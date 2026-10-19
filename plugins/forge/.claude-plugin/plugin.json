@@ -1,0 +1,10 @@
+{
+  "name": "forge",
+  "version": "1.0.0",
+  "description": "La partie générique de l'usine Forge : coder, revue en deux temps (forge:qc), décideurs délégués, chaîne des features de l'idée à la livraison, et les hooks qui gardent git, les rôles et la pause.",
+  "author": {
+    "name": "ikoro-labs"
+  },
+  "repository": "https://github.com/ikoro-labs/forge",
+  "keywords": ["usine", "agents", "revue", "features"]
+}

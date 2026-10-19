@@ -1,0 +1,16 @@
+{
+  "name": "ikoro-labs",
+  "owner": {
+    "name": "ikoro-labs"
+  },
+  "metadata": {
+    "description": "La marketplace privée d'ikoro-labs : l'usine agentique partagée par ses projets."
+  },
+  "plugins": [
+    {
+      "name": "forge",
+      "source": "./plugins/forge",
+      "description": "La partie générique de l'usine Forge, partagée par les projets d'ikoro-labs."
+    }
+  ]
+}

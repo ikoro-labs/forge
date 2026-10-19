@@ -1,0 +1,135 @@
+"""The agents and skills are well formed, and every `forge:<name>` the plugin cites exists."""
+
+import json
+import re
+import unittest
+from pathlib import Path
+
+import support
+
+FRONTMATTER = re.compile(r"\A---\n(.*?)\n---\n", re.DOTALL)
+FIELD = re.compile(r"^([a-zA-Z-]+):(.*)$")
+# A name followed by "*" is a family (`/forge:feature-*`), not a citation.
+CITED = re.compile(r"(?<![\w@-])/?forge:([a-z0-9-]+)(?![\w*-])")
+# A plugin agent's frontmatter is read for these; Claude Code ignores hooks, permissionMode,
+# mcpServers and initialPrompt there, so a guard written in them would never run.
+AGENT_FIELDS = {"name", "description", "tools", "model", "color"}
+SKILL_FIELDS = {
+    "name", "description", "argument-hint", "allowed-tools", "model", "disable-model-invocation",
+    "user-invocable",
+}
+AGENTS = sorted((support.PLUGIN / "agents").glob("*.md"))
+SKILLS = sorted((support.PLUGIN / "skills").glob("*/SKILL.md"))
+
+
+def frontmatter(path: Path) -> dict[str, str]:
+    match = FRONTMATTER.match(path.read_text(encoding="utf-8"))
+    if match is None:
+        raise AssertionError(f"{path}: no frontmatter between two `---` lines")
+    fields: dict[str, str] = {}
+    for line in match.group(1).splitlines():
+        field = FIELD.match(line)
+        if field is None:
+            raise AssertionError(f"{path}: `{line}` is not a `key: value` line")
+        value = field.group(2).strip()
+        quoted = len(value) > 1 and value[0] == value[-1] and value[0] in "\"'"
+        if not quoted and ": " in value:
+            raise AssertionError(f"{path}: `{field.group(1)}` holds an unquoted `: `, YAML breaks")
+        fields[field.group(1)] = value.strip("\"'") if quoted else value
+    return fields
+
+
+def names() -> set[str]:
+    return {path.stem for path in AGENTS} | {path.parent.name for path in SKILLS}
+
+
+class Frontmatter(unittest.TestCase):
+    def test_the_plugin_has_its_agents_and_skills(self) -> None:
+        self.assertEqual(
+            {path.stem for path in AGENTS},
+            {"coder", "qc-gate", "qc-conf", "staff-engineer", "product-owner"},
+        )
+        self.assertIn("qc", names())
+        self.assertIn("feature-build", names())
+
+    def test_every_agent_reads_as_a_plugin_agent(self) -> None:
+        for path in AGENTS:
+            with self.subTest(agent=path.stem):
+                fields = frontmatter(path)
+                self.assertEqual(fields.get("name"), path.stem)
+                self.assertTrue(fields.get("description"))
+                self.assertTrue(fields.get("tools"))
+                self.assertEqual(set(fields) - AGENT_FIELDS, set())
+
+    def test_every_skill_reads_as_a_skill(self) -> None:
+        for path in SKILLS:
+            with self.subTest(skill=path.parent.name):
+                fields = frontmatter(path)
+                self.assertEqual(fields.get("name"), path.parent.name)
+                self.assertTrue(fields.get("description"))
+                self.assertEqual(set(fields) - SKILL_FIELDS, set())
+
+    def test_the_judges_have_no_write_tool(self) -> None:
+        for agent in ("qc-gate", "qc-conf", "staff-engineer", "product-owner"):
+            with self.subTest(agent=agent):
+                tools = {tool.strip() for tool in frontmatter(support.PLUGIN / "agents" / f"{agent}.md")["tools"].split(",")}
+                self.assertEqual(tools & {"Edit", "Write", "MultiEdit", "NotebookEdit", "Agent"}, set())
+
+    def test_the_coder_cannot_launch_an_agent(self) -> None:
+        tools = frontmatter(support.PLUGIN / "agents" / "coder.md")["tools"]
+        self.assertNotIn("Agent", tools)
+        self.assertNotIn("Task", tools)
+
+
+class CitedNames(unittest.TestCase):
+    def test_every_forge_name_the_plugin_cites_exists(self) -> None:
+        known = names()
+        texts = [
+            path
+            for path in support.REPO_ROOT.rglob("*")
+            if path.suffix in (".md", ".py", ".json")
+            and path.is_file()
+            and ".git" not in path.parts
+            and "tests" not in path.parts
+        ]
+        self.assertGreater(len(texts), 10)
+        unknown = {}
+        for path in texts:
+            for name in CITED.findall(path.read_text(encoding="utf-8")):
+                if name not in known:
+                    unknown.setdefault(name, str(path.relative_to(support.REPO_ROOT)))
+        self.assertEqual(unknown, {})
+
+    def test_the_hooks_name_the_agents_the_plugin_ships(self) -> None:
+        import guard_coder
+        import guard_readonly
+
+        for agent in (guard_coder.CODER, guard_readonly.GATE, *guard_readonly.READERS):
+            with self.subTest(agent=agent):
+                self.assertTrue((support.PLUGIN / "agents" / f"{agent.removeprefix('forge:')}.md").is_file())
+
+
+class Manifests(unittest.TestCase):
+    def test_the_version_lives_in_plugin_json_only(self) -> None:
+        plugin = json.loads((support.PLUGIN / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
+        marketplace = json.loads(
+            (support.REPO_ROOT / ".claude-plugin" / "marketplace.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(plugin["name"], "forge")
+        self.assertRegex(plugin["version"], r"^\d+\.\d+\.\d+$")
+        self.assertEqual(marketplace["name"], "ikoro-labs")
+        self.assertEqual([entry["name"] for entry in marketplace["plugins"]], ["forge"])
+        self.assertEqual(marketplace["plugins"][0]["source"], "./plugins/forge")
+        self.assertNotIn("version", marketplace["plugins"][0])
+        self.assertNotIn("version", marketplace.get("metadata", {}))
+
+    def test_the_changelog_opens_on_the_plugin_version(self) -> None:
+        version = json.loads((support.PLUGIN / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))["version"]
+        changelog = (support.REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+        first = re.search(r"^## \[?(\d+\.\d+\.\d+)", changelog, re.MULTILINE)
+        self.assertIsNotNone(first)
+        self.assertEqual(first.group(1) if first else None, version)
+
+
+if __name__ == "__main__":
+    unittest.main()
