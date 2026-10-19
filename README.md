@@ -43,13 +43,17 @@ Ce qui est entré dans chaque version, et ce qui en est resté dehors avec sa ra
 
    ```json
    {
-     "extraKnownMarketplaces": {
-       "ikoro-labs": {
-         "source": { "source": "github", "repo": "ikoro-labs/forge", "ref": "forge--v1.0.0" }
-       }
-     },
      "enabledPlugins": {
        "forge@ikoro-labs": true
+     },
+     "extraKnownMarketplaces": {
+       "ikoro-labs": {
+         "source": {
+           "source": "github",
+           "repo": "ikoro-labs/forge",
+           "ref": "forge--v1.0.0"
+         }
+       }
      }
    }
    ```
@@ -61,23 +65,42 @@ Ce qui est entré dans chaque version, et ce qui en est resté dehors avec sa ra
    honoré qu'une fois la confiance du dossier accordée. Une session cloud l'ignore.
 
 3. **Installer**, une fois par poste et par projet : `enabledPlugins` active le plugin sans
-   l'installer.
+   l'installer. Depuis la racine du projet, redéclarer d'abord son épingle, puis installer :
 
    ```sh
+   claude plugin marketplace add ikoro-labs/forge@forge--v1.0.0 --scope project
    claude plugin install forge@ikoro-labs --scope project
    ```
+
+   La première ligne remet la marketplace du poste sur le `ref` du projet : un poste ne connaît
+   qu'une source par marketplace, celle du dernier projet qui l'a déclarée (voir **Limites
+   connues**). Elle réécrit aussi le `.claude/settings.json` du projet dans sa propre forme
+   (indentation de deux espaces, `extraKnownMarketplaces` en dernière clé), sans toucher aux autres
+   clés : sous la forme de l'étape 1, `git diff` reste vide. S'il montre autre chose que de la mise
+   en forme, l'épingle tapée n'est pas celle du projet.
 
 4. **Configurer** : copier `plugins/forge/templates/usine.md` vers `docs/agents/usine.md` dans le
    projet, puis, pour chaque clé, mettre la vraie valeur ou supprimer la ligne (voir plus bas).
 
-5. **Vérifier** : `claude plugin list` montre `forge@ikoro-labs` à la version du `ref`, et `/forge:`
-   dans une session liste les skills.
+5. **Vérifier** : `claude plugin list --json` donne, pour l'entrée de `forge@ikoro-labs` dont le
+   `projectPath` est ce projet, la version du `ref` ; `/forge:` dans une session liste les skills.
+   Sans `--json`, la liste n'affiche qu'une entrée par plugin, celle du dernier projet installé,
+   même quand on la lance depuis un autre.
 
 ## Monter de version
 
 1. Une PR du projet bouge le `ref` vers le nouveau tag, après lecture de son entrée au
    `CHANGELOG.md`.
-2. Une fois fusionnée, sur chaque poste : `claude plugin update forge@ikoro-labs`.
+2. Une fois fusionnée, sur chaque poste, depuis la racine du projet :
+
+   ```sh
+   claude plugin marketplace add ikoro-labs/forge@<nouveau tag> --scope project
+   claude plugin update forge@ikoro-labs --scope project
+   ```
+
+   `update` prend la source que le poste connaît, pas le `ref` du projet. Sans la première ligne,
+   un projet épinglé sur une version passe à celle qu'un autre projet du poste a déclarée en
+   dernier.
 
 **Jamais pendant un `/forge:feature-build` actif.** Une session garde les versions qu'elle a
 chargées, mais la suivante charge la nouvelle : un passage repris dans une nouvelle session
@@ -85,7 +108,8 @@ changerait d'usine au milieu d'une feature. La mise à jour automatique de la ma
 coupée.
 
 Un poste qui n'a pas lancé `claude plugin update` garde l'ancienne version, et rien ne l'en avertit
-en dehors de `/plugin` : après chaque montée, comparer `claude plugin list` au `ref` du projet.
+en dehors de `/plugin` : après chaque montée, comparer `claude plugin list --json` au `ref` du
+projet.
 
 ## Configurer : `docs/agents/usine.md`
 
@@ -143,12 +167,19 @@ Ce qu'aucun agent ne fait à la place d'un humain :
 1. Créer le dépôt privé `ikoro-labs/forge` (fait) et donner à la session Projet A le droit d'y pousser
    et d'y poser les tags.
 2. Sur chaque poste (bureau, PC personnel), et pour chaque contributeur : un accès git au dépôt privé (clé
-   SSH, ou `gh auth login`) ; puis, dans chaque projet, approuver le dossier et lancer
-   `claude plugin install forge@ikoro-labs --scope project`.
-3. À chaque montée d'épingle : `claude plugin update forge@ikoro-labs` sur chaque poste.
+   SSH, ou `gh auth login`) ; puis, dans chaque projet, approuver le dossier et lancer les deux
+   commandes de l'étape 3 d'**Installer dans un projet**.
+3. À chaque montée d'épingle, sur chaque poste et dans chaque projet : les deux commandes de
+   **Monter de version**.
 
 ## Limites connues
 
+- **Une source par marketplace et par poste** : la marketplace `ikoro-labs` n'est connue qu'une
+  fois par poste, à la source du dernier projet qui l'a déclarée (`claude plugin marketplace add`).
+  L'ouverture d'une session ne la remet pas sur le `ref` du projet. Deux projets d'un même poste
+  peuvent tourner sur deux versions, car chaque installation garde son propre dossier de cache ;
+  mais `install` et `update` prennent la source du poste. D'où la redéclaration de l'épingle avant
+  chacun d'eux.
 - **Dépendance à GitHub** : un poste neuf ou une nouvelle version ne s'installent pas si GitHub ou
   les identifiants git du poste font défaut.
 - **Noms préfixés** : `forge:coder`, `/forge:qc`. Les commandes tapées, les tests et les mesures
@@ -159,15 +190,22 @@ Ce qu'aucun agent ne fait à la place d'un humain :
   en silence, d'où les tests de `tests/`.
 - **Aucun `CLAUDE.md`** n'est chargé depuis un plugin : la constitution reste celle du projet.
 
-### Points à confirmer sur un poste
+### Éprouvé sur un poste (Claude Code 2.1.303, 2026-10-19)
 
-Lus dans la documentation de Claude Code, pas encore éprouvés :
+Les quatre points que l'ADR-0129 laissait à confirmer, essayés dans des projets jetables :
 
-- deux projets d'un même poste qui épinglent la marketplace sur deux `ref` différents ;
-- la priorité entre un skill de projet et le skill du plugin de même nom court (`qc` et
-  `forge:qc`), pendant la transition où les deux existent ;
-- le comportement de `guard_coder`, filtré sur `agent_type`, dans le worktree d'un agent ;
-- le chargement d'une version déjà en cache quand la marketplace est injoignable au démarrage.
+- **Deux projets, deux `ref`** : possible, avec la limite ci-dessus. Un projet épinglé sur 1.0.0,
+  un autre sur 1.0.1 : chacun a gardé sa version, jusqu'à un `update` lancé dans le premier, qui
+  l'a fait passer en 1.0.1 ; redéclarer son épingle puis relancer `update` l'a ramené en 1.0.0.
+- **`qc` du projet et `forge:qc`** : `/qc` lance le skill du projet ; `forge:qc` reste joignable
+  sous son nom préfixé, et les deux figurent dans la liste des skills. Pendant la transition, les
+  commandes qui doivent viser le plugin écrivent `/forge:qc`.
+- **`guard_coder` dans un worktree** : un `forge:coder` lancé avec `isolation: worktree` porte bien
+  `agent_type: "forge:coder"` dans l'événement du hook. Rejoué sur `guard_coder`, cet événement
+  est refusé pour `gh pr merge` comme pour le skill `forge:qc`, et le même événement avec un autre
+  `agent_type` passe.
+- **Marketplace injoignable au démarrage** : avec git coupé vers GitHub, la session charge la
+  version en cache, skills et agents compris.
 
 ## Licence
 
