@@ -8,12 +8,17 @@ the first notice, it stops waiting, lists the agents still alive for a rescue an
 relay (stage "hard"). Past each notice, only a new user prompt gets a reminder: repeating it
 after every tool call would interrupt the work.
 
-The threshold is CLAUDE_SESSION_TOKEN_LIMIT, 150k by default. Only handoff_relay.sh raises it,
+The threshold is CLAUDE_SESSION_TOKEN_LIMIT, 150k by default. Only handoff_relay.py raises it,
 to 400k for a successor whose handoff carries a feature; no settings, skill or session sets it.
 
 State and handoffs live outside the plugin cache, which every version rewrites:
 `~/.claude/hooks/state/`, handoffs under `handoffs/<project>/<date>-r<N>.md`. The first-notice
 marker is never touched again: its mtime is the start of the drain.
+
+The session writes the handoff with its own file tools, which a managed policy may forbid
+under any `.claude` folder. CLAUDE_HANDOFF_DIR then moves the handoffs elsewhere, as
+`<CLAUDE_HANDOFF_DIR>/<project>/<date>-r<N>.md`; markers and counters, written by the hooks
+themselves, stay in the state folder.
 
 While `~/.claude/settings.json` still declares a copy of this hook outside the plugin, this one
 stays silent: the session would otherwise get every notice twice.
@@ -37,7 +42,9 @@ DEFAULT_LIMIT = 150000
 HARD_MARGIN = 35000
 HOOKS = Path(__file__).resolve().parent
 MANIFEST = HOOKS.parent / ".claude-plugin" / "plugin.json"
-RELAY = HOOKS / "handoff_relay.sh"
+RELAY = HOOKS / "handoff_relay.py"
+# The interpreter every hook of the plugin runs on; `python3` is a Microsoft Store alias on Windows.
+PYTHON = "uv run --no-project --quiet python"
 NAME = "handoff_trigger.py"
 KEYS = (
     "projet, feature, passage_depart, jetons_agents, en_vol, file_revue, sauvetage, successeur, "
@@ -47,6 +54,14 @@ KEYS = (
 
 def state_dir() -> Path:
     return Path.home() / ".claude" / "hooks" / "state"
+
+
+def handoff_dir() -> Path:
+    """CLAUDE_HANDOFF_DIR, `~` and variables expanded, else the `handoffs` folder of the state."""
+    configured = os.environ.get("CLAUDE_HANDOFF_DIR", "").strip()
+    if configured:
+        return Path(os.path.expandvars(configured)).expanduser()
+    return state_dir() / "handoffs"
 
 
 def handoff_skill() -> Path | None:
@@ -104,22 +119,13 @@ def context_tokens(transcript: Path) -> int:
     return last
 
 
-def session_pids() -> set[int]:
-    """This hook's ancestors, among them the Claude Code process that holds this session's agent locks."""
-    pids, pid = set(), os.getpid()
-    while pid > 1:
-        pids.add(pid)
-        stat = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8")
-        pid = int(stat.rsplit(")", 1)[1].split()[1])
-    return pids
-
-
 def agents_in_flight(root: Path) -> str:
     try:
         # Imported here so that a broken sibling costs only this listing, never the notice.
         import handoff_header
 
-        agents = handoff_header.live_agents(root, session_pids())
+        # This hook's ancestors, among them the Claude Code process that holds this session's agent locks.
+        agents = handoff_header.live_agents(root, handoff_header.ancestors(os.getpid()))
     except Exception:  # noqa: BLE001 - outside a repository there is simply nothing to list
         return "none found by worktree lock (agents without a worktree, such as qc-gate and qc-conf, are not seen)"
     listed = "; ".join(f"{path} on {branch}" for path, branch in agents) or "none with a worktree"
@@ -128,7 +134,7 @@ def agents_in_flight(root: Path) -> str:
 
 def handoff_path(root: Path) -> Path:
     """First free `<date>-r<N>.md` of the project: a name can already be taken by another session."""
-    folder = state_dir() / "handoffs" / root.name
+    folder = handoff_dir() / root.name
     day = datetime.date.today().isoformat()
     rank = 1
     while (folder / f"{day}-r{rank}.md").exists():
@@ -155,13 +161,15 @@ def drain(tokens: int, limit: int, drain_minutes: int, root: Path) -> str:
         "whichever comes first; you will be told. If you wait on agents, check the clock between notifications.\n"
         f"4. Once nothing is in flight, {procedure()} at {path} (create the folder; if the file exists, take the "
         f"next r<N>). It starts with a YAML front matter holding exactly these keys: {KEYS}. passage_depart is a "
-        "UTC epoch, lists are inline `[]` or `- item` lines, successeur and seuil are left empty (the relay writes "
+        "UTC epoch, lists are inline `[]` or `- item` lines, feature is the feature identifier (F-NNNN) or left "
+        "empty, never prose, successeur and seuil are left empty (the relay writes "
         "them), contexte_passation is your context in tokens when you write it, "
         f"hooks_version is `{hooks_version()}`. An agent woken again by SendMessage works in its worktree without "
         "locking it: list it under en_vol, the relay cannot see it otherwise. The body is the resume prompt. No "
         "secret. Respect the project's own end-of-session rules too; a resume memory keeps only a pointer to this "
         "handoff.\n"
-        f"5. Run `bash {RELAY} <handoff path>` from the project directory. Exit 5 means an agent of this session "
+        f'5. Run `{PYTHON} "{RELAY}" <handoff path>` from the project directory. '
+        "Exit 5 means an agent of this session "
         "is still alive or en_vol is not empty: wait for it, do not force. Exit 2 means the header is invalid: fix "
         "it. End your reply with the handoff path, the relay session id and `claude attach <id>`; if the relay "
         "refuses its daily cap (exit 3), tell the user to open a new session from the handoff by hand.\n"
@@ -175,7 +183,7 @@ def hard(tokens: int, minutes: int, root: Path) -> str:
         "for agents. Never write in the worktree of a living agent. In the handoff header, list each agent still "
         "alive under `sauvetage`, one `- ` item each: agent type, ticket or PR, worktree, branch, last sha on "
         "origin (`git ls-remote origin <branch>`); keep them under `en_vol` too. Write the handoff as instructed "
-        f"before, then run `bash {RELAY} --force <handoff path>`: --force is refused while `sauvetage` is empty. "
+        f'before, then run `{PYTHON} "{RELAY}" --force <handoff path>`: --force is refused while `sauvetage` is empty. '
         "The successor's first move is to rescue each listed worktree (a Conventional Commits commit in the "
         "project's language, a push, a fresh agent relaunched).\n"
         f"Agents of this session in flight now: {agents_in_flight(root)}."

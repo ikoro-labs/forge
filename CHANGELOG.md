@@ -5,6 +5,64 @@ tag `forge--v<X.Y.Z>` sur ce dépôt ; sa version est celle de `plugins/forge/.c
 et nulle part ailleurs. Les tags `forge-v<X.Y.Z>` (un seul tiret) appartiennent à l'historique de
 Projet A et ne sont pas repris ici.
 
+## [1.2.0] - 2026-10-20
+
+La passation drainée sous Windows (ikoro-labs/forge#3) : elle ne tournait que sous Linux, parce que
+le relais était un script bash et que les questions de processus lisaient `/proc`.
+
+### Hooks
+
+- `handoff_relay.py` remplace `handoff_relay.sh` : même usage, mêmes codes de sortie (1 à 5),
+  mêmes variables, mêmes messages, en Python de la bibliothèque standard lancé par
+  `uv run --no-project --quiet python`. La fermeture différée de la session appelante est une copie
+  détachée du relais (`--close`), sortie du job de la session sous Windows quand il le permet. Sous
+  Windows, l'exécutable `claude.exe` est préféré au lanceur `.cmd`, pour qu'aucun `cmd.exe` ne
+  relise le prompt du successeur ; une session interactive y reçoit `/exit` dans sa console
+  (`--exit-console`), et n'est tuée qu'au bout de 15 secondes, le relais coupant alors lui-même le
+  suivi de la souris : essayée tuée d'emblée par `taskkill /F`, elle avait laissé chaque mouvement
+  de souris s'écrire dans le shell. Une session de fond est arrêtée par `claude stop` puis
+  `claude rm`, ses fenêtres `claude attach` fermées d'abord. `CLAUDE_HANDOFF_TERMINAL` accepte
+  `wt.exe`. Le nom du compteur du jour remplace aussi `\` et `:` d'un chemin Windows.
+- Le relais reconnaît une session interactive au registre de Claude Code
+  (`~/.claude/sessions/<pid>.json`, `"kind": "interactive"`) : elle porte elle aussi
+  `CLAUDE_CODE_CHILD_SESSION=1` (Claude Code 2.1.304), et la 1.1.0 la traitait en session de fond.
+- `feature` ne compte que ses identifiants `F-NNNN` : essayé sous Windows, un « aucune (demande
+  ponctuelle) » avait donné au successeur le seuil de 400 k. La consigne du hook le dit.
+- `CLAUDE_HANDOFF_CLOSE_DRY_RUN` : `0`, `false`, `no`, `off` ou vide laissent le relais à blanc
+  coupé ; toute valeur non vide l'allumait, `0` compris.
+- `handoff_header.py` : `process_alive`, `process_start`, `parent_pid` et `ancestors` répondent par
+  `/proc` sous Linux et par l'API Win32 (`ctypes`) sous Windows ; ailleurs, un processus compte pour
+  vivant. Le verrou d'un worktree d'agent est lu avec ou sans heure de départ : Claude Code n'en
+  écrit pas sous Windows (`claude agent <nom> (pid N)`), et l'ancienne expression, qui l'exigeait,
+  aurait compté pour vivant tout verrou, même d'un agent mort ou d'une autre session. Sans heure, un
+  pid vivant vaut détenteur.
+- `handoff_trigger.py` : la consigne lance le relais par `uv run --no-project --quiet python`, et
+  la liste des agents en vol passe par `handoff_header.ancestors`. Le prompt du successeur ne cite
+  plus `python3`, qui sous Windows est un alias du Microsoft Store.
+- `CLAUDE_HANDOFF_DIR` : dossier des passations, `~` et variables développés, par défaut
+  `~/.claude/hooks/state/handoffs` comme avant. Essayé sur un poste Windows sous politique gérée :
+  le hook s'est déclenché, mais la session n'a pas pu écrire la passation, l'outil Write étant
+  refusé sous tout dossier `.claude` ; le relais a répondu `handoff document not found`. Les
+  marqueurs et compteurs, écrits par les hooks eux-mêmes, restent dans `~/.claude/hooks/state`.
+
+### Tests
+
+- `tests/test_handoff.py` : le relais tourne sous Windows comme sous Linux (seul git est requis),
+  sur un `claude` simulé en Python ; verrou lu avec et sans heure de départ ; processus vivant,
+  fini, et ancêtres d'un enfant ; détenteur mort qui libère son worktree ; passation sous
+  `CLAUDE_HANDOFF_DIR`, variable développée, marqueur resté dans l'état ; plan de fermeture d'une
+  session interactive et d'une session de fond à blanc, registre des sessions ; `feature` en prose
+  à 150 k ; `DRY_RUN=0` coupé ; sous Windows, `/exit` tapé dans la console cachée d'une session
+  simulée, et session sourde à `/exit` tuée. Les tests isolent `USERPROFILE` comme
+  `HOME`, sans quoi sous Windows ils écrivaient dans le vrai `~/.claude/hooks/state`, et ne passent
+  plus aux relais les variables `CLAUDE_` de la session qui les lance. `enterContext` (Python 3.11)
+  cède la place à `patch.start` : la suite tourne sous le Python 3.10 que `uv` peut choisir.
+
+### Gestes humains
+
+- La règle de permission qui autorisait `bash …/hooks/handoff_relay.sh` vise désormais
+  `uv run --no-project --quiet python …/hooks/handoff_relay.py` (README, **Gestes humains**, point 5).
+
 ## [1.1.0] - 2026-10-20
 
 La passation drainée d'une session à sa limite de contexte (ikoro-labs/forge#3), décidée dans

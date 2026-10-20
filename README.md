@@ -18,7 +18,7 @@ plugins/forge/                    le plugin
   skills/                         qc, feature-build, feature-*, codebase-design, domain-modeling,
                                   improve-codebase-architecture
   hooks/                          hooks.json, les gardes et la passation drainée, en Python de la
-                                  bibliothèque standard (et handoff_relay.sh en bash)
+                                  bibliothèque standard, sous Linux comme sous Windows
   scripts/parse_output.py         lecture du RESULT du coder et du verdict du juge
   templates/                      usine.md, adr.md, features/
 tests/                            tests des hooks, du parseur et du contenu
@@ -53,7 +53,7 @@ Ce qui est entré dans chaque version, et ce qui en est resté dehors avec sa ra
          "source": {
            "source": "github",
            "repo": "ikoro-labs/forge",
-           "ref": "forge--v1.1.0"
+           "ref": "forge--v1.2.0"
          }
        }
      }
@@ -70,7 +70,7 @@ Ce qui est entré dans chaque version, et ce qui en est resté dehors avec sa ra
    l'installer. Depuis la racine du projet, redéclarer d'abord son épingle, puis installer :
 
    ```sh
-   claude plugin marketplace add ikoro-labs/forge@forge--v1.1.0 --scope project
+   claude plugin marketplace add ikoro-labs/forge@forge--v1.2.0 --scope project
    claude plugin install forge@ikoro-labs --scope project
    ```
 
@@ -124,35 +124,64 @@ draine.
   finir ses agents puis d'écrire la passation et de lancer le relais. Au plafond dur (seuil plus
   35 k jetons, ou 45 minutes après le premier avis), il fait lister les agents encore vivants sous
   `sauvetage` et forcer le relais. Un sous-agent n'est jamais averti.
-- **La passation** est un fichier `~/.claude/hooks/state/handoffs/<projet>/<date>-r<N>.md`, hors du
-  cache du plugin, qui commence par un front matter de onze clés (`projet`, `feature`,
+- **La passation** est un fichier `~/.claude/hooks/state/handoffs/<projet>/<date>-r<N>.md` (ou
+  `<CLAUDE_HANDOFF_DIR>/<projet>/<date>-r<N>.md`), hors du cache du plugin, qui commence par un front matter de onze clés (`projet`, `feature`,
   `passage_depart`, `jetons_agents`, `en_vol`, `file_revue`, `sauvetage`, `successeur`,
   `hooks_version`, `seuil`, `contexte_passation`). `handoff_header.py` le valide ; son corps est le
   prompt de reprise. Le skill `handoff` de l'utilisateur (`~/.claude/skills/handoff/`) est suivi
   s'il existe.
-- **Le relais** `handoff_relay.sh`, lancé par la session depuis le dossier du projet, refuse
+- **Le relais** `handoff_relay.py`, lancé par la session depuis le dossier du projet
+  (`uv run --no-project --quiet python <hooks>/handoff_relay.py <passation>`), refuse
   (code 5) tant qu'un agent de la session est vivant ou que `en_vol` n'est pas vide, et n'admet
   `--force` qu'avec `sauvetage` non vide. Il lance le successeur par `claude --bg`, écrit son
   identifiant et son seuil dans l'en-tête, puis arrête et supprime la session appelante. Le
   successeur vérifie d'abord qu'il est bien le successeur désigné
   (`handoff_header.py successor-ok`).
 - **Le seuil** est `CLAUDE_SESSION_TOKEN_LIMIT`, 150 000 par défaut. Seul le relais le relève, à
-  400 000 pour un successeur dont la passation porte une feature. Aucun `settings.json` ne doit le
-  fixer.
+  400 000 pour un successeur dont la passation porte une feature, c'est-à-dire un identifiant
+  `F-NNNN` dans `feature` (du texte comme « aucune » n'en est pas une). Aucun `settings.json` ne
+  doit le fixer.
 
 | Variable | Défaut | Effet |
 | --- | --- | --- |
 | `CLAUDE_SESSION_TOKEN_LIMIT` | 150000 | seuil de drainage, posé par le relais seulement |
 | `CLAUDE_HANDOFF_DRAIN_MINUTES` | 45 | minutes de drainage avant le plafond dur |
+| `CLAUDE_HANDOFF_DIR` | `~/.claude/hooks/state/handoffs` | dossier des passations, `~` et variables développés (`%LOCALAPPDATA%\forge\handoffs`) ; les marqueurs et compteurs restent dans `~/.claude/hooks/state` |
 | `CLAUDE_HANDOFF_RELAY_MAX` | 5 | relais par projet et par jour (code 3 au-delà) |
 | `CLAUDE_HANDOFF_CLOSE_DELAY` | 45 | secondes avant la fermeture de la session appelante, 0 la garde ouverte |
-| `CLAUDE_HANDOFF_TERMINAL` | aucune | commande de terminal (`ghostty -e`, `gnome-terminal --`) où ouvrir `claude attach <id>` ; sans elle, aucune fenêtre |
-| `CLAUDE_HANDOFF_CLOSE_DRY_RUN` | aucune | affiche le lancement et la fermeture sans rien lancer, compteur et passation intacts |
+| `CLAUDE_HANDOFF_TERMINAL` | aucune | commande de terminal (`ghostty -e`, `gnome-terminal --`, `wt.exe` sous Windows) où ouvrir `claude attach <id>` ; sans elle, aucune fenêtre |
+| `CLAUDE_HANDOFF_CLOSE_DRY_RUN` | aucune | affiche le lancement et la fermeture sans rien lancer, compteur et passation intacts ; `0`, `false`, `no`, `off` ou vide le laissent coupé |
 
-Le relais lit `/proc` et tourne sous bash : Linux seulement. La passation ne vaut que dans les
-projets où le plugin est activé ; une copie de ces scripts dans `~/.claude/hooks` couvrait tous les
-projets du poste. Tant que `~/.claude/settings.json` déclare encore une telle copie, le hook du
-plugin se tait.
+Le relais tourne sous Linux et sous Windows. Les questions de processus (un pid vit-il, quand
+est-il né, qui est son parent) passent par `/proc` sous Linux et par l'API Win32 (`ctypes`) sous
+Windows ; ailleurs, un processus compte pour vivant, le côté prudent. Différences sous Windows :
+
+- Claude Code y verrouille le worktree d'un agent sans heure de départ (`claude agent <nom>
+  (pid N)`) : un pid vivant y vaut détenteur du verrou, sans garde contre la réutilisation d'un pid.
+- La session interactive fermée par le relais reçoit `/exit` dans sa console, comme si on le
+  tapait : Claude Code se ferme normalement et rend le terminal propre ; sa fenêtre reste ouverte
+  sur l'invite du shell qui l'a lancée. Si elle vit encore 15 secondes plus tard, elle est tuée
+  (`taskkill /F`) et le relais coupe lui-même le suivi de la souris dans la console : tuée sans
+  cela, elle laissait chaque mouvement de souris s'écrire dans le shell. Une session de fond est
+  arrêtée puis supprimée (`claude stop`, `claude rm`) comme sous Linux, ses fenêtres
+  `claude attach` fermées d'abord.
+- Une session interactive porte elle aussi `CLAUDE_CODE_CHILD_SESSION=1` : le relais la reconnaît au
+  registre de Claude Code (`~/.claude/sessions/<pid>.json`, `"kind": "interactive"`), sous Linux
+  comme sous Windows.
+
+La session écrit la passation avec ses propres outils de fichier. Une politique gérée peut les
+interdire sous tout dossier `.claude` : le hook se déclenche, mais l'écriture est refusée et le
+relais répond `handoff document not found`. Sur un tel poste, `CLAUDE_HANDOFF_DIR` place les
+passations ailleurs. Elle se pose dans l'environnement du poste ou dans le bloc `env` du
+`~/.claude/settings.json`, pour que le hook, le relais et le successeur la voient :
+
+```json
+{ "env": { "CLAUDE_HANDOFF_DIR": "%LOCALAPPDATA%\\forge\\handoffs" } }
+```
+
+La passation ne vaut que dans les projets où le plugin est activé ; une copie de ces scripts dans
+`~/.claude/hooks` couvrait tous les projets du poste. Tant que `~/.claude/settings.json` déclare
+encore une telle copie, le hook du plugin se tait.
 
 ## Configurer : `docs/agents/usine.md`
 
@@ -195,7 +224,7 @@ Publier une version :
 3. Vérifier :
 
    ```sh
-   python3 -m unittest discover -s tests
+   uv run --no-project --quiet python -m unittest discover -s tests
    claude plugin validate .
    claude plugin validate plugins/forge
    ```
@@ -222,6 +251,10 @@ Ce qu'aucun agent ne fait à la place d'un humain :
    `bash ~/.claude/hooks/handoff_relay.sh` par la même règle sur le relais du plugin
    (`~/.claude/plugins/cache/ikoro-labs/forge/<version>/hooks/handoff_relay.sh`). Jusque-là, le
    hook du plugin se tait et la copie reste celle qui tourne.
+5. À la montée vers `forge` 1.2.0 : remplacer la règle de permission qui autorise
+   `bash ~/.claude/plugins/cache/ikoro-labs/forge/<version>/hooks/handoff_relay.sh` par
+   `uv run --no-project --quiet python ~/.claude/plugins/cache/ikoro-labs/forge/<version>/hooks/handoff_relay.py`.
+   Le relais bash n'existe plus.
 
 ## Limites connues
 
