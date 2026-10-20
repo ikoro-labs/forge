@@ -82,6 +82,9 @@ class GateCommands(unittest.TestCase):
             "git fetch origin",
             "gh pr checks 61",
             "gh api repos/o/r/check-runs/1/annotations",
+            "gh api repos/o/r/rules/branches/main --jq '[.[] | select(.type == \"required_status_checks\")"
+            " | .parameters.required_status_checks[].context]'",
+            "gh api repos/o/r/branches/main --jq '.protection.required_status_checks.contexts'",
             "git diff origin/main...origin/feat/x --stat",
         ]:
             with self.subTest(command=command):

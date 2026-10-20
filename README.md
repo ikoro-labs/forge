@@ -338,9 +338,10 @@ Ce qu'aucun agent ne fait à la place d'un humain :
    Le relais bash n'existe plus.
 6. Dans ce dépôt, une fois par poste qui y développe : les deux commandes de l'étape 3
    d'**Installer dans un projet**, depuis sa racine.
-   Puis, si l'offre GitHub du dépôt le permet, protéger `main` avec les checks de la clé
-   `required-contexts` de `docs/agents/usine.md`. Sans protection, seul `guard_git` retient une
-   fusion dont un check n'est pas vert.
+   `main` est protégée par un ruleset qui exige les checks de la clé `required-contexts` de
+   `docs/agents/usine.md` (Settings, Rules, Rulesets, ciblant la branche par défaut). Sans
+   protection, seul `guard_git` retient une fusion dont un check n'est pas vert. `forge:qc-gate`
+   lit la protection dans les rulesets comme dans l'ancienne protection de branche.
 
 ## Limites connues
 
