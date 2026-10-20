@@ -8,7 +8,7 @@ the first notice, it stops waiting, lists the agents still alive for a rescue an
 relay (stage "hard"). Past each notice, only a new user prompt gets a reminder: repeating it
 after every tool call would interrupt the work.
 
-The threshold is CLAUDE_SESSION_TOKEN_LIMIT, 150k by default. Only handoff_relay.sh raises it,
+The threshold is CLAUDE_SESSION_TOKEN_LIMIT, 150k by default. Only handoff_relay.py raises it,
 to 400k for a successor whose handoff carries a feature; no settings, skill or session sets it.
 
 State and handoffs live outside the plugin cache, which every version rewrites:
@@ -37,7 +37,9 @@ DEFAULT_LIMIT = 150000
 HARD_MARGIN = 35000
 HOOKS = Path(__file__).resolve().parent
 MANIFEST = HOOKS.parent / ".claude-plugin" / "plugin.json"
-RELAY = HOOKS / "handoff_relay.sh"
+RELAY = HOOKS / "handoff_relay.py"
+# The interpreter every hook of the plugin runs on; `python3` is a Microsoft Store alias on Windows.
+PYTHON = "uv run --no-project --quiet python"
 NAME = "handoff_trigger.py"
 KEYS = (
     "projet, feature, passage_depart, jetons_agents, en_vol, file_revue, sauvetage, successeur, "
@@ -104,22 +106,13 @@ def context_tokens(transcript: Path) -> int:
     return last
 
 
-def session_pids() -> set[int]:
-    """This hook's ancestors, among them the Claude Code process that holds this session's agent locks."""
-    pids, pid = set(), os.getpid()
-    while pid > 1:
-        pids.add(pid)
-        stat = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8")
-        pid = int(stat.rsplit(")", 1)[1].split()[1])
-    return pids
-
-
 def agents_in_flight(root: Path) -> str:
     try:
         # Imported here so that a broken sibling costs only this listing, never the notice.
         import handoff_header
 
-        agents = handoff_header.live_agents(root, session_pids())
+        # This hook's ancestors, among them the Claude Code process that holds this session's agent locks.
+        agents = handoff_header.live_agents(root, handoff_header.ancestors(os.getpid()))
     except Exception:  # noqa: BLE001 - outside a repository there is simply nothing to list
         return "none found by worktree lock (agents without a worktree, such as qc-gate and qc-conf, are not seen)"
     listed = "; ".join(f"{path} on {branch}" for path, branch in agents) or "none with a worktree"
@@ -161,7 +154,8 @@ def drain(tokens: int, limit: int, drain_minutes: int, root: Path) -> str:
         "locking it: list it under en_vol, the relay cannot see it otherwise. The body is the resume prompt. No "
         "secret. Respect the project's own end-of-session rules too; a resume memory keeps only a pointer to this "
         "handoff.\n"
-        f"5. Run `bash {RELAY} <handoff path>` from the project directory. Exit 5 means an agent of this session "
+        f'5. Run `{PYTHON} "{RELAY}" <handoff path>` from the project directory. '
+        "Exit 5 means an agent of this session "
         "is still alive or en_vol is not empty: wait for it, do not force. Exit 2 means the header is invalid: fix "
         "it. End your reply with the handoff path, the relay session id and `claude attach <id>`; if the relay "
         "refuses its daily cap (exit 3), tell the user to open a new session from the handoff by hand.\n"
@@ -175,7 +169,7 @@ def hard(tokens: int, minutes: int, root: Path) -> str:
         "for agents. Never write in the worktree of a living agent. In the handoff header, list each agent still "
         "alive under `sauvetage`, one `- ` item each: agent type, ticket or PR, worktree, branch, last sha on "
         "origin (`git ls-remote origin <branch>`); keep them under `en_vol` too. Write the handoff as instructed "
-        f"before, then run `bash {RELAY} --force <handoff path>`: --force is refused while `sauvetage` is empty. "
+        f'before, then run `{PYTHON} "{RELAY}" --force <handoff path>`: --force is refused while `sauvetage` is empty. '
         "The successor's first move is to rescue each listed worktree (a Conventional Commits commit in the "
         "project's language, a push, a fresh agent relaunched).\n"
         f"Agents of this session in flight now: {agents_in_flight(root)}."
