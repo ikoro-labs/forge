@@ -263,6 +263,7 @@ class Relay(unittest.TestCase):
         holder = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
         self.addCleanup(holder.wait)
         self.addCleanup(holder.kill)
+        self.holder = holder
         worktree = self.repo / ".claude" / "worktrees" / "agent-x"
         subprocess.run([*self.git, "worktree", "add", "-q", "-b", "agent-x", str(worktree)], check=True)
         if WINDOWS:
@@ -274,13 +275,10 @@ class Relay(unittest.TestCase):
 
     def test_a_dead_holder_frees_its_worktree(self) -> None:
         pid = self.live_agent()
-        if WINDOWS:
-            subprocess.run(["taskkill", "/PID", str(pid), "/F"], capture_output=True, check=False)
-        else:
-            os.kill(pid, 9)
-        deadline = time.monotonic() + 10
-        while handoff_header.process_alive(pid) and time.monotonic() < deadline:
-            time.sleep(0.1)
+        # Reaped, not only killed: on Linux an unreaped child stays a zombie in /proc with its
+        # start time, as alive as before for the lock check. A real holder is reaped by its parent.
+        self.holder.kill()
+        self.holder.wait()
         result = self.relay(handoff(self.home), CLAUDE_PID=str(pid))
         self.assertEqual(result.returncode, 0, result.stderr)
 
