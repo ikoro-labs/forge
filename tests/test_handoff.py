@@ -418,6 +418,7 @@ class CloseInAJob(unittest.TestCase):
         folder = Path(tempfile.mkdtemp())
         self.addCleanup(remove_tree, folder)
         marker = folder / "closed"
+        touch = f"open({str(marker)!r}, 'w').close()"
         # The child puts itself in a fresh job, whose limits do not include JOB_OBJECT_LIMIT_BREAKAWAY_OK.
         code = (
             "import ctypes, sys\n"
@@ -430,7 +431,7 @@ class CloseInAJob(unittest.TestCase):
             "job = kernel32.CreateJobObjectW(None, None)\n"
             "if not job or not kernel32.AssignProcessToJobObject(job, kernel32.GetCurrentProcess()):\n"
             "    sys.exit(f'no job: {ctypes.get_last_error()}')\n"
-            f"step = [sys.executable, '-c', 'open({str(marker)!r}, \"w\").close()']\n"
+            f"step = [sys.executable, '-c', {touch!r}]\n"
             "handoff_relay.close(0, [[step]])\n"
         )
         result = subprocess.run(
