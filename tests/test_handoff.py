@@ -163,6 +163,28 @@ class Trigger(unittest.TestCase):
         self.assertNotIn(str(self.home / ".claude" / "hooks" / "state" / "handoffs"), message)
         self.assertTrue((self.home / ".claude" / "hooks" / "state" / "s1.handoff").exists())
 
+    @unittest.skipUnless(HAS_GIT, "a worktree is made by git")
+    def test_a_session_in_a_worktree_files_its_handoff_under_the_project(self) -> None:
+        def git(*args: str, cwd: Path) -> None:
+            subprocess.run(
+                ["git", "-c", "user.name=t", "-c", "user.email=t@t", *args], cwd=cwd,
+                env=isolated_home(self.home), check=True, capture_output=True,
+            )
+
+        git("init", "-q", cwd=self.project)
+        git("commit", "-q", "--allow-empty", "-m", "init", cwd=self.project)
+        worktree = self.project / ".claude" / "worktrees" / "feature-x"
+        git("worktree", "add", "-q", "-b", "feature-x", str(worktree), cwd=self.project)
+        os.environ["CLAUDE_PROJECT_DIR"] = str(worktree)
+        message = self.notice(150_000) or ""
+        day = datetime.date.today().isoformat()
+        self.assertIn(str(self.home / ".claude" / "hooks" / "state" / "handoffs" / "demo" / f"{day}-r1.md"), message)
+
+    def test_a_git_file_without_a_common_dir_keeps_the_folder_name(self) -> None:
+        # A submodule's `.git` is a file too, but names no common directory: it is its own project.
+        (self.project / ".git").write_text("gitdir: ../elsewhere/modules/demo\n", encoding="utf-8")
+        self.assertEqual(handoff_trigger.project_name(self.project), "demo")
+
     def test_the_hard_cap_comes_with_the_tokens_or_the_clock(self) -> None:
         self.notice(150_000)
         self.assertIn("Hard cap reached", self.notice(185_000) or "")

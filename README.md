@@ -129,7 +129,8 @@ draine.
   35 k jetons, ou 45 minutes après le premier avis), il fait lister les agents encore vivants sous
   `sauvetage` et forcer le relais. Un sous-agent n'est jamais averti.
 - **La passation** est un fichier `~/.claude/hooks/state/handoffs/<projet>/<date>-r<N>.md` (ou
-  `<CLAUDE_HANDOFF_DIR>/<projet>/<date>-r<N>.md`), hors du cache du plugin, qui commence par un front matter de onze clés (`projet`, `feature`,
+  `<CLAUDE_HANDOFF_DIR>/<projet>/<date>-r<N>.md`), `<projet>` étant le nom de la copie principale
+  du dépôt, même pour une session lancée dans un worktree, hors du cache du plugin, qui commence par un front matter de onze clés (`projet`, `feature`,
   `passage_depart`, `jetons_agents`, `en_vol`, `file_revue`, `sauvetage`, `successeur`,
   `hooks_version`, `seuil`, `contexte_passation`). `handoff_header.py` le valide ; son corps est le
   prompt de reprise. Le skill `handoff` de l'utilisateur (`~/.claude/skills/handoff/`) est suivi
