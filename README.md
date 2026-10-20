@@ -16,10 +16,11 @@ plugins/forge/                    le plugin
   .claude-plugin/plugin.json      son manifeste, seul endroit qui porte sa version
   agents/                         coder, qc-gate, qc-conf, staff-engineer, product-owner
   skills/                         qc, feature-build, feature-*, codebase-design, domain-modeling,
-                                  improve-codebase-architecture
+                                  improve-codebase-architecture, audit-jetons
   hooks/                          hooks.json, les gardes et la passation drainée, en Python de la
                                   bibliothèque standard, sous Linux comme sous Windows
   scripts/parse_output.py         lecture du RESULT du coder et du verdict du juge
+  scripts/token_audit.py          les jetons de chaque rôle, lus dans les journaux de Claude Code
   templates/                      usine.md, adr.md, features/
 tests/                            tests des hooks, du parseur et du contenu
 CHANGELOG.md                      une entrée par version publiée
@@ -233,6 +234,30 @@ Un appel qui fixe `model` l'emporte sur le front matter de l'agent.
 Ces variables et la forme du champ `model` (un alias ou un identifiant) ont été lues dans Claude
 Code 2.1.305. Une usine servie par un autre fournisseur, à travers une passerelle, n'a pas encore
 été essayée : l'usage des outils et le cache de prompt peuvent s'y comporter autrement.
+
+## Mesurer les jetons de chaque rôle
+
+`/forge:audit-jetons` compte les jetons que chaque rôle a dépensés sur le projet, par modèle et par
+effort, et compare un avant et un après :
+
+```text
+/forge:audit-jetons --coupure 2026-10-20T21:52
+```
+
+Il lit les journaux que Claude Code écrit déjà sur le poste (`~/.claude/projects/`, ou le dossier
+de `CLAUDE_CONFIG_DIR`), ne garde que les réponses dont le dossier de travail est le projet ou l'un
+de ses worktrees, et compte une seule fois une réponse écrite sur plusieurs lignes. `--depuis` et
+`--jusqua` bornent la période ; `--coupure` la coupe en deux, par exemple à l'heure de fusion de la
+PR qui a changé un modèle ou un effort. Une date sans zone est en UTC, comme les heures de GitHub.
+La comparaison se fait en jetons par lancement d'agent, puisque le volume de travail change d'une
+période à l'autre. Le script ne donne aucun prix : les quatre sortes de jetons (entrée, écriture
+de cache, lecture de cache, sortie) n'ont pas le même, et chaque fournisseur a le sien.
+
+Une limite des journaux eux-mêmes : Claude Code note la plupart des réponses des sous-agents avant
+leur fin, avec la sortie connue à ce moment, bien en dessous de la vraie. Le rapport compte ces
+réponses dans sa colonne « Sortie partielle » ; leur sortie est sous-comptée, l'entrée et le cache
+ne le sont pas. Le format des journaux a été lu dans Claude Code 2.1.302 à 2.1.305 sous Linux ; il
+n'est pas documenté et peut changer. Le skill n'a pas été essayé sous Windows.
 
 ## Compléter ou remplacer, sans éditer le plugin
 
