@@ -267,7 +267,8 @@ Une limite des journaux eux-mêmes : Claude Code note la plupart des réponses d
 leur fin, avec la sortie connue à ce moment, bien en dessous de la vraie. Le rapport compte ces
 réponses dans sa colonne « Sortie partielle » ; leur sortie est sous-comptée, l'entrée et le cache
 ne le sont pas. Le format des journaux a été lu dans Claude Code 2.1.302 à 2.1.305 sous Linux ; il
-n'est pas documenté et peut changer. Le skill n'a pas été essayé sous Windows.
+n'est pas documenté et peut changer. Seul le script a tourné sur un vrai poste, sous Linux : le
+skill lui-même n'a été lancé dans aucune session, et rien n'a été essayé sous Windows hors CI.
 
 ## Compléter ou remplacer, sans éditer le plugin
 
