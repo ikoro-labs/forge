@@ -5,6 +5,49 @@ tag `forge--v<X.Y.Z>` sur ce dépôt ; sa version est celle de `plugins/forge/.c
 et nulle part ailleurs. Les tags `forge-v<X.Y.Z>` (un seul tiret) appartiennent à l'historique de
 Projet A et ne sont pas repris ici.
 
+## [1.1.0] - 2026-10-20
+
+La passation drainée d'une session à sa limite de contexte (ikoro-labs/forge#3), décidée dans
+Projet B sous l'ADR-0126 (catégorie B, Projet B #973, points A à F) et adoptée par Projet A. Le
+plugin devient la source des scripts qui vivaient en copie dans `~/.claude/hooks`.
+
+### Hooks
+
+- `handoff_trigger` (`UserPromptSubmit`, `PostToolUse`) : au seuil de contexte, la session ne
+  lance plus rien et attend ses agents (drainage, point A) ; plafond dur au seuil plus 35 k jetons
+  ou 45 minutes après le premier avis, avec la liste `sauvetage`. Seuil
+  `CLAUDE_SESSION_TOKEN_LIMIT`, 150 k par défaut. Filtre `agent_id` : un sous-agent n'est jamais
+  averti. Le hook se tait tant que `~/.claude/settings.json` déclare encore une copie hors
+  plugin, pour qu'aucun avis n'arrive deux fois. `hooks_version` de l'en-tête est lu dans
+  `plugin.json`. Le skill `handoff` de l'utilisateur n'est cité que s'il existe. La consigne
+  rappelle qu'un agent relancé par `SendMessage` ne reverrouille pas son worktree et doit figurer
+  sous `en_vol`.
+- `handoff_relay.sh` : refuse le relais (code 5) tant qu'un agent de la session est vivant ou que
+  `en_vol` est non vide, `--force` seulement avec `sauvetage` non vide (point B) ; plafond du jour
+  par projet (code 3), compteur avancé après les contrôles seulement ; écrit `successeur` et
+  `seuil` dans l'en-tête, arrête puis supprime la session fermée (`claude stop`, `claude rm`,
+  point C). Le successeur démarre à 400 k quand la passation porte une feature, à 150 k sinon
+  (point F). Fenêtre de terminal optionnelle par `CLAUDE_HANDOFF_TERMINAL`, aucun terminal câblé ;
+  nom de session horodaté.
+- `handoff_header.py` : valide le front matter de la passation (point E : onze clés), écrit le
+  successeur, dit à une session de relais si elle est le successeur désigné (code 3 sinon), liste
+  les worktrees d'agents dont le processus tient encore le verrou.
+- État et passations hors du cache du plugin : `~/.claude/hooks/state/`, passations sous
+  `handoffs/<projet>/<date>-r<N>.md`.
+
+### Agents
+
+- `forge:coder` : un commit Conventional Commits poussé par critère vert, jamais « wip » (point
+  D) : ce qui est poussé se reprend quand la session qui l'a lancé se ferme.
+
+### Tests
+
+- `tests/test_handoff.py` : en-tête invalide (2), agent vivant de la session (5) et agent d'une
+  autre session ignoré, `en_vol` (5), `--force` sans `sauvetage` (5), plafond du jour (3) sans
+  mouvement du compteur, seuil 400 k avec feature et 150 k sans, même hérité de 400 k, étapes
+  drain et hard, copie hors plugin, relais à blanc (`CLAUDE_HANDOFF_CLOSE_DRY_RUN=1`) et relais
+  réel sur un `claude` simulé.
+
 ## [1.0.0] - 2026-10-19
 
 Première version, selon l'ADR-0129 de Projet B (§1 et §4) : la partie générique de Forge au tag
