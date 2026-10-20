@@ -23,6 +23,9 @@ plugins/forge/                    le plugin
   templates/                      usine.md, adr.md, features/
 tests/                            tests des hooks, du parseur et du contenu
 CHANGELOG.md                      une entrée par version publiée
+CLAUDE.md, .claude/               l'usine de ce dépôt : son épingle, ses règles
+docs/agents/usine.md              sa configuration
+.github/                          la CI (tests sous Linux et Windows, validation) et le modèle de PR
 ```
 
 Ce qui est entré dans chaque version, et ce qui en est resté dehors avec sa raison : `CHANGELOG.md`.
@@ -211,8 +214,15 @@ gardes de CI, le modèle de PR, les hooks git. La CI ne charge aucun plugin.
 
 ## Contribuer et publier
 
-- **Projet A publie** : la session Projet A tient ce `CHANGELOG.md` et pose les tags.
-- **Projet B propose** ses changements par PR à ce dépôt ; elle ne pose pas de tag.
+- **Seuls les contributeurs écrivent** : les comptes qui ont le droit d'écriture sur ce dépôt. Un
+  projet consommateur n'y écrit pas ; un besoin né dans un projet devient un ticket ou une PR d'un
+  contributeur.
+- **L'usine développe l'usine** : ce dépôt installe `forge` comme un projet consommateur, épinglé
+  dans son `.claude/settings.json`, configuré par son `docs/agents/usine.md`. La session qui tourne
+  charge la version épinglée depuis le cache ; ce qu'elle modifie, c'est `plugins/forge/`, qui
+  n'agit sur elle qu'une fois publié et l'épingle montée par une PR. Les règles du dépôt sont dans
+  `CLAUDE.md` et `.claude/rules/`.
+- **La session forge publie** : elle tient ce `CHANGELOG.md` et pose les tags.
 - Le contenu reste générique : il cite les clés de `docs/agents/usine.md`, jamais un numéro d'ADR,
   un nom de personne ou un chemin propre à un projet.
 
@@ -236,11 +246,12 @@ Publier une version :
 
 Ce qu'aucun agent ne fait à la place d'un humain :
 
-1. Créer le dépôt privé `ikoro-labs/forge` (fait) et donner à la session Projet A le droit d'y pousser
-   et d'y poser les tags.
-2. Sur chaque poste (bureau, PC personnel), et pour chaque contributeur : un accès git au dépôt privé (clé
-   SSH, ou `gh auth login`) ; puis, dans chaque projet, approuver le dossier et lancer les deux
-   commandes de l'étape 3 d'**Installer dans un projet**.
+1. Créer le dépôt privé `ikoro-labs/forge` (fait), et choisir ses contributeurs, seuls comptes à
+   y avoir le droit d'écriture.
+2. Sur chaque poste (bureau, PC personnel) : un accès git au dépôt privé (clé SSH, ou
+   `gh auth login`) ; puis, dans chaque projet, approuver le dossier et lancer les deux commandes
+   de l'étape 3 d'**Installer dans un projet**. Un contributeur installe le plugin : un accès en lecture
+   lui suffit, pour installer comme pour monter de version.
 3. À chaque montée d'épingle, sur chaque poste et dans chaque projet : les deux commandes de
    **Monter de version**.
 4. Une fois `forge` 1.1.0 installé dans chaque projet du poste qui fait des passations : retirer de
@@ -255,6 +266,11 @@ Ce qu'aucun agent ne fait à la place d'un humain :
    `bash ~/.claude/plugins/cache/ikoro-labs/forge/<version>/hooks/handoff_relay.sh` par
    `uv run --no-project --quiet python ~/.claude/plugins/cache/ikoro-labs/forge/<version>/hooks/handoff_relay.py`.
    Le relais bash n'existe plus.
+6. Dans ce dépôt, une fois par poste qui y développe : les deux commandes de l'étape 3
+   d'**Installer dans un projet**, depuis sa racine.
+   Puis, si l'offre GitHub du dépôt le permet, protéger `main` avec les checks de la clé
+   `required-contexts` de `docs/agents/usine.md`. Sans protection, seul `guard_git` retient une
+   fusion dont un check n'est pas vert.
 
 ## Limites connues
 

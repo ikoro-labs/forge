@@ -75,15 +75,18 @@ def counter_path(state: Path, project: Path) -> Path:
     return state / f"relay-{name}-{datetime.date.today().isoformat()}.count"
 
 
-def detached() -> dict[str, object]:
-    """Popen options for a process that survives the session that starts it."""
+def detached(breakaway: bool = True) -> dict[str, object]:
+    """Popen options for a process that survives the session that starts it.
+
+    Under Windows, `breakaway` also takes it out of the session's job, which a job may forbid:
+    a command the relay waits for stays in the job it runs in.
+    """
     options: dict[str, object] = {
         "stdin": subprocess.DEVNULL, "stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL,
     }
     if WINDOWS:
-        options["creationflags"] = (
-            subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP | 0x01000000  # CREATE_BREAKAWAY_FROM_JOB
-        )
+        flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+        options["creationflags"] = flags | 0x01000000 if breakaway else flags  # CREATE_BREAKAWAY_FROM_JOB
     else:
         options["start_new_session"] = True
     return options
@@ -96,9 +99,7 @@ def spawn(argv: list[str]) -> None:
         if not WINDOWS:
             raise
         # The job of the session may forbid breaking away: start without it.
-        options = detached()
-        options["creationflags"] = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
-        subprocess.Popen(argv, **options)
+        subprocess.Popen(argv, **detached(breakaway=False))
 
 
 # A closing plan is a list of steps; a step is a list of alternative commands, tried in order
@@ -247,7 +248,7 @@ def exit_console(pid: int, wait: float = EXIT_WAIT_SECONDS) -> int:
             time.sleep(0.5)
         if not handoff_header.process_alive(pid):
             return 0
-        subprocess.run(["taskkill", "/PID", str(pid), "/F"], check=False, **detached())
+        subprocess.run(["taskkill", "/PID", str(pid), "/F"], check=False, **detached(breakaway=False))
         console_out = _open_console("CONOUT$")
         if console_out:
             mode = wintypes.DWORD()
@@ -266,7 +267,7 @@ def close(delay: int, plan: Plan) -> None:
     for step in plan:
         for command in step:
             try:
-                if subprocess.run(command, check=False, **detached()).returncode == 0:
+                if subprocess.run(command, check=False, **detached(breakaway=False)).returncode == 0:
                     break
             except OSError:
                 continue
