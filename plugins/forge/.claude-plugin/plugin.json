@@ -1,6 +1,6 @@
 {
   "name": "forge",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "La partie générique de l'usine Forge : coder, revue en deux temps (forge:qc), décideurs délégués, chaîne des features de l'idée à la livraison, les hooks qui gardent git, les rôles et la pause, et la passation drainée d'une session à sa limite de contexte.",
   "author": {
     "name": "ikoro-labs"
