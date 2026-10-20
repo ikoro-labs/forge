@@ -13,7 +13,7 @@ FIELD = re.compile(r"^([a-zA-Z-]+):(.*)$")
 CITED = re.compile(r"(?<![\w@-])/?forge:([a-z0-9-]+)(?![\w*-])")
 # A plugin agent's frontmatter is read for these; Claude Code ignores hooks, permissionMode,
 # mcpServers and initialPrompt there, so a guard written in them would never run.
-AGENT_FIELDS = {"name", "description", "tools", "model", "color"}
+AGENT_FIELDS = {"name", "description", "tools", "model", "effort", "omitClaudeMd", "color"}
 SKILL_FIELDS = {
     "name", "description", "argument-hint", "allowed-tools", "model", "disable-model-invocation",
     "user-invocable",
@@ -30,6 +30,17 @@ AGENT_LEVELS = {
     "staff-engineer": "opus",
     "product-owner": "opus",
 }
+# Thinking is billed as output: each agent thinks as long as its task needs, no longer.
+AGENT_EFFORTS = {
+    "qc-gate": "low",
+    "coder": "medium",
+    "qc-conf": "medium",
+    "staff-engineer": "high",
+    "product-owner": "medium",
+}
+# Only an agent that takes everything from its prompt and from `docs/agents/usine.md` starts
+# without the project's CLAUDE.md files.
+WITHOUT_CLAUDE_MD = {"qc-gate"}
 SKILLS = sorted((support.PLUGIN / "skills").glob("*/SKILL.md"))
 
 
@@ -93,6 +104,18 @@ class Frontmatter(unittest.TestCase):
                 model = frontmatter(path).get("model")
                 self.assertIn(model, LEVELS)
                 self.assertEqual(model, AGENT_LEVELS[path.stem])
+
+    def test_every_agent_names_its_effort(self) -> None:
+        self.assertEqual(set(AGENT_EFFORTS), {path.stem for path in AGENTS})
+        for path in AGENTS:
+            with self.subTest(agent=path.stem):
+                self.assertEqual(frontmatter(path).get("effort"), AGENT_EFFORTS[path.stem])
+
+    def test_only_the_gate_starts_without_claude_md(self) -> None:
+        for path in AGENTS:
+            with self.subTest(agent=path.stem):
+                expected = "true" if path.stem in WITHOUT_CLAUDE_MD else None
+                self.assertEqual(frontmatter(path).get("omitClaudeMd"), expected)
 
     def test_the_coder_cannot_launch_an_agent(self) -> None:
         tools = frontmatter(support.PLUGIN / "agents" / "coder.md")["tools"]
