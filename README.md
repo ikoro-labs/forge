@@ -199,6 +199,41 @@ sans ses commandes de porte ni sa grille, `/forge:qc` rend des sondes « sans ob
 qu'une revue configurée, et une clé qui pointe un chemin disparu donne un `NOT RUN` à chaque PR
 jusqu'à sa correction.
 
+## Les modèles des rôles
+
+Chaque agent fixe dans son front matter un **niveau** de modèle, jamais l'identifiant d'un modèle :
+le moins cher qui fait le travail, le plus fort là seulement où une erreur coûte.
+
+| Agent | Niveau | Pourquoi |
+| --- | --- | --- |
+| `forge:qc-gate` | `haiku` | Il rejoue des commandes et recopie leurs mesures, sans avis. |
+| `forge:coder` | `sonnet` | Le plus gros consommateur ; un modèle moyen code un ticket bien découpé. |
+| `forge:qc-conf` | `opus` | Le garde-fou de la qualité ; il lit surtout le diff, sa tâche reste courte. Un autre niveau que le coder rend moins probable qu'une même erreur échappe aux deux. |
+| `forge:staff-engineer`, `forge:product-owner` | `opus` | Appelés rarement, et leur décision engage la suite. |
+
+La session principale, celle qui lance les skills, n'est pas réglée par le plugin : c'est le
+modèle choisi par `/model`, souvent le plus gros poste de consommation.
+
+**Brancher un autre fournisseur.** Les quatre niveaux (`fable`, `opus`, `sonnet`, `haiku`) sont
+des alias que chaque poste fait pointer où il veut, sans toucher au plugin :
+
+- `ANTHROPIC_DEFAULT_FABLE_MODEL`, `ANTHROPIC_DEFAULT_OPUS_MODEL`,
+  `ANTHROPIC_DEFAULT_SONNET_MODEL`, `ANTHROPIC_DEFAULT_HAIKU_MODEL` : l'identifiant du modèle
+  derrière chaque niveau ;
+- `ANTHROPIC_BASE_URL` : l'adresse où Claude Code envoie ses requêtes, par exemple une passerelle
+  compatible avec l'API Anthropic (LiteLLM, ou une autre) qui les relaie vers GPT, Grok ou un modèle
+  local.
+
+Ces variables se posent dans l'environnement du poste ou dans son `~/.claude/settings.json`, jamais
+par le plugin. Elles valent pour tout le poste : deux rôles d'un même niveau ont le même modèle.
+Sans elles, chaque niveau reste le modèle Claude du même nom.
+
+Un appel qui fixe `model` l'emporte sur le front matter de l'agent.
+
+Ces variables et la forme du champ `model` (un alias ou un identifiant) ont été lues dans Claude
+Code 2.1.305. Une usine servie par un autre fournisseur, à travers une passerelle, n'a pas encore
+été essayée : l'usage des outils et le cache de prompt peuvent s'y comporter autrement.
+
 ## Compléter ou remplacer, sans éditer le plugin
 
 - **Un complément** est un fichier du projet : ses skills de domaine, son arbitre du métier, ses

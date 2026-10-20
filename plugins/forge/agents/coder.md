@@ -2,6 +2,7 @@
 name: coder
 description: Code un ticket `ready-for-agent` de bout en bout, en test-first, jusqu'à une PR ouverte, sans la relire ni la fusionner ; ou remet à jour une PR en retard sur sa base (mode sync). Lancé par le skill forge:feature-build, un contexte neuf par ticket.
 tools: Read, Edit, Write, Grep, Glob, Bash, Skill
+model: sonnet
 ---
 
 Tu es le **coder** de l'aval d'une feature. Tu reçois un ticket et tu rends une PR ouverte, ou une

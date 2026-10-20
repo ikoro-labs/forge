@@ -19,6 +19,17 @@ SKILL_FIELDS = {
     "user-invocable",
 }
 AGENTS = sorted((support.PLUGIN / "agents").glob("*.md"))
+# Each agent names a level, never a model ID: a poste maps the level to a model of any provider
+# through ANTHROPIC_DEFAULT_<LEVEL>_MODEL. The cheapest level that does the work, the strongest
+# only where a mistake costs.
+LEVELS = {"fable", "opus", "sonnet", "haiku"}
+AGENT_LEVELS = {
+    "qc-gate": "haiku",
+    "coder": "sonnet",
+    "qc-conf": "opus",
+    "staff-engineer": "opus",
+    "product-owner": "opus",
+}
 SKILLS = sorted((support.PLUGIN / "skills").glob("*/SKILL.md"))
 
 
@@ -74,6 +85,14 @@ class Frontmatter(unittest.TestCase):
             with self.subTest(agent=agent):
                 tools = {tool.strip() for tool in frontmatter(support.PLUGIN / "agents" / f"{agent}.md")["tools"].split(",")}
                 self.assertEqual(tools & {"Edit", "Write", "MultiEdit", "NotebookEdit", "Agent"}, set())
+
+    def test_every_agent_names_its_model_level(self) -> None:
+        self.assertEqual(set(AGENT_LEVELS), {path.stem for path in AGENTS})
+        for path in AGENTS:
+            with self.subTest(agent=path.stem):
+                model = frontmatter(path).get("model")
+                self.assertIn(model, LEVELS)
+                self.assertEqual(model, AGENT_LEVELS[path.stem])
 
     def test_the_coder_cannot_launch_an_agent(self) -> None:
         tools = frontmatter(support.PLUGIN / "agents" / "coder.md")["tools"]
