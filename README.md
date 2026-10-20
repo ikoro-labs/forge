@@ -214,6 +214,15 @@ le moins cher qui fait le travail, le plus fort là seulement où une erreur co�
 La session principale, celle qui lance les skills, n'est pas réglée par le plugin : c'est le
 modèle choisi par `/model`, souvent le plus gros poste de consommation.
 
+**L'effort de réflexion.** Avant de répondre, un modèle réfléchit, et cette réflexion se paie
+comme du texte produit. Chaque agent fixe donc aussi son `effort` : `low` pour `forge:qc-gate`,
+qui n'a rien à peser, `high` pour `forge:staff-engineer`, qui tranche les questions techniques
+difficiles, `medium` pour les autres. `CLAUDE_CODE_EFFORT_LEVEL`, posé sur un poste, l'emporte sur
+ce réglage. `forge:qc-gate` démarre aussi sans les `CLAUDE.md` du projet (`omitClaudeMd`) : il lit
+ses portes dans `docs/agents/usine.md`. Ces deux champs sont ceux que la documentation de Claude
+Code donne pour un agent ; leur gain n'est pas mesuré, et ils n'ont pas encore été essayés sur un
+vrai poste.
+
 **Brancher un autre fournisseur.** Les quatre niveaux (`fable`, `opus`, `sonnet`, `haiku`) sont
 des alias que chaque poste fait pointer où il veut, sans toucher au plugin :
 
