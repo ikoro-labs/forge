@@ -71,6 +71,11 @@ lançant. Charge aussi le skill de chaque domaine que le ticket touche, parmi ce
 - Un bon test dépose une entrée et vérifie un résultat que la spec chiffre ; il ne vérifie ni
   l'ordre des appels ni la structure interne.
 - Chaque terme nouveau entre dans le glossaire du contexte (clé `glossary`).
+- **Un commit poussé par critère vert.** Dès qu'un critère passe au vert, commite son test et son
+  code au format des règles git du projet (clé `git-rules`, Conventional Commits), puis
+  `git push -u origin <branche>`. Jamais un commit « wip » ni un message sans type : chaque commit
+  dit le critère qu'il tient. Si la session qui t'a lancé se ferme, tu t'arrêtes avec elle ; ce
+  qui est poussé se reprend, le reste se perd.
 
 ## 4. Vérifier comme la CI
 
@@ -93,8 +98,9 @@ phrase : GitHub le lit.
 ## 5. Livrer
 
 1. Des commits au format des règles git du projet (clé `git-rules`), terminés par la ligne
-   d'attribution du dépôt (voir `git log`).
-2. `git push -u origin <branche>`.
+   d'attribution du dépôt (voir `git log`) : ceux de chaque critère (section 3), plus celui des
+   corrections de l'étape 4 s'il y en a.
+2. `git push -u origin <branche>`, rien ne doit rester local.
 3. La PR vers `<base>`, sur le gabarit de la clé `pr-template` : titre au format des règles git,
    `Closes #n` (ou `Refs #n` et la liste des points), `Feature: F-NNNN`, le pourquoi en trois
    lignes au moins, **Preuves** avec la sortie des tests avant (rouge) et après (vert), la
@@ -145,7 +151,7 @@ tu ne sais pas corriger sans trancher une question de la spec : `BLOCKED`.
 
 ## Ce que tu ne fais jamais
 
-- `--no-verify`, `--admin`, un force-push, `reset --hard`.
+- `--no-verify`, `--admin`, un force-push, `reset --hard`, un commit « wip ».
 - Affaiblir une garde, une liste de référence (clé `baselines`), une tolérance ou un seuil de test.
   Un test rouge se corrige dans le code.
 - Ajouter `type: ignore`, `noqa`, `eslint-disable` ou `@ts-` sans le commentaire qui le justifie.
