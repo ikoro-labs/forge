@@ -130,7 +130,7 @@ class Trigger(unittest.TestCase):
         patcher = mock.patch.dict(os.environ)
         patcher.start()
         self.addCleanup(patcher.stop)
-        for name in ("CLAUDE_SESSION_TOKEN_LIMIT", "CLAUDE_HANDOFF_DRAIN_MINUTES"):
+        for name in ("CLAUDE_SESSION_TOKEN_LIMIT", "CLAUDE_HANDOFF_DRAIN_MINUTES", "CLAUDE_HANDOFF_DIR"):
             os.environ.pop(name, None)
         os.environ.update(HOME=str(self.home), USERPROFILE=str(self.home), CLAUDE_PROJECT_DIR=str(self.project))
 
@@ -154,6 +154,14 @@ class Trigger(unittest.TestCase):
         self.assertIn("en_vol", message or "")
         self.assertIsNone(self.notice(151_000))
         self.assertIn("stage drain", self.notice(151_000, "UserPromptSubmit") or "")
+
+    def test_the_handoffs_can_live_outside_any_claude_folder(self) -> None:
+        os.environ["FORGE_TEST_ROOT"] = str(self.home)
+        os.environ["CLAUDE_HANDOFF_DIR"] = os.path.join("$FORGE_TEST_ROOT", "passations")
+        message = self.notice(150_000) or ""
+        self.assertIn(str(self.home / "passations" / "demo" / f"{datetime.date.today().isoformat()}-r1.md"), message)
+        self.assertNotIn(str(self.home / ".claude" / "hooks" / "state" / "handoffs"), message)
+        self.assertTrue((self.home / ".claude" / "hooks" / "state" / "s1.handoff").exists())
 
     def test_the_hard_cap_comes_with_the_tokens_or_the_clock(self) -> None:
         self.notice(150_000)

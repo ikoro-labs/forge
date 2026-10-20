@@ -30,12 +30,18 @@ le relais était un script bash et que les questions de processus lisaient `/pro
 - `handoff_trigger.py` : la consigne lance le relais par `uv run --no-project --quiet python`, et
   la liste des agents en vol passe par `handoff_header.ancestors`. Le prompt du successeur ne cite
   plus `python3`, qui sous Windows est un alias du Microsoft Store.
+- `CLAUDE_HANDOFF_DIR` : dossier des passations, `~` et variables développés, par défaut
+  `~/.claude/hooks/state/handoffs` comme avant. Essayé sur un poste Windows sous politique gérée :
+  le hook s'est déclenché, mais la session n'a pas pu écrire la passation, l'outil Write étant
+  refusé sous tout dossier `.claude` ; le relais a répondu `handoff document not found`. Les
+  marqueurs et compteurs, écrits par les hooks eux-mêmes, restent dans `~/.claude/hooks/state`.
 
 ### Tests
 
 - `tests/test_handoff.py` : le relais tourne sous Windows comme sous Linux (seul git est requis),
   sur un `claude` simulé en Python ; verrou lu avec et sans heure de départ ; processus vivant,
-  fini, et ancêtres d'un enfant ; détenteur mort qui libère son worktree ; plan de fermeture d'une
+  fini, et ancêtres d'un enfant ; détenteur mort qui libère son worktree ; passation sous
+  `CLAUDE_HANDOFF_DIR`, variable développée, marqueur resté dans l'état ; plan de fermeture d'une
   session interactive et d'une session de fond à blanc. Les tests isolent `USERPROFILE` comme
   `HOME`, sans quoi sous Windows ils écrivaient dans le vrai `~/.claude/hooks/state`, et ne passent
   plus aux relais les variables `CLAUDE_` de la session qui les lance. `enterContext` (Python 3.11)

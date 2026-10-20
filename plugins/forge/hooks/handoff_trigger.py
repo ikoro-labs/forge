@@ -15,6 +15,11 @@ State and handoffs live outside the plugin cache, which every version rewrites:
 `~/.claude/hooks/state/`, handoffs under `handoffs/<project>/<date>-r<N>.md`. The first-notice
 marker is never touched again: its mtime is the start of the drain.
 
+The session writes the handoff with its own file tools, which a managed policy may forbid
+under any `.claude` folder. CLAUDE_HANDOFF_DIR then moves the handoffs elsewhere, as
+`<CLAUDE_HANDOFF_DIR>/<project>/<date>-r<N>.md`; markers and counters, written by the hooks
+themselves, stay in the state folder.
+
 While `~/.claude/settings.json` still declares a copy of this hook outside the plugin, this one
 stays silent: the session would otherwise get every notice twice.
 
@@ -49,6 +54,14 @@ KEYS = (
 
 def state_dir() -> Path:
     return Path.home() / ".claude" / "hooks" / "state"
+
+
+def handoff_dir() -> Path:
+    """CLAUDE_HANDOFF_DIR, `~` and variables expanded, else the `handoffs` folder of the state."""
+    configured = os.environ.get("CLAUDE_HANDOFF_DIR", "").strip()
+    if configured:
+        return Path(os.path.expandvars(configured)).expanduser()
+    return state_dir() / "handoffs"
 
 
 def handoff_skill() -> Path | None:
@@ -121,7 +134,7 @@ def agents_in_flight(root: Path) -> str:
 
 def handoff_path(root: Path) -> Path:
     """First free `<date>-r<N>.md` of the project: a name can already be taken by another session."""
-    folder = state_dir() / "handoffs" / root.name
+    folder = handoff_dir() / root.name
     day = datetime.date.today().isoformat()
     rank = 1
     while (folder / f"{day}-r{rank}.md").exists():

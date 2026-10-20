@@ -124,8 +124,8 @@ draine.
   finir ses agents puis d'écrire la passation et de lancer le relais. Au plafond dur (seuil plus
   35 k jetons, ou 45 minutes après le premier avis), il fait lister les agents encore vivants sous
   `sauvetage` et forcer le relais. Un sous-agent n'est jamais averti.
-- **La passation** est un fichier `~/.claude/hooks/state/handoffs/<projet>/<date>-r<N>.md`, hors du
-  cache du plugin, qui commence par un front matter de onze clés (`projet`, `feature`,
+- **La passation** est un fichier `~/.claude/hooks/state/handoffs/<projet>/<date>-r<N>.md` (ou
+  `<CLAUDE_HANDOFF_DIR>/<projet>/<date>-r<N>.md`), hors du cache du plugin, qui commence par un front matter de onze clés (`projet`, `feature`,
   `passage_depart`, `jetons_agents`, `en_vol`, `file_revue`, `sauvetage`, `successeur`,
   `hooks_version`, `seuil`, `contexte_passation`). `handoff_header.py` le valide ; son corps est le
   prompt de reprise. Le skill `handoff` de l'utilisateur (`~/.claude/skills/handoff/`) est suivi
@@ -145,6 +145,7 @@ draine.
 | --- | --- | --- |
 | `CLAUDE_SESSION_TOKEN_LIMIT` | 150000 | seuil de drainage, posé par le relais seulement |
 | `CLAUDE_HANDOFF_DRAIN_MINUTES` | 45 | minutes de drainage avant le plafond dur |
+| `CLAUDE_HANDOFF_DIR` | `~/.claude/hooks/state/handoffs` | dossier des passations, `~` et variables développés (`%LOCALAPPDATA%\forge\handoffs`) ; les marqueurs et compteurs restent dans `~/.claude/hooks/state` |
 | `CLAUDE_HANDOFF_RELAY_MAX` | 5 | relais par projet et par jour (code 3 au-delà) |
 | `CLAUDE_HANDOFF_CLOSE_DELAY` | 45 | secondes avant la fermeture de la session appelante, 0 la garde ouverte |
 | `CLAUDE_HANDOFF_TERMINAL` | aucune | commande de terminal (`ghostty -e`, `gnome-terminal --`, `wt.exe` sous Windows) où ouvrir `claude attach <id>` ; sans elle, aucune fenêtre |
@@ -159,6 +160,16 @@ Windows ; ailleurs, un processus compte pour vivant, le côté prudent. Différe
 - La session interactive fermée par le relais l'est par `taskkill /F` ; sa fenêtre reste ouverte
   sur l'invite du shell qui l'a lancée. Une session de fond est arrêtée puis supprimée
   (`claude stop`, `claude rm`) comme sous Linux, ses fenêtres `claude attach` fermées d'abord.
+
+La session écrit la passation avec ses propres outils de fichier. Une politique gérée peut les
+interdire sous tout dossier `.claude` : le hook se déclenche, mais l'écriture est refusée et le
+relais répond `handoff document not found`. Sur un tel poste, `CLAUDE_HANDOFF_DIR` place les
+passations ailleurs. Elle se pose dans l'environnement du poste ou dans le bloc `env` du
+`~/.claude/settings.json`, pour que le hook, le relais et le successeur la voient :
+
+```json
+{ "env": { "CLAUDE_HANDOFF_DIR": "%LOCALAPPDATA%\\forge\\handoffs" } }
+```
 
 La passation ne vaut que dans les projets où le plugin est activé ; une copie de ces scripts dans
 `~/.claude/hooks` couvrait tous les projets du poste. Tant que `~/.claude/settings.json` déclare
