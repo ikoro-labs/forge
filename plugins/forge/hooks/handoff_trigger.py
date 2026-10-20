@@ -132,9 +132,26 @@ def agents_in_flight(root: Path) -> str:
     return listed + " (agents without a worktree, such as qc-gate and qc-conf, are not seen here)"
 
 
+def project_name(root: Path) -> str:
+    """The project's folder name, that of its main checkout when `root` is a git worktree.
+
+    A worktree's `.git` is a file naming its own git directory, and there a `commondir` file leads
+    to the main checkout's `.git`. Read without running git, which a hook cannot wait for."""
+    try:
+        text = (root / ".git").read_text(encoding="utf-8").strip()
+        if not text.startswith("gitdir:"):
+            return root.name
+        gitdir = root / text.removeprefix("gitdir:").strip()
+        common = gitdir / (gitdir / "commondir").read_text(encoding="utf-8").strip()
+        return common.resolve().parent.name or root.name
+    except OSError:
+        # No `.git` file (a main checkout, or no repository), or no `commondir` (a submodule).
+        return root.name
+
+
 def handoff_path(root: Path) -> Path:
     """First free `<date>-r<N>.md` of the project: a name can already be taken by another session."""
-    folder = handoff_dir() / root.name
+    folder = handoff_dir() / project_name(root)
     day = datetime.date.today().isoformat()
     rank = 1
     while (folder / f"{day}-r{rank}.md").exists():
