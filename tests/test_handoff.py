@@ -1,0 +1,272 @@
+"""The drained session handoff: the trigger's stages, the header, and the relay's refusals."""
+
+import datetime
+import io
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+import unittest
+from contextlib import redirect_stdout
+from pathlib import Path
+from unittest import mock
+
+import support
+import handoff_header
+import handoff_trigger
+
+RELAY = support.PLUGIN / "hooks" / "handoff_relay.sh"
+HEADER = support.PLUGIN / "hooks" / "handoff_header.py"
+VERSION = json.loads((support.PLUGIN / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))["version"]
+ON_LINUX = sys.platform.startswith("linux") and shutil.which("bash") is not None and shutil.which("git") is not None
+
+
+def handoff(folder: Path, feature: str = "", en_vol: str = "[]", sauvetage: str = "[]") -> Path:
+    path = folder / "2026-10-20-r1.md"
+    path.write_text(
+        "---\n"
+        "projet: demo\n"
+        f"feature: {feature}\n"
+        "passage_depart: 1792494562\n"
+        "jetons_agents: 0\n"
+        f"en_vol: {en_vol}\n"
+        "file_revue: []\n"
+        f"sauvetage: {sauvetage}\n"
+        "successeur:\n"
+        "hooks_version: forge@test\n"
+        "seuil:\n"
+        "contexte_passation: 151000\n"
+        "---\n\n# Reprise\n",
+        encoding="utf-8",
+    )
+    return path
+
+
+class Header(unittest.TestCase):
+    def test_a_header_without_a_required_key_is_refused(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            path = handoff(Path(root))
+            path.write_text(path.read_text(encoding="utf-8").replace("seuil:\n", ""), encoding="utf-8")
+            with redirect_stdout(io.StringIO()) as out:
+                self.assertEqual(handoff_header.main(["handoff_header.py", "check", str(path)]), 2)
+            self.assertIn("seuil", out.getvalue())
+
+    def test_check_counts_the_lists(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            path = handoff(Path(root), feature="F-0001", sauvetage="\n  - coder #12 agent-x")
+            with redirect_stdout(io.StringIO()) as out:
+                self.assertEqual(handoff_header.main(["handoff_header.py", "check", str(path)]), 0)
+            self.assertEqual(out.getvalue().strip(), "en_vol=0 sauvetage=1 feature=1")
+
+    def test_only_the_recorded_successor_may_act(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            path = handoff(Path(root))
+            self.assertTrue(handoff_header.successor_ok(path, "abcdef12-3456", wait=0)[0])
+            handoff_header.set_successor(path, "abcdef12", "400000")
+            values = handoff_header.check(path)
+            self.assertEqual((values["successeur"], values["seuil"]), (["abcdef12"], ["400000"]))
+            self.assertTrue(handoff_header.successor_ok(path, "abcdef12-3456", wait=0)[0])
+            self.assertFalse(handoff_header.successor_ok(path, "99999999-0000", wait=0)[0])
+
+
+class Trigger(unittest.TestCase):
+    def setUp(self) -> None:
+        self.home = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.home)
+        self.project = self.home / "demo"
+        self.project.mkdir()
+        self.transcript = self.home / "session.jsonl"
+        self.enterContext(mock.patch.dict(os.environ))
+        for name in ("CLAUDE_SESSION_TOKEN_LIMIT", "CLAUDE_HANDOFF_DRAIN_MINUTES"):
+            os.environ.pop(name, None)
+        os.environ.update(HOME=str(self.home), CLAUDE_PROJECT_DIR=str(self.project))
+
+    def notice(self, tokens: int, event: str = "PostToolUse", **extra: object) -> str | None:
+        line = {"type": "assistant", "message": {"usage": {"input_tokens": tokens}}}
+        self.transcript.write_text(json.dumps(line) + "\n", encoding="utf-8")
+        payload = {"transcript_path": str(self.transcript), "session_id": "s1", "hook_event_name": event, **extra}
+        return handoff_trigger.notice(payload)
+
+    def test_below_the_limit_nothing_is_said(self) -> None:
+        self.assertIsNone(self.notice(149_999))
+
+    def test_the_limit_opens_the_drain_once(self) -> None:
+        message = self.notice(150_000)
+        self.assertIsNotNone(message)
+        self.assertIn("launch nothing new", message or "")
+        self.assertIn(f"forge@{VERSION}", message or "")
+        self.assertIn("185k tokens or 45 minutes", message or "")
+        self.assertIn(str(self.home / ".claude" / "hooks" / "state" / "handoffs" / "demo"), message or "")
+        self.assertIn("en_vol", message or "")
+        self.assertIsNone(self.notice(151_000))
+        self.assertIn("stage drain", self.notice(151_000, "UserPromptSubmit") or "")
+
+    def test_the_hard_cap_comes_with_the_tokens_or_the_clock(self) -> None:
+        self.notice(150_000)
+        self.assertIn("Hard cap reached", self.notice(185_000) or "")
+        self.assertIsNone(self.notice(190_000))
+        self.assertIn("stage hard", self.notice(190_000, "UserPromptSubmit") or "")
+
+        marker = self.home / ".claude" / "hooks" / "state" / "s1.handoff"
+        (self.home / ".claude" / "hooks" / "state" / "s1.hard").unlink()
+        old = time.time() - 46 * 60
+        os.utime(marker, (old, old))
+        self.assertIn("46 minutes", self.notice(160_000) or "")
+
+    def test_an_orchestration_relay_drains_at_its_own_threshold(self) -> None:
+        os.environ["CLAUDE_SESSION_TOKEN_LIMIT"] = "400000"
+        self.assertIsNone(self.notice(399_000))
+        self.assertIn("435k tokens", self.notice(400_000) or "")
+
+    def test_a_subagent_is_never_told(self) -> None:
+        self.assertIsNone(self.notice(200_000, agent_id="a1"))
+
+    def test_a_copy_outside_the_plugin_keeps_it_silent(self) -> None:
+        settings = self.home / ".claude" / "settings.json"
+        settings.parent.mkdir(parents=True)
+        own = f'python3 "{handoff_trigger.HOOKS}/handoff_trigger.py"'
+        settings.write_text(json.dumps({"hooks": {"PostToolUse": [{"hooks": [{"command": own}]}]}}), encoding="utf-8")
+        self.assertIsNotNone(self.notice(150_000))
+        copy = f"python3 {self.home}/.claude/hooks/handoff_trigger.py"
+        settings.write_text(json.dumps({"hooks": {"PostToolUse": [{"hooks": [{"command": copy}]}]}}), encoding="utf-8")
+        (self.home / ".claude" / "hooks" / "state" / "s1.handoff").unlink()
+        self.assertIsNone(self.notice(150_000))
+
+    def test_the_user_skill_is_cited_only_when_it_exists(self) -> None:
+        self.assertNotIn("SKILL.md", self.notice(150_000) or "")
+        skill = self.home / ".claude" / "skills" / "handoff" / "SKILL.md"
+        skill.parent.mkdir(parents=True)
+        skill.write_text("---\nname: handoff\n---\n", encoding="utf-8")
+        (self.home / ".claude" / "hooks" / "state" / "s1.handoff").unlink()
+        self.assertIn(str(skill), self.notice(150_000) or "")
+
+    def test_the_hook_prints_its_notice_for_claude_code(self) -> None:
+        self.transcript.write_text(
+            json.dumps({"type": "assistant", "message": {"usage": {"input_tokens": 150_000}}}) + "\n",
+            encoding="utf-8",
+        )
+        event = {"transcript_path": str(self.transcript), "session_id": "s2", "hook_event_name": "UserPromptSubmit"}
+        result = subprocess.run(
+            [sys.executable, str(support.PLUGIN / "hooks" / "handoff_trigger.py")],
+            input=json.dumps(event), capture_output=True, text=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0)
+        output = json.loads(result.stdout)["hookSpecificOutput"]
+        self.assertEqual(output["hookEventName"], "UserPromptSubmit")
+        self.assertIn("launch nothing new", output["additionalContext"])
+
+
+@unittest.skipUnless(ON_LINUX, "the relay reads /proc and runs under bash")
+class Relay(unittest.TestCase):
+    def setUp(self) -> None:
+        self.home = Path(os.path.realpath(tempfile.mkdtemp()))
+        self.addCleanup(shutil.rmtree, self.home)
+        self.repo = self.home / "demo"
+        self.repo.mkdir()
+        git = ["git", "-C", str(self.repo), "-c", "user.name=t", "-c", "user.email=t@t"]
+        subprocess.run([*git, "init", "-q"], check=True)
+        subprocess.run([*git, "commit", "-q", "--allow-empty", "-m", "init"], check=True)
+        self.git = git
+        self.state = self.home / ".claude" / "hooks" / "state"
+        self.counter = self.state / f"relay-{str(self.repo).replace('/', '-')}-{datetime.date.today().isoformat()}.count"
+        # A stand-in for `claude`: a relay test never starts or stops a real session.
+        bin_dir = self.home / "bin"
+        bin_dir.mkdir()
+        self.log = self.home / "claude.log"
+        fake = bin_dir / "claude"
+        fake.write_text(
+            "#!/bin/sh\n"
+            f'echo "$CLAUDE_SESSION_TOKEN_LIMIT $*" >> "{self.log}"\n'
+            'echo "relais backgrounded · abcdef12 · claude attach abcdef12"\n',
+            encoding="utf-8",
+        )
+        fake.chmod(0o755)
+        self.env = {
+            "HOME": str(self.home),
+            "PATH": f"{bin_dir}:{os.environ['PATH']}",
+            "CLAUDE_HANDOFF_RELAY_MAX": "3",
+            "CLAUDE_HANDOFF_CLOSE_DELAY": "0",
+            "CLAUDE_HANDOFF_CLOSE_DRY_RUN": "1",
+        }
+
+    def relay(self, path: Path, *flags: str, **env: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["bash", str(RELAY), *flags, str(path)],
+            cwd=self.repo, capture_output=True, text=True, env={**self.env, **env}, check=False,
+        )
+
+    def live_agent(self) -> int:
+        """An agent worktree locked the way Claude Code locks it, held by a running process."""
+        holder = subprocess.Popen(["sleep", "60"])
+        self.addCleanup(holder.wait)
+        self.addCleanup(holder.kill)
+        start = Path(f"/proc/{holder.pid}/stat").read_text(encoding="utf-8").rsplit(")", 1)[1].split()[19]
+        worktree = self.repo / ".claude" / "worktrees" / "agent-x"
+        subprocess.run([*self.git, "worktree", "add", "-q", "-b", "agent-x", str(worktree)], check=True)
+        reason = f"claude agent x (pid {holder.pid} start {start})"
+        subprocess.run([*self.git, "worktree", "lock", "--reason", reason, str(worktree)], check=True)
+        return holder.pid
+
+    def test_an_invalid_header_is_refused(self) -> None:
+        path = handoff(self.home)
+        path.write_text("no front matter\n", encoding="utf-8")
+        result = self.relay(path)
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertFalse(self.counter.exists())
+
+    def test_a_live_agent_of_this_session_holds_the_relay(self) -> None:
+        pid = self.live_agent()
+        result = self.relay(handoff(self.home), CLAUDE_PID=str(pid))
+        self.assertEqual(result.returncode, 5, result.stderr)
+        self.assertIn("agent-x", result.stderr)
+        self.assertEqual(self.relay(handoff(self.home), CLAUDE_PID=str(os.getpid())).returncode, 0)
+
+    def test_agents_listed_in_flight_hold_the_relay(self) -> None:
+        result = self.relay(handoff(self.home, en_vol="\n  - coder #12"))
+        self.assertEqual(result.returncode, 5, result.stderr)
+        self.assertIn("en_vol", result.stderr)
+
+    def test_force_needs_agents_listed_for_a_rescue(self) -> None:
+        result = self.relay(handoff(self.home, en_vol="[coder #12]"), "--force")
+        self.assertEqual(result.returncode, 5, result.stderr)
+        self.assertIn("sauvetage", result.stderr)
+        rescued = handoff(self.home, en_vol="[coder #12]", sauvetage="[coder #12 agent-x]")
+        self.assertEqual(self.relay(rescued, "--force").returncode, 0)
+
+    def test_the_daily_cap_stops_the_chain_without_moving_the_counter(self) -> None:
+        self.state.mkdir(parents=True)
+        self.counter.write_text("3\n", encoding="utf-8")
+        result = self.relay(handoff(self.home), CLAUDE_HANDOFF_CLOSE_DRY_RUN="")
+        self.assertEqual(result.returncode, 3, result.stderr)
+        self.assertEqual(self.counter.read_text(encoding="utf-8").strip(), "3")
+        self.assertFalse(self.log.exists())
+
+    def test_a_dry_run_moves_nothing(self) -> None:
+        path = handoff(self.home, feature="F-0001")
+        before = path.read_text(encoding="utf-8")
+        result = self.relay(path)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("CLAUDE_SESSION_TOKEN_LIMIT=400000 claude --bg", result.stdout)
+        self.assertEqual(path.read_text(encoding="utf-8"), before)
+        self.assertFalse(self.counter.exists())
+        self.assertFalse(self.log.exists())
+
+    def test_a_feature_gives_the_successor_400k_and_none_gives_150k(self) -> None:
+        for feature, threshold in (("F-0001", "400000"), ("", "150000")):
+            with self.subTest(feature=feature):
+                path = handoff(self.home, feature=feature)
+                result = self.relay(path, CLAUDE_HANDOFF_CLOSE_DRY_RUN="", CLAUDE_SESSION_TOKEN_LIMIT="400000")
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertTrue(self.log.read_text(encoding="utf-8").splitlines()[-1].startswith(f"{threshold} --bg"))
+                values = handoff_header.check(path)
+                self.assertEqual((values["successeur"], values["seuil"]), (["abcdef12"], [threshold]))
+                self.assertIn("claude attach abcdef12", result.stdout)
+        self.assertEqual(self.counter.read_text(encoding="utf-8").strip(), "2")
+
+
+if __name__ == "__main__":
+    unittest.main()

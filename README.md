@@ -2,7 +2,8 @@
 
 La partie générique de l'usine agentique d'ikoro-labs, en plugin Claude Code privé : le coder, la
 revue en deux temps, les décideurs délégués, la chaîne des features de l'idée à la livraison, et
-les hooks qui gardent git, les rôles et la pause. Les projets (Projet A, Projet B) le consomment à
+les hooks qui gardent git, les rôles et la pause, et la passation drainée d'une session à sa
+limite de contexte. Les projets (Projet A, Projet B) le consomment à
 une version épinglée et gardent dans leur dépôt tout ce qui leur est propre. La décision est
 l'ADR-0129 de Projet B.
 
@@ -16,7 +17,8 @@ plugins/forge/                    le plugin
   agents/                         coder, qc-gate, qc-conf, staff-engineer, product-owner
   skills/                         qc, feature-build, feature-*, codebase-design, domain-modeling,
                                   improve-codebase-architecture
-  hooks/                          hooks.json et les gardes, en Python de la bibliothèque standard
+  hooks/                          hooks.json, les gardes et la passation drainée, en Python de la
+                                  bibliothèque standard (et handoff_relay.sh en bash)
   scripts/parse_output.py         lecture du RESULT du coder et du verdict du juge
   templates/                      usine.md, adr.md, features/
 tests/                            tests des hooks, du parseur et du contenu
@@ -51,7 +53,7 @@ Ce qui est entré dans chaque version, et ce qui en est resté dehors avec sa ra
          "source": {
            "source": "github",
            "repo": "ikoro-labs/forge",
-           "ref": "forge--v1.0.0"
+           "ref": "forge--v1.1.0"
          }
        }
      }
@@ -68,7 +70,7 @@ Ce qui est entré dans chaque version, et ce qui en est resté dehors avec sa ra
    l'installer. Depuis la racine du projet, redéclarer d'abord son épingle, puis installer :
 
    ```sh
-   claude plugin marketplace add ikoro-labs/forge@forge--v1.0.0 --scope project
+   claude plugin marketplace add ikoro-labs/forge@forge--v1.1.0 --scope project
    claude plugin install forge@ikoro-labs --scope project
    ```
 
@@ -110,6 +112,47 @@ coupée.
 Un poste qui n'a pas lancé `claude plugin update` garde l'ancienne version, et rien ne l'en avertit
 en dehors de `/plugin` : après chaque montée, comparer `claude plugin list --json` au `ref` du
 projet.
+
+## La passation drainée
+
+Une session passe la main à une nouvelle session quand son contexte atteint le seuil
+(ikoro-labs/forge#3). Fermer une session tue ses sous-agents : la passation est donc un arrêt qui
+draine.
+
+- **Le hook** `handoff_trigger.py` (`UserPromptSubmit`, `PostToolUse`) lit le contexte du fil
+  principal dans la transcription. Au seuil, il dit à la session de ne plus rien lancer, de laisser
+  finir ses agents puis d'écrire la passation et de lancer le relais. Au plafond dur (seuil plus
+  35 k jetons, ou 45 minutes après le premier avis), il fait lister les agents encore vivants sous
+  `sauvetage` et forcer le relais. Un sous-agent n'est jamais averti.
+- **La passation** est un fichier `~/.claude/hooks/state/handoffs/<projet>/<date>-r<N>.md`, hors du
+  cache du plugin, qui commence par un front matter de onze clés (`projet`, `feature`,
+  `passage_depart`, `jetons_agents`, `en_vol`, `file_revue`, `sauvetage`, `successeur`,
+  `hooks_version`, `seuil`, `contexte_passation`). `handoff_header.py` le valide ; son corps est le
+  prompt de reprise. Le skill `handoff` de l'utilisateur (`~/.claude/skills/handoff/`) est suivi
+  s'il existe.
+- **Le relais** `handoff_relay.sh`, lancé par la session depuis le dossier du projet, refuse
+  (code 5) tant qu'un agent de la session est vivant ou que `en_vol` n'est pas vide, et n'admet
+  `--force` qu'avec `sauvetage` non vide. Il lance le successeur par `claude --bg`, écrit son
+  identifiant et son seuil dans l'en-tête, puis arrête et supprime la session appelante. Le
+  successeur vérifie d'abord qu'il est bien le successeur désigné
+  (`handoff_header.py successor-ok`).
+- **Le seuil** est `CLAUDE_SESSION_TOKEN_LIMIT`, 150 000 par défaut. Seul le relais le relève, à
+  400 000 pour un successeur dont la passation porte une feature. Aucun `settings.json` ne doit le
+  fixer.
+
+| Variable | Défaut | Effet |
+| --- | --- | --- |
+| `CLAUDE_SESSION_TOKEN_LIMIT` | 150000 | seuil de drainage, posé par le relais seulement |
+| `CLAUDE_HANDOFF_DRAIN_MINUTES` | 45 | minutes de drainage avant le plafond dur |
+| `CLAUDE_HANDOFF_RELAY_MAX` | 5 | relais par projet et par jour (code 3 au-delà) |
+| `CLAUDE_HANDOFF_CLOSE_DELAY` | 45 | secondes avant la fermeture de la session appelante, 0 la garde ouverte |
+| `CLAUDE_HANDOFF_TERMINAL` | aucune | commande de terminal (`ghostty -e`, `gnome-terminal --`) où ouvrir `claude attach <id>` ; sans elle, aucune fenêtre |
+| `CLAUDE_HANDOFF_CLOSE_DRY_RUN` | aucune | affiche le lancement et la fermeture sans rien lancer, compteur et passation intacts |
+
+Le relais lit `/proc` et tourne sous bash : Linux seulement. La passation ne vaut que dans les
+projets où le plugin est activé ; une copie de ces scripts dans `~/.claude/hooks` couvrait tous les
+projets du poste. Tant que `~/.claude/settings.json` déclare encore une telle copie, le hook du
+plugin se tait.
 
 ## Configurer : `docs/agents/usine.md`
 
@@ -171,6 +214,14 @@ Ce qu'aucun agent ne fait à la place d'un humain :
    commandes de l'étape 3 d'**Installer dans un projet**.
 3. À chaque montée d'épingle, sur chaque poste et dans chaque projet : les deux commandes de
    **Monter de version**.
+4. Une fois `forge` 1.1.0 installé dans chaque projet du poste qui fait des passations : retirer de
+   `~/.claude/settings.json` les entrées `UserPromptSubmit` et `PostToolUse` qui lancent la copie
+   `~/.claude/hooks/handoff_trigger.py`, puis cette copie et ses deux voisins
+   (`handoff_header.py`, `handoff_relay.sh`) ; garder `~/.claude/hooks/state/`, qui porte les
+   passations et les compteurs. Remplacer la règle de permission qui autorise
+   `bash ~/.claude/hooks/handoff_relay.sh` par la même règle sur le relais du plugin
+   (`~/.claude/plugins/cache/ikoro-labs/forge/<version>/hooks/handoff_relay.sh`). Jusque-là, le
+   hook du plugin se tait et la copie reste celle qui tourne.
 
 ## Limites connues
 
