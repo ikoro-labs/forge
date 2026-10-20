@@ -391,21 +391,55 @@ class ExitConsole(unittest.TestCase):
         time.sleep(1)  # let it reach its read
         return process
 
-    def exit_console(self, pid: int) -> int:
+    def exit_console(self, pid: int) -> subprocess.CompletedProcess:
         return subprocess.run(
             [sys.executable, str(RELAY), "--exit-console", str(pid)],
-            creationflags=subprocess.DETACHED_PROCESS, capture_output=True, timeout=60, check=False,
-        ).returncode
+            creationflags=subprocess.DETACHED_PROCESS, capture_output=True, text=True, timeout=60, check=False,
+        )
 
     def test_the_session_ends_on_the_exit_typed_in_its_console(self) -> None:
         session = self.session("import sys; sys.exit(0 if sys.stdin.readline().strip() == '/exit' else 3)")
-        self.assertEqual(self.exit_console(session.pid), 0)
+        result = self.exit_console(session.pid)
+        self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(session.wait(timeout=5), 0)
 
     def test_a_session_deaf_to_exit_is_killed(self) -> None:
         session = self.session("import time; time.sleep(120)")
-        self.assertEqual(self.exit_console(session.pid), 2)
+        result = self.exit_console(session.pid)
+        self.assertEqual(result.returncode, 2, result.stderr)
         self.assertIsNotNone(session.wait(timeout=5))
+
+
+@unittest.skipUnless(WINDOWS, "a job that forbids breaking away is a Windows job object")
+class CloseInAJob(unittest.TestCase):
+    """The --close copy that spawn() could only start inside the session's job."""
+
+    def test_the_closing_plan_runs_in_a_job_that_forbids_breaking_away(self) -> None:
+        folder = Path(tempfile.mkdtemp())
+        self.addCleanup(remove_tree, folder)
+        marker = folder / "closed"
+        touch = f"open({str(marker)!r}, 'w').close()"
+        # The child puts itself in a fresh job, whose limits do not include JOB_OBJECT_LIMIT_BREAKAWAY_OK.
+        code = (
+            "import ctypes, sys\n"
+            f"sys.path.insert(0, {str(RELAY.parent)!r})\n"
+            "import handoff_relay\n"
+            "kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)\n"
+            "kernel32.CreateJobObjectW.restype = ctypes.c_void_p\n"
+            "kernel32.GetCurrentProcess.restype = ctypes.c_void_p\n"
+            "kernel32.AssignProcessToJobObject.argtypes = (ctypes.c_void_p, ctypes.c_void_p)\n"
+            "job = kernel32.CreateJobObjectW(None, None)\n"
+            "if not job or not kernel32.AssignProcessToJobObject(job, kernel32.GetCurrentProcess()):\n"
+            "    sys.exit(f'no job: {ctypes.get_last_error()}')\n"
+            f"step = [sys.executable, '-c', {touch!r}]\n"
+            "handoff_relay.close(0, [[step]])\n"
+        )
+        result = subprocess.run(
+            [sys.executable, "-c", code], env=isolated_home(folder), capture_output=True, text=True, timeout=60,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(marker.exists(), "a command of the closing plan did not run inside the job")
 
 
 if __name__ == "__main__":
