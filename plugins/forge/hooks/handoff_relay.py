@@ -18,7 +18,9 @@ explicitly: the relay inherits the threshold of the session that runs it, which 
 Runs on Linux and Windows with the standard library, like every hook of the plugin:
 `uv run --no-project --quiet python handoff_relay.py`. It replaces handoff_relay.sh, which
 read /proc and ran under bash. The old session is closed by a detached copy of this script
-(`--close`), which outlives the session it stops.
+(`--close`), which outlives the session it stops. On Windows an interactive session is sent
+`/exit` through its console (`--exit-console`), and killed only if it does not end: a killed
+Claude Code leaves its console with mouse tracking on.
 
 State (the daily counters) lives in ~/.claude/hooks/state, outside the plugin cache.
 
@@ -28,8 +30,8 @@ Environment: CLAUDE_HANDOFF_RELAY_MAX (default 5), CLAUDE_HANDOFF_CLOSE_DELAY se
 before closing the old session (default 45, 0 keeps it open), CLAUDE_HANDOFF_TERMINAL (a
 terminal command that runs the words after it, such as `ghostty -e`, `gnome-terminal --` or
 `wt.exe` on Windows: the relay opens `claude attach <id>` in it; unset, no window opens), and
-CLAUDE_HANDOFF_CLOSE_DRY_RUN (set: print the relay and closing commands instead of running
-them; the counter and the handoff are left untouched).
+CLAUDE_HANDOFF_CLOSE_DRY_RUN (set to anything but empty, 0, false, no or off: print the relay
+and closing commands instead of running them; the counter and the handoff are left untouched).
 """
 
 from __future__ import annotations
@@ -54,6 +56,8 @@ WINDOWS = handoff_header.WINDOWS
 BACKGROUNDED = re.compile(r"backgrounded\W+([0-9a-f]+)\b")
 # The kernel keeps 15 characters of a command name.
 COMM_LENGTH = 15
+# CLAUDE_HANDOFF_CLOSE_DRY_RUN values that leave the dry run off.
+OFF = ("", "0", "false", "no", "off")
 
 
 def fail(message: str, code: int) -> int:
@@ -113,11 +117,23 @@ def command_name(pid: int) -> str:
         return ""
 
 
+def session_kind(pid: int) -> str:
+    """The kind Claude Code records for a live session (`interactive`, ...), "" when unknown."""
+    try:
+        entry = json.loads((Path.home() / ".claude" / "sessions" / f"{pid}.json").read_text(encoding="utf-8"))
+        return str(entry.get("kind", ""))
+    except (OSError, ValueError, AttributeError):
+        return ""
+
+
 def closing_plan(pid: int, terminal: str) -> Plan:
     """How to end the session that runs this script (CLAUDE_PID)."""
     cli = claude()
     session = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
-    if os.environ.get("CLAUDE_CODE_CHILD_SESSION") == "1" and session:
+    # CLAUDE_CODE_CHILD_SESSION is set in interactive sessions too: the session registry
+    # tells them apart when it knows the pid.
+    background = os.environ.get("CLAUDE_CODE_CHILD_SESSION") == "1" and session_kind(pid) != "interactive"
+    if background and session:
         # A background session (a previous relay). A stopped session restarts on the next
         # message or `claude attach`, so it is deleted after the stop: only `claude rm` ends
         # everything it carries. Its viewers, `claude attach <id>` in their own windows,
@@ -135,9 +151,10 @@ def closing_plan(pid: int, terminal: str) -> Plan:
             kill = ["kill", "-TERM", str(pid)]
         return [[viewers], [[cli, "stop", short], kill], [[cli, "rm", short]]]
     if WINDOWS:
-        # An interactive session. Its console window belongs to the shell that started
-        # claude and stays open on that shell's prompt.
-        return [[["taskkill", "/PID", str(pid), "/F"]]]
+        # An interactive session. Killed outright, it would leave its console with mouse
+        # tracking on, every mouse move typed into the shell: it is sent `/exit` instead, as
+        # the user would type it, and only forced when it does not end (--exit-console).
+        return [[[sys.executable, str(Path(__file__).resolve()), "--exit-console", str(pid)]]]
     # An interactive session. Its window closes only when the shell that started claude
     # exits, so that shell is hung up too, but only when the user's terminal
     # (CLAUDE_HANDOFF_TERMINAL) is its direct parent: a claude started from a script or tmux
@@ -150,6 +167,98 @@ def closing_plan(pid: int, terminal: str) -> Plan:
         if command_name(term).startswith(wanted):
             plan += [[["sleep", "2"]], [["kill", "-HUP", str(shell)]]]
     return plan
+
+
+# Console modes Claude Code turns on and a forced kill leaves on: mouse tracking (1000, 1002,
+# 1003, 1006), focus events, bracketed paste, the alternate screen; then the cursor shown again.
+TERMINAL_RESET = "\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?1004l\x1b[?2004l\x1b[?1049l\x1b[?25h"
+EXIT_WAIT_SECONDS = 15
+
+
+def _console_records(text: str):
+    """INPUT_RECORDs typing `text`, a key press and release per character."""
+    import ctypes
+    from ctypes import wintypes
+
+    class KeyEvent(ctypes.Structure):
+        _fields_ = [
+            ("bKeyDown", wintypes.BOOL), ("wRepeatCount", wintypes.WORD), ("wVirtualKeyCode", wintypes.WORD),
+            ("wVirtualScanCode", wintypes.WORD), ("uChar", wintypes.WCHAR), ("dwControlKeyState", wintypes.DWORD),
+        ]
+
+    class InputRecord(ctypes.Structure):
+        _fields_ = [("EventType", wintypes.WORD), ("Event", KeyEvent)]
+
+    user32 = ctypes.WinDLL("user32")
+    records = (InputRecord * (2 * len(text)))()
+    for index, char in enumerate(text):
+        key = 0x0D if char == "\r" else user32.VkKeyScanW(ord(char)) & 0xFF
+        scan = user32.MapVirtualKeyW(key, 0)
+        for offset, down in ((0, True), (1, False)):
+            record = records[2 * index + offset]
+            record.EventType = 0x0001  # KEY_EVENT
+            record.Event = KeyEvent(down, 1, key, scan, char, 0)
+    return records
+
+
+def _open_console(name: str):
+    import ctypes
+    from ctypes import wintypes
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.CreateFileW.restype = wintypes.HANDLE
+    kernel32.CreateFileW.argtypes = (
+        wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, ctypes.c_void_p, wintypes.DWORD, wintypes.DWORD,
+        wintypes.HANDLE,
+    )
+    # GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, OPEN_EXISTING
+    handle = kernel32.CreateFileW(name, 0xC0000000, 0x3, None, 3, 0, None)
+    return None if handle in (None, wintypes.HANDLE(-1).value) else handle
+
+
+def exit_console(pid: int, wait: float = EXIT_WAIT_SECONDS) -> int:
+    """End the interactive session `pid` the way its user would: type `/exit` in its console.
+
+    This runs detached, with no console of its own, so it can attach to the session's. A
+    session that has not ended after `wait` seconds is killed, and its console is given back
+    the modes Claude Code would have reset on exit. Windows only.
+    """
+    import ctypes
+    from ctypes import wintypes
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.WriteConsoleInputW.argtypes = (wintypes.HANDLE, ctypes.c_void_p, wintypes.DWORD, ctypes.POINTER(wintypes.DWORD))
+    kernel32.WriteConsoleW.argtypes = (wintypes.HANDLE, wintypes.LPCWSTR, wintypes.DWORD, ctypes.POINTER(wintypes.DWORD), ctypes.c_void_p)
+    kernel32.GetConsoleMode.argtypes = (wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD))
+    kernel32.SetConsoleMode.argtypes = (wintypes.HANDLE, wintypes.DWORD)
+    kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
+    kernel32.FreeConsole()
+    if not kernel32.AttachConsole(pid):
+        return 1
+    try:
+        console_in = _open_console("CONIN$")
+        if console_in:
+            records = _console_records("/exit\r")
+            written = wintypes.DWORD()
+            kernel32.WriteConsoleInputW(console_in, records, len(records), ctypes.byref(written))
+            kernel32.CloseHandle(console_in)
+        deadline = time.monotonic() + wait
+        while handoff_header.process_alive(pid) and time.monotonic() < deadline:
+            time.sleep(0.5)
+        if not handoff_header.process_alive(pid):
+            return 0
+        subprocess.run(["taskkill", "/PID", str(pid), "/F"], check=False, **detached())
+        console_out = _open_console("CONOUT$")
+        if console_out:
+            mode = wintypes.DWORD()
+            if kernel32.GetConsoleMode(console_out, ctypes.byref(mode)):
+                kernel32.SetConsoleMode(console_out, mode.value | 0x0004)  # ENABLE_VIRTUAL_TERMINAL_PROCESSING
+            written = wintypes.DWORD()
+            kernel32.WriteConsoleW(console_out, TERMINAL_RESET, len(TERMINAL_RESET), ctypes.byref(written), None)
+            kernel32.CloseHandle(console_out)
+        return 2
+    finally:
+        kernel32.FreeConsole()
 
 
 def close(delay: int, plan: Plan) -> None:
@@ -184,7 +293,7 @@ def relay(argv: list[str]) -> int:
     if not handoff.is_file():
         return fail(f"handoff document not found: {handoff}", 1)
     handoff = handoff.resolve()
-    dry_run = bool(os.environ.get("CLAUDE_HANDOFF_CLOSE_DRY_RUN"))
+    dry_run = os.environ.get("CLAUDE_HANDOFF_CLOSE_DRY_RUN", "").strip().lower() not in OFF
     cap = int(os.environ.get("CLAUDE_HANDOFF_RELAY_MAX", "5"))
     close_delay = int(os.environ.get("CLAUDE_HANDOFF_CLOSE_DELAY", "45"))
     terminal = os.environ.get("CLAUDE_HANDOFF_TERMINAL", "")
@@ -196,7 +305,7 @@ def relay(argv: list[str]) -> int:
     except (handoff_header.HeaderError, OSError, ValueError) as error:
         return fail(f"invalid handoff header: {error}", 2)
     en_vol, sauvetage = len(values["en_vol"]), len(values["sauvetage"])
-    threshold = 400000 if values["feature"] else 150000
+    threshold = 400000 if handoff_header.features(values) else 150000
     # Only the agents of the calling session: another session's agents in the same
     # repository do not die with this one. Run by hand, without CLAUDE_PID, every live
     # agent of the repository counts, the prudent side.
@@ -274,6 +383,8 @@ def main(argv: list[str]) -> int:
     if len(argv) == 3 and argv[0] == "--close":
         close(int(argv[1]), json.loads(argv[2]))
         return 0
+    if len(argv) == 2 and argv[0] == "--exit-console":
+        return exit_console(int(argv[1]))
     return relay(argv)
 
 

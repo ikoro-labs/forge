@@ -17,10 +17,19 @@ le relais était un script bash et que les questions de processus lisaient `/pro
   `uv run --no-project --quiet python`. La fermeture différée de la session appelante est une copie
   détachée du relais (`--close`), sortie du job de la session sous Windows quand il le permet. Sous
   Windows, l'exécutable `claude.exe` est préféré au lanceur `.cmd`, pour qu'aucun `cmd.exe` ne
-  relise le prompt du successeur ; une session interactive y est fermée par `taskkill /F`, une
-  session de fond par `claude stop` puis `claude rm`, ses fenêtres `claude attach` fermées d'abord.
-  `CLAUDE_HANDOFF_TERMINAL` accepte `wt.exe`. Le nom du compteur du jour remplace aussi `\` et `:`
-  d'un chemin Windows.
+  relise le prompt du successeur ; une session interactive y reçoit `/exit` dans sa console
+  (`--exit-console`), et n'est tuée qu'au bout de 15 secondes, le relais coupant alors lui-même le
+  suivi de la souris : essayée tuée d'emblée par `taskkill /F`, elle avait laissé chaque mouvement
+  de souris s'écrire dans le shell. Une session de fond est arrêtée par `claude stop` puis
+  `claude rm`, ses fenêtres `claude attach` fermées d'abord. `CLAUDE_HANDOFF_TERMINAL` accepte
+  `wt.exe`. Le nom du compteur du jour remplace aussi `\` et `:` d'un chemin Windows.
+- Le relais reconnaît une session interactive au registre de Claude Code
+  (`~/.claude/sessions/<pid>.json`, `"kind": "interactive"`) : elle porte elle aussi
+  `CLAUDE_CODE_CHILD_SESSION=1` (Claude Code 2.1.304), et la 1.1.0 la traitait en session de fond.
+- `feature` ne compte que ses identifiants `F-NNNN` : essayé sous Windows, un « aucune (demande
+  ponctuelle) » avait donné au successeur le seuil de 400 k. La consigne du hook le dit.
+- `CLAUDE_HANDOFF_CLOSE_DRY_RUN` : `0`, `false`, `no`, `off` ou vide laissent le relais à blanc
+  coupé ; toute valeur non vide l'allumait, `0` compris.
 - `handoff_header.py` : `process_alive`, `process_start`, `parent_pid` et `ancestors` répondent par
   `/proc` sous Linux et par l'API Win32 (`ctypes`) sous Windows ; ailleurs, un processus compte pour
   vivant. Le verrou d'un worktree d'agent est lu avec ou sans heure de départ : Claude Code n'en
@@ -42,7 +51,9 @@ le relais était un script bash et que les questions de processus lisaient `/pro
   sur un `claude` simulé en Python ; verrou lu avec et sans heure de départ ; processus vivant,
   fini, et ancêtres d'un enfant ; détenteur mort qui libère son worktree ; passation sous
   `CLAUDE_HANDOFF_DIR`, variable développée, marqueur resté dans l'état ; plan de fermeture d'une
-  session interactive et d'une session de fond à blanc. Les tests isolent `USERPROFILE` comme
+  session interactive et d'une session de fond à blanc, registre des sessions ; `feature` en prose
+  à 150 k ; `DRY_RUN=0` coupé ; sous Windows, `/exit` tapé dans la console cachée d'une session
+  simulée, et session sourde à `/exit` tuée. Les tests isolent `USERPROFILE` comme
   `HOME`, sans quoi sous Windows ils écrivaient dans le vrai `~/.claude/hooks/state`, et ne passent
   plus aux relais les variables `CLAUDE_` de la session qui les lance. `enterContext` (Python 3.11)
   cède la place à `patch.start` : la suite tourne sous le Python 3.10 que `uv` peut choisir.

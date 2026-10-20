@@ -293,14 +293,29 @@ class Relay(unittest.TestCase):
     def test_a_dry_run_shows_how_the_session_closes(self) -> None:
         result = self.relay(handoff(self.home), CLAUDE_PID="4242", CLAUDE_HANDOFF_CLOSE_DELAY="45")
         self.assertEqual(result.returncode, 0, result.stderr)
-        closer = "taskkill /PID 4242 /F" if WINDOWS else "kill -TERM 4242"
-        self.assertIn(f"dry run, would run in 45s: {closer}", result.stdout)
-        background = self.relay(
-            handoff(self.home), CLAUDE_PID="4242", CLAUDE_HANDOFF_CLOSE_DELAY="45",
-            CLAUDE_CODE_CHILD_SESSION="1", CLAUDE_CODE_SESSION_ID="0123abcd-ffff",
-        )
+        closer = "--exit-console 4242" if WINDOWS else "dry run, would run in 45s: kill -TERM 4242"
+        self.assertIn(closer, result.stdout)
+        self.assertNotIn("taskkill", result.stdout)
+        child = {"CLAUDE_PID": "4242", "CLAUDE_HANDOFF_CLOSE_DELAY": "45",
+                 "CLAUDE_CODE_CHILD_SESSION": "1", "CLAUDE_CODE_SESSION_ID": "0123abcd-ffff"}
+        background = self.relay(handoff(self.home), **child)
         self.assertIn("stop 0123abcd", background.stdout)
         self.assertIn("rm 0123abcd", background.stdout)
+        # Interactive sessions carry CLAUDE_CODE_CHILD_SESSION too: the registry tells them apart.
+        registry = self.home / ".claude" / "sessions" / "4242.json"
+        registry.parent.mkdir(parents=True)
+        registry.write_text(json.dumps({"pid": 4242, "kind": "interactive"}), encoding="utf-8")
+        interactive = self.relay(handoff(self.home), **child)
+        self.assertNotIn("rm 0123abcd", interactive.stdout)
+        self.assertIn(closer, interactive.stdout)
+
+    def test_zero_or_false_leaves_the_dry_run_off(self) -> None:
+        for value in ("0", "false", "off"):
+            with self.subTest(value=value):
+                result = self.relay(handoff(self.home), CLAUDE_HANDOFF_CLOSE_DRY_RUN=value)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertNotIn("dry run", result.stdout)
+        self.assertEqual(self.counter.read_text(encoding="utf-8").strip(), "3")
 
     def test_an_invalid_header_is_refused(self) -> None:
         path = handoff(self.home)
@@ -347,7 +362,8 @@ class Relay(unittest.TestCase):
         self.assertFalse(self.log.exists())
 
     def test_a_feature_gives_the_successor_400k_and_none_gives_150k(self) -> None:
-        for feature, threshold in (("F-0001", "400000"), ("", "150000")):
+        prose = "aucune (demande ponctuelle hors forge)"
+        for feature, threshold in (("F-0001", "400000"), ("", "150000"), (prose, "150000")):
             with self.subTest(feature=feature):
                 path = handoff(self.home, feature=feature)
                 result = self.relay(path, CLAUDE_HANDOFF_CLOSE_DRY_RUN="", CLAUDE_SESSION_TOKEN_LIMIT="400000")
@@ -356,7 +372,40 @@ class Relay(unittest.TestCase):
                 values = handoff_header.check(path)
                 self.assertEqual((values["successeur"], values["seuil"]), (["abcdef12"], [threshold]))
                 self.assertIn("claude attach abcdef12", result.stdout)
-        self.assertEqual(self.counter.read_text(encoding="utf-8").strip(), "2")
+        self.assertEqual(self.counter.read_text(encoding="utf-8").strip(), "3")
+
+
+@unittest.skipUnless(WINDOWS, "the console of an interactive session is a Windows console")
+class ExitConsole(unittest.TestCase):
+    """--exit-console against a stand-in session in its own hidden console."""
+
+    def session(self, code: str) -> subprocess.Popen:
+        startup = subprocess.STARTUPINFO()
+        startup.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        startup.wShowWindow = 0  # SW_HIDE
+        process = subprocess.Popen(
+            [sys.executable, "-c", code], creationflags=subprocess.CREATE_NEW_CONSOLE, startupinfo=startup,
+        )
+        self.addCleanup(process.wait)
+        self.addCleanup(process.kill)
+        time.sleep(1)  # let it reach its read
+        return process
+
+    def exit_console(self, pid: int) -> int:
+        return subprocess.run(
+            [sys.executable, str(RELAY), "--exit-console", str(pid)],
+            creationflags=subprocess.DETACHED_PROCESS, capture_output=True, timeout=60, check=False,
+        ).returncode
+
+    def test_the_session_ends_on_the_exit_typed_in_its_console(self) -> None:
+        session = self.session("import sys; sys.exit(0 if sys.stdin.readline().strip() == '/exit' else 3)")
+        self.assertEqual(self.exit_console(session.pid), 0)
+        self.assertEqual(session.wait(timeout=5), 0)
+
+    def test_a_session_deaf_to_exit_is_killed(self) -> None:
+        session = self.session("import time; time.sleep(120)")
+        self.assertEqual(self.exit_console(session.pid), 2)
+        self.assertIsNotNone(session.wait(timeout=5))
 
 
 if __name__ == "__main__":

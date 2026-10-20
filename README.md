@@ -138,8 +138,9 @@ draine.
   successeur vérifie d'abord qu'il est bien le successeur désigné
   (`handoff_header.py successor-ok`).
 - **Le seuil** est `CLAUDE_SESSION_TOKEN_LIMIT`, 150 000 par défaut. Seul le relais le relève, à
-  400 000 pour un successeur dont la passation porte une feature. Aucun `settings.json` ne doit le
-  fixer.
+  400 000 pour un successeur dont la passation porte une feature, c'est-à-dire un identifiant
+  `F-NNNN` dans `feature` (du texte comme « aucune » n'en est pas une). Aucun `settings.json` ne
+  doit le fixer.
 
 | Variable | Défaut | Effet |
 | --- | --- | --- |
@@ -149,7 +150,7 @@ draine.
 | `CLAUDE_HANDOFF_RELAY_MAX` | 5 | relais par projet et par jour (code 3 au-delà) |
 | `CLAUDE_HANDOFF_CLOSE_DELAY` | 45 | secondes avant la fermeture de la session appelante, 0 la garde ouverte |
 | `CLAUDE_HANDOFF_TERMINAL` | aucune | commande de terminal (`ghostty -e`, `gnome-terminal --`, `wt.exe` sous Windows) où ouvrir `claude attach <id>` ; sans elle, aucune fenêtre |
-| `CLAUDE_HANDOFF_CLOSE_DRY_RUN` | aucune | affiche le lancement et la fermeture sans rien lancer, compteur et passation intacts |
+| `CLAUDE_HANDOFF_CLOSE_DRY_RUN` | aucune | affiche le lancement et la fermeture sans rien lancer, compteur et passation intacts ; `0`, `false`, `no`, `off` ou vide le laissent coupé |
 
 Le relais tourne sous Linux et sous Windows. Les questions de processus (un pid vit-il, quand
 est-il né, qui est son parent) passent par `/proc` sous Linux et par l'API Win32 (`ctypes`) sous
@@ -157,9 +158,16 @@ Windows ; ailleurs, un processus compte pour vivant, le côté prudent. Différe
 
 - Claude Code y verrouille le worktree d'un agent sans heure de départ (`claude agent <nom>
   (pid N)`) : un pid vivant y vaut détenteur du verrou, sans garde contre la réutilisation d'un pid.
-- La session interactive fermée par le relais l'est par `taskkill /F` ; sa fenêtre reste ouverte
-  sur l'invite du shell qui l'a lancée. Une session de fond est arrêtée puis supprimée
-  (`claude stop`, `claude rm`) comme sous Linux, ses fenêtres `claude attach` fermées d'abord.
+- La session interactive fermée par le relais reçoit `/exit` dans sa console, comme si on le
+  tapait : Claude Code se ferme normalement et rend le terminal propre ; sa fenêtre reste ouverte
+  sur l'invite du shell qui l'a lancée. Si elle vit encore 15 secondes plus tard, elle est tuée
+  (`taskkill /F`) et le relais coupe lui-même le suivi de la souris dans la console : tuée sans
+  cela, elle laissait chaque mouvement de souris s'écrire dans le shell. Une session de fond est
+  arrêtée puis supprimée (`claude stop`, `claude rm`) comme sous Linux, ses fenêtres
+  `claude attach` fermées d'abord.
+- Une session interactive porte elle aussi `CLAUDE_CODE_CHILD_SESSION=1` : le relais la reconnaît au
+  registre de Claude Code (`~/.claude/sessions/<pid>.json`, `"kind": "interactive"`), sous Linux
+  comme sous Windows.
 
 La session écrit la passation avec ses propres outils de fichier. Une politique gérée peut les
 interdire sous tout dossier `.claude` : le hook se déclenche, mais l'écriture est refusée et le

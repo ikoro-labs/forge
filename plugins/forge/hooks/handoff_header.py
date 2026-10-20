@@ -46,6 +46,8 @@ REQUIRED = (
     "contexte_passation",
 )
 KEY = re.compile(r"^([a-z_]+):\s*(.*)$")
+# A feature is named by its identifier; anything else in `feature` ("aucune", prose) is none.
+FEATURE_ID = re.compile(r"F-\d+")
 SESSION_ID = re.compile(r"^[0-9a-f]{8,}(-[0-9a-f-]+)?$")
 # Claude Code locks an agent worktree with this reason while the agent runs. The start time
 # is written on Linux only: on Windows the reason ends at the pid.
@@ -104,6 +106,11 @@ def check(path: Path) -> dict[str, list[str]]:
     if missing:
         raise HeaderError("missing header keys: " + ", ".join(missing))
     return values
+
+
+def features(values: dict[str, list[str]]) -> list[str]:
+    """The feature identifiers (`F-NNNN`) the handoff carries."""
+    return [item.strip("\"' ") for item in values.get("feature", []) if FEATURE_ID.fullmatch(item.strip("\"' "))]
 
 
 def set_successor(path: Path, session: str, threshold: str = "") -> None:
@@ -288,7 +295,7 @@ def main(argv: list[str]) -> int:
             values = check(Path(argv[2]))
             print(
                 f"en_vol={len(values['en_vol'])} sauvetage={len(values['sauvetage'])} "
-                f"feature={len(values['feature'])}"
+                f"feature={len(features(values))}"
             )
             return 0
         if len(argv) in (4, 5) and argv[1] == "set-successor":
