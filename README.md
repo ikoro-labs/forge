@@ -39,9 +39,9 @@ plugins/forge/                    le plugin
   agents/                         coder, qc-gate, qc-conf, staff-engineer, product-owner
   skills/                         qc, feature-build, feature-*, codebase-design, domain-modeling,
                                   improve-codebase-architecture, audit-jetons
-  hooks/                          hooks.json, les gardes, les sorties raccourcies et la passation
-                                  drainée, en Python de la bibliothèque standard, sous Linux
-                                  comme sous Windows
+  hooks/                          hooks.json, les gardes, les sorties raccourcies, la passation
+                                  drainée et l'avis des autres sessions du dépôt, en Python de la
+                                  bibliothèque standard, sous Linux comme sous Windows
   scripts/parse_output.py         lecture du RESULT du coder et du verdict du juge
   scripts/token_audit.py          les jetons de chaque rôle, lus dans les journaux de Claude Code
   templates/                      usine.md, adr.md, features/
@@ -146,8 +146,8 @@ projet.
 ## Règles communes
 
 Ce que suit toute session d'un projet qui utilise l'usine, interactive ou de fond
-(ikoro-labs/forge#4). Le contenu du plugin la porte (`feature-build`, étape 0, et le relais de la
-passation) ; chaque projet la reçoit à sa montée d'épingle.
+(ikoro-labs/forge#4). Le contenu du plugin la porte (`feature-build`, étape 0, le relais de la
+passation et le hook `SessionStart`) ; chaque projet la reçoit à sa montée d'épingle.
 
 - **Une session par dépôt.** Une seule session agit sur un dépôt à la fois, ses worktrees compris.
   « Un seul passage par feature » en est un cas particulier. Des sessions de dépôts différents
@@ -168,6 +168,15 @@ passation) ; chaque projet la reçoit à sa montée d'épingle.
   pour chaque autre session et sort en 0 si aucune ne vit, en code 6 sinon ; une entrée illisible
   compte pour vivante. Si le registre manque ou change de forme, `claude agents --json` liste les
   sessions vivantes avec leur dossier.
+- **Le hook** `sessions_notice.py` (`SessionStart`, sur toutes les sources : `startup`, `resume`,
+  `clear`, `compact`, `fork`) fait ce premier contrôle au démarrage de chaque session. Il appelle la
+  même détection que `sessions`, avec les mêmes exclusions (l'identifiant de la session est le
+  `session_id` de l'événement), et, s'il trouve une autre session vivante du dépôt, ajoute au
+  contexte de la session un avis qui la nomme et la renvoie au point 5 de l'étape 0 de
+  `feature-build`, en commençant par relancer `sessions .`. Il ne dit rien quand aucune autre
+  session ne vit, ni pour un sous-agent (`agent_id` dans l'événement), et sort toujours en 0 : il
+  observe et ne bloque jamais la session. `hooks.json` le lance avec un `timeout` de 10 secondes ;
+  au-delà, Claude Code l'annule et la session démarre sans l'avis.
 - **Une autre session agit sur le dépôt** : la nouvelle n'agit pas. Elle envoie sa demande à la
   session en place (`SendMessage`), qui l'ajoute à sa file, puis elle s'arrête et le dit. Une
   tâche annexe entre de même dans la file de la session en place, par message ou par ticket ; elle
@@ -218,6 +227,14 @@ tests, sous Linux. La fermeture par `--yield` n'y a tourné que contre un faux `
 `rm` retire l'entrée du registre ; qu'un vrai `claude rm` la retire n'a été vérifié sur aucun
 poste. Sous Windows, rien n'a été essayé hors de la CI ; `procStart` n'y est pas
 comparé, et un pid vivant y vaut session vivante, sans garde contre la reprise d'un pid.
+
+Le hook `sessions_notice.py` n'a tourné dans aucune session réelle de Claude Code. Il a tourné
+dans la suite de tests sous Linux, que la CI fait aussi tourner sous Windows, et à la main sous
+Linux, son événement passé sur l'entrée standard, sur le registre réel d'un poste : il s'est tu, la
+session qui le lançait exclue par ses ancêtres et les deux autres sessions vivantes du poste étant
+d'autres dépôts. Qu'il nomme une autre session du dépôt n'a été vu que dans la suite de tests. Que Claude Code 2.1.306 ne mette `agent_id` que dans l'événement d'un sous-agent a été lu
+dans sa documentation des hooks et dans le schéma d'événement que porte son binaire, pas relevé
+sur une entrée réelle de `SessionStart`.
 
 ## La passation drainée
 
