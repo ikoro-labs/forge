@@ -58,7 +58,7 @@ Ce qui est entré dans chaque version, et ce qui en est resté dehors avec sa ra
          "source": {
            "source": "github",
            "repo": "ikoro-labs/forge",
-           "ref": "forge--v1.2.0"
+           "ref": "forge--v1.3.0"
          }
        }
      }
@@ -75,7 +75,7 @@ Ce qui est entré dans chaque version, et ce qui en est resté dehors avec sa ra
    l'installer. Depuis la racine du projet, redéclarer d'abord son épingle, puis installer :
 
    ```sh
-   claude plugin marketplace add ikoro-labs/forge@forge--v1.2.0 --scope project
+   claude plugin marketplace add ikoro-labs/forge@forge--v1.3.0 --scope project
    claude plugin install forge@ikoro-labs --scope project
    ```
 
