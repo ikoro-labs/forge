@@ -85,7 +85,7 @@ class Verdict(unittest.TestCase):
         for spec, words in [
             ("SPEC: none", "`none (<reason>)`"),
             ("SPEC: none ( )", "`none (<reason>)`"),
-            ("SPEC: no ticket", "or the one line reads `none (<reason>)`"),
+            ("SPEC: no ticket", "neither `#<ticket>` nor `none`"),
             ("SPEC: none (a pin bump)\nSPEC: #12 A1 met", "stands alone"),
         ]:
             with self.subTest(spec=spec):
@@ -93,6 +93,22 @@ class Verdict(unittest.TestCase):
                 with self.assertRaises(OutputError) as raised:
                     parse_verdict(text)
                 self.assertIn(words, str(raised.exception))
+
+    def test_each_spec_refusal_names_both_admitted_forms(self) -> None:
+        # A judge relaunched with the message alone must be able to fix either wrong form.
+        for spec in [
+            "SPEC: none",
+            "SPEC: none ( )",
+            "SPEC: no ticket",
+            "SPEC: none (a pin bump)\nSPEC: #12 A1 met",
+        ]:
+            with self.subTest(spec=spec):
+                text = VERDICT.replace("SPEC: #12 A1 met\nSPEC: #12 A2 missing", spec)
+                with self.assertRaises(OutputError) as raised:
+                    parse_verdict(text)
+                message = str(raised.exception)
+                self.assertIn("one `#<ticket>: ...` line per ticket", message)
+                self.assertIn("the one line `none (<reason>)` when the PR has no ticket", message)
 
     def test_the_verdict_and_its_findings_must_agree(self) -> None:
         for text, words in [

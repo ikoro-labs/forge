@@ -20,6 +20,11 @@ FENCE = re.compile(r"^```[\w-]*\s*$")
 FINDING = re.compile(r"^-\s*\[(BLOCKER|MINOR|NOTE)\]\s*(.+)$")
 HEAD = re.compile(r"^[0-9a-f]{7,40}$")
 NO_TICKET = re.compile(r"^none \(\s*\S.*\)$", re.DOTALL)
+# Every refusal of a `SPEC:` line names both admitted forms: the relaunched judge fixes either one.
+SPEC_FORMS = (
+    "`SPEC:` reads one `#<ticket>: ...` line per ticket, "
+    "or the one line `none (<reason>)` when the PR has no ticket"
+)
 
 RESULT_KEYS = {
     "PR": ("PR", "TICKET", "CRITERIA", "NOTES"),
@@ -102,17 +107,18 @@ def parse_verdict(text: str) -> dict[str, object]:
     # A PR with no ticket (a Dependabot bump, a pin bump) says so, and against what it was judged.
     if any(re.match(r"^none\b", spec) for spec in specs):
         if len(specs) > 1:
-            raise OutputError("`SPEC: none` stands alone: a verdict that judges a ticket has none")
+            raise OutputError(
+                "`SPEC: none` stands alone: a verdict that judges a ticket has none. " + SPEC_FORMS
+            )
         if not NO_TICKET.match(specs[0]):
             raise OutputError(
-                f"`SPEC: {specs[0]}`: a verdict with no ticket reads `none (<reason>)`, "
-                "the reason saying what the PR was judged against"
+                f"`SPEC: {specs[0]}`: the reason is missing, it says what the PR was judged "
+                "against. " + SPEC_FORMS
             )
     for spec in specs:
         if not re.match(r"^(#\d+\b|none\b)", spec):
             raise OutputError(
-                f"`SPEC: {spec}`: each line starts with `#<ticket>`, "
-                "or the one line reads `none (<reason>)` when the PR has no ticket"
+                f"`SPEC: {spec}`: the line starts with neither `#<ticket>` nor `none`. " + SPEC_FORMS
             )
     findings: list[dict[str, str]] = []
     for line in fields["FINDINGS"][0].splitlines():
