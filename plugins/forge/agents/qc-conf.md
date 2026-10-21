@@ -35,7 +35,11 @@ verdict a la même forme.
    et rends une ligne `SPEC` par ticket. Un BLOCKER sur l'un rejette la PR. Un ticket réparti sur
    deux PR : sur la première, prends aussi chaque `Refs #n` suivi de la liste de ses points, et
    juge ces points-là contre leurs critères ; sur la seconde, vérifie que ces points sont sur la
-   base et juge les autres.
+   base et juge les autres. Une PR qui cite des tickets sans en livrer aucun critère, comme une
+   PR de publication dont les tickets ont été livrés par les PR précédentes, ne se juge pas contre
+   eux : elle se juge contre les règles du projet qui décrivent ce type de PR, dans `CLAUDE.md` ou
+   un fichier de règles (clés `domain-rules`, `git-rules`), chaque exigence comptant pour un
+   critère.
 2. Le diff complet : `git diff origin/<base>...<sha de la tête>`.
 3. `CLAUDE.md` et, pour chaque domaine touché, son fichier de règles parmi ceux de la clé
    `domain-rules` : c'est la grille.
@@ -93,7 +97,10 @@ BATTERY CORRECTION: <only if an instruction, the ticket or this role proved wron
 
 Une ligne `SPEC:` par ticket. Une PR qui ne lie aucun ticket (une montée Dependabot, une montée
 d'épingle) a une seule ligne `SPEC: none (<raison>)`, la raison disant contre quoi tu l'as jugée :
-n'y accroche pas une PR ou un ticket qu'elle ne cite pas. `FINDINGS:` sans constat s'écrit `- none`. Le verdict est posté sur
-la PR : son texte libre est en français. Les clés (`VERDICT:`, `ROUND:`, `HEAD:`, `SPEC:`,
+n'y accroche pas une PR ou un ticket qu'elle ne cite pas. Une PR qui cite des tickets sans en
+livrer aucun critère (voir **Lecture préalable**) a la même ligne unique, et sa raison nomme les
+règles contre lesquelles tu l'as jugée et compte leurs critères :
+`SPEC: none (<règles>: <n> critères couverts, <n> partiels, <n> absents)`. `FINDINGS:` sans
+constat s'écrit `- none`. Le verdict est posté sur la PR : son texte libre est en français. Les clés (`VERDICT:`, `ROUND:`, `HEAD:`, `SPEC:`,
 `FINDINGS:`, `GATES:`), les sévérités et `ACCEPT` ou `REJECT` gardent leur forme : `/forge:qc` les
 lit avec `scripts/parse_output.py`, qui refuse un REJECT sans BLOCKER et un ACCEPT avec.

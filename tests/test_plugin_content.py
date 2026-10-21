@@ -169,6 +169,25 @@ class JudgeOutput(unittest.TestCase):
         judge = (support.PLUGIN / "agents" / "qc-conf.md").read_text(encoding="utf-8")
         self.assertIn("`SPEC: none (<raison>)`", judge)
 
+    def test_the_judge_weighs_a_pr_that_delivers_no_criterion_against_the_project_rules(self) -> None:
+        # Ticket #28. A release PR cites the tickets it ships, but the earlier PRs delivered their
+        # criteria: a judge with no rule for it hangs a SPEC line on each ticket, or on none.
+        from parse_output import parse_verdict
+
+        judge = " ".join((support.PLUGIN / "agents" / "qc-conf.md").read_text(encoding="utf-8").split())
+        self.assertIn("cite des tickets sans en livrer aucun critère", judge)
+        self.assertIn("se juge contre les règles du projet qui décrivent ce type de PR", judge)
+        example = re.search(r"`(SPEC: none \(<règles>[^`]*\))`", judge)
+        self.assertIsNotNone(example)
+        spec = example.group(1) if example else ""
+        for count in ("couverts", "partiels", "absents"):
+            self.assertIn(count, spec)
+        # The example the role gives is one parse_output.py admits.
+        verdict = f"VERDICT: ACCEPT\nROUND: 1\nHEAD: 3f2a9c1\n{spec}\nFINDINGS:\n- none\nGATES: vertes\n"
+        self.assertEqual(parse_verdict(verdict)["SPEC"], [spec.removeprefix("SPEC: ")])
+        # The role stays generic: no rules file of a given project.
+        self.assertNotIn("git.md", judge)
+
 
 class Manifests(unittest.TestCase):
     def test_the_version_lives_in_plugin_json_only(self) -> None:
