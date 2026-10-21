@@ -21,10 +21,23 @@ Usage:
   handoff_header.py live <repo> [<owner pid>]       print `<worktree> <branch>` for each agent
                                                     worktree whose lock holder is still alive,
                                                     only those of <owner pid> when given
+  handoff_header.py sessions <repo>                 print `<pid> <kind> <name> <status> <cwd>` for
+                                                    each other live Claude Code session of the
+                                                    repository; exit 0 if there is none, 6 if
+                                                    there is one
+
+`sessions` reads the registry Claude Code keeps of its live sessions, ~/.claude/sessions/<pid>.json
+(ikoro-labs/forge#4: one session per repository). A session belongs to the repository when its
+cwd resolves to the same main checkout, a worktree included. The calling session is left out:
+CLAUDE_PID, the process running the command, and their ancestors. An entry that cannot be read
+counts as a live session of the repository, the prudent side, printed as
+`<pid> ? ? unreadable <file>`. When the registry is missing or its format changes,
+`claude agents --json` lists the live sessions with their cwd.
 """
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import subprocess
@@ -289,6 +302,80 @@ def live_agents(repo: Path, owners: set[int] | None = None) -> list[tuple[str, s
     return found
 
 
+def main_checkout(path: Path) -> str:
+    """The main checkout a path belongs to, normalized for comparison.
+
+    The first folder up from `path` that holds a `.git`: a directory there is the main checkout;
+    a file names the worktree's own git directory, whose `commondir` leads to the main
+    checkout's `.git`. A `.git` file without `commondir` (a submodule) is its own checkout.
+    Read without running git, and without requiring `path` to exist: a session may outlive
+    its worktree. Outside any repository, the path itself.
+    """
+    path = Path(os.path.abspath(path))
+    found = path
+    for folder in (path, *path.parents):
+        dot_git = folder / ".git"
+        if dot_git.is_dir():
+            found = folder
+            break
+        if dot_git.is_file():
+            found = folder
+            try:
+                text = dot_git.read_text(encoding="utf-8").strip()
+                if text.startswith("gitdir:"):
+                    gitdir = folder / text.removeprefix("gitdir:").strip()
+                    common = gitdir / (gitdir / "commondir").read_text(encoding="utf-8").strip()
+                    found = Path(os.path.realpath(common)).parent
+            except OSError:
+                pass
+            break
+    return os.path.normcase(os.path.realpath(found))
+
+
+def session_alive(pid: int, recorded_start: object) -> bool:
+    """A registered pid still runs the session it was recorded for. On Linux the start time
+    Claude Code records (`procStart`, clock ticks since boot) must match: a pid can be reused."""
+    if LINUX and recorded_start:
+        return process_start(pid) == str(recorded_start)
+    return process_alive(pid)
+
+
+def column(value: object) -> str:
+    """A registry field as one column of the listing: spaces become `_`, `?` when absent."""
+    text = "" if value is None else "_".join(str(value).split())
+    return text or "?"
+
+
+def other_sessions(repo: Path, caller: set[int]) -> list[str]:
+    """`<pid> <kind> <name> <status> <cwd>` for each live session of `repo` outside `caller`."""
+    target = main_checkout(repo)
+    found = []
+    for entry in sorted((Path.home() / ".claude" / "sessions").glob("*.json")):
+        if entry.stem.isdigit() and int(entry.stem) in caller:
+            continue
+        try:
+            fields = json.loads(entry.read_text(encoding="utf-8"))
+            pid, cwd = int(fields["pid"]), str(fields["cwd"])
+        except (OSError, ValueError, KeyError, TypeError):
+            found.append(f"{column(entry.stem)} ? ? unreadable {entry}")
+            continue
+        if pid in caller or not session_alive(pid, fields.get("procStart")):
+            continue
+        if main_checkout(Path(cwd)) != target:
+            continue
+        found.append(" ".join([str(pid), *(column(fields.get(key)) for key in ("kind", "name", "status")), cwd]))
+    return found
+
+
+def calling_session() -> set[int]:
+    """CLAUDE_PID, the process running this, and their ancestors."""
+    pids = ancestors(os.getpid())
+    owner = os.environ.get("CLAUDE_PID", "")
+    if owner.isdigit():
+        pids |= ancestors(int(owner)) | {int(owner)}
+    return pids
+
+
 def main(argv: list[str]) -> int:
     try:
         if len(argv) == 3 and argv[1] == "check":
@@ -310,6 +397,11 @@ def main(argv: list[str]) -> int:
             for path, branch in live_agents(Path(argv[2]), owners):
                 print(f"{path} {branch}")
             return 0
+        if len(argv) == 3 and argv[1] == "sessions":
+            found = other_sessions(Path(argv[2]), calling_session())
+            for line in found:
+                print(line)
+            return 6 if found else 0
     except (HeaderError, OSError, ValueError, subprocess.SubprocessError) as error:
         print(error)
         return 2

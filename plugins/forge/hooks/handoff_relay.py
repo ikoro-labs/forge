@@ -25,7 +25,9 @@ Claude Code leaves its console with mouse tracking on.
 State (the daily counters) lives in ~/.claude/hooks/state, outside the plugin cache.
 
 Usage: handoff_relay.py [--force] <handoff document>
-Exit: 1 usage, 2 invalid header, 3 daily cap, 4 relay id unreadable, 5 agents alive.
+Exit: 1 usage, 2 invalid header, 3 daily cap, 4 relay id unreadable, 5 agents alive, 6 another session alive.
+Code 6 is one session per repository (ikoro-labs/forge#4): another live session of the
+repository, found by `handoff_header.py sessions`, is the successor in effect.
 Environment: CLAUDE_HANDOFF_RELAY_MAX (default 5), CLAUDE_HANDOFF_CLOSE_DELAY seconds
 before closing the old session (default 45, 0 keeps it open), CLAUDE_HANDOFF_TERMINAL (a
 terminal command that runs the words after it, such as `ghostty -e`, `gnome-terminal --` or
@@ -329,6 +331,21 @@ def relay(argv: list[str]) -> int:
         if en_vol:
             print(f"en_vol in the header: {en_vol}", file=sys.stderr)
         return 5
+    # One session per repository: a successor would run beside another live session, such as
+    # an interactive one the user opened. That session is the successor in effect.
+    try:
+        others = handoff_header.other_sessions(project, handoff_header.calling_session())
+    except (OSError, ValueError) as error:
+        return fail(f"relay refused: could not read the session registry: {error}", 6)
+    if others:
+        print(
+            "relay refused: another session is live on this repository; no successor is started. "
+            "Leave the handoff for it, stop here and say so",
+            file=sys.stderr,
+        )
+        for line in others:
+            print(f"live session: {line}", file=sys.stderr)
+        return 6
     counter = counter_path(state, project)
     try:
         count = int(counter.read_text(encoding="utf-8").strip())

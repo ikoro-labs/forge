@@ -189,6 +189,66 @@ class JudgeOutput(unittest.TestCase):
         self.assertNotIn("git.md", judge)
 
 
+class OneSessionPerRepository(unittest.TestCase):
+    """ikoro-labs/forge#4: one session acts on a repository at a time."""
+
+    def test_feature_build_checks_the_registry_before_list_agents_then_hands_over_and_stops(self) -> None:
+        # Critère 3. The registry sees every session of the repository, interactive ones
+        # included; ListAgents comes second, then the request goes to the session in place.
+        skill = (support.PLUGIN / "skills" / "feature-build" / "SKILL.md").read_text(encoding="utf-8")
+        step = skill.split("## 0.", 1)[1].split("\n## ", 1)[0]
+        point = re.search(r"^5\. (.*?)(?=^\d+\. )", step, re.DOTALL | re.MULTILINE)
+        self.assertIsNotNone(point, "step 0 has no point 5")
+        text = " ".join((point.group(1) if point else "").split())
+        self.assertTrue(text.startswith("**Une seule session par projet.**"), text)
+        command = 'uv run --no-project --quiet python "${CLAUDE_PLUGIN_ROOT}/hooks/handoff_header.py" sessions'
+        self.assertIn(command, text)
+        for later in ("`ListAgents`", "`SendMessage`"):
+            self.assertIn(later, text)
+        self.assertLess(text.index(command), text.index("`ListAgents`"))
+        self.assertLess(text.index("`ListAgents`"), text.index("`SendMessage`"))
+        self.assertIn("code 6", text)
+        self.assertIn("tu t'arrêtes", text[text.index("`SendMessage`"):])
+
+    def test_the_readme_states_the_common_rule_and_the_relay_code_6(self) -> None:
+        # Critère 4.
+        readme = (support.REPO_ROOT / "README.md").read_text(encoding="utf-8")
+        self.assertIn("\n## Règles communes\n", readme)
+        rules = " ".join(readme.split("\n## Règles communes\n", 1)[1].split("\n## ", 1)[0].split())
+        for expected in (
+            "**Une session par dépôt.**",
+            "**Le premier geste**",
+            "handoff_header.py sessions",
+            "`ListAgents`",
+            "`SendMessage`",
+            "draine puis s'arrête",
+            "successeur de fait",
+            "`claude attach <id>`",
+            "`claude agents --json`",
+            "code 6",
+            "Essayé sous Linux",
+            "Windows",
+        ):
+            self.assertIn(expected, rules)
+        relay = readme.split("\n## La passation drainée\n", 1)[1].split("\n## ", 1)[0]
+        codes = re.findall(r"^\| (\d) \|", relay, re.MULTILINE)
+        self.assertEqual(codes, ["0", "1", "2", "3", "4", "5", "6"])
+        self.assertRegex(relay, r"\| 6 \| [^\n]*autre session")
+
+    def test_the_plugin_names_no_project_and_no_person(self) -> None:
+        # Critère 6: what projects load stays generic.
+        forbidden = re.compile(r"(?!)")
+        for path in sorted(support.PLUGIN.rglob("*")):
+            if not path.is_file():
+                continue
+            try:
+                text = path.read_text(encoding="utf-8")
+            except UnicodeDecodeError:
+                continue
+            with self.subTest(path=str(path.relative_to(support.PLUGIN))):
+                self.assertIsNone(forbidden.search(text))
+
+
 class Manifests(unittest.TestCase):
     def test_the_version_lives_in_plugin_json_only(self) -> None:
         plugin = json.loads((support.PLUGIN / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))

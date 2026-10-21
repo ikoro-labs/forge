@@ -143,6 +143,47 @@ Un poste qui n'a pas lancé `claude plugin update` garde l'ancienne version, et 
 en dehors de `/plugin` : après chaque montée, comparer `claude plugin list --json` au `ref` du
 projet.
 
+## Règles communes
+
+Ce que suit toute session d'un projet qui utilise l'usine, interactive ou de fond
+(ikoro-labs/forge#4). Le contenu du plugin la porte (`feature-build`, étape 0, et le relais de la
+passation) ; chaque projet la reçoit à sa montée d'épingle.
+
+- **Une session par dépôt.** Une seule session agit sur un dépôt à la fois, ses worktrees compris.
+  « Un seul passage par feature » en est un cas particulier. Des sessions de dépôts différents
+  coexistent : la règle porte sur un dépôt, pas sur le poste.
+- **Le premier geste** de toute session, depuis le dépôt :
+  `uv run --no-project --quiet python <hooks>/handoff_header.py sessions .`, puis `ListAgents`. La
+  commande lit le registre que Claude Code tient de ses sessions (`~/.claude/sessions/<pid>.json`),
+  garde les processus vivants (sous Linux, l'heure de départ notée `procStart` doit être celle du
+  processus, un pid pouvant être repris), les sessions dont le dossier se résout sur la même copie
+  principale (`.git` puis `commondir`), et laisse de côté la session appelante (`CLAUDE_PID`, le
+  processus qui lance la commande, et leurs ancêtres). Elle imprime `pid kind name status cwd`
+  pour chaque autre session et sort en 0 si aucune ne vit, en code 6 sinon ; une entrée illisible
+  compte pour vivante. Si le registre manque ou change de forme, `claude agents --json` liste les
+  sessions vivantes avec leur dossier.
+- **Une autre session agit sur le dépôt** : la nouvelle n'agit pas. Elle envoie sa demande à la
+  session en place (`SendMessage`), qui l'ajoute à sa file, puis elle s'arrête et le dit. Une
+  tâche annexe entre de même dans la file de la session en place, par message ou par ticket ; elle
+  n'ouvre jamais une deuxième session à côté.
+- **Une passation ne crée pas de session parallèle** : le relais refuse en code 6 quand une autre
+  session du dépôt vit, et ne lance aucun successeur.
+- **L'humain ouvre une session interactive** sur un dépôt où une session de fond agit : la session
+  de fond draine puis s'arrête. Elle ne lance plus rien, laisse finir ses agents en vol, écrit sa
+  passation et s'arrête en le disant, sous le plafond de drainage de la passation. La session
+  interactive le lui demande par `SendMessage` et en devient le successeur de fait : c'est
+  pourquoi le relais refuse alors en code 6. Céder tout de suite tuerait les sous-agents, et finir
+  le passage ferait attendre l'humain. Avant d'ouvrir une seconde session sur un dépôt, mieux vaut
+  suivre celle qui y agit : `claude attach <id>`, l'identifiant étant celui que donne
+  `claude agents`.
+
+Essayé sous Linux, avec Claude Code 2.1.306 et un registre écrit par 2.1.305 : sur le registre réel
+d'un poste, `sessions` a listé la session de fond d'un autre dépôt, lancée dans un worktree, et
+laissé de côté la session qui la lançait. Le refus du relais n'a tourné que dans la suite de tests,
+et la règle entière (premier geste, `SendMessage`, drainage de la session de fond) n'a pas encore été
+éprouvée de bout en bout. Sous Windows, rien n'a été essayé hors de la CI ; `procStart` n'y est pas
+comparé, et un pid vivant y vaut session vivante, sans garde contre la reprise d'un pid.
+
 ## La passation drainée
 
 Une session passe la main à une nouvelle session quand son contexte atteint le seuil
@@ -164,7 +205,8 @@ draine.
 - **Le relais** `handoff_relay.py`, lancé par la session depuis le dossier du projet
   (`uv run --no-project --quiet python <hooks>/handoff_relay.py <passation>`), refuse
   (code 5) tant qu'un agent de la session est vivant ou que `en_vol` n'est pas vide, et n'admet
-  `--force` qu'avec `sauvetage` non vide. Il lance le successeur par `claude --bg`, écrit son
+  `--force` qu'avec `sauvetage` non vide. Il refuse aussi (code 6) quand une autre session du
+  dépôt vit (voir **Règles communes**). Il lance le successeur par `claude --bg`, écrit son
   identifiant et son seuil dans l'en-tête, puis arrête et supprime la session appelante. Le
   successeur vérifie d'abord qu'il est bien le successeur désigné
   (`handoff_header.py successor-ok`).
@@ -172,6 +214,19 @@ draine.
   400 000 pour un successeur dont la passation porte une feature, c'est-à-dire un identifiant
   `F-NNNN` dans `feature` (du texte comme « aucune » n'en est pas une). Aucun `settings.json` ne
   doit le fixer.
+
+Chaque refus du relais tombe avant que le compteur du jour bouge et avant `claude --bg`, sauf le
+code 4, qui suit le lancement.
+
+| Code | Sortie du relais |
+| --- | --- |
+| 0 | successeur lancé, ou essai à blanc affiché |
+| 1 | usage, ou passation introuvable |
+| 2 | en-tête de la passation invalide |
+| 3 | plafond du jour atteint (`CLAUDE_HANDOFF_RELAY_MAX`) |
+| 4 | identifiant du successeur illisible dans la sortie de `claude --bg` |
+| 5 | agents de la session encore vivants, `en_vol` non vide, ou `--force` sans `sauvetage` |
+| 6 | une autre session du dépôt vit : aucun successeur, elle l'est de fait ; les sessions trouvées sont sur stderr |
 
 | Variable | Défaut | Effet |
 | --- | --- | --- |

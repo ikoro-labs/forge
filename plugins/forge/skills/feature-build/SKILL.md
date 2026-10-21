@@ -37,9 +37,17 @@ passage (étape 4). Par défaut : 5 tickets, 3 coders, 6 heures et 3 000 000 jet
    (`gh api "repos/<dépôt>/actions/runs?per_page=1"`, puis
    `gh api repos/<dépôt>/actions/runs/<id>/jobs`). Des jobs terminés sans une seule étape signalent
    Actions coupé (facturation, quota), et aucune fusion ne passera : arrête-toi et dis-le.
-5. **Un seul passage par feature.** `ListAgents` : une autre session qui mène la même feature, et tu
-   t'arrêtes (deux trains sur la même base se marchent dessus). Tes propres coders ne comptent
-   pas : ce sont des sous-agents de ce passage.
+5. **Une seule session par projet.** Une seule session, interactive ou de fond, agit sur un dépôt :
+   un seul passage par feature en est un cas particulier (deux trains sur la même base se marchent
+   dessus). Lance d'abord, depuis le dépôt,
+   `uv run --no-project --quiet python "${CLAUDE_PLUGIN_ROOT}/hooks/handoff_header.py" sessions .` :
+   il liste les autres sessions vivantes du dépôt, worktrees compris et la tienne exceptée, et sort
+   en code 6 s'il en trouve une (une entrée illisible du registre compte pour vivante). Puis
+   `ListAgents`, pour une session de fond que le registre n'aurait pas vue ; sans registre,
+   `claude agents --json` en tient lieu. Une autre session agit sur le dépôt : tu ne lances rien,
+   tu envoies ta demande à la session en place par `SendMessage`, qui l'ajoute à sa file, puis tu
+   t'arrêtes et tu dis quelle session mène le dépôt. Tes propres coders ne comptent pas : ce sont
+   des sous-agents de ce passage.
 6. **L'agent `forge:coder` existe** dans la liste des agents. Sinon le plugin n'est pas chargé dans
    cette session : arrête-toi et dis-le. Pas de repli sur un agent générique, qui n'aurait ni le
    rôle ni le hook `guard_coder`.

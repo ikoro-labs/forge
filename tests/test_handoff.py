@@ -120,6 +120,119 @@ class Processes(unittest.TestCase):
         self.assertEqual(handoff_header.parent_pid(os.getpid()), os.getppid())
 
 
+class Sessions(unittest.TestCase):
+    """`handoff_header.py sessions <repo>` on a stand-in registry under an isolated HOME
+    (ikoro-labs/forge#4, critère 1)."""
+
+    def setUp(self) -> None:
+        self.home = Path(os.path.realpath(tempfile.mkdtemp()))
+        self.addCleanup(remove_tree, self.home)
+        self.repo = self.home / "demo"
+        (self.repo / ".git").mkdir(parents=True)
+        self.registry = self.home / ".claude" / "sessions"
+        self.registry.mkdir(parents=True)
+        patcher = mock.patch.dict(os.environ)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        for name in [key for key in os.environ if key.startswith("CLAUDE_")]:
+            del os.environ[name]
+        os.environ.update(HOME=str(self.home), USERPROFILE=str(self.home))
+
+    def sleeper(self) -> int:
+        """A running process that is neither this one nor one of its ancestors."""
+        process = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+        self.addCleanup(process.wait)
+        self.addCleanup(process.kill)
+        return process.pid
+
+    def register(self, pid: int, cwd: Path, **fields: object) -> None:
+        entry = {
+            "pid": pid, "sessionId": "0801df0e-3c3b", "cwd": str(cwd), "kind": "bg", "name": "relais-1-demo",
+            "status": "busy", "procStart": handoff_header.process_start(pid), **fields,
+        }
+        (self.registry / f"{pid}.json").write_text(json.dumps(entry), encoding="utf-8")
+
+    def sessions(self, repo: Path | None = None) -> tuple[int, list[str]]:
+        with redirect_stdout(io.StringIO()) as out:
+            code = handoff_header.main(["handoff_header.py", "sessions", str(repo or self.repo)])
+        return code, out.getvalue().splitlines()
+
+    def test_a_live_session_of_the_repository_is_listed_with_code_6(self) -> None:
+        pid = self.sleeper()
+        self.register(pid, self.repo)
+        self.assertEqual(self.sessions(), (6, [f"{pid} bg relais-1-demo busy {self.repo}"]))
+
+    def test_no_registry_and_no_other_session_exit_0(self) -> None:
+        self.assertEqual(self.sessions(), (0, []))
+        remove_tree(self.registry)
+        self.assertEqual(self.sessions(), (0, []))
+
+    def test_a_dead_pid_is_ignored(self) -> None:
+        gone = subprocess.Popen([sys.executable, "-c", "pass"])
+        gone.wait()
+        self.register(gone.pid, self.repo, procStart="1")
+        self.assertEqual(self.sessions(), (0, []))
+
+    @unittest.skipUnless(HAS_GIT, "a worktree is made by git")
+    def test_a_session_in_a_worktree_of_the_repository_is_listed(self) -> None:
+        git = ["git", "-C", str(self.repo), "-c", "user.name=t", "-c", "user.email=t@t"]
+        remove_tree(self.repo / ".git")
+        subprocess.run([*git, "init", "-q"], check=True, env=isolated_home(self.home))
+        subprocess.run([*git, "commit", "-q", "--allow-empty", "-m", "init"], check=True, env=isolated_home(self.home))
+        inside = self.repo / ".claude" / "worktrees" / "agent-x"
+        beside = self.home / "demo-ailleurs"
+        for path, branch in ((inside, "agent-x"), (beside, "ailleurs")):
+            subprocess.run([*git, "worktree", "add", "-q", "-b", branch, str(path)], check=True, env=isolated_home(self.home))
+        first, second = self.sleeper(), self.sleeper()
+        self.register(first, inside)
+        self.register(second, beside, kind="interactive", name="revue", status="idle")
+        code, lines = self.sessions(beside)
+        self.assertEqual(code, 6)
+        self.assertEqual(
+            sorted(lines), sorted([f"{first} bg relais-1-demo busy {inside}", f"{second} interactive revue idle {beside}"]),
+        )
+
+    def test_a_session_of_another_repository_is_ignored(self) -> None:
+        other = self.home / "autre"
+        (other / ".git").mkdir(parents=True)
+        self.register(self.sleeper(), other)
+        self.register(self.sleeper(), self.home / "hors-depot")
+        self.assertEqual(self.sessions(), (0, []))
+
+    @unittest.skipUnless(sys.platform.startswith("linux"), "procStart is compared to the start time read in /proc")
+    def test_a_reused_pid_whose_start_differs_is_ignored(self) -> None:
+        self.register(self.sleeper(), self.repo, procStart="1")
+        self.assertEqual(self.sessions(), (0, []))
+
+    def test_an_unreadable_entry_counts_as_live(self) -> None:
+        (self.registry / "4242.json").write_text("{pas du json", encoding="utf-8")
+        (self.registry / "4243.json").write_text(json.dumps({"pid": 4243, "kind": "bg"}), encoding="utf-8")
+        code, lines = self.sessions()
+        self.assertEqual(code, 6)
+        self.assertEqual(len(lines), 2, lines)
+        for line, name in zip(sorted(lines), ("4242.json", "4243.json")):
+            self.assertTrue(line.startswith(name[:4] + " "), line)
+            self.assertIn("unreadable", line)
+            self.assertIn(name, line)
+
+    def test_the_calling_session_and_its_ancestors_are_excluded(self) -> None:
+        caller = self.sleeper()
+        self.register(caller, self.repo)
+        self.register(os.getpid(), self.repo, kind="interactive")
+        (self.registry / f"{caller}.json").write_text(json.dumps({"pid": caller, "kind": "bg"}), encoding="utf-8")
+        os.environ["CLAUDE_PID"] = str(caller)
+        self.assertEqual(self.sessions(), (0, []))
+        self.register(caller, self.repo)
+        self.assertEqual(self.sessions(), (0, []))
+        del os.environ["CLAUDE_PID"]
+        self.assertEqual(self.sessions(), (6, [f"{caller} bg relais-1-demo busy {self.repo}"]))
+
+    def test_a_name_with_spaces_keeps_five_columns(self) -> None:
+        pid = self.sleeper()
+        self.register(pid, self.repo, name="ma revue du soir")
+        self.assertEqual(self.sessions(), (6, [f"{pid} bg ma_revue_du_soir busy {self.repo}"]))
+
+
 class Trigger(unittest.TestCase):
     def setUp(self) -> None:
         self.home = Path(tempfile.mkdtemp())
@@ -372,6 +485,34 @@ class Relay(unittest.TestCase):
         self.assertEqual(result.returncode, 3, result.stderr)
         self.assertEqual(self.counter.read_text(encoding="utf-8").strip(), "3")
         self.assertFalse(self.log.exists())
+
+    def test_another_live_session_of_the_repository_refuses_the_relay_with_code_6(self) -> None:
+        """ikoro-labs/forge#4, critère 2: before the counter moves and before `claude --bg`."""
+        other = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+        self.addCleanup(other.wait)
+        self.addCleanup(other.kill)
+        registry = self.home / ".claude" / "sessions"
+        registry.mkdir(parents=True)
+        entry = {"pid": other.pid, "cwd": str(self.repo), "kind": "interactive", "status": "busy",
+                 "procStart": handoff_header.process_start(other.pid)}
+        (registry / f"{other.pid}.json").write_text(json.dumps(entry), encoding="utf-8")
+        for dry_run in ("", "1"):
+            with self.subTest(dry_run=dry_run):
+                result = self.relay(handoff(self.home), CLAUDE_HANDOFF_CLOSE_DRY_RUN=dry_run, CLAUDE_PID="4242")
+                self.assertEqual(result.returncode, 6, result.stderr)
+                self.assertIn(f"{other.pid} interactive ? busy {self.repo}", result.stderr)
+                self.assertFalse(self.counter.exists())
+                self.assertFalse(self.log.exists())
+                self.assertNotIn("claude --bg", result.stdout)
+        # The calling session's own entry does not count.
+        result = self.relay(handoff(self.home), CLAUDE_PID=str(other.pid))
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_the_docstring_names_code_6_among_the_exit_codes(self) -> None:
+        import handoff_relay
+
+        exit_line = next(line for line in (handoff_relay.__doc__ or "").splitlines() if line.startswith("Exit:"))
+        self.assertRegex(exit_line, r"\b6 [a-z]")
 
     def test_a_dry_run_moves_nothing(self) -> None:
         path = handoff(self.home, feature="F-0001")
