@@ -65,10 +65,16 @@ def write_journal(folder: Path, session: str, command: str, response: Mapping[st
     for name in STREAMS:
         parts += [f"\n== {name} ==\n", str(response.get(name) or "")]
     journal.write_text("".join(parts), encoding="utf-8")
-    older = sorted(folder.glob("*.log"), key=lambda path: path.stat().st_mtime)[:-KEEP_JOURNALS]
-    for path in older:
+    others = sorted((path for path in folder.glob("*.log") if path != journal), key=written_at)
+    for path in others[: max(len(others) - (KEEP_JOURNALS - 1), 0)]:
         path.unlink(missing_ok=True)
     return journal
+
+
+def written_at(journal: Path) -> int:
+    """The instant in the journal's name: file times tie or run backwards across sessions."""
+    instant = journal.stem.rsplit("-", 1)[-1]
+    return int(instant) if instant.isdigit() else 0
 
 
 def run(event: Mapping[str, object]) -> dict[str, object] | None:

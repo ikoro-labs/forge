@@ -200,7 +200,8 @@ lancée contient l'une de ses valeurs. Sans la clé, il ne fait rien.
   complète est écrite dans un journal, `~/.claude/hooks/state/trimmed/<session>-<instant>.log`, et
   l'agent ne reçoit que les 20 dernières lignes de chaque flux plus long que cela, précédées du
   chemin du journal. Le dossier est commun à toutes les sessions et à tous les projets du poste ;
-  les 20 journaux les plus récents y sont gardés.
+  les 20 journaux les plus récents y sont gardés, rangés par l'instant inscrit dans leur nom, et
+  celui qu'une session vient d'écrire n'est jamais du nombre des supprimés.
 - Une commande qui échoue n'est jamais raccourcie : Claude Code envoie alors `PostToolUseFailure`
   à la place de `PostToolUse`, et l'agent voit la sortie entière. Seul compte le code de sortie de
   la commande entière : une suite qui échoue derrière un tube (`| tee log`, `| tail`) ou suivie

@@ -1,5 +1,7 @@
 import io
 import json
+import os
+import time
 import tempfile
 import unittest
 from contextlib import redirect_stdout
@@ -109,6 +111,25 @@ class Hook(unittest.TestCase):
             self.run_hook(self.event(SUITE, lines(MAX_LINES * 3, "test")))
         self.assertLessEqual(len(self.journals()), 20)
 
+    def test_the_journal_just_written_survives_the_pruning(self) -> None:
+        # Another session's journals, older by name but stamped later: a coarse clock or a
+        # parallel session leaves the file times out of order.
+        self.configure(f"- `trimmed-command` : `{SUITE}`\n")
+        folder = self.home / ".claude" / "hooks" / "state" / "trimmed"
+        folder.mkdir(parents=True)
+        later = time.time() + 3600
+        for n in range(25):
+            other = folder / f"other-{n}.log"
+            other.write_text("an older run", encoding="utf-8")
+            os.utime(other, (later, later))
+        code, out = self.run_hook(self.event(SUITE, lines(MAX_LINES * 3, "test")))
+        self.assertEqual(code, 0)
+        notice = json.loads(out)["hookSpecificOutput"]["updatedToolOutput"]["stdout"].splitlines()[0]
+        [journal] = [path for path in self.journals() if str(path) in notice]
+        self.assertTrue(journal.exists())
+        self.assertEqual(len(self.journals()), 20)
+        self.assertFalse((folder / "other-0.log").exists())
+
     def test_an_unreadable_event_or_journal_exits_0_and_replaces_nothing(self) -> None:
         self.assertEqual(self.run_hook("not json"), (0, ""))
         self.assertEqual(self.run_hook("[]"), (0, ""))
@@ -134,3 +155,4 @@ class Wiring(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
