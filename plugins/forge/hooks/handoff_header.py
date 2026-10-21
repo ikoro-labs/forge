@@ -13,8 +13,9 @@ Usage:
   handoff_header.py check <handoff>                 exit 0 and print `en_vol=<n> sauvetage=<n> feature=<n>`,
                                                     exit 2 and print the reason if invalid
   handoff_header.py set-successor <handoff> <id> [<seuil>]
-                                                    write `successeur: <id>` in the header, and
-                                                    `seuil: <seuil>`, the successor's drain threshold
+                                                    write `successeur: <id>` in the header,
+                                                    `seuil: <seuil>`, the successor's drain threshold,
+                                                    and `auteur:`, this session (CLAUDE_CODE_SESSION_ID)
   handoff_header.py successor-ok <handoff>          exit 0 if this session (CLAUDE_CODE_SESSION_ID)
                                                     may act on the handoff, exit 3 if another
                                                     session is its successor
@@ -25,11 +26,18 @@ Usage:
                                                     each other live Claude Code session of the
                                                     repository; exit 0 if there is none, 6 if
                                                     there is one
+  handoff_header.py self                            print `<kind> <id>` of this session: the kind
+                                                    its registry entry records (CLAUDE_PID), such
+                                                    as `interactive` or `bg`, and
+                                                    CLAUDE_CODE_SESSION_ID; `?` when unknown
 
 `sessions` reads the registry Claude Code keeps of its live sessions, ~/.claude/sessions/<pid>.json
 (ikoro-labs/forge#4: one session per repository). A session belongs to the repository when its
 cwd resolves to the same main checkout, a worktree included. The calling session is left out:
-CLAUDE_PID, the process running the command, and their ancestors. An entry that cannot be read
+CLAUDE_PID, the process running the command, and their ancestors. So is the session that handed
+it over: the `auteur` of a handoff of the project whose `successeur` names the calling session
+(CLAUDE_CODE_SESSION_ID): a successor is no child of the session that hands over to it, and that
+session stays alive during its closing delay, CLAUDE_HANDOFF_CLOSE_DELAY. An entry that cannot be read
 counts as a live session of the repository, the prudent side, printed as
 `<pid> ? ? unreadable <file>`. When the registry is missing or its format changes,
 `claude agents --json` lists the live sessions with their cwd.
@@ -126,13 +134,17 @@ def features(values: dict[str, list[str]]) -> list[str]:
     return [item.strip("\"' ") for item in values.get("feature", []) if FEATURE_ID.fullmatch(item.strip("\"' "))]
 
 
-def set_successor(path: Path, session: str, threshold: str = "") -> None:
+def set_successor(path: Path, session: str, threshold: str = "", author: str = "") -> None:
+    """Write `successeur`, and `seuil` and `auteur` when given: `auteur` is the session that
+    hands over, which `sessions` then leaves out for its successor."""
     header, rest = split(path.read_text(encoding="utf-8"))
-    written = ("successeur:", "seuil:") if threshold else ("successeur:",)
+    written = ("successeur:",) + (("seuil:",) if threshold else ()) + (("auteur:",) if author else ())
     kept = [line for line in header if not line.startswith(written)]
     kept.append(f"successeur: {session}\n")
     if threshold:
         kept.append(f"seuil: {threshold}\n")
+    if author:
+        kept.append(f"auteur: {author}\n")
     path.write_text("---\n" + "".join(kept) + rest, encoding="utf-8")
 
 
@@ -143,6 +155,11 @@ def recorded_successor(path: Path) -> str:
     return value if SESSION_ID.match(value) else ""
 
 
+def names(successor: str, session: str) -> bool:
+    """The `successeur` of a header, often the short id `claude --bg` prints, names `session`."""
+    return bool(successor and session) and (session.startswith(successor) or successor.startswith(session[:8]))
+
+
 def successor_ok(path: Path, session: str, wait: float = SUCCESSOR_WAIT_SECONDS) -> tuple[bool, str]:
     deadline = time.monotonic() + wait
     successor = recorded_successor(path)
@@ -151,7 +168,7 @@ def successor_ok(path: Path, session: str, wait: float = SUCCESSOR_WAIT_SECONDS)
         successor = recorded_successor(path)
     if not successor:
         return True, "no successor recorded in the header, an older handoff: confirm with ListAgents"
-    if session and (session.startswith(successor) or successor.startswith(session[:8])):
+    if names(successor, session):
         return True, f"this session ({session[:8]}) is the successor"
     return False, f"the successor is {successor}, not this session ({session[:8] or 'unknown'}): stop here"
 
@@ -346,9 +363,33 @@ def column(value: object) -> str:
     return text or "?"
 
 
-def other_sessions(repo: Path, caller: set[int]) -> list[str]:
-    """`<pid> <kind> <name> <status> <cwd>` for each live session of `repo` outside `caller`."""
+def predecessors(checkout: str, session: str) -> set[str]:
+    """The sessions that handed `session` over the project of `checkout`: the `auteur` of each of
+    its handoffs whose `successeur` names `session`. The relay writes both; a handoff that cannot
+    be read, or carries no `auteur` (an older one), names nobody, the prudent side."""
+    if not session:
+        return set()
+    # Imported here: handoff_trigger imports this module, and only `sessions` needs the folder.
+    from handoff_trigger import handoff_dir
+
+    found = set()
+    for path in (handoff_dir() / Path(checkout).name).glob("*.md"):
+        try:
+            values = parse(split(path.read_text(encoding="utf-8"))[0])
+        except (HeaderError, OSError, ValueError):
+            continue
+        successor = (values.get("successeur") or [""])[0].strip("\"'")
+        author = (values.get("auteur") or [""])[0].strip("\"'")
+        if author and names(successor, session):
+            found.add(author)
+    return found
+
+
+def other_sessions(repo: Path, caller: set[int], session: str = "") -> list[str]:
+    """`<pid> <kind> <name> <status> <cwd>` for each live session of `repo` outside `caller`,
+    and outside the sessions that handed `session` over (`predecessors`)."""
     target = main_checkout(repo)
+    handed_over = predecessors(target, session)
     found = []
     for entry in sorted((Path.home() / ".claude" / "sessions").glob("*.json")):
         if entry.stem.isdigit() and int(entry.stem) in caller:
@@ -359,12 +400,25 @@ def other_sessions(repo: Path, caller: set[int]) -> list[str]:
         except (OSError, ValueError, KeyError, TypeError):
             found.append(f"{column(entry.stem)} ? ? unreadable {entry}")
             continue
-        if pid in caller or not session_alive(pid, fields.get("procStart")):
+        if pid in caller or str(fields.get("sessionId", "")) in handed_over:
+            continue
+        if not session_alive(pid, fields.get("procStart")):
             continue
         if main_checkout(Path(cwd)) != target:
             continue
         found.append(" ".join([str(pid), *(column(fields.get(key)) for key in ("kind", "name", "status")), cwd]))
     return found
+
+
+def session_kind(pid: int) -> str:
+    """The kind Claude Code records for a live session, "" when unknown. Claude Code 2.1.306
+    writes `interactive` unless the session was started as `bg` (`claude --bg`), `daemon` or
+    `daemon-worker`."""
+    try:
+        entry = json.loads((Path.home() / ".claude" / "sessions" / f"{pid}.json").read_text(encoding="utf-8"))
+        return str(entry.get("kind", ""))
+    except (OSError, ValueError, AttributeError):
+        return ""
 
 
 def calling_session() -> set[int]:
@@ -386,7 +440,8 @@ def main(argv: list[str]) -> int:
             )
             return 0
         if len(argv) in (4, 5) and argv[1] == "set-successor":
-            set_successor(Path(argv[2]), *argv[3:])
+            threshold = argv[4] if len(argv) == 5 else ""
+            set_successor(Path(argv[2]), argv[3], threshold, os.environ.get("CLAUDE_CODE_SESSION_ID", ""))
             return 0
         if len(argv) == 3 and argv[1] == "successor-ok":
             ok, reason = successor_ok(Path(argv[2]), os.environ.get("CLAUDE_CODE_SESSION_ID", ""))
@@ -397,8 +452,13 @@ def main(argv: list[str]) -> int:
             for path, branch in live_agents(Path(argv[2]), owners):
                 print(f"{path} {branch}")
             return 0
+        if len(argv) == 2 and argv[1] == "self":
+            owner = os.environ.get("CLAUDE_PID", "")
+            kind = session_kind(int(owner)) if owner.isdigit() else ""
+            print(column(kind), column(os.environ.get("CLAUDE_CODE_SESSION_ID")))
+            return 0
         if len(argv) == 3 and argv[1] == "sessions":
-            found = other_sessions(Path(argv[2]), calling_session())
+            found = other_sessions(Path(argv[2]), calling_session(), os.environ.get("CLAUDE_CODE_SESSION_ID", ""))
             for line in found:
                 print(line)
             return 6 if found else 0

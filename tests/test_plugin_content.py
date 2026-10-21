@@ -210,6 +210,31 @@ class OneSessionPerRepository(unittest.TestCase):
         self.assertIn("code 6", text)
         self.assertIn("tu t'arrêtes", text[text.index("`SendMessage`"):])
 
+    def test_feature_build_lets_the_interactive_session_take_over_from_a_background_one(self) -> None:
+        # MINOR 1 of #36, decision 1: the background session drains then stops, and the user's
+        # interactive session is its successor in effect; the background session's conduct is
+        # in what projects load, not only in this repository's README.
+        skill = (support.PLUGIN / "skills" / "feature-build" / "SKILL.md").read_text(encoding="utf-8")
+        step = skill.split("## 0.", 1)[1].split("\n## ", 1)[0]
+        point = re.search(r"^5\. (.*?)(?=^\d+\. )", step, re.DOTALL | re.MULTILINE)
+        text = " ".join((point.group(1) if point else "").split())
+        hooks = 'uv run --no-project --quiet python "${CLAUDE_PLUGIN_ROOT}/hooks/'
+        own_kind = hooks + 'handoff_header.py" self'
+        handover = hooks + 'handoff_trigger.py" yield'
+        for expected in (own_kind, "`interactive <ton identifiant>`", "`bg`", handover, "successeur de fait", "`successor-ok`"):
+            self.assertIn(expected, text)
+        interactive = text[text.index(own_kind):]
+        self.assertLess(interactive.index("`SendMessage`"), interactive.index(handover))
+        background = text[text.index("**Tu es de fond et une session interactive te demande de céder**"):]
+        for conduct in ("ne lances plus rien", "laisses finir tes agents", "passation", "t'arrêtes en le disant"):
+            self.assertIn(conduct, background)
+        # BLOCKER of round 1 on #37: the background session that yields is closed, after its
+        # handoff names the interactive session and is sent to it, and the interactive side knows it.
+        closing = "`handoff_relay.py --yield` arrête et supprime ta session"
+        self.assertIn(closing, background)
+        self.assertLess(background.index("`SendMessage`"), background.index(closing))
+        self.assertIn("`CLAUDE_HANDOFF_CLOSE_DELAY`", interactive[: interactive.index("**Sinon**")])
+
     def test_the_readme_states_the_common_rule_and_the_relay_code_6(self) -> None:
         # Critère 4.
         readme = (support.REPO_ROOT / "README.md").read_text(encoding="utf-8")
@@ -234,6 +259,25 @@ class OneSessionPerRepository(unittest.TestCase):
         codes = re.findall(r"^\| (\d) \|", relay, re.MULTILINE)
         self.assertEqual(codes, ["0", "1", "2", "3", "4", "5", "6"])
         self.assertRegex(relay, r"\| 6 \| [^\n]*autre session")
+
+    def test_the_readme_says_the_predecessor_of_a_handoff_does_not_count(self) -> None:
+        # MINOR 2 of #36: the successor's `sessions` leaves out the `auteur` of its handoff.
+        readme = (support.REPO_ROOT / "README.md").read_text(encoding="utf-8")
+        rules = " ".join(readme.split("\n## Règles communes\n", 1)[1].split("\n## ", 1)[0].split())
+        for expected in ("l'`auteur` d'une passation du projet", "`CLAUDE_HANDOFF_CLOSE_DELAY`", "sans `auteur`"):
+            self.assertIn(expected, rules)
+
+    def test_the_readme_says_how_the_interactive_session_takes_over(self) -> None:
+        # MINOR 1 of #36: the README follows the skill.
+        readme = (support.REPO_ROOT / "README.md").read_text(encoding="utf-8")
+        rules = " ".join(readme.split("\n## Règles communes\n", 1)[1].split("\n## ", 1)[0].split())
+        for expected in ("handoff_header.py self", "handoff_trigger.py yield", '"kind": "bg"', '"kind": "interactive"'):
+            self.assertIn(expected, rules)
+        # BLOCKER of round 1 on #37: the README says the background session is closed, and how.
+        self.assertIn("`handoff_relay.py --yield <passation>`", rules)
+        drained = " ".join(readme.split("\n## La passation drainée\n", 1)[1].split("\n## ", 1)[0].split())
+        for expected in ("handoff_relay.py --yield [--force] <passation>", "`claude stop` puis `claude rm`", "sans le code 6"):
+            self.assertIn(expected, drained)
 
     def test_the_plugin_names_no_project_and_no_person(self) -> None:
         # Critère 6: what projects load stays generic.

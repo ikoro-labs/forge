@@ -92,6 +92,20 @@ class Header(unittest.TestCase):
             self.assertTrue(handoff_header.successor_ok(path, "abcdef12-3456", wait=0)[0])
             self.assertFalse(handoff_header.successor_ok(path, "99999999-0000", wait=0)[0])
 
+    def test_the_successor_is_written_with_the_session_that_hands_over(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            path = handoff(Path(root))
+            handoff_header.set_successor(path, "abcdef12", "150000", "0801df0e-3c3b")
+            self.assertEqual(handoff_header.check(path)["auteur"], ["0801df0e-3c3b"])
+            # Written again, the header keeps one author.
+            handoff_header.set_successor(path, "abcdef12", "150000", "0801df0e-3c3b")
+            self.assertEqual(path.read_text(encoding="utf-8").count("auteur:"), 1)
+            # From the command line, the author is the calling session.
+            with mock.patch.dict(os.environ, {"CLAUDE_CODE_SESSION_ID": "77777777-8888"}):
+                self.assertEqual(handoff_header.main(["handoff_header.py", "set-successor", str(path), "12345678"]), 0)
+            values = handoff_header.check(path)
+            self.assertEqual((values["successeur"], values["auteur"]), (["12345678"], ["77777777-8888"]))
+
     def test_the_lock_is_read_with_or_without_its_start_time(self) -> None:
         linux = handoff_header.LOCK.search("claude agent agent-a1b2 (pid 4242 start 987654)")
         windows = handoff_header.LOCK.search("claude agent agent-a1b2 (pid 4242)")
@@ -232,6 +246,94 @@ class Sessions(unittest.TestCase):
         self.register(pid, self.repo, name="ma revue du soir")
         self.assertEqual(self.sessions(), (6, [f"{pid} bg ma_revue_du_soir busy {self.repo}"]))
 
+    def test_self_prints_the_kind_and_the_id_of_the_calling_session(self) -> None:
+        """ikoro-labs/forge#4, MINOR 1 of #36: precedence asks a session whether it is the
+        interactive one, which Claude Code records in its registry entry."""
+        def self_line() -> tuple[int, str]:
+            with redirect_stdout(io.StringIO()) as out:
+                code = handoff_header.main(["handoff_header.py", "self"])
+            return code, out.getvalue().strip()
+
+        self.assertEqual(self_line(), (0, "? ?"))
+        caller = self.sleeper()
+        os.environ.update(CLAUDE_PID=str(caller), CLAUDE_CODE_SESSION_ID="abcdef12-3456")
+        self.assertEqual(self_line(), (0, "? abcdef12-3456"))
+        self.register(caller, self.repo, kind="interactive")
+        self.assertEqual(self_line(), (0, "interactive abcdef12-3456"))
+        self.register(caller, self.repo, kind="bg")
+        self.assertEqual(self_line(), (0, "bg abcdef12-3456"))
+
+    def test_a_background_session_that_yielded_no_longer_stops_the_interactive_one(self) -> None:
+        """ikoro-labs/forge#4, MINOR 1 of #36: once the background session has written its
+        handoff and named the interactive session with `set-successor`, the interactive session
+        is its successor in effect and `sessions` lets it act."""
+        background = self.sleeper()
+        self.register(background, self.repo, sessionId="0801df0e-3c3b-48e6-a43f-375ac6d170e3", status="idle")
+        folder = self.home / ".claude" / "hooks" / "state" / "handoffs" / "demo"
+        folder.mkdir(parents=True)
+        path = handoff(folder)
+        interactive = "abcdef12-3456-7890-abcd-ef1234567890"
+        os.environ["CLAUDE_CODE_SESSION_ID"] = interactive
+        self.assertEqual(self.sessions(), (6, [f"{background} bg relais-1-demo idle {self.repo}"]))
+        # The background session runs the command `yield` printed, with its own id in its environment.
+        with mock.patch.dict(os.environ, {"CLAUDE_CODE_SESSION_ID": "0801df0e-3c3b-48e6-a43f-375ac6d170e3"}):
+            self.assertEqual(handoff_header.main(["handoff_header.py", "set-successor", str(path), interactive]), 0)
+        self.assertEqual(self.sessions(), (0, []))
+        self.assertTrue(handoff_header.successor_ok(path, interactive, wait=0)[0])
+
+    def handed_over(self, successor: str, author: str, folder: Path | None = None) -> Path:
+        """A handoff of the project whose header names its successor and its author."""
+        folder = folder or self.home / ".claude" / "hooks" / "state" / "handoffs" / "demo"
+        folder.mkdir(parents=True, exist_ok=True)
+        path = handoff(folder)
+        handoff_header.set_successor(path, successor, "150000", author)
+        return path
+
+    def test_the_predecessor_of_the_calling_session_is_not_counted(self) -> None:
+        """ikoro-labs/forge#4, MINOR 2 of #36: a session that handed over to the caller, alive
+        during its closing delay, does not make its successor stop."""
+        predecessor = self.sleeper()
+        self.register(predecessor, self.repo, sessionId="0801df0e-3c3b-48e6-a43f-375ac6d170e3")
+        listed = (6, [f"{predecessor} bg relais-1-demo busy {self.repo}"])
+        self.handed_over("abcdef12", "0801df0e-3c3b-48e6-a43f-375ac6d170e3")
+        self.assertEqual(self.sessions(), listed)
+        os.environ["CLAUDE_CODE_SESSION_ID"] = "abcdef12-3456-7890-abcd-ef1234567890"
+        self.assertEqual(self.sessions(), (0, []))
+        # Another session of the repository still counts.
+        other = self.sleeper()
+        self.register(other, self.repo, sessionId="11111111-2222", kind="interactive", name="revue")
+        self.assertEqual(self.sessions(), (6, [f"{other} interactive revue busy {self.repo}"]))
+
+    def test_a_handoff_to_another_session_or_by_another_author_excludes_nothing(self) -> None:
+        predecessor = self.sleeper()
+        self.register(predecessor, self.repo, sessionId="0801df0e-3c3b-48e6-a43f-375ac6d170e3")
+        listed = (6, [f"{predecessor} bg relais-1-demo busy {self.repo}"])
+        os.environ["CLAUDE_CODE_SESSION_ID"] = "abcdef12-3456-7890-abcd-ef1234567890"
+        self.handed_over("99999999", "0801df0e-3c3b-48e6-a43f-375ac6d170e3")
+        self.assertEqual(self.sessions(), listed)
+        remove_tree(self.home / ".claude" / "hooks" / "state" / "handoffs")
+        self.handed_over("abcdef12", "22222222-3333-4444-5555-666666666666")
+        self.assertEqual(self.sessions(), listed)
+        # An older handoff, without `auteur`, names no predecessor.
+        remove_tree(self.home / ".claude" / "hooks" / "state" / "handoffs")
+        self.handed_over("abcdef12", "")
+        self.assertEqual(self.sessions(), listed)
+        # A handoff of another project neither.
+        remove_tree(self.home / ".claude" / "hooks" / "state" / "handoffs")
+        self.handed_over(
+            "abcdef12", "0801df0e-3c3b-48e6-a43f-375ac6d170e3",
+            self.home / ".claude" / "hooks" / "state" / "handoffs" / "autre",
+        )
+        self.assertEqual(self.sessions(), listed)
+
+    def test_the_handoffs_are_read_where_claude_handoff_dir_puts_them(self) -> None:
+        predecessor = self.sleeper()
+        self.register(predecessor, self.repo, sessionId="0801df0e-3c3b-48e6-a43f-375ac6d170e3")
+        os.environ["CLAUDE_CODE_SESSION_ID"] = "abcdef12-3456-7890-abcd-ef1234567890"
+        os.environ["CLAUDE_HANDOFF_DIR"] = str(self.home / "passations")
+        self.handed_over("abcdef12", "0801df0e-3c3b-48e6-a43f-375ac6d170e3", self.home / "passations" / "demo")
+        self.assertEqual(self.sessions(), (0, []))
+
 
 class Trigger(unittest.TestCase):
     def setUp(self) -> None:
@@ -337,6 +439,51 @@ class Trigger(unittest.TestCase):
         (self.home / ".claude" / "hooks" / "state" / "s1.handoff").unlink()
         self.assertIn(str(skill), self.notice(150_000) or "")
 
+    def yield_to(self, *argv: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [sys.executable, str(support.PLUGIN / "hooks" / "handoff_trigger.py"), "yield", *argv],
+            cwd=self.project, capture_output=True, encoding="utf-8",
+            env={**isolated_home(self.home), "CLAUDE_HANDOFF_DRAIN_MINUTES": "30"}, check=False,
+        )
+
+    def test_a_background_session_asked_to_yield_drains_writes_its_handoff_and_stops(self) -> None:
+        """ikoro-labs/forge#4, MINOR 1 of #36: what a background session does when the user's
+        interactive session asks it to hand over, under the drain cap of the handoff."""
+        result = self.yield_to("abcdef12-3456-7890")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        text = " ".join(result.stdout.split())
+        day = datetime.date.today().isoformat()
+        path = self.home / ".claude" / "hooks" / "state" / "handoffs" / "demo" / f"{day}-r1.md"
+        for expected in (
+            "launch nothing new",
+            "run to its exit",
+            "30 minutes",
+            "sauvetage",
+            str(path),
+            f'"{HEADER}" set-successor <handoff path> abcdef12-3456-7890',
+            "Do not run the relay itself",
+            "SendMessage",
+            f'"{RELAY}" --yield <handoff path>',
+            "stops then deletes this one",
+            "session abcdef12-3456-7890 takes over",
+        ):
+            self.assertIn(expected, text)
+        self.assertLess(text.index("launch nothing new"), text.index(str(path)))
+        self.assertLess(text.index(str(path)), text.index("set-successor"))
+        # BLOCKER of round 1 on #37: the handoff is named and sent before this session is closed.
+        sent = "Send the handoff path to the session abcdef12-3456-7890 by SendMessage"
+        self.assertLess(text.index("set-successor"), text.index(sent))
+        self.assertLess(text.index(sent), text.index("--yield"))
+        # The hook's own markers are left alone: the session's context has not reached its limit.
+        self.assertFalse((self.home / ".claude" / "hooks" / "state" / "s1.handoff").exists())
+
+    def test_yield_needs_the_id_of_the_session_that_takes_over(self) -> None:
+        for argv in ((), ("pas un identifiant; rm -rf",), ("abcdef12", "en trop")):
+            with self.subTest(argv=argv):
+                result = self.yield_to(*argv)
+                self.assertEqual(result.returncode, 1, result.stdout)
+                self.assertNotIn("launch nothing new", result.stdout)
+
     def test_the_hook_prints_its_notice_for_claude_code(self) -> None:
         self.transcript.write_text(
             json.dumps({"type": "assistant", "message": {"usage": {"input_tokens": 150_000}}}) + "\n",
@@ -377,6 +524,15 @@ class Relay(unittest.TestCase):
             "import os, sys\n"
             f"with open({str(self.log)!r}, 'a', encoding='utf-8') as log:\n"
             "    log.write(os.environ.get('CLAUDE_SESSION_TOKEN_LIMIT', '') + ' ' + ' '.join(sys.argv[1:]) + '\\n')\n"
+            # `claude rm <id>` ends the session and takes it out of the registry, as Claude Code does.
+            "if sys.argv[1:2] == ['rm']:\n"
+            "    import json, pathlib, signal\n"
+            "    for entry in (pathlib.Path.home() / '.claude' / 'sessions').glob('*.json'):\n"
+            "        fields = json.loads(entry.read_text(encoding='utf-8'))\n"
+            "        if fields.get('sessionId', '').startswith(sys.argv[2]):\n"
+            "            os.kill(int(fields['pid']), signal.SIGTERM)\n"
+            "            entry.unlink()\n"
+            "    sys.exit(0)\n"
             "sys.stdout.reconfigure(encoding='utf-8')\n"
             "print('relais backgrounded · abcdef12 · claude attach abcdef12')\n",
             encoding="utf-8",
@@ -507,6 +663,115 @@ class Relay(unittest.TestCase):
         # The calling session's own entry does not count.
         result = self.relay(handoff(self.home), CLAUDE_PID=str(other.pid))
         self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_the_relay_names_the_session_that_hands_over_and_its_successor_relays_past_it(self) -> None:
+        """ikoro-labs/forge#4, MINOR 2 of #36: the predecessor, alive during its closing delay,
+        does not refuse its successor's own relay."""
+        first = self.home / ".claude" / "hooks" / "state" / "handoffs" / "demo"
+        first.mkdir(parents=True)
+        path = handoff(first)
+        result = self.relay(path, CLAUDE_HANDOFF_CLOSE_DRY_RUN="", CLAUDE_CODE_SESSION_ID="0801df0e-3c3b-48e6")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        values = handoff_header.check(path)
+        self.assertEqual((values["successeur"], values["auteur"]), (["abcdef12"], ["0801df0e-3c3b-48e6"]))
+        predecessor = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+        self.addCleanup(predecessor.wait)
+        self.addCleanup(predecessor.kill)
+        registry = self.home / ".claude" / "sessions"
+        registry.mkdir(parents=True)
+        entry = {"pid": predecessor.pid, "sessionId": "0801df0e-3c3b-48e6", "cwd": str(self.repo), "kind": "bg",
+                 "status": "idle", "procStart": handoff_header.process_start(predecessor.pid)}
+        (registry / f"{predecessor.pid}.json").write_text(json.dumps(entry), encoding="utf-8")
+        second = self.home / "r2"
+        second.mkdir()
+        self.assertEqual(self.relay(handoff(second), CLAUDE_PID="4242").returncode, 6)
+        result = self.relay(handoff(second), CLAUDE_PID="4242", CLAUDE_CODE_SESSION_ID="abcdef12-0000-1111")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def registered(self, session: str, kind: str) -> subprocess.Popen[bytes]:
+        """A running process recorded in the session registry as the live session `session`."""
+        process = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+        self.addCleanup(process.wait)
+        self.addCleanup(process.kill)
+        registry = self.home / ".claude" / "sessions"
+        registry.mkdir(parents=True, exist_ok=True)
+        entry = {"pid": process.pid, "sessionId": session, "cwd": str(self.repo), "kind": kind, "status": "idle",
+                 "name": kind, "procStart": handoff_header.process_start(process.pid)}
+        (registry / f"{process.pid}.json").write_text(json.dumps(entry), encoding="utf-8")
+        return process
+
+    def yielding(self, process: subprocess.Popen[bytes], session: str, **env: str) -> dict[str, str]:
+        """The environment of the background session `session` running the commands `yield` prints."""
+        return {"CLAUDE_PID": str(process.pid), "CLAUDE_CODE_SESSION_ID": session, "CLAUDE_CODE_CHILD_SESSION": "1",
+                **env}
+
+    def test_a_background_session_that_yielded_is_gone_for_a_third_session(self) -> None:
+        """ikoro-labs/forge#4, BLOCKER of round 1 on #37: the background session B that yields to
+        the user's interactive session I is stopped and deleted once its handoff names I. A third
+        session, here C, the relay I starts at its own limit, does not find B in place and stop."""
+        b, i, c = "b0b0b0b0-1111-2222", "1a1a1a1a-3333-4444", "c0c0c0c0-5555-6666"
+        background = self.registered(b, "bg")
+        self.registered(i, "interactive")
+        folder = self.state / "handoffs" / "demo"
+        folder.mkdir(parents=True)
+        path = handoff(folder)
+        # B follows what `yield` prints: it names I, sends I the path (SendMessage), then closes.
+        env = self.yielding(background, b, CLAUDE_HANDOFF_CLOSE_DELAY="1", CLAUDE_HANDOFF_CLOSE_DRY_RUN="")
+        named = subprocess.run(
+            [sys.executable, str(HEADER), "set-successor", str(path), i],
+            cwd=self.repo, capture_output=True, encoding="utf-8", env={**self.env, **env}, check=False,
+        )
+        self.assertEqual(named.returncode, 0, named.stdout)
+        closing = self.relay(path, "--yield", **env)
+        deadline = time.monotonic() + 30
+        entry = self.home / ".claude" / "sessions" / f"{background.pid}.json"
+        while closing.returncode == 0 and entry.exists() and time.monotonic() < deadline:
+            time.sleep(0.2)
+        # I relays to C at its own limit: the relay writes C as successor and I as author.
+        second = handoff(self.home).rename(folder / "2026-10-20-r2.md")
+        handoff_header.set_successor(second, c, "150000", i)
+        seen = subprocess.run(
+            [sys.executable, str(HEADER), "sessions", "."], cwd=self.repo, capture_output=True,
+            encoding="utf-8", env={**self.env, "CLAUDE_CODE_SESSION_ID": c}, check=False,
+        )
+        self.assertEqual((seen.returncode, seen.stdout), (0, ""))
+        self.assertEqual(closing.returncode, 0, closing.stderr)
+        self.assertIn(f"rm {b[:8]}", self.log.read_text(encoding="utf-8"))
+        # No successor was started and the daily counter did not move.
+        self.assertNotIn("--bg", self.log.read_text(encoding="utf-8"))
+        self.assertFalse(self.counter.exists())
+
+    def test_yield_closes_only_a_background_session_whose_handoff_names_its_successor(self) -> None:
+        """ikoro-labs/forge#4, BLOCKER of round 1 on #37: `--yield` refuses what would close the
+        wrong session or kill an agent the handoff does not leave for a rescue."""
+        b = "b0b0b0b0-1111-2222"
+        env = self.yielding(self.registered(b, "bg"), b, CLAUDE_HANDOFF_CLOSE_DELAY="45")
+        path = handoff(self.home)
+        # Nothing names the interactive session yet: set-successor comes first.
+        self.assertEqual(self.relay(path, "--yield", **env).returncode, 2)
+        handoff_header.set_successor(path, "1a1a1a1a", "", b)
+        result = self.relay(path, "--yield", **env)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("dry run, would run in 45s:", result.stdout)
+        self.assertIn(f"stop {b[:8]}", result.stdout)
+        self.assertIn(f"rm {b[:8]}", result.stdout)
+        self.assertNotIn("--bg", result.stdout)
+        self.assertFalse(self.counter.exists())
+        # An agent in flight is waited for; listed for a rescue, --force admits it.
+        for flags, en_vol, sauvetage, code in (((), "[agent-x]", "[]", 5), (("--force",), "[]", "[]", 5),
+                                               (("--force",), "[agent-x]", "[agent-x]", 0)):
+            with self.subTest(flags=flags, en_vol=en_vol, sauvetage=sauvetage):
+                folder = Path(tempfile.mkdtemp(dir=self.home))
+                drained = handoff(folder, en_vol=en_vol, sauvetage=sauvetage)
+                handoff_header.set_successor(drained, "1a1a1a1a", "", b)
+                self.assertEqual(self.relay(drained, "--yield", *flags, **env).returncode, code)
+        # The user's interactive session, or a session whose pid is unknown, is never closed this way.
+        i = "1a1a1a1a-3333-4444"
+        interactive = self.relay(path, "--yield", **self.yielding(self.registered(i, "interactive"), i))
+        self.assertEqual(interactive.returncode, 1)
+        self.assertNotIn("would run", interactive.stdout)
+        unknown = self.relay(path, "--yield", CLAUDE_CODE_CHILD_SESSION="1", CLAUDE_CODE_SESSION_ID=b)
+        self.assertEqual(unknown.returncode, 1)
 
     def test_the_docstring_names_code_6_among_the_exit_codes(self) -> None:
         import handoff_relay

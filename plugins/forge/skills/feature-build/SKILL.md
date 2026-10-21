@@ -41,13 +41,41 @@ passage (étape 4). Par défaut : 5 tickets, 3 coders, 6 heures et 3 000 000 jet
    un seul passage par feature en est un cas particulier (deux trains sur la même base se marchent
    dessus). Lance d'abord, depuis le dépôt,
    `uv run --no-project --quiet python "${CLAUDE_PLUGIN_ROOT}/hooks/handoff_header.py" sessions .` :
-   il liste les autres sessions vivantes du dépôt, worktrees compris et la tienne exceptée, et sort
-   en code 6 s'il en trouve une (une entrée illisible du registre compte pour vivante). Puis
-   `ListAgents`, pour une session de fond que le registre n'aurait pas vue ; sans registre,
-   `claude agents --json` en tient lieu. Une autre session agit sur le dépôt : tu ne lances rien,
-   tu envoies ta demande à la session en place par `SendMessage`, qui l'ajoute à sa file, puis tu
-   t'arrêtes et tu dis quelle session mène le dépôt. Tes propres coders ne comptent pas : ce sont
-   des sous-agents de ce passage.
+   il liste les autres sessions vivantes du dépôt, worktrees compris, la tienne exceptée et celle
+   qui t'a passé la main par une passation, et sort en code 6 s'il en trouve une (une entrée
+   illisible du registre compte pour vivante). Puis `ListAgents`, pour une session de fond que le
+   registre n'aurait pas vue ; sans registre, `claude agents --json` en tient lieu. Tes propres
+   coders ne comptent pas : ce sont des sous-agents de ce passage. Une autre session agit sur le
+   dépôt :
+   - **Tu es la session interactive de l'humain et chaque session en place est de fond** :
+     `uv run --no-project --quiet python "${CLAUDE_PLUGIN_ROOT}/hooks/handoff_header.py" self`
+     imprime `interactive <ton identifiant>`, et chaque session listée porte le type `bg` (une
+     session que seul `ListAgents` montre est de fond). C'est la session de fond qui cède, et tu es
+     son successeur de fait. Tu ne lances rien. Tu lui envoies par `SendMessage` ton identifiant et
+     cette demande : lancer, depuis le dépôt,
+     `uv run --no-project --quiet python "${CLAUDE_PLUGIN_ROOT}/hooks/handoff_trigger.py" yield <ton identifiant>`
+     et suivre ce qu'il imprime. Tu dis à l'humain que tu attends qu'elle draine, au plus le plafond
+     de drainage (`CLAUDE_HANDOFF_DRAIN_MINUTES`, 45 minutes par défaut). Quand elle t'a envoyé le
+     chemin de sa passation, relance `sessions .` : sa passation te nomme successeur, elle n'y
+     figure plus, et elle s'arrête puis se supprime d'elle-même après le délai de fermeture
+     (`CLAUDE_HANDOFF_CLOSE_DELAY`), si bien qu'aucune session ouverte après toi ne la trouve en
+     place. Lis alors sa passation (`successor-ok` d'abord, avec
+     `"${CLAUDE_PLUGIN_ROOT}/hooks/handoff_header.py"`), sauve chaque worktree listé sous
+     `sauvetage`, puis reprends l'étape 0 depuis le point 1. Sans réponse passé le plafond, ou si
+     `sessions .` la liste encore, tu ne lances toujours rien : tu le dis à l'humain, avec
+     `claude attach <id>` pour la suivre.
+   - **Sinon** (tu es de fond, ou une session en place n'est pas `bg`) : tu ne lances rien, tu
+     envoies ta demande à la session en place par `SendMessage`, qui l'ajoute à sa file, puis tu
+     t'arrêtes et tu dis quelle session mène le dépôt.
+   - **Tu es de fond et une session interactive te demande de céder**, pendant ce passage ou
+     n'importe quel autre travail : tu ne lances plus rien, tu laisses finir tes agents en vol, tu
+     écris ta passation et tu t'arrêtes en le disant, sous le plafond de drainage. Dans cet ordre,
+     ta passation nomme la session interactive successeur, tu lui en envoies le chemin par
+     `SendMessage`, puis `handoff_relay.py --yield` arrête et supprime ta session après le délai
+     de fermeture, sans en lancer aucune. Chaque geste, avec le chemin de la passation, est
+     imprimé par
+     `uv run --no-project --quiet python "${CLAUDE_PLUGIN_ROOT}/hooks/handoff_trigger.py" yield <son identifiant>`,
+     lancé depuis le dépôt.
 6. **L'agent `forge:coder` existe** dans la liste des agents. Sinon le plugin n'est pas chargé dans
    cette session : arrête-toi et dis-le. Pas de repli sur un agent générique, qui n'aurait ni le
    rôle ni le hook `guard_coder`.

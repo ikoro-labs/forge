@@ -24,10 +24,17 @@ Claude Code leaves its console with mouse tracking on.
 
 State (the daily counters) lives in ~/.claude/hooks/state, outside the plugin cache.
 
-Usage: handoff_relay.py [--force] <handoff document>
+Usage: handoff_relay.py [--yield] [--force] <handoff document>
 Exit: 1 usage, 2 invalid header, 3 daily cap, 4 relay id unreadable, 5 agents alive, 6 another session alive.
+--yield closes a background session that yields to the user's interactive session
+(handoff_trigger.py yield, ikoro-labs/forge#4) once its handoff names that session
+(`handoff_header.py set-successor`): the same agent checks (5) and the same closing as a relay,
+but no session is started, the daily counter does not move and code 6 does not apply. It refuses
+(1) an interactive session or an unknown CLAUDE_PID, and (2) a handoff that names no successor.
 Code 6 is one session per repository (ikoro-labs/forge#4): another live session of the
-repository, found by `handoff_header.py sessions`, is the successor in effect.
+repository, found by `handoff_header.py sessions`, is the successor in effect. The header gets
+the successor, its threshold and its author, the calling session (CLAUDE_CODE_SESSION_ID):
+the successor's own `sessions` leaves out its author, alive during its closing delay.
 Environment: CLAUDE_HANDOFF_RELAY_MAX (default 5), CLAUDE_HANDOFF_CLOSE_DELAY seconds
 before closing the old session (default 45, 0 keeps it open), CLAUDE_HANDOFF_TERMINAL (a
 terminal command that runs the words after it, such as `ghostty -e`, `gnome-terminal --` or
@@ -120,23 +127,22 @@ def command_name(pid: int) -> str:
         return ""
 
 
-def session_kind(pid: int) -> str:
-    """The kind Claude Code records for a live session (`interactive`, ...), "" when unknown."""
-    try:
-        entry = json.loads((Path.home() / ".claude" / "sessions" / f"{pid}.json").read_text(encoding="utf-8"))
-        return str(entry.get("kind", ""))
-    except (OSError, ValueError, AttributeError):
-        return ""
+def background_session(pid: int) -> bool:
+    """The session that runs this script (CLAUDE_PID) is a background one, stopped and deleted
+    when it closes. CLAUDE_CODE_CHILD_SESSION is set in interactive sessions too: the session
+    registry tells them apart when it knows the pid."""
+    return (
+        os.environ.get("CLAUDE_CODE_CHILD_SESSION") == "1"
+        and handoff_header.session_kind(pid) != "interactive"
+        and bool(os.environ.get("CLAUDE_CODE_SESSION_ID", ""))
+    )
 
 
 def closing_plan(pid: int, terminal: str) -> Plan:
     """How to end the session that runs this script (CLAUDE_PID)."""
     cli = claude()
     session = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
-    # CLAUDE_CODE_CHILD_SESSION is set in interactive sessions too: the session registry
-    # tells them apart when it knows the pid.
-    background = os.environ.get("CLAUDE_CODE_CHILD_SESSION") == "1" and session_kind(pid) != "interactive"
-    if background and session:
+    if background_session(pid):
         # A background session (a previous relay). A stopped session restarts on the next
         # message or `claude attach`, so it is deleted after the stop: only `claude rm` ends
         # everything it carries. Its viewers, `claude attach <id>` in their own windows,
@@ -286,16 +292,90 @@ def open_viewer(terminal: str, relay_id: str) -> bool:
     return True
 
 
+def agents_refusal(values: dict[str, list[str]], project: Path, owner: str, force: bool) -> int:
+    """5 while closing this session would kill an agent the handoff does not leave for a rescue, else 0."""
+    en_vol, sauvetage = len(values["en_vol"]), len(values["sauvetage"])
+    # Only the agents of the calling session: another session's agents in the same
+    # repository do not die with this one. Run by hand, without CLAUDE_PID, every live
+    # agent of the repository counts, the prudent side.
+    try:
+        live = handoff_header.live_agents(project, {int(owner)} if owner else None)
+    except (OSError, ValueError, subprocess.SubprocessError) as error:
+        return fail(f"could not list the agent worktrees: {error}", 5)
+    if force:
+        if not sauvetage:
+            return fail("--force refused: the handoff lists no agent under sauvetage; wait for the agents instead", 5)
+    elif live or en_vol:
+        print(
+            "refused: agents of this session are still in flight; let them finish, or at the hard cap list "
+            "them under sauvetage and pass --force",
+            file=sys.stderr,
+        )
+        for path, branch in live:
+            print(f"live agent worktree: {path} {branch}", file=sys.stderr)
+        if en_vol:
+            print(f"en_vol in the header: {en_vol}", file=sys.stderr)
+        return 5
+    return 0
+
+
+def schedule_close(owner: str, close_delay: int, terminal: str, dry_run: bool) -> None:
+    """Close the session that runs this script (CLAUDE_PID) after the delay that lets it finish its reply."""
+    if close_delay <= 0 or not owner:
+        return
+    plan = closing_plan(int(owner), terminal)
+    if dry_run:
+        print(f"dry run, would run in {close_delay}s: {render(plan)}")
+    else:
+        spawn([sys.executable, str(Path(__file__).resolve()), "--close", str(close_delay), json.dumps(plan)])
+        print(f"this session (pid {owner}) closes in {close_delay}s")
+
+
+def hand_over(handoff: Path, force: bool) -> int:
+    """`--yield`: a background session that yields to the user's interactive session
+    (handoff_trigger.py yield) is closed like a relayed one, but no successor is started: its
+    handoff already names the interactive session (`handoff_header.py set-successor`). Left
+    alive, it would stay in the session registry, and the next session of the repository, the
+    interactive session's own relay included, would stop behind it."""
+    owner = os.environ.get("CLAUDE_PID", "")
+    if not owner.isdigit():
+        return fail("--yield refused: CLAUDE_PID is unknown, there is no session to close", 1)
+    if not background_session(int(owner)):
+        return fail("--yield refused: only a background session yields; this one is not closed", 1)
+    try:
+        values = handoff_header.check(handoff)
+        successor = handoff_header.recorded_successor(handoff)
+    except (handoff_header.HeaderError, OSError, ValueError) as error:
+        return fail(f"invalid handoff header: {error}", 2)
+    if not successor:
+        return fail("--yield refused: the handoff names no successor; run handoff_header.py set-successor first", 2)
+    refused = agents_refusal(values, Path.cwd(), owner, force)
+    if refused:
+        return refused
+    dry_run = os.environ.get("CLAUDE_HANDOFF_CLOSE_DRY_RUN", "").strip().lower() not in OFF
+    close_delay = int(os.environ.get("CLAUDE_HANDOFF_CLOSE_DELAY", "45"))
+    print(f"no successor started: session {successor} takes over from {handoff}")
+    if close_delay <= 0:
+        print("CLAUDE_HANDOFF_CLOSE_DELAY is 0: this session stays open; stop and delete it by hand")
+    schedule_close(owner, close_delay, os.environ.get("CLAUDE_HANDOFF_TERMINAL", ""), dry_run)
+    return 0
+
+
 def relay(argv: list[str]) -> int:
+    hand_over_only = bool(argv) and argv[0] == "--yield"
+    if hand_over_only:
+        argv = argv[1:]
     force = bool(argv) and argv[0] == "--force"
     if force:
         argv = argv[1:]
     if len(argv) != 1:
-        return fail("usage: handoff_relay.py [--force] <handoff document>", 1)
+        return fail("usage: handoff_relay.py [--yield] [--force] <handoff document>", 1)
     handoff = Path(argv[0])
     if not handoff.is_file():
         return fail(f"handoff document not found: {handoff}", 1)
     handoff = handoff.resolve()
+    if hand_over_only:
+        return hand_over(handoff, force)
     dry_run = os.environ.get("CLAUDE_HANDOFF_CLOSE_DRY_RUN", "").strip().lower() not in OFF
     cap = int(os.environ.get("CLAUDE_HANDOFF_RELAY_MAX", "5"))
     close_delay = int(os.environ.get("CLAUDE_HANDOFF_CLOSE_DELAY", "45"))
@@ -307,34 +387,17 @@ def relay(argv: list[str]) -> int:
         values = handoff_header.check(handoff)
     except (handoff_header.HeaderError, OSError, ValueError) as error:
         return fail(f"invalid handoff header: {error}", 2)
-    en_vol, sauvetage = len(values["en_vol"]), len(values["sauvetage"])
     threshold = 400000 if handoff_header.features(values) else 150000
-    # Only the agents of the calling session: another session's agents in the same
-    # repository do not die with this one. Run by hand, without CLAUDE_PID, every live
-    # agent of the repository counts, the prudent side.
     owner = os.environ.get("CLAUDE_PID", "")
-    try:
-        live = handoff_header.live_agents(project, {int(owner)} if owner else None)
-    except (OSError, ValueError, subprocess.SubprocessError) as error:
-        return fail(f"could not list the agent worktrees: {error}", 5)
-    if force:
-        if not sauvetage:
-            return fail("--force refused: the handoff lists no agent under sauvetage; wait for the agents instead", 5)
-    elif live or en_vol:
-        print(
-            "relay refused: agents of this session are still in flight; let them finish, or at the hard cap list "
-            "them under sauvetage and pass --force",
-            file=sys.stderr,
-        )
-        for path, branch in live:
-            print(f"live agent worktree: {path} {branch}", file=sys.stderr)
-        if en_vol:
-            print(f"en_vol in the header: {en_vol}", file=sys.stderr)
-        return 5
+    refused = agents_refusal(values, project, owner, force)
+    if refused:
+        return refused
     # One session per repository: a successor would run beside another live session, such as
     # an interactive one the user opened. That session is the successor in effect.
     try:
-        others = handoff_header.other_sessions(project, handoff_header.calling_session())
+        others = handoff_header.other_sessions(
+            project, handoff_header.calling_session(), os.environ.get("CLAUDE_CODE_SESSION_ID", ""),
+        )
     except (OSError, ValueError) as error:
         return fail(f"relay refused: could not read the session registry: {error}", 6)
     if others:
@@ -380,20 +443,14 @@ def relay(argv: list[str]) -> int:
         if not found:
             return fail("could not read the relay session id", 4)
         relay_id = found.group(1)
-        handoff_header.set_successor(handoff, relay_id, str(threshold))
+        handoff_header.set_successor(handoff, relay_id, str(threshold), os.environ.get("CLAUDE_CODE_SESSION_ID", ""))
         print(f"successeur: {relay_id} and seuil: {threshold} written in {handoff}")
     if terminal and not dry_run and open_viewer(terminal, relay_id):
         print(f"relay {relay_id} opened in a new terminal window")
     else:
         print(f"follow the relay with: claude attach {relay_id}")
     # CLAUDE_PID is the session that runs this script. The delay lets it finish its reply.
-    if close_delay > 0 and owner:
-        plan = closing_plan(int(owner), terminal)
-        if dry_run:
-            print(f"dry run, would run in {close_delay}s: {render(plan)}")
-        else:
-            spawn([sys.executable, str(Path(__file__).resolve()), "--close", str(close_delay), json.dumps(plan)])
-            print(f"this session (pid {owner}) closes in {close_delay}s")
+    schedule_close(owner, close_delay, terminal, dry_run)
     return 0
 
 
