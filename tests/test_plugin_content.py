@@ -210,6 +210,17 @@ class Manifests(unittest.TestCase):
         self.assertIsNotNone(first)
         self.assertEqual(first.group(1) if first else None, version)
 
+    def test_the_icon_is_a_square_png_the_plugin_directory_accepts(self) -> None:
+        # The directory takes a PNG of 512 to 2048 px a side, under 2 MB, and no SVG.
+        icon = (support.PLUGIN / ".claude-plugin" / "icon.png").read_bytes()
+        self.assertEqual(icon[:8], b"\x89PNG\r\n\x1a\n")
+        self.assertEqual(icon[12:16], b"IHDR")
+        width, height = int.from_bytes(icon[16:20], "big"), int.from_bytes(icon[20:24], "big")
+        self.assertEqual(width, height)
+        self.assertTrue(512 <= width <= 2048, width)
+        self.assertLess(len(icon), 2 * 1024 * 1024)
+        self.assertTrue((support.REPO_ROOT / "docs" / "logo.svg").is_file())
+
 
 if __name__ == "__main__":
     unittest.main()

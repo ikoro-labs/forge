@@ -1,5 +1,7 @@
 # forge
 
+<img src="docs/logo.svg" alt="Logo de forge : une enclume et son lingot rougeoyant" width="120" align="right">
+
 La partie générique de l'usine agentique d'ikoro-labs, en plugin Claude Code privé : le coder, la
 revue en deux temps, les décideurs délégués, la chaîne des features de l'idée à la livraison, et
 les hooks qui gardent git, les rôles et la pause, et la passation drainée d'une session à sa
@@ -14,6 +16,14 @@ des features, la boucle d'un ticket du coder à la fusion, et les hooks qui gard
 Sa source est `docs/architecture.excalidraw`, à ouvrir dans Excalidraw ; `docs/architecture.svg`
 en est l'export, refait à chaque changement de la source.
 
+Le logo a sa source dans `docs/logo.svg`. Son export en PNG de 1024 px,
+`plugins/forge/.claude-plugin/icon.png`, est l'icône du plugin, et se refait à chaque changement
+de la source :
+
+```sh
+uv run --no-project --quiet --with cairosvg python -c "import cairosvg; cairosvg.svg2png(url='docs/logo.svg', write_to='plugins/forge/.claude-plugin/icon.png', output_width=1024, output_height=1024)"
+```
+
 Ce dépôt est une marketplace (`ikoro-labs`) qui sert un seul plugin (`forge`) : `forge@ikoro-labs`.
 Ses noms sont préfixés : `/forge:qc` pour un skill, `forge:coder` pour un agent.
 
@@ -21,6 +31,7 @@ Ses noms sont préfixés : `/forge:qc` pour un skill, `forge:coder` pour un agen
 .claude-plugin/marketplace.json   la marketplace ikoro-labs, un plugin à source relative
 plugins/forge/                    le plugin
   .claude-plugin/plugin.json      son manifeste, seul endroit qui porte sa version
+  .claude-plugin/icon.png         son icône, l'export de docs/logo.svg
   agents/                         coder, qc-gate, qc-conf, staff-engineer, product-owner
   skills/                         qc, feature-build, feature-*, codebase-design, domain-modeling,
                                   improve-codebase-architecture, audit-jetons
@@ -36,6 +47,7 @@ CLAUDE.md, .claude/               l'usine de ce dépôt : son épingle, ses règ
 docs/agents/usine.md              sa configuration
 docs/architecture.excalidraw      le schéma du README, sa source éditable
 docs/architecture.svg             son export, que le README affiche
+docs/logo.svg                     le logo, sa source
 .github/                          la CI (tests sous Linux et Windows, validation) et le modèle de PR
 ```
 
