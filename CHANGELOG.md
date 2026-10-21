@@ -5,6 +5,114 @@ tag `forge--v<X.Y.Z>` sur ce dépôt ; sa version est celle de `plugins/forge/.c
 et nulle part ailleurs. Les tags `forge-v<X.Y.Z>` (un seul tiret) appartiennent à l'historique de
 Projet A et ne sont pas repris ici.
 
+## [1.4.0] - 2026-10-21
+
+Une seule session par dépôt (ikoro-labs/forge#4, en partie) : une session sait quelles autres
+sessions vivent sur son dépôt, le relais de la passation refuse d'en lancer une à côté, et la
+session de fond cède à la session interactive de l'humain. Le juge rend un verdict lisible pour une
+PR sans ticket ou sans critère livré (#24, #28, #29). Le plugin gagne une icône (#26) et une
+licence MIT (#31).
+
+### Hooks
+
+- `handoff_header.py sessions <repo>`, nouveau (#4) : lit le registre que Claude Code tient de ses
+  sessions (`~/.claude/sessions/*.json`), garde les processus vivants (sous Linux, `procStart` doit
+  être l'heure de départ du processus), les sessions dont le dossier se résout sur la même copie
+  principale (`.git` puis `commondir`, worktrees compris), et laisse de côté la session appelante
+  (`CLAUDE_PID`, le processus qui lance la commande, et leurs ancêtres). Il imprime
+  `pid kind name status cwd` par autre session et sort en 0 si aucune ne vit, en 6 sinon ; une
+  entrée illisible compte pour vivante. Sous Windows, `procStart` n'est pas comparé : un pid vivant
+  y vaut session vivante. Éprouvé sous Linux sur le registre réel d'un poste (Claude Code 2.1.306,
+  registre écrit par 2.1.305) ; sous Windows, seulement par la suite en CI.
+- `handoff_relay.py` refuse en code 6 quand une autre session du dépôt vit : il imprime les
+  sessions trouvées sur stderr, ne lance aucun successeur, ne touche pas au compteur du jour et ne
+  ferme pas la session appelante. Le code 5 passe avant lui, et un registre illisible vaut refus en
+  6. Le `README.md` gagne la table des codes du relais (0 à 6).
+- Le successeur d'une passation ne compte plus la session qui la lui passe : le relais, comme
+  `handoff_header.py set-successor`, écrit `auteur` (`CLAUDE_CODE_SESSION_ID`) à côté de
+  `successeur`, et `sessions` laisse de côté l'`auteur` d'une passation du projet qui nomme la
+  session appelante successeur, encore vivant pendant `CLAUDE_HANDOFF_CLOSE_DELAY`. `auteur`
+  n'entre pas dans les clés requises : une passation écrite avant 1.4.0 reste valide, mais n'exclut
+  personne.
+- La session de fond cède à la session interactive de l'humain. `handoff_header.py self` imprime
+  le type que le registre note pour la session appelante et son identifiant (`?` quand il manque).
+  `handoff_trigger.py yield <identifiant>`, lancé par la session de fond, imprime sa conduite : ne
+  plus rien lancer, laisser finir ses agents sous `CLAUDE_HANDOFF_DRAIN_MINUTES`, écrire sa
+  passation au même format qu'au seuil, la donner à la session interactive par `set-successor`,
+  lui envoyer le chemin par `SendMessage`, puis lancer `handoff_relay.py --yield [--force]
+  <passation>`. Celui-ci fait les contrôles d'agents du relais (code 5) et sa fermeture
+  (`claude stop` puis `claude rm` après `CLAUDE_HANDOFF_CLOSE_DELAY`), sans lancer de session ni
+  passer par le code 6 ; il refuse en code 1 une session interactive ou un `CLAUDE_PID` inconnu, en
+  code 2 une passation sans `successeur`. Sans argument, `handoff_trigger.py` reste le hook qui ne
+  bloque jamais. Seul le type `bg` cède ; un type inconnu fait s'arrêter la nouvelle session.
+  `self`, `yield`, l'exclusion de l'`auteur` et `--yield` n'ont tourné que dans la suite, sous
+  Linux, `--yield` contre un faux `claude` : qu'un vrai `claude rm` retire l'entrée du registre n'a
+  été vérifié sur aucun poste, et le parcours interactif entier n'a été éprouvé sur aucun système.
+  Les types du registre ont été lus sous Linux, sur trois entrées réelles toutes `bg`, et dans le
+  code de Claude Code 2.1.306, qui écrit `interactive` par défaut.
+- Le `README.md` énonce la règle dans une section **Règles communes** (une session par dépôt, le
+  premier geste, qui cède à qui), et décrit `--yield` dans **La passation drainée**.
+
+### Agents
+
+- `qc-conf` : une PR qui ne lie aucun ticket (une montée Dependabot, une montée d'épingle) a une
+  seule ligne `SPEC: none (<raison>)`, la raison disant contre quoi elle a été jugée, sans
+  s'accrocher à une PR ou un ticket qu'elle ne cite pas (#24). Une PR qui cite des tickets sans en
+  livrer aucun critère, comme une PR de publication, se juge contre les règles du projet qui
+  décrivent ce type de PR (clés `domain-rules`, `git-rules`) et rend
+  `SPEC: none (<règles>: <n> critères couverts, <n> partiels, <n> absents)` (#28). Aucun juge n'a
+  encore suivi ces consignes sur une vraie PR.
+
+### Skills
+
+- `/forge:qc`, `scripts/parse_output.py verdict` : il admet la ligne unique `SPEC: none (<raison>)`
+  et refuse une raison vide ou un `none` mêlé à des lignes `#<ticket>` (#24). Chacun de ses trois
+  refus sur `SPEC:` dit ce qui est faux dans la ligne et nomme les deux formes admises, pour que la
+  relance du juge suffise (#29). Éprouvé par la suite de tests, sous Linux ; aucun `/forge:qc` n'a
+  encore tourné avec ce parseur.
+- `/forge:feature-build`, étape 0, point 5 : « Un seul passage par feature » devient « Une seule
+  session par projet ». La session lance `handoff_header.py sessions .`, puis `ListAgents`. Une
+  session interactive face à des sessions toutes `bg` leur demande de céder (`yield`) et reprend
+  depuis leur passation (`successor-ok`, puis le sauvetage) ; dans tout autre cas, elle envoie sa
+  demande à la session en place par `SendMessage` et s'arrête ; une session de fond à qui l'on
+  demande de céder draine puis s'arrête (#4). Pas encore éprouvé dans un vrai passage.
+
+### Tests
+
+- `tests/test_handoff.py` : `sessions` sur un registre factice, `HOME` et `USERPROFILE` isolés (pid
+  vivant, pid mort, worktree, autre dépôt, entrée illisible, session appelante, et `procStart`
+  différent, sous Linux seul par `skipUnless`) ; le code 6 du relais ; `auteur`, l'exclusion du
+  prédécesseur et `CLAUDE_HANDOFF_DIR` ; `self`, `yield` et `--yield`, dont une troisième session
+  qui ne voit plus la session de fond qui a cédé.
+- `tests/test_parse_output.py` : les formes de `SPEC: none` et les deux formes nommées par chaque
+  refus.
+- `tests/test_plugin_content.py` : les consignes de `qc-conf`, le point 5 de `feature-build`, la
+  règle du `README.md`, aucun projet ni aucune personne nommés sous `plugins/forge/`, l'icône (un
+  PNG carré de 512 à 2048 px, de moins de 2 Mo) et la licence (`LICENSE` MIT à la racine,
+  `"license": "MIT"` dans `plugin.json`).
+- La suite compte 158 tests sous Linux, dont 3 sautés, propres à Windows. Elle tourne en CI sous
+  Linux et sous Windows.
+
+### Gestes humains
+
+- Aucun geste n'est obligatoire à la montée, en dehors des deux commandes de **Monter de version**.
+- Monter l'épingle hors d'un `/forge:feature-build` actif, comme le veut déjà **Monter de
+  version**, et plus largement hors d'une chaîne de relais en cours : une passation écrite par
+  1.3.0 n'a pas d'`auteur`, et son successeur en 1.4.0 s'arrêterait derrière son prédécesseur
+  encore vivant.
+- L'humain qui ouvre une session interactive sur un dépôt où une session de fond agit la voit
+  drainer puis s'arrêter, au plus `CLAUDE_HANDOFF_DRAIN_MINUTES` minutes. Pour la suivre sans
+  l'arrêter : `claude attach <id>`, l'identifiant étant celui que donne `claude agents`.
+
+### Restés dehors
+
+- Le hook `SessionStart` qui nomme, au démarrage d'une session, les autres sessions vivantes du
+  dépôt (PR #38, critère 5 de #4) : ACCEPT, en attente d'une fusion humaine, car il touche
+  `plugins/forge/hooks/hooks.json`, chemin protégé. #4 n'est donc livré qu'en partie : critères 1
+  à 4, 6 et 7.
+- Ne plus activer le cache de uv dans la CI (PR #34, #32) : ACCEPT, en attente d'une fusion
+  humaine, car elle touche `.github/`, chemin protégé. Rien n'en change pour un projet consommateur.
+
 ## [1.3.0] - 2026-10-21
 
 Ce que coûte chaque rôle : un niveau de modèle et un effort de réflexion par agent
