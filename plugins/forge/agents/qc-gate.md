@@ -43,9 +43,13 @@ Le numéro de PR, et le numéro du tour (1 ou 2).
    **Contextes obligatoires** : si la PR touche `.github/workflows/`, compare les noms de ses
    check-runs à la clé `required-contexts` et rends chaque nom attendu absent des check-runs (un
    nom obligatoire qui ne publie plus laisse la PR en « Expected »). Compare aussi cette clé à la
-   protection en place, lisible sans droit d'administration :
-   `gh api repos/<dépôt>/branches/<base> --jq '.protection.required_status_checks.contexts'` ;
-   rends chaque écart, dans un sens comme dans l'autre.
+   protection en place, lisible sans droit d'administration. Elle vient de deux sources, dont tu
+   prends l'union : les rulesets actifs sur la base,
+   `gh api repos/<dépôt>/rules/branches/<base> --jq '[.[] | select(.type == "required_status_checks") | .parameters.required_status_checks[].context]'`,
+   et l'ancienne protection de branche,
+   `gh api repos/<dépôt>/branches/<base> --jq '.protection.required_status_checks.contexts'`, qui
+   rend `[]` pour une branche que seul un ruleset protège. Rends chaque écart, dans un sens comme
+   dans l'autre.
 3. **CI.** `gh pr checks <n>`, ou sans GraphQL `gh api repos/<dépôt>/commits/<sha>/check-runs`.
    Un check en cours se rend `PENDING`, jamais `PASS`. Une étape qui sort toujours à 0 ne prouve
    rien par sa couleur : relève les annotations de son check-run

@@ -151,6 +151,17 @@ class CitedNames(unittest.TestCase):
                 self.assertTrue((support.PLUGIN / "agents" / f"{agent.removeprefix('forge:')}.md").is_file())
 
 
+class GateProbes(unittest.TestCase):
+    def test_the_gate_reads_the_protection_in_rulesets_and_in_branch_protection(self) -> None:
+        # A branch that only a ruleset protects has no contexts in its branch protection: the
+        # gate reading that source alone would report every required check as missing.
+        gate = (support.PLUGIN / "agents" / "qc-gate.md").read_text(encoding="utf-8")
+        self.assertIn("gh api repos/<dépôt>/rules/branches/<base>", gate)
+        self.assertIn(".parameters.required_status_checks[].context", gate)
+        self.assertIn("gh api repos/<dépôt>/branches/<base>", gate)
+        self.assertIn(".protection.required_status_checks.contexts", gate)
+
+
 class Manifests(unittest.TestCase):
     def test_the_version_lives_in_plugin_json_only(self) -> None:
         plugin = json.loads((support.PLUGIN / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
