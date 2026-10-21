@@ -6,5 +6,6 @@
     "name": "ikoro-labs"
   },
   "repository": "https://github.com/ikoro-labs/forge",
+  "license": "MIT",
   "keywords": ["usine", "agents", "revue", "features"]
 }

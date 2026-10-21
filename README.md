@@ -24,6 +24,10 @@ de la source :
 uv run --no-project --quiet --with cairosvg python -c "import cairosvg; cairosvg.svg2png(url='docs/logo.svg', write_to='plugins/forge/.claude-plugin/icon.png', output_width=1024, output_height=1024)"
 ```
 
+Elle demande la bibliothèque système cairo, que cairosvg charge à l'import : `libcairo2` sous
+Linux ; sous Windows, une installation qui la fournit (GTK, MSYS2). Sans elle, `import cairosvg`
+lève `OSError: no library called "cairo-2" was found`. La commande n'a été essayée que sous Linux.
+
 Ce dépôt est une marketplace (`ikoro-labs`) qui sert un seul plugin (`forge`) : `forge@ikoro-labs`.
 Ses noms sont préfixés : `/forge:qc` pour un skill, `forge:coder` pour un agent.
 

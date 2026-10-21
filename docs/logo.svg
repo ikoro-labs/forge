@@ -13,8 +13,10 @@
       <stop offset="0" stop-color="#FFD166"/>
       <stop offset="1" stop-color="#FF6B1A"/>
     </linearGradient>
-    <!-- En coordonnées de l'image : une ligne verticale n'a pas de largeur, et un dégradé
-         rapporté à sa boîte ne s'y peindrait pas. -->
+    <!-- Dans le repère de l'élément qui emploie le dégradé (userSpaceOnUse) : celui des
+         étincelles, après les translate de leurs groupes, où elles vont de y=200 à y=372.
+         Une ligne verticale n'a pas de largeur, et un dégradé rapporté à sa boîte ne s'y
+         peindrait pas. -->
     <linearGradient id="etincelle" gradientUnits="userSpaceOnUse" x1="0" y1="200" x2="0" y2="380">
       <stop offset="0" stop-color="#FFD166"/>
       <stop offset="1" stop-color="#FF6B1A"/>

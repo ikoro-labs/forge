@@ -221,6 +221,18 @@ class Manifests(unittest.TestCase):
         self.assertLess(len(icon), 2 * 1024 * 1024)
         self.assertTrue((support.REPO_ROOT / "docs" / "logo.svg").is_file())
 
+    def test_the_repository_root_holds_the_mit_licence_the_manifest_names(self) -> None:
+        # The plugin directory looks for the licence at the root of the git repository, not in
+        # plugins/forge/; plugin.json names it by its SPDX id.
+        licence = support.REPO_ROOT / "LICENSE"
+        self.assertTrue(licence.is_file(), "no LICENSE at the repository root")
+        text = licence.read_text(encoding="utf-8")
+        self.assertTrue(text.startswith("MIT License\n"), text[:40])
+        self.assertIn("Copyright (c) 2026 ikoro-labs", text)
+        self.assertIn("THE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND", text)
+        plugin = json.loads((support.PLUGIN / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
+        self.assertEqual(plugin.get("license"), "MIT")
+
 
 if __name__ == "__main__":
     unittest.main()
