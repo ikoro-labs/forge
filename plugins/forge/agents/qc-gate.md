@@ -56,12 +56,15 @@ Le numéro de PR, et le numéro du tour (1 ou 2).
    pas la PR. Installe d'abord cette copie, en entier, par chaque commande de la clé `install` :
    un environnement incomplet donne des échecs qui ne disent rien de la PR. Le rejeu ne modifie
    rien hors de sa copie, configuration git partagée comprise. Rends les lignes finales de chaque
-   commande, sauts compris.
+   commande, sauts compris, lus dans le journal d'une sortie raccourcie (sonde 5).
 5. **Tests sautés.** Les sauts eux-mêmes, pas seulement leur nombre : un saut ajouté pendant qu'un
    autre disparaît laisse le compte égal. Relève, job par job, les tests sautés du dernier run de
    la PR, et ceux de la base en rejouant les suites touchées sur une copie de la base. Rends la
    différence des deux ensembles ; le résumé des compteurs sert de contrôle croisé. Un rejeu
-   impossible s'écrit `NOT RUN` avec sa commande, jamais « aucun ».
+   impossible s'écrit `NOT RUN` avec sa commande, jamais « aucun ». Une sortie qui commence par
+   `[forge kept the last <n> of <total> lines; full output in <journal>]` a été raccourcie par un
+   hook : les sauts du milieu n'y sont plus. Relève-les dans le journal qu'elle nomme
+   (`grep -i skip <journal>`), jamais dans les seules lignes reçues.
 6. **Listes de référence.** `git diff origin/<base>...<sha de la tête> -- <chemin>` pour chaque
    chemin de la clé `baselines`, rendu verbatim : une ligne ajoutée ou augmentée est à juger par
    `forge:qc-conf`.

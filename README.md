@@ -207,6 +207,8 @@ lancée contient l'une de ses valeurs. Sans la clé, il ne fait rien.
   la commande entière : une suite qui échoue derrière un tube (`| tee log`, `| tail`) ou suivie
   d'une autre commande (`; echo fini`) sort à 0, et sa sortie est raccourcie comme celle d'une
   suite qui passe. Le début de ses échecs n'est alors que dans le journal.
+- `forge:qc-gate` reconnaît une sortie raccourcie à sa première ligne et relève les tests sautés
+  dans le journal qu'elle nomme : ils sont au milieu de la sortie, que l'agent ne reçoit plus.
 - Le hook observe : une entrée illisible ou un journal impossible à écrire le fait sortir à 0, la
   sortie d'origine intacte.
 

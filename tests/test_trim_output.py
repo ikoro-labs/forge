@@ -156,3 +156,15 @@ class Wiring(unittest.TestCase):
 if __name__ == "__main__":
     unittest.main()
 
+
+class Gate(unittest.TestCase):
+    def test_the_gate_reads_the_skips_in_the_journal_of_a_trimmed_output(self) -> None:
+        response = {"stdout": lines(MAX_LINES * 3, "test"), "stderr": ""}
+        trimmed = trimmed_output(response, Path("JOURNAL"))
+        assert trimmed is not None
+        notice = str(trimmed["stdout"]).splitlines()[0]
+        prefix = notice[: notice.index(" of ")].rsplit(" ", 1)[0]
+        gate = (support.PLUGIN / "agents" / "qc-gate.md").read_text(encoding="utf-8")
+        skips = gate[gate.index("**Tests sautés.**"):gate.index("**Listes de référence.**")]
+        self.assertIn(prefix, skips)
+        self.assertIn("journal", skips)
