@@ -41,6 +41,12 @@ manifeste de la marketplace, et les gardes qui tiennent les agents eux-mêmes.
 - `protected-path` : `plugins/forge/hooks/hooks.json`
 - `protected-path` : `plugins/forge/hooks/guard_`
 
+## Hooks
+
+La suite de tests de ce dépôt, dont la sortie se raccourcit quand elle passe.
+
+- `trimmed-command` : `python -m unittest discover -s tests`
+
 ## Clés absentes
 
 - `decision-matrix` : aucune matrice encore ; `forge:staff-engineer` et `forge:product-owner`

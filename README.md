@@ -17,8 +17,9 @@ plugins/forge/                    le plugin
   agents/                         coder, qc-gate, qc-conf, staff-engineer, product-owner
   skills/                         qc, feature-build, feature-*, codebase-design, domain-modeling,
                                   improve-codebase-architecture, audit-jetons
-  hooks/                          hooks.json, les gardes et la passation drainée, en Python de la
-                                  bibliothèque standard, sous Linux comme sous Windows
+  hooks/                          hooks.json, les gardes, les sorties raccourcies et la passation
+                                  drainée, en Python de la bibliothèque standard, sous Linux
+                                  comme sous Windows
   scripts/parse_output.py         lecture du RESULT du coder et du verdict du juge
   scripts/token_audit.py          les jetons de chaque rôle, lus dans les journaux de Claude Code
   templates/                      usine.md, adr.md, features/
@@ -188,12 +189,41 @@ La passation ne vaut que dans les projets où le plugin est activé ; une copie 
 `~/.claude/hooks` couvrait tous les projets du poste. Tant que `~/.claude/settings.json` déclare
 encore une telle copie, le hook du plugin se tait.
 
+## Les sorties de tests raccourcies
+
+Une suite de tests qui passe rend des centaines de lignes que l'agent relit et paie en jetons, alors
+que seul le résumé lui sert. Le hook `trim_output.py` (`PostToolUse`, sur `Bash`) raccourcit la
+sortie d'une commande que nomme la clé `trimmed-command` de `docs/agents/usine.md` : la commande
+lancée contient l'une de ses valeurs. Sans la clé, il ne fait rien.
+
+- Une commande nommée qui réussit et rend plus de 60 lignes (les deux flux ensemble) : sa sortie
+  complète est écrite dans un journal, `~/.claude/hooks/state/trimmed/<session>-<instant>.log`, et
+  l'agent ne reçoit que les 20 dernières lignes de chaque flux plus long que cela, précédées du
+  chemin du journal. Le dossier est commun à toutes les sessions et à tous les projets du poste ;
+  les 20 journaux les plus récents y sont gardés, rangés par l'instant inscrit dans leur nom, et
+  celui qu'une session vient d'écrire n'est jamais du nombre des supprimés.
+- Une commande qui échoue n'est jamais raccourcie : Claude Code envoie alors `PostToolUseFailure`
+  à la place de `PostToolUse`, et l'agent voit la sortie entière. Seul compte le code de sortie de
+  la commande entière : une suite qui échoue derrière un tube (`| tee log`, `| tail`) ou suivie
+  d'une autre commande (`; echo fini`) sort à 0, et sa sortie est raccourcie comme celle d'une
+  suite qui passe. Le début de ses échecs n'est alors que dans le journal.
+- `forge:qc-gate` reconnaît une sortie raccourcie à sa première ligne et relève les tests sautés
+  dans le journal qu'elle nomme : ils sont au milieu de la sortie, que l'agent ne reçoit plus.
+- Le hook observe : une entrée illisible ou un journal impossible à écrire le fait sortir à 0, la
+  sortie d'origine intacte.
+
+Éprouvé avec Claude Code 2.1.305 sous Linux, dans une session `claude -p --plugin-dir` lancée
+depuis un projet jetable : 200 lignes d'une commande nommée qui réussit arrivent à l'agent en 21
+lignes, et les mêmes 200 lignes d'une commande qui échoue arrivent entières. Pas encore essayé sous
+Windows, ni dans une session interactive. Une commande lancée par l'outil `PowerShell` n'est pas
+raccourcie.
+
 ## Configurer : `docs/agents/usine.md`
 
 Le seul fichier où un projet décrit son usine au plugin : qui accepte, la matrice de décision,
 l'arbitre du métier, les commandes d'installation et de rejeu de la CI, les checks obligatoires, la
-grille de revue, les chemins protégés, les tolérances des hooks. Le gabarit,
-`plugins/forge/templates/usine.md`, documente chaque clé.
+grille de revue, les chemins protégés, les tolérances des hooks, les commandes dont la sortie se
+raccourcit. Le gabarit, `plugins/forge/templates/usine.md`, documente chaque clé.
 
 Une clé absente ne prend jamais de valeur par défaut : l'étape qui la lit se rend « sans objet (clé
 `<nom>` absente) », jamais `PASS`. La revue d'un projet vaut donc ce que sa configuration déclare :
