@@ -58,7 +58,7 @@ Ce qui est entré dans chaque version, et ce qui en est resté dehors avec sa ra
          "source": {
            "source": "github",
            "repo": "ikoro-labs/forge",
-           "ref": "forge--v1.2.0"
+           "ref": "forge--v1.3.0"
          }
        }
      }
@@ -75,7 +75,7 @@ Ce qui est entré dans chaque version, et ce qui en est resté dehors avec sa ra
    l'installer. Depuis la racine du projet, redéclarer d'abord son épingle, puis installer :
 
    ```sh
-   claude plugin marketplace add ikoro-labs/forge@forge--v1.2.0 --scope project
+   claude plugin marketplace add ikoro-labs/forge@forge--v1.3.0 --scope project
    claude plugin install forge@ikoro-labs --scope project
    ```
 
@@ -250,10 +250,12 @@ modèle choisi par `/model`, souvent le plus gros poste de consommation.
 comme du texte produit. Chaque agent fixe donc aussi son `effort` : `low` pour `forge:qc-gate`,
 qui n'a rien à peser, `high` pour `forge:staff-engineer`, qui tranche les questions techniques
 difficiles, `medium` pour les autres. `CLAUDE_CODE_EFFORT_LEVEL`, posé sur un poste, l'emporte sur
-ce réglage. `forge:qc-gate` démarre aussi sans les `CLAUDE.md` du projet (`omitClaudeMd`) : il lit
-ses portes dans `docs/agents/usine.md`. Ces deux champs sont ceux que la documentation de Claude
-Code donne pour un agent ; leur gain n'est pas mesuré, et ils n'ont pas encore été essayés sur un
-vrai poste.
+ce réglage. `forge:qc-gate` démarre aussi sans `CLAUDE.md` (`omitClaudeMd`, Claude Code 2.1.271 et
+plus) : il lit ses portes dans `docs/agents/usine.md`. Le champ retire ceux du projet, mais aussi le
+`~/.claude/CLAUDE.md` du poste et le `CLAUDE.local.md` ; seuls les fichiers de politique gérée
+restent. Une consigne du poste dont `forge:qc-gate` aurait besoin (compte `gh`, proxy) ne lui
+parvient donc pas. Ces deux champs sont ceux que la documentation de Claude Code donne pour un
+agent ; leur gain n'est pas mesuré, et ils n'ont pas encore été essayés sur un vrai poste.
 
 **Brancher un autre fournisseur.** Les quatre niveaux (`fable`, `opus`, `sonnet`, `haiku`) sont
 des alias que chaque poste fait pointer où il veut, sans toucher au plugin :

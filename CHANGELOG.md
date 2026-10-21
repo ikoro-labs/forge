@@ -5,6 +5,103 @@ tag `forge--v<X.Y.Z>` sur ce dépôt ; sa version est celle de `plugins/forge/.c
 et nulle part ailleurs. Les tags `forge-v<X.Y.Z>` (un seul tiret) appartiennent à l'historique de
 Projet A et ne sont pas repris ici.
 
+## [1.3.0] - 2026-10-21
+
+Ce que coûte chaque rôle : un niveau de modèle et un effort de réflexion par agent
+(ikoro-labs/forge#10, #12), un audit des jetons pour en mesurer l'effet (#14), et la sortie d'une
+suite de tests qui passe raccourcie (#19). Avec trois correctifs : la fermeture d'une session
+Windows depuis un job (#3), le dossier de la passation depuis un worktree, et la protection d'une
+branche lue dans ses rulesets (#17).
+
+### Agents
+
+- Chaque agent fixe dans son front matter un niveau de modèle et un effort de réflexion, le moins
+  cher qui fait le travail : `qc-gate` en `haiku`, effort `low` ; `coder` en `sonnet`, effort
+  `medium` ; `qc-conf` et `product-owner` en `opus`, effort `medium` ; `staff-engineer` en `opus`,
+  effort `high`. En 1.2.0, `qc-gate`, `coder` et `qc-conf` prenaient le modèle de la session,
+  `staff-engineer` et `product-owner` le niveau `fable`. Un niveau est un alias : chaque poste le
+  fait pointer vers le modèle et le fournisseur de son choix (`ANTHROPIC_DEFAULT_<NIVEAU>_MODEL`,
+  `ANTHROPIC_BASE_URL` vers une passerelle), sans toucher au plugin. `CLAUDE_CODE_EFFORT_LEVEL`,
+  posé sur un poste, l'emporte sur l'effort. Le gain n'est pas mesuré, et aucune usine servie par
+  un autre fournisseur n'a été essayée.
+- `qc-gate` démarre sans `CLAUDE.md` (`omitClaudeMd: true`, Claude Code 2.1.271 et plus) et lit ses
+  portes dans `docs/agents/usine.md` par Bash. Le champ retire aussi le `~/.claude/CLAUDE.md` du
+  poste et le `CLAUDE.local.md`.
+- `qc-gate`, sonde « Contextes obligatoires » : elle prend l'union des checks exigés par les
+  rulesets actifs de la base (`rules/branches/<base>`) et par l'ancienne protection de branche.
+  Elle ne lisait que la seconde, qui rend `contexts: []` pour une branche que seul un ruleset
+  protège : chaque revue sur une telle base rendait un `FAIL` à tort. Les deux lectures ont été
+  lancées à la main sur ce dépôt ; la sonde modifiée n'a pas encore tourné dans une vraie revue.
+- `qc-gate`, sondes des tests sautés : sur une sortie raccourcie par `trim_output.py`, elle relève
+  les sauts dans le journal que nomme la première ligne, puisque l'agent ne reçoit plus le milieu
+  de la sortie.
+
+### Hooks
+
+- `trim_output.py` (`PostToolUse`, sur `Bash`), nouveau : pour une commande que nomme la clé
+  `trimmed-command` de `docs/agents/usine.md`, une sortie réussie de plus de 60 lignes est écrite
+  en entier dans `~/.claude/hooks/state/trimmed/` (les 20 journaux les plus récents gardés, jamais
+  celui qui vient d'être écrit), et l'agent n'en reçoit que les 20 dernières lignes de chaque flux,
+  avec le chemin du journal. Sans la clé, rien ne change. Une commande en échec arrive entière, à
+  condition que son code de sortie le dise : derrière un tube ou suivie de `; echo fini`, une suite
+  en échec sort à 0 et se raccourcit. Le hook observe : toute erreur sort à 0, la sortie d'origine
+  intacte. Éprouvé avec Claude Code 2.1.305 sous Linux, dans une session `claude -p --plugin-dir` ;
+  pas encore sous Windows ni dans une session interactive. Une commande lancée par l'outil
+  `PowerShell` n'est pas raccourcie.
+- `handoff_trigger.py` : la passation se range sous le nom de la copie principale du dépôt, lu dans
+  le fichier `.git` du worktree et son `commondir`, sans lancer git. Depuis un worktree, elle se
+  rangeait sous le nom du worktree. Un sous-module garde son propre nom. Les passations déjà mal
+  rangées restent où elles sont.
+- `handoff_relay.py` : sous Windows, une commande que le relais lance et attend reste dans le job de
+  la session ; seul le lancement du successeur demande encore à en sortir, avec son repli. Dans un
+  job qui interdit d'en sortir (celui d'un runner GitHub, ou celui d'une session dont le lancement
+  a dû se replier), `CreateProcess` levait `OSError` : `--exit-console` mourait au `taskkill` d'une
+  session sourde à `/exit`, et `--close` sautait chaque commande de son plan sans fermer la
+  session. Éprouvé sur les runners Windows de GitHub seulement.
+
+### Skills
+
+- `/forge:audit-jetons` et son script `scripts/token_audit.py`, nouveaux : les jetons dépensés par
+  chaque rôle sur un projet, par modèle et par effort, lus dans les journaux que Claude Code écrit
+  déjà (`~/.claude/projects/`, ou `CLAUDE_CONFIG_DIR`), worktrees compris. `--depuis` et `--jusqua`
+  bornent la période, `--coupure` compare un avant et un après en jetons par lancement d'agent.
+  Aucun prix. Claude Code note la plupart des réponses de sous-agents avant leur fin : leur sortie
+  est sous-comptée, et le rapport les compte dans une colonne « Sortie partielle ». Le format des
+  journaux n'est pas documenté ; il a été lu dans Claude Code 2.1.302 à 2.1.305. Seul le script a
+  tourné sur un vrai poste, sous Linux ; le skill n'a été lancé dans aucune session.
+
+### Tests
+
+- `tests/test_plugin_content.py` : le niveau et l'effort de chaque agent, `omitClaudeMd` sur
+  `qc-gate` seul, et la sonde de protection qui lit les rulesets.
+- `tests/test_trim_output.py` (12 tests, dont la lecture du journal d'une sortie raccourcie par
+  `qc-gate`) et `tests/test_token_audit.py` (16 tests), sur des sorties et des journaux factices,
+  `HOME` et `USERPROFILE` isolés.
+- `tests/test_handoff.py` : la passation d'une session lancée dans un worktree, rangée sous le
+  projet ; sous Windows, `CloseInAJob`, un plan de fermeture qui s'exécute dans un job sans
+  `JOB_OBJECT_LIMIT_BREAKAWAY_OK`.
+- `tests/test_guard_readonly.py` : `guard_readonly` laisse passer la lecture des rulesets.
+- La suite tourne en CI sous Linux et sous Windows, avec `claude plugin validate` sur la
+  marketplace et le plugin (`.github/workflows/tests.yml`).
+
+### Gestes humains
+
+- Aucun geste n'est obligatoire à la montée, en dehors des deux commandes de **Monter de version**.
+- Un projet qui veut raccourcir la sortie de sa suite de tests ajoute la clé `trimmed-command` à
+  son `docs/agents/usine.md` (gabarit `templates/usine.md`).
+- Un poste servi par une passerelle ou un autre fournisseur fait pointer chaque niveau
+  (`ANTHROPIC_DEFAULT_HAIKU_MODEL`, `ANTHROPIC_DEFAULT_SONNET_MODEL`, `ANTHROPIC_DEFAULT_OPUS_MODEL`)
+  vers un modèle qu'il sert.
+
+### Restés dehors
+
+- Le cache d'une heure pour le coder (`experimental.cacheTtl: 1h` dans son front matter) : une
+  écriture dans ce cache coûte 2 fois le prix d'entrée, contre 1,25 fois pour celui de 5 minutes,
+  et aucun journal de ce poste ne montre un lancement de `forge:coder` qui en prouverait le gain.
+  Abandonné.
+- Le hook de routage des modèles (PR #6) : fermé, remplacé par le niveau de chaque agent (#11).
+- Une seule session par projet (#4) : ouvert, pas commencé.
+
 ## [1.2.0] - 2026-10-20
 
 La passation drainée sous Windows (ikoro-labs/forge#3) : elle ne tournait que sous Linux, parce que
