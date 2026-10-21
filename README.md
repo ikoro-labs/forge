@@ -199,9 +199,13 @@ lancée contient l'une de ses valeurs. Sans la clé, il ne fait rien.
 - Une commande nommée qui réussit et rend plus de 60 lignes (les deux flux ensemble) : sa sortie
   complète est écrite dans un journal, `~/.claude/hooks/state/trimmed/<session>-<instant>.log`, et
   l'agent ne reçoit que les 20 dernières lignes de chaque flux plus long que cela, précédées du
-  chemin du journal. Les 20 journaux les plus récents sont gardés.
+  chemin du journal. Le dossier est commun à toutes les sessions et à tous les projets du poste ;
+  les 20 journaux les plus récents y sont gardés.
 - Une commande qui échoue n'est jamais raccourcie : Claude Code envoie alors `PostToolUseFailure`
-  à la place de `PostToolUse`, et l'agent voit la sortie entière.
+  à la place de `PostToolUse`, et l'agent voit la sortie entière. Seul compte le code de sortie de
+  la commande entière : une suite qui échoue derrière un tube (`| tee log`, `| tail`) ou suivie
+  d'une autre commande (`; echo fini`) sort à 0, et sa sortie est raccourcie comme celle d'une
+  suite qui passe. Le début de ses échecs n'est alors que dans le journal.
 - Le hook observe : une entrée illisible ou un journal impossible à écrire le fait sortir à 0, la
   sortie d'origine intacte.
 

@@ -8,7 +8,9 @@ its summary matters. For a Bash command holding a value of the `trimmed-command`
 the key, nothing is trimmed.
 
 A command that fails is never trimmed: Claude Code sends `PostToolUseFailure` for it, without its
-output, in place of `PostToolUse`. This hook only observes: whatever goes wrong, it exits 0 and
+output, in place of `PostToolUse`. Only the exit code of the whole command counts: a suite that
+fails behind a pipe (`| tee log`) or followed by another command (`; echo done`) exits 0 and is
+trimmed like one that passes. This hook only observes: whatever goes wrong, it exits 0 and
 leaves the output as it was.
 """
 

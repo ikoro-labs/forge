@@ -144,7 +144,9 @@ fichier écrit par un agent n'en garde.
 Les commandes dont la sortie se raccourcit quand elles réussissent (la suite de tests, en général) :
 une commande lancée qui contient l'une de ces valeurs, et rend plus de 60 lignes, n'en montre à
 l'agent que la fin, la sortie complète gardée dans un journal. Une commande qui échoue reste
-entière. Sans la clé, aucune sortie n'est raccourcie. Une par ligne.
+entière, à condition que son code de sortie le dise : derrière un tube (`| tee log`) ou suivie
+d'une autre commande (`; echo fini`), une suite en échec sort à 0 et se raccourcit. Sans la clé,
+aucune sortie n'est raccourcie. Une par ligne.
 
 - `trimmed-command` : `<uv run pytest>`
 
