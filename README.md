@@ -7,6 +7,13 @@ limite de contexte. Les projets (Projet A, Projet B) le consomment à
 une version épinglée et gardent dans leur dépôt tout ce qui leur est propre. La décision est
 l'ADR-0129 de Projet B.
 
+![Architecture de forge : le projet et son épingle, la chaîne des features, la boucle d'un ticket jusqu'à la fusion, les hooks](docs/architecture.svg)
+
+Le schéma montre ce que le plugin monte dans un projet : la configuration et l'épingle, la chaîne
+des features, la boucle d'un ticket du coder à la fusion, et les hooks qui gardent chaque session.
+Sa source est `docs/architecture.excalidraw`, à ouvrir dans Excalidraw ; `docs/architecture.svg`
+en est l'export, refait à chaque changement de la source.
+
 Ce dépôt est une marketplace (`ikoro-labs`) qui sert un seul plugin (`forge`) : `forge@ikoro-labs`.
 Ses noms sont préfixés : `/forge:qc` pour un skill, `forge:coder` pour un agent.
 
@@ -27,6 +34,8 @@ tests/                            tests des hooks, du parseur et du contenu
 CHANGELOG.md                      une entrée par version publiée
 CLAUDE.md, .claude/               l'usine de ce dépôt : son épingle, ses règles
 docs/agents/usine.md              sa configuration
+docs/architecture.excalidraw      le schéma du README, sa source éditable
+docs/architecture.svg             son export, que le README affiche
 .github/                          la CI (tests sous Linux et Windows, validation) et le modèle de PR
 ```
 
