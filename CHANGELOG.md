@@ -69,8 +69,9 @@ licence MIT (#31).
 - `/forge:qc`, `scripts/parse_output.py verdict` : il admet la ligne unique `SPEC: none (<raison>)`
   et refuse une raison vide ou un `none` mêlé à des lignes `#<ticket>` (#24). Chacun de ses trois
   refus sur `SPEC:` dit ce qui est faux dans la ligne et nomme les deux formes admises, pour que la
-  relance du juge suffise (#29). Éprouvé par la suite de tests, sous Linux ; aucun `/forge:qc` n'a
-  encore tourné avec ce parseur.
+  relance du juge suffise (#29). Éprouvé par la suite de tests, sous Linux et dans la CI Windows.
+  Sous Linux, il a lu les verdicts `SPEC: none` des revues des PR #39 à #41, lancé à la main depuis
+  `main` : l'usine de ce dépôt chargeait encore un parseur qui refuse cette forme.
 - `/forge:feature-build`, étape 0, point 5 : « Un seul passage par feature » devient « Une seule
   session par projet ». La session lance `handoff_header.py sessions .`, puis `ListAgents`. Une
   session interactive face à des sessions toutes `bg` leur demande de céder (`yield`) et reprend
