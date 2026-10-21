@@ -72,6 +72,28 @@ class Verdict(unittest.TestCase):
         )
         self.assertEqual(parse_verdict(text)["FINDINGS"], [])
 
+    def test_a_verdict_without_ticket_says_none_and_why(self) -> None:
+        text = VERDICT.replace(
+            "SPEC: #12 A1 met\nSPEC: #12 A2 missing",
+            "SPEC: none (a Dependabot bump,\n  judged against its changelog)",
+        )
+        self.assertEqual(
+            parse_verdict(text)["SPEC"], ["none (a Dependabot bump,\njudged against its changelog)"]
+        )
+
+    def test_a_verdict_without_ticket_needs_its_reason_and_stands_alone(self) -> None:
+        for spec, words in [
+            ("SPEC: none", "`none (<reason>)`"),
+            ("SPEC: none ( )", "`none (<reason>)`"),
+            ("SPEC: no ticket", "or the one line reads `none (<reason>)`"),
+            ("SPEC: none (a pin bump)\nSPEC: #12 A1 met", "stands alone"),
+        ]:
+            with self.subTest(spec=spec):
+                text = VERDICT.replace("SPEC: #12 A1 met\nSPEC: #12 A2 missing", spec)
+                with self.assertRaises(OutputError) as raised:
+                    parse_verdict(text)
+                self.assertIn(words, str(raised.exception))
+
     def test_the_verdict_and_its_findings_must_agree(self) -> None:
         for text, words in [
             (VERDICT.replace("- [BLOCKER]", "- [MINOR]"), "only a blocker rejects"),

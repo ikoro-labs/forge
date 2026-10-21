@@ -19,6 +19,7 @@ KEY = re.compile(r"^([A-Z][A-Z_ ]*[A-Z]):[ \t]?(.*)$")
 FENCE = re.compile(r"^```[\w-]*\s*$")
 FINDING = re.compile(r"^-\s*\[(BLOCKER|MINOR|NOTE)\]\s*(.+)$")
 HEAD = re.compile(r"^[0-9a-f]{7,40}$")
+NO_TICKET = re.compile(r"^none \(\s*\S.*\)$", re.DOTALL)
 
 RESULT_KEYS = {
     "PR": ("PR", "TICKET", "CRITERIA", "NOTES"),
@@ -97,9 +98,22 @@ def parse_verdict(text: str) -> dict[str, object]:
         raise OutputError(f"`ROUND: {round_}`: the value must be 1 or 2")
     if not HEAD.match(head):
         raise OutputError(f"`HEAD: {head}`: it must be the hexadecimal SHA of the judged head")
-    for spec in fields["SPEC"]:
-        if not re.match(r"^#\d+\b", spec):
-            raise OutputError(f"`SPEC: {spec}`: each line starts with `#<ticket>`")
+    specs = fields["SPEC"]
+    # A PR with no ticket (a Dependabot bump, a pin bump) says so, and against what it was judged.
+    if any(re.match(r"^none\b", spec) for spec in specs):
+        if len(specs) > 1:
+            raise OutputError("`SPEC: none` stands alone: a verdict that judges a ticket has none")
+        if not NO_TICKET.match(specs[0]):
+            raise OutputError(
+                f"`SPEC: {specs[0]}`: a verdict with no ticket reads `none (<reason>)`, "
+                "the reason saying what the PR was judged against"
+            )
+    for spec in specs:
+        if not re.match(r"^(#\d+\b|none\b)", spec):
+            raise OutputError(
+                f"`SPEC: {spec}`: each line starts with `#<ticket>`, "
+                "or the one line reads `none (<reason>)` when the PR has no ticket"
+            )
     findings: list[dict[str, str]] = []
     for line in fields["FINDINGS"][0].splitlines():
         line = line.strip()

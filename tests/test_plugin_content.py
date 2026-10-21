@@ -162,6 +162,14 @@ class GateProbes(unittest.TestCase):
         self.assertIn(".protection.required_status_checks.contexts", gate)
 
 
+class JudgeOutput(unittest.TestCase):
+    def test_the_judge_knows_the_spec_line_of_a_pr_without_ticket(self) -> None:
+        # parse_output.py refuses any other SPEC line than `#<ticket>` or this one: a judge that
+        # does not know it would hang a ticketless PR on a ticket it does not cite.
+        judge = (support.PLUGIN / "agents" / "qc-conf.md").read_text(encoding="utf-8")
+        self.assertIn("`SPEC: none (<raison>)`", judge)
+
+
 class Manifests(unittest.TestCase):
     def test_the_version_lives_in_plugin_json_only(self) -> None:
         plugin = json.loads((support.PLUGIN / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))

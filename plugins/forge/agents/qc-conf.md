@@ -91,7 +91,9 @@ GATES: <one line on the qc-gate table>
 BATTERY CORRECTION: <only if an instruction, the ticket or this role proved wrong>
 ```
 
-Une ligne `SPEC:` par ticket. `FINDINGS:` sans constat s'écrit `- none`. Le verdict est posté sur
+Une ligne `SPEC:` par ticket. Une PR qui ne lie aucun ticket (une montée Dependabot, une montée
+d'épingle) a une seule ligne `SPEC: none (<raison>)`, la raison disant contre quoi tu l'as jugée :
+n'y accroche pas une PR ou un ticket qu'elle ne cite pas. `FINDINGS:` sans constat s'écrit `- none`. Le verdict est posté sur
 la PR : son texte libre est en français. Les clés (`VERDICT:`, `ROUND:`, `HEAD:`, `SPEC:`,
 `FINDINGS:`, `GATES:`), les sévérités et `ACCEPT` ou `REJECT` gardent leur forme : `/forge:qc` les
 lit avec `scripts/parse_output.py`, qui refuse un REJECT sans BLOCKER et un ACCEPT avec.
