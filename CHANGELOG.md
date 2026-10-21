@@ -46,8 +46,9 @@ licence MIT (#31).
   code 2 une passation sans `successeur`. Sans argument, `handoff_trigger.py` reste le hook qui ne
   bloque jamais. Seul le type `bg` cède ; un type inconnu fait s'arrêter la nouvelle session.
   `self`, `yield`, l'exclusion de l'`auteur` et `--yield` n'ont tourné que dans la suite, sous
-  Linux, `--yield` contre un faux `claude` : qu'un vrai `claude rm` retire l'entrée du registre n'a
-  été vérifié sur aucun poste, et le parcours interactif entier n'a été éprouvé sur aucun système.
+  Linux et dans la CI Windows, `--yield` contre un faux `claude` : qu'un vrai `claude rm` retire
+  l'entrée du registre n'a été vérifié sur aucun poste, et le parcours interactif entier n'a été
+  éprouvé sur aucun système.
   Les types du registre ont été lus sous Linux, sur trois entrées réelles toutes `bg`, et dans le
   code de Claude Code 2.1.306, qui écrit `interactive` par défaut.
 - Le `README.md` énonce la règle dans une section **Règles communes** (une session par dépôt, le

@@ -83,7 +83,7 @@ Ce qui est entré dans chaque version, et ce qui en est resté dehors avec sa ra
          "source": {
            "source": "github",
            "repo": "ikoro-labs/forge",
-           "ref": "forge--v1.3.0"
+           "ref": "forge--v1.4.0"
          }
        }
      }
@@ -100,7 +100,7 @@ Ce qui est entré dans chaque version, et ce qui en est resté dehors avec sa ra
    l'installer. Depuis la racine du projet, redéclarer d'abord son épingle, puis installer :
 
    ```sh
-   claude plugin marketplace add ikoro-labs/forge@forge--v1.3.0 --scope project
+   claude plugin marketplace add ikoro-labs/forge@forge--v1.4.0 --scope project
    claude plugin install forge@ikoro-labs --scope project
    ```
 
@@ -214,9 +214,9 @@ et la règle entière (premier geste, `SendMessage`, drainage de la session de f
 écrites par Claude Code 2.1.305, toutes `"kind": "bg"` (des relais), et dans le code de 2.1.306,
 qui écrit `interactive` par défaut ; aucune entrée interactive vivante n'a été relue cette fois.
 `self`, `yield` et l'exclusion de l'`auteur` d'une passation n'ont tourné que dans la suite de
-tests, sous Linux. La fermeture par `--yield` n'y a tourné que contre un faux `claude`, dont le
-`rm` retire l'entrée du registre ; qu'un vrai `claude rm` la retire n'a été vérifié sur aucun
-poste. Sous Windows, rien n'a été essayé hors de la CI ; `procStart` n'y est pas
+tests, sous Linux et dans la CI Windows. La fermeture par `--yield` n'y a tourné que contre un
+faux `claude`, dont le `rm` retire l'entrée du registre ; qu'un vrai `claude rm` la retire n'a été
+vérifié sur aucun poste. Sous Windows, rien n'a été essayé hors de la CI ; `procStart` n'y est pas
 comparé, et un pid vivant y vaut session vivante, sans garde contre la reprise d'un pid.
 
 ## La passation drainée
