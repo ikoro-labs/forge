@@ -10,6 +10,8 @@ relative POSIX path, case included: `**/` (any directories, or none), `*` and `?
 `{a,b}` (alternatives, not nested); anything else is literal. The command is split like a POSIX
 shell would, run without a shell from the project root, with the file's absolute path as its last
 argument. Each command has `COMMAND_TIMEOUT` seconds, all of them together `TOTAL_TIMEOUT`.
+Each runs in its own process group, killed whole at the delay. On Windows a `.cmd` or `.bat`
+formatter goes through cmd.exe, so a path with a cmd.exe metacharacter is refused, not quoted.
 Without the key nothing is formatted and no formatter is guessed.
 
 The em dash allowances are the project's, in the file the `em-dash-allowances` key names, one
@@ -143,8 +145,10 @@ def run_formatter(command: str, path: Path, root: Path, timeout: float) -> str |
                 return f"timed out after {max(1, math.ceil(timeout))}s"
             finally:
                 group.close()
-    except OSError:
+    except FileNotFoundError:
         return "command not found"
+    except OSError as error:
+        return f"could not start: {error.strerror or type(error).__name__}"
     return None if process.returncode == 0 else f"exit {process.returncode}"
 
 

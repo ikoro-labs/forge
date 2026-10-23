@@ -299,6 +299,24 @@ class FormatOnWrite(unittest.TestCase):
         self.assertEqual(run_hook(self.root, target), (0, ""))
         self.assertEqual(target.read_text(encoding="utf-8"), "x!")
 
+    def test_an_os_error_other_than_a_missing_binary_has_its_own_form(self) -> None:
+        """No F-NNNN: ticket #17. A permission error is not `command not found`."""
+        self.configure("**/*.txt | fmt --write")
+        target = self.root / "a.txt"
+        target.write_text("x", encoding="utf-8")
+        for error, reason in (
+            (PermissionError(13, "Permission denied"), "could not start: Permission denied"),
+            (FileNotFoundError(2, "No such file"), "command not found"),
+            (OSError(), "could not start: OSError"),
+        ):
+            with (
+                mock.patch.object(after_write.shutil, "which", return_value="/bin/fmt"),
+                mock.patch.object(after_write.subprocess, "Popen", side_effect=error),
+            ):
+                code, err = run_hook(self.root, target)
+            self.assertEqual(code, 2)
+            self.assertEqual(err, f"format-on-write: fmt --write failed on a.txt ({reason})\n")
+
     def test_a_line_missing_its_command_is_reported_not_completed(self) -> None:
         self.configure("**/*.txt")
         target = self.root / "a.txt"

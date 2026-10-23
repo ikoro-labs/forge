@@ -218,8 +218,14 @@ le reste est littéral. La commande est découpée comme par un shell POSIX, lan
 racine du dépôt, le chemin absolu du fichier ajouté en dernier argument ; elle peut contenir `|`
 (la coupe se fait au premier ` | `). Plusieurs motifs qui correspondent : toutes les commandes,
 dans l'ordre du fichier, avant le contrôle du tiret cadratin. Chacune a 30 s, 120 s au total.
-Un échec ou un délai dépassé ne défait pas l'écriture : une ligne sur stderr, `format-on-write:
-<commande> failed on <chemin> (exit <n>)`, que l'agent voit. Sans la clé, rien n'est formaté.
+Chaque formateur est lancé dans son propre groupe de processus (une session neuve sous Linux, un
+job Win32 sous Windows) : au délai, tout le groupe est tué, pas seulement la commande. Sous Windows,
+un formateur résolu en `.cmd` ou `.bat` passe par `cmd.exe` : le hook refuse de lui donner un chemin
+qui contient `&|<>^%!"` ou une parenthèse, plutôt que de le citer. Un échec ou un délai dépassé ne
+défait pas l'écriture : une ligne sur stderr que l'agent voit, `format-on-write: <commande> failed
+on <chemin> (<raison>)`, la raison étant `exit <n>`, `timed out after <n>s` (arrondi au supérieur),
+`command not found`, `could not start: <cause>` ou `not run: <cause>`. Sans la clé, rien n'est
+formaté.
 
 - `format-on-write` : `<**/*.py | uv run ruff format>`
 - `format-on-write` : `<apps/web/**/*.{ts,tsx} | pnpm --dir apps/web exec prettier --write>`
