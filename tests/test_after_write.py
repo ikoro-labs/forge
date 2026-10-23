@@ -3,6 +3,7 @@ import json
 import shlex
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -187,6 +188,62 @@ class FormatOnWrite(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertEqual(err, f"format-on-write: {command} failed on a.txt (timed out after 1s)\n")
 
+    def grandchild_formatter(self) -> str:
+        """A formatter that starts a grandchild holding its outputs open, which would rewrite the
+        file 2.5 s later, then hangs."""
+        return self.script(
+            "fmt.py",
+            "import subprocess, sys, time\n"
+            "code = 'import sys, time; time.sleep(2.5); open(sys.argv[1], \"a\").write(\"LATE\")'\n"
+            "subprocess.Popen([sys.executable, '-c', code, sys.argv[1]])\n"
+            "time.sleep(30)\n",
+        )
+
+    def check_group_killed_at_the_delay(self) -> None:
+        self.configure(f"**/*.txt | {self.grandchild_formatter()}")
+        target = self.root / "a.txt"
+        target.write_text("x", encoding="utf-8")
+        with mock.patch.object(after_write, "COMMAND_TIMEOUT", 1):
+            code, err = run_hook(self.root, target)
+        self.assertEqual(code, 2)
+        self.assertIn("(timed out after 1s)", err)
+        time.sleep(3.5)
+        self.assertEqual(target.read_text(encoding="utf-8"), "x")
+
+    @unittest.skipUnless(sys.platform.startswith("linux"), "process groups: tried on Linux")
+    def test_the_grandchild_is_killed_with_the_formatter_at_the_delay_on_linux(self) -> None:
+        """No F-NNNN: ticket #17. `uv run ruff` left `ruff` orphan, free to rewrite the file."""
+        self.check_group_killed_at_the_delay()
+
+    @unittest.skipUnless(sys.platform == "win32", "the Win32 job object exists on Windows only")
+    def test_the_grandchild_is_killed_with_the_formatter_at_the_delay_on_windows(self) -> None:
+        """No F-NNNN: ticket #17. Same scenario, through the job object of handoff_header."""
+        self.check_group_killed_at_the_delay()
+
+    @unittest.skipUnless(sys.platform == "win32", "a .cmd shim and cmd.exe exist on Windows only")
+    def test_a_cmd_shim_with_an_ampersand_in_the_path_is_refused_on_windows(self) -> None:
+        """No F-NNNN: ticket #17. The real cmd.exe does not get to read `R&D.txt` as a command."""
+        shim = self.root / "fmt.cmd"
+        shim.write_text("@echo ran> ran.marker\r\n", encoding="utf-8")
+        self.configure(f'**/*.txt | "{shim}"')
+        target = self.root / "R&D.txt"
+        target.write_text("x", encoding="utf-8")
+        code, err = run_hook(self.root, target)
+        self.assertEqual(code, 2)
+        self.assertIn("metacharacter", err)
+        self.assertFalse((self.root / "ran.marker").exists())
+
+    def test_a_delay_under_a_second_is_shown_rounded_up_never_as_zero(self) -> None:
+        """No F-NNNN: ticket #17. The rest of a budget is 0.4 s, not 0 s."""
+        command = self.script("fmt.py", "import time\ntime.sleep(30)\n")
+        self.configure(f"**/*.txt | {command}")
+        target = self.root / "a.txt"
+        target.write_text("x", encoding="utf-8")
+        with mock.patch.object(after_write, "COMMAND_TIMEOUT", 0.4):
+            code, err = run_hook(self.root, target)
+        self.assertEqual(code, 2)
+        self.assertEqual(err, f"format-on-write: {command} failed on a.txt (timed out after 1s)\n")
+
     def test_the_total_delay_bounds_the_commands_together(self) -> None:
         slow = self.script("slow.py", "import time\ntime.sleep(30)\n")
         quick = self.script("quick.py", "import sys\nopen(sys.argv[1], 'a').write('!')\n")
@@ -213,6 +270,52 @@ class FormatOnWrite(unittest.TestCase):
             err,
             "format-on-write: no-such-formatter-xyz --write failed on a.txt (command not found)\n",
         )
+
+    def test_a_cmd_shim_is_not_given_a_path_with_a_cmd_exe_metacharacter(self) -> None:
+        """No F-NNNN: ticket #17. A `.cmd` goes through cmd.exe, where `&` would cut the command."""
+        self.configure("**/*.txt | prettier --write")
+        target = self.root / "R&D.txt"
+        target.write_text("x", encoding="utf-8")
+        with (
+            mock.patch.object(after_write, "WINDOWS", True),
+            mock.patch.object(after_write.shutil, "which", return_value="C:\\bin\\prettier.CMD"),
+            mock.patch.object(after_write.subprocess, "Popen") as popen,
+        ):
+            code, err = run_hook(self.root, target)
+        popen.assert_not_called()
+        self.assertEqual(code, 2)
+        self.assertEqual(
+            err,
+            "format-on-write: prettier --write failed on R&D.txt"
+            " (not run: the path holds a cmd.exe metacharacter)\n",
+        )
+
+    def test_a_path_with_a_metacharacter_is_formatted_when_no_shell_is_involved(self) -> None:
+        """No F-NNNN: ticket #17. Off Windows nothing changes: `&` is a plain character."""
+        command = self.script("fmt.py", "import sys\nopen(sys.argv[1], 'a').write('!')\n")
+        self.configure(f"**/*.txt | {command}")
+        target = self.root / "R&D (1).txt"
+        target.write_text("x", encoding="utf-8")
+        self.assertEqual(run_hook(self.root, target), (0, ""))
+        self.assertEqual(target.read_text(encoding="utf-8"), "x!")
+
+    def test_an_os_error_other_than_a_missing_binary_has_its_own_form(self) -> None:
+        """No F-NNNN: ticket #17. A permission error is not `command not found`."""
+        self.configure("**/*.txt | fmt --write")
+        target = self.root / "a.txt"
+        target.write_text("x", encoding="utf-8")
+        for error, reason in (
+            (PermissionError(13, "Permission denied"), "could not start: Permission denied"),
+            (FileNotFoundError(2, "No such file"), "command not found"),
+            (OSError(), "could not start: OSError"),
+        ):
+            with (
+                mock.patch.object(after_write.shutil, "which", return_value="/bin/fmt"),
+                mock.patch.object(after_write.subprocess, "Popen", side_effect=error),
+            ):
+                code, err = run_hook(self.root, target)
+            self.assertEqual(code, 2)
+            self.assertEqual(err, f"format-on-write: fmt --write failed on a.txt ({reason})\n")
 
     def test_a_line_missing_its_command_is_reported_not_completed(self) -> None:
         self.configure("**/*.txt")

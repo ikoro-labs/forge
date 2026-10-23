@@ -10,6 +10,8 @@ relative POSIX path, case included: `**/` (any directories, or none), `*` and `?
 `{a,b}` (alternatives, not nested); anything else is literal. The command is split like a POSIX
 shell would, run without a shell from the project root, with the file's absolute path as its last
 argument. Each command has `COMMAND_TIMEOUT` seconds, all of them together `TOTAL_TIMEOUT`.
+Each runs in its own process group, killed whole at the delay. On Windows a `.cmd` or `.bat`
+formatter goes through cmd.exe, so a path with a cmd.exe metacharacter is refused, not quoted.
 Without the key nothing is formatted and no formatter is guessed.
 
 The em dash allowances are the project's, in the file the `em-dash-allowances` key names, one
@@ -22,6 +24,7 @@ project's commit hook is the net for those.
 from __future__ import annotations
 
 import json
+import math
 import re
 import shlex
 import shutil
@@ -32,6 +35,7 @@ import time
 from collections.abc import Mapping
 from pathlib import Path
 
+from handoff_header import ProcessGroup, group_options
 from usine import load, project_root, split_value
 
 EM_DASH = chr(0x2014)
@@ -39,6 +43,10 @@ ALLOWANCES_KEY = "em-dash-allowances"
 FORMAT_KEY = "format-on-write"
 COMMAND_TIMEOUT = 30
 TOTAL_TIMEOUT = 120
+WINDOWS = sys.platform == "win32"
+# CreateProcess runs a `.cmd` or `.bat` through cmd.exe, which reads these as syntax, not as text.
+CMD_METACHARACTERS = frozenset('&|<>^%!"()')
+CMD_SCRIPTS = (".cmd", ".bat")
 
 
 def em_dash_problem(path: str, content: str, allowances: Mapping[str, int]) -> str | None:
@@ -112,22 +120,36 @@ def run_formatter(command: str, path: Path, root: Path, timeout: float) -> str |
     executable = shutil.which(argv[0])
     if executable is None:
         return "command not found"
+    if (
+        WINDOWS
+        and executable.lower().endswith(CMD_SCRIPTS)
+        and CMD_METACHARACTERS & set(str(path))
+    ):
+        return "not run: the path holds a cmd.exe metacharacter"
     try:
         # The output goes to a file, not a pipe: a grandchild of `uv run` would hold a pipe open.
         with tempfile.TemporaryFile() as sink:
-            done = subprocess.run(
+            process = subprocess.Popen(
                 [executable, *argv[1:], str(path)],
                 cwd=root,
                 stdin=subprocess.DEVNULL,
                 stdout=sink,
                 stderr=subprocess.STDOUT,
-                timeout=timeout,
+                **group_options(),
             )
-    except subprocess.TimeoutExpired:
-        return f"timed out after {int(timeout)}s"
-    except OSError:
+            group = ProcessGroup(process)
+            try:
+                process.wait(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                group.kill()
+                return f"timed out after {max(1, math.ceil(timeout))}s"
+            finally:
+                group.close()
+    except FileNotFoundError:
         return "command not found"
-    return None if done.returncode == 0 else f"exit {done.returncode}"
+    except OSError as error:
+        return f"could not start: {error.strerror or type(error).__name__}"
+    return None if process.returncode == 0 else f"exit {process.returncode}"
 
 
 def format_problems(
