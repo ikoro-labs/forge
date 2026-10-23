@@ -31,7 +31,7 @@ Publier une version :
    ```
 
 4. Fusionner sur `main`, puis poser et pousser le tag annoté `forge--v<X.Y.Z>`, deux tirets : c'est
-   la forme que Claude Code lit. Les anciens tags `forge-v<X.Y.Z>` de Projet A ne changent pas.
+   la forme que Claude Code lit. Les anciens tags `forge-v<X.Y.Z>`, antérieurs à ce dépôt, ne changent pas.
 5. Une fois le tag poussé, deux PR : l'une monte l'épingle de ce dépôt (`.claude/settings.json`),
    l'autre le tag cité par l'installation, dans `README.md` et `docs/installation.md`.
 

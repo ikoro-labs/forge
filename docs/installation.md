@@ -7,8 +7,6 @@ fait, et les limites connues.
 ## Prérequis sur le poste
 
 - Claude Code.
-- Un accès git au dépôt privé `ikoro-labs/forge` : une clé SSH, ou `gh auth login` pour HTTPS.
-  Claude Code lit une marketplace privée avec les identifiants git du poste.
 - [uv](https://docs.astral.sh/uv/) : chaque hook se lance par `uv run --no-project --quiet python`.
   Sans uv, `guard_coder` et `guard_readonly` refusent chaque appel qu'ils filtrent (leur échec
   vaut refus), et les autres gardes ne s'appliquent pas.
@@ -120,12 +118,11 @@ gardes de CI, le modèle de PR, les hooks git. La CI ne charge aucun plugin.
 
 Ce qu'aucun agent ne fait à la place d'un humain :
 
-1. Créer le dépôt privé `ikoro-labs/forge` (fait), et choisir ses contributeurs, seuls comptes à
+1. Créer le dépôt `ikoro-labs/forge` (fait), et choisir ses contributeurs, seuls comptes à
    y avoir le droit d'écriture.
-2. Sur chaque poste (bureau, PC personnel) : un accès git au dépôt privé (clé SSH, ou
-   `gh auth login`) ; puis, dans chaque projet, approuver le dossier et lancer les deux commandes
-   de l'étape 3 d'**Installer dans un projet**. Un contributeur installe le plugin : un accès en lecture
-   lui suffit, pour installer comme pour monter de version.
+2. Sur chaque poste (bureau, PC personnel), dans chaque projet : approuver le dossier et lancer
+   les deux commandes de l'étape 3 d'**Installer dans un projet**. Un utilisateur sans droit
+   d'écriture installe le plugin et monte de version de la même façon.
 3. À chaque montée d'épingle, sur chaque poste et dans chaque projet : les deux commandes de
    **Monter de version**.
 4. Une fois `forge` 1.1.0 installé dans chaque projet du poste qui fait des passations : retirer de
@@ -155,8 +152,8 @@ Ce qu'aucun agent ne fait à la place d'un humain :
   peuvent tourner sur deux versions, car chaque installation garde son propre dossier de cache ;
   mais `install` et `update` prennent la source du poste. D'où la redéclaration de l'épingle avant
   chacun d'eux.
-- **Dépendance à GitHub** : un poste neuf ou une nouvelle version ne s'installent pas si GitHub ou
-  les identifiants git du poste font défaut.
+- **Dépendance à GitHub** : un poste neuf ou une nouvelle version ne s'installent pas si GitHub
+  est injoignable.
 - **Noms préfixés** : `forge:coder`, `/forge:qc`. Les commandes tapées, les tests et les mesures
   d'un projet qui lisent un nom d'agent doivent suivre à la migration.
 - **Frontmatter des agents** : un agent de plugin ignore `hooks`, `permissionMode`, `mcpServers` et
@@ -167,7 +164,7 @@ Ce qu'aucun agent ne fait à la place d'un humain :
 
 ### Éprouvé sur un poste (Claude Code 2.1.303, 2026-10-19)
 
-Les quatre points que l'ADR-0129 laissait à confirmer, essayés dans des projets jetables :
+Les quatre points restés à confirmer, essayés dans des projets jetables :
 
 - **Deux projets, deux `ref`** : possible, avec la limite ci-dessus. Un projet épinglé sur 1.0.0,
   un autre sur 1.0.1 : chacun a gardé sa version, jusqu'à un `update` lancé dans le premier, qui

@@ -1,5 +1,6 @@
 """The agents and skills are well formed, and every `forge:<name>` the plugin cites exists."""
 
+import hashlib
 import json
 import re
 import unittest
@@ -306,7 +307,12 @@ class OneSessionPerRepository(unittest.TestCase):
 
     def test_the_plugin_names_no_project_and_no_person(self) -> None:
         # Critère 6: what projects load stays generic.
-        forbidden = re.compile(r"(?!)")
+        # The names stay out of this public repo too: only their SHA-256 is kept, compared word by word.
+        forbidden = {
+            "0446597c56a0163e2afe9be46c51c889d7b6c0407408c0fcc859eae685d911d5",
+            "e1025e9718b1aeb757262510352237eec3651a8f48e523325542b09954fd4bb9",
+            "85f5e10431f69bc2a14046a13aabaefc660103b6de7a84f75c4b96181d03f0b5",
+        }
         for path in sorted(support.PLUGIN.rglob("*")):
             if not path.is_file():
                 continue
@@ -314,8 +320,10 @@ class OneSessionPerRepository(unittest.TestCase):
                 text = path.read_text(encoding="utf-8")
             except UnicodeDecodeError:
                 continue
+            words = {w for w in re.findall(r"[a-z0-9]+", text.lower())}
+            found = [w for w in words if hashlib.sha256(w.encode()).hexdigest() in forbidden]
             with self.subTest(path=str(path.relative_to(support.PLUGIN))):
-                self.assertIsNone(forbidden.search(text))
+                self.assertEqual(found, [])
 
 
 class Manifests(unittest.TestCase):

@@ -7,8 +7,7 @@ feature jusqu'à la PR fusionnée. Les humains n'interviennent qu'aux points de 
 accepter un document, trancher une question qu'aucun agent n'a le droit de trancher.
 
 Chaque projet installe forge à une version épinglée et garde chez lui ce qui lui est propre : sa
-configuration, ses règles, ses skills de domaine. Projet A et Projet B l'utilisent ; la décision
-est l'ADR-0129 de Projet B.
+configuration, ses règles, ses skills de domaine.
 
 ![Architecture de forge : le projet et son épingle, la chaîne des features, la boucle d'un ticket jusqu'à la fusion, les hooks](docs/architecture.svg)
 
@@ -67,7 +66,6 @@ ne fusionne une PR rouge, ou ne sort de son rôle.
 ## Prérequis
 
 - Claude Code.
-- Un accès git au dépôt privé `ikoro-labs/forge` (clé SSH, ou `gh auth login`).
 - [uv](https://docs.astral.sh/uv/) : chaque hook se lance par `uv run`. Sans lui, les gardes ne
   s'appliquent pas, sauf ceux des agents, qui refusent alors chaque appel qu'ils filtrent.
 - [gh](https://cli.github.com/), authentifié : la revue et la chaîne des features passent par lui.
@@ -137,5 +135,5 @@ Chaque page dit ce qui a été éprouvé sur un vrai poste, et ce qui n'a tourn�
 
 ## Licence
 
-Privé. Trois skills adaptent mattpocock/skills sous licence MIT :
+MIT ([`LICENSE`](LICENSE)). Trois skills adaptent mattpocock/skills sous licence MIT :
 [`plugins/forge/THIRD_PARTY_NOTICES.md`](plugins/forge/THIRD_PARTY_NOTICES.md).

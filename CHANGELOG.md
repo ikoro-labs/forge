@@ -2,8 +2,8 @@
 
 Une entrée par version publiée du plugin `forge`, la plus récente en haut. Chaque version porte le
 tag `forge--v<X.Y.Z>` sur ce dépôt ; sa version est celle de `plugins/forge/.claude-plugin/plugin.json`,
-et nulle part ailleurs. Les tags `forge-v<X.Y.Z>` (un seul tiret) appartiennent à l'historique de
-Projet A et ne sont pas repris ici.
+et nulle part ailleurs. Les tags `forge-v<X.Y.Z>` (un seul tiret) appartiennent à l'historique
+antérieur à ce dépôt et ne sont pas repris ici.
 
 ## [1.4.0] - 2026-10-21
 
@@ -275,8 +275,7 @@ le relais était un script bash et que les questions de processus lisaient `/pro
 ## [1.1.0] - 2026-10-20
 
 La passation drainée d'une session à sa limite de contexte (ikoro-labs/forge#3), décidée dans
-Projet B sous l'ADR-0126 (catégorie B, Projet B #973, points A à F) et adoptée par Projet A. Le
-plugin devient la source des scripts qui vivaient en copie dans `~/.claude/hooks`.
+un projet qui utilise forge, puis adoptée par les autres. Le plugin devient la source des scripts qui vivaient en copie dans `~/.claude/hooks`.
 
 ### Hooks
 
@@ -317,9 +316,8 @@ plugin devient la source des scripts qui vivaient en copie dans `~/.claude/hooks
 
 ## [1.0.0] - 2026-10-19
 
-Première version, selon l'ADR-0129 de Projet B (§1 et §4) : la partie générique de Forge au tag
-`forge-v2.2.0` de Projet A, plus les capacités que Projet B avait et que Forge n'avait pas (relevé de
-Projet B #897 et de `docs/agents/skills.json` de Projet A). Tout ce qui est propre à un
+Première version : la partie générique de l'usine Forge telle qu'elle vivait dans les projets qui
+l'utilisaient, plus les capacités que l'un d'eux avait et que Forge n'avait pas. Tout ce qui est propre à un
 projet en est sorti : chaque élément qui en dépendait lit désormais la clé correspondante de
 `docs/agents/usine.md`, et une clé absente rend l'étape « sans objet », jamais `PASS`.
 
@@ -376,16 +374,14 @@ projet en est sorti : chaque élément qui en dépendait lit désormais la clé 
 
 ### Restés hors du plugin
 
-- G3, G4, G5, G8 et G15 : lots 3 et 4 de Projet B #898, tenus jusqu'à la clôture de F-0001 ; ils
-  arriveront par une montée de version.
+- G3, G4, G5, G8 et G15 : encore en cours dans le projet qui les porte ; ils arriveront par une
+  montée de version.
 - G6 et G18 : demandent une décision qui n'est pas prise.
 - G13 : demande un accès réseau que les hooks n'ont pas.
-- Le contrôleur `factory/` de Projet A, son contrat de revue d'architecture
-  (`docs/architecture/reviews/<FEATURE-ID>.json`) et `python -m factory prepare` : propres à Projet A.
-- Les skills de domaine (architect, backend, frontend, postgres, security, observability,
-  performance, prompt-engineer, context-engineer, reviewer, langgraph),
-  `domain-arbiter`, `run-app` et les skills `projet-a-*` : chacun applique les règles de son
-  projet. Un projet les garde dans `.claude/` et les désigne par les clés `domain-skill`,
+- Le contrôleur `factory/` d'un projet, son contrat de revue d'architecture
+  (`docs/architecture/reviews/<FEATURE-ID>.json`) et `python -m factory prepare` : propres à ce projet.
+- Les skills de domaine, l'arbitre de domaine, `run-app` et les skills propres à un projet :
+  chacun applique les règles de son projet. Un projet les garde dans `.claude/` et les désigne par les clés `domain-skill`,
   `domain-rules`, `review-grid` et `domain-arbiter`.
 - Les gardes de CI, `scripts/features.py`, `ci_local`, le modèle de PR et les hooks git : lus par la
   CI, GitHub ou git, qui ne chargent aucun plugin ; ils restent en copie dans chaque dépôt.
