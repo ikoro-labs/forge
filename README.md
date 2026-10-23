@@ -1,6 +1,6 @@
 # forge
 
-<img src="docs/logo.svg" alt="Logo de forge : une enclume et son lingot rougeoyant" width="120" align="right">
+![forge : l'usine logicielle agentique, de l'idée à la PR fusionnée](docs/banniere.png)
 
 Un plugin Claude Code qui fait travailler une équipe d'agents sur un projet, de l'idée d'une
 feature jusqu'à la PR fusionnée. Les humains n'interviennent qu'aux points de validation :
@@ -120,6 +120,12 @@ jamais `PASS`. Une revue vaut donc ce que la configuration déclare.
 Pour adapter forge sans toucher au plugin, le projet ajoute ses propres skills, agents et hooks
 dans son `.claude/` : ils coexistent avec ceux de forge, dont les noms sont préfixés (`forge:`).
 Le cache du plugin ne s'édite jamais.
+
+## Limites connues
+
+Une seule source de marketplace par poste, la dépendance à GitHub, les noms préfixés, les champs
+du front matter qu'un agent de plugin ignore : le détail est dans
+[`docs/installation.md`](docs/installation.md#limites-connues).
 
 ## Aller plus loin
 
