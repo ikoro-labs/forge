@@ -35,6 +35,13 @@ un humain.
 
 - `domain-arbiter` : `<nom de l'agent, par exemple domain-arbiter>`
 
+Le référent du métier : quand l'arbitre rend `OPEN` (le corpus du projet ne tranche pas),
+`forge:feature-build` le mentionne sur le ticket et suit la voie prudente sans arrêter le passage.
+La valeur est le login GitHub sans `@` ; le skill ajoute le `@`. Sans la clé, la question va à un
+humain par `ready-for-human`.
+
+- `domain-owner` : `<login GitHub du référent, sans @>`
+
 Les sources produit que lit `forge:product-owner`, une par ligne, **dans l'ordre de préséance** :
 la plus haute gagne sur les suivantes.
 

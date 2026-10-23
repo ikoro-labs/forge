@@ -190,6 +190,67 @@ class JudgeOutput(unittest.TestCase):
         self.assertNotIn("git.md", judge)
 
 
+class DomainOwner(unittest.TestCase):
+    """Ticket 4: an open domain question notifies the owner and follows the prudent path."""
+
+    @staticmethod
+    def read(*parts: str) -> str:
+        return " ".join(support.PLUGIN.joinpath(*parts).read_text(encoding="utf-8").split())
+
+    def test_the_template_documents_the_domain_owner_key(self) -> None:
+        template = self.read("templates", "usine.md")
+        self.assertIn("`domain-owner`", template)
+        self.assertIn("sans `@`", template)
+
+    def test_feature_build_notifies_the_owner_and_follows_the_prudent_path_without_stopping(self) -> None:
+        skill = self.read("skills", "feature-build", "SKILL.md")
+        for text in [
+            "ANSWER: DECIDED | INFERRED | OPEN | NOT_DOMAIN",
+            "parse_output.py\" domain",
+            "`OPEN` : commente le ticket avec la question, les options, la recommandation et la voie prudente",
+            "mentionne `@` suivi du compte de la clé `domain-owner`",
+            "voie prudente en attendant le référent",
+            "Le chiffre n'est pas produit",
+            "Sur `INFERRED`, pose `needs-your-attention` sur le ticket, sans arrêter le passage",
+            "un second renvoi pose `needs-info`",
+            "Sans la clé `domain-owner`, la question va à un humain par `ready-for-human`",
+            "liste les questions notifiées",
+            "ouvre le ticket de levée",
+        ]:
+            with self.subTest(text=text):
+                self.assertIn(text, skill)
+
+    def test_the_decision_journal_is_written_without_reopening_the_design(self) -> None:
+        skill = self.read("skills", "feature-build", "SKILL.md")
+        self.assertIn("sans rouvrir le design", skill)
+        self.assertIn("corps de la PR et commentaire du ticket", skill)
+        self.assertIn("ne crée jamais de design", skill)
+        protocol = self.read("templates", "features", "protocole.md")
+        self.assertIn("Exception", protocol)
+        self.assertIn("section 9", protocol)
+
+    def test_the_judge_counts_a_prudent_path_as_a_justified_partial(self) -> None:
+        judge = self.read("agents", "qc-conf.md")
+        self.assertIn("voie prudente", judge)
+        self.assertIn("partiel justifié", judge)
+
+
+class ArchitectureDiagram(unittest.TestCase):
+    def test_the_svg_export_carries_every_text_of_the_excalidraw_source(self) -> None:
+        # Ticket 4: the diagram shows the domain arbiter and the owner notified on OPEN; the
+        # export the README displays must not lag behind its source.
+        docs = support.REPO_ROOT / "docs"
+        source = json.loads((docs / "architecture.excalidraw").read_text(encoding="utf-8"))
+        svg = (docs / "architecture.svg").read_text(encoding="utf-8")
+        texts = [element["text"] for element in source["elements"] if element["type"] == "text"]
+        self.assertIn("domain-arbiter", " ".join(texts))
+        self.assertIn("domain-owner", " ".join(texts))
+        for text in texts:
+            for line in text.splitlines():
+                with self.subTest(line=line):
+                    self.assertIn(line.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"), svg)
+
+
 class AttentionLabel(unittest.TestCase):
     def test_qc_removes_the_attention_label_once_its_reason_no_longer_holds(self) -> None:
         # Demande directe. A label left after its reason is gone (a FAILED review rerun and

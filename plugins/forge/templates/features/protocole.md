@@ -74,7 +74,9 @@ document, avec son fondement et ce qui change si le relecteur lit autrement.
 
 Depuis son gabarit, avec `statut: en-revue`. **Jamais `accepte`** : seul `/forge:feature-accept`,
 tapée par un humain, l'écrit. Modifier un document déjà accepté le repasse en `en-revue`, avec une
-ligne qui dit pourquoi. Chaque terme nouveau entre dans le glossaire de son contexte (clé
+ligne qui dit pourquoi. Exception : la section 9 du design (« Décisions prises pendant la
+construction ») s'écrit pendant la construction, sans rouvrir le document ni le repasser en revue.
+Chaque terme nouveau entre dans le glossaire de son contexte (clé
 `glossary`).
 
 ## 7. Livrer dans une PR

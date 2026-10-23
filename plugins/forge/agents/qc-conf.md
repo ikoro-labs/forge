@@ -51,7 +51,9 @@ verdict a la même forme.
 - **Standards** : chaque règle de la grille qui s'applique au diff est vérifiée, dans l'ordre de la
   grille de revue quand elle existe.
 - **Spec** : chaque critère d'acceptation du ticket est couvert, partiellement couvert ou absent ;
-  tout comportement que le ticket ne demande pas est signalé comme débordement.
+  tout comportement que le ticket ne demande pas est signalé comme débordement. Un critère laissé
+  de côté par une voie prudente, sourcée à la section 9 du design (ou dans le corps de la PR sans
+  design) en attendant le référent du métier, compte pour partiel justifié : jamais un constat.
 
 Cherche aussi la **prose fausse** : un commentaire, une docstring ou un document que le diff rend
 faux, ou dont la raison invoquée est fausse. Une commande qu'un fichier recommande ou déconseille
