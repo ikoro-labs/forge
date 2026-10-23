@@ -138,8 +138,49 @@ phrase que le script a rendue ; un second échec se traite comme `RESULT: FAILED
     source ; `needs-your-attention` si `VETO: yes`), puis relance un `forge:coder` sur le ticket
     avec ce bloc ; sa PR écrit la décision là où dit `WRITE_TO`. Pas d'arrêt.
   - `DOMAIN` : la question porte sur la doctrine du métier. Passe-la à l'agent que nomme la clé
-    `domain-arbiter`, avec la même entrée, et suis le contrat de sortie que cet agent décrit. Sans
-    la clé, traite-la comme `RESERVED`.
+    `domain-arbiter`, avec la même entrée et ce contrat de sortie, que tu recopies dans ton message
+    (l'arbitre peut ne pas le connaître) :
+
+    ```text
+    ANSWER: DECIDED | INFERRED | OPEN | NOT_DOMAIN
+    QUESTION: <la question>
+    DECISION: <la décision>            (DECIDED, INFERRED)
+    SOURCE: <le corpus ; pour INFERRED, ses prémisses>   (DECIDED, INFERRED)
+    OPTIONS: <les options>             (OPEN)
+    RECOMMENDATION: <ta recommandation>   (OPEN)
+    PRUDENT_PATH: <la voie qui ne produit pas le chiffre>   (OPEN)
+    DECIDER: <le décideur nommé>       (NOT_DOMAIN)
+    ```
+
+    `OPEN` veut dire que le corpus du projet ne tranche pas. `NOT_DOMAIN` veut dire que la question
+    relève d'un autre décideur, nommé. Écris la sortie dans un fichier et lis-la par
+    `uv run --no-project --quiet python "${CLAUDE_PLUGIN_ROOT}/scripts/parse_output.py" domain <fichier>` :
+    code 1, relance l'arbitre une fois avec la phrase rendue, puis un second échec se traite comme
+    `RESULT: FAILED`. Selon `ANSWER` :
+    - `DECIDED` : commente le ticket (décision et source), relance un `forge:coder` avec ce bloc,
+      et la décision s'écrit au journal (voir plus bas). Pas d'arrêt.
+    - `INFERRED` : comme `DECIDED`, avec les prémisses comme source. Sur `INFERRED`, pose
+      `needs-your-attention` sur le ticket, sans arrêter le passage : un humain relira l'inférence.
+    - `OPEN` : commente le ticket avec la question, les options, la recommandation et la voie
+      prudente, et mentionne `@` suivi du compte de la clé `domain-owner` (la valeur est le login
+      sans `@`, tu ajoutes le `@`) ; invite le référent à répondre sur le ticket. Le chiffre n'est
+      pas produit. Relance un `forge:coder` avec la voie prudente : sa PR l'écrit au journal
+      (« voie prudente en attendant le référent »). Tu ne t'arrêtes pas. Quand le référent répond,
+      l'humain, ou une session à sa demande, ouvre le ticket de levée ; tu n'en ouvres pas. Le
+      compte rendu liste les questions notifiées. Sans la clé `domain-owner`, la question va à un
+      humain par `ready-for-human`, comme pour `RESERVED`.
+    - `NOT_DOMAIN` : la question repart une fois vers le décideur nommé ; un second renvoi pose
+      `needs-info` (retire `ready-for-agent`, `agent-claimed` et l'assignation) et le passage
+      continue sans ce ticket.
+
+    **Le journal** : le coder écrit la décision, ou la voie prudente, à la section 9 du design de
+    la feature (« Décisions prises pendant la construction »), sans rouvrir le design : le document
+    ne repasse pas en revue. Sans design, elle va dans le corps de la PR et commentaire du ticket ;
+    le coder ne crée jamais de design pendant la
+    construction, et ne touche jamais à la spec. Le juge compte un critère laissé de côté par une
+    voie prudente ainsi sourcée pour un partiel justifié.
+
+    Sans la clé `domain-arbiter`, traite la question comme `RESERVED`.
   - `RESERVED` : une décision réservée à un humain (clé `accepting-human`) ou un geste qu'aucun
     agent ne peut faire (signature, runner, secret, facturation, permission). Commente le ticket
     avec le geste et la recommandation, pose `ready-for-human`, retire `ready-for-agent`,
