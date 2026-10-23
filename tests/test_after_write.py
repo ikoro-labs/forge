@@ -214,6 +214,34 @@ class FormatOnWrite(unittest.TestCase):
             "format-on-write: no-such-formatter-xyz --write failed on a.txt (command not found)\n",
         )
 
+    def test_a_cmd_shim_is_not_given_a_path_with_a_cmd_exe_metacharacter(self) -> None:
+        """No F-NNNN: ticket #17. A `.cmd` goes through cmd.exe, where `&` would cut the command."""
+        self.configure("**/*.txt | prettier --write")
+        target = self.root / "R&D.txt"
+        target.write_text("x", encoding="utf-8")
+        with (
+            mock.patch.object(after_write, "WINDOWS", True),
+            mock.patch.object(after_write.shutil, "which", return_value="C:\\bin\\prettier.CMD"),
+            mock.patch.object(after_write.subprocess, "Popen") as popen,
+        ):
+            code, err = run_hook(self.root, target)
+        popen.assert_not_called()
+        self.assertEqual(code, 2)
+        self.assertEqual(
+            err,
+            "format-on-write: prettier --write failed on R&D.txt"
+            " (not run: the path holds a cmd.exe metacharacter)\n",
+        )
+
+    def test_a_path_with_a_metacharacter_is_formatted_when_no_shell_is_involved(self) -> None:
+        """No F-NNNN: ticket #17. Off Windows nothing changes: `&` is a plain character."""
+        command = self.script("fmt.py", "import sys\nopen(sys.argv[1], 'a').write('!')\n")
+        self.configure(f"**/*.txt | {command}")
+        target = self.root / "R&D (1).txt"
+        target.write_text("x", encoding="utf-8")
+        self.assertEqual(run_hook(self.root, target), (0, ""))
+        self.assertEqual(target.read_text(encoding="utf-8"), "x!")
+
     def test_a_line_missing_its_command_is_reported_not_completed(self) -> None:
         self.configure("**/*.txt")
         target = self.root / "a.txt"

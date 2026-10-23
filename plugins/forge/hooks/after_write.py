@@ -39,6 +39,10 @@ ALLOWANCES_KEY = "em-dash-allowances"
 FORMAT_KEY = "format-on-write"
 COMMAND_TIMEOUT = 30
 TOTAL_TIMEOUT = 120
+WINDOWS = sys.platform == "win32"
+# CreateProcess runs a `.cmd` or `.bat` through cmd.exe, which reads these as syntax, not as text.
+CMD_METACHARACTERS = frozenset('&|<>^%!"()')
+CMD_SCRIPTS = (".cmd", ".bat")
 
 
 def em_dash_problem(path: str, content: str, allowances: Mapping[str, int]) -> str | None:
@@ -112,6 +116,12 @@ def run_formatter(command: str, path: Path, root: Path, timeout: float) -> str |
     executable = shutil.which(argv[0])
     if executable is None:
         return "command not found"
+    if (
+        WINDOWS
+        and executable.lower().endswith(CMD_SCRIPTS)
+        and CMD_METACHARACTERS & set(str(path))
+    ):
+        return "not run: the path holds a cmd.exe metacharacter"
     try:
         # The output goes to a file, not a pipe: a grandchild of `uv run` would hold a pipe open.
         with tempfile.TemporaryFile() as sink:
