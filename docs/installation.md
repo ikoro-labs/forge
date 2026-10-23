@@ -28,7 +28,7 @@ fait, et les limites connues.
          "source": {
            "source": "github",
            "repo": "ikoro-labs/forge",
-           "ref": "forge--v1.4.0"
+           "ref": "forge--v1.5.0"
          }
        }
      }
@@ -45,7 +45,7 @@ fait, et les limites connues.
    l'installer. Depuis la racine du projet, redéclarer d'abord son épingle, puis installer :
 
    ```sh
-   claude plugin marketplace add ikoro-labs/forge@forge--v1.4.0 --scope project
+   claude plugin marketplace add ikoro-labs/forge@forge--v1.5.0 --scope project
    claude plugin install forge@ikoro-labs --scope project
    ```
 
