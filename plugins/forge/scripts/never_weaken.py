@@ -13,7 +13,8 @@ script launches no command the project declares. Each `never-weaken` entry is
 `<path>` is a file, or a directory when it ends with `/`. One line per entry is printed, `<status>`,
 `<entry>` and `<detail>` separated by tabs, the status being APPLIES (the diff weakens what the
 entry guards), NONE, or INVALID (the entry is malformed, or its diff cannot be read: it is never
-read as NONE). Exit code 0 when no entry applies, 1 when one does, 2 when one is invalid or the
+read as NONE). A last line, `docs/agents/usine.md : never-weaken`, says whether the diff removes
+or edits an entry (APPLIES) : a PR cannot lift the guard it is judged by. Exit code 0 when no entry applies, 1 when one does, 2 when one is invalid or the
 call is wrong. Without the key, the step is "sans objet" and the exit code is 0.
 
 The entries are read from the base (`--usine`, `git show origin/<base>:docs/agents/usine.md`), so a
@@ -209,6 +210,21 @@ def check(entries: list[str], diff_text: str) -> list[Result]:
     return [check_entry(entry, changes) for entry in entries]
 
 
+def _guard_config(changes: list[FileChange]) -> Result:
+    """A PR that removes or edits a `never-weaken` entry lifts the guard it is judged by."""
+    name = usine.CONFIG_PATH.as_posix()
+    lifted = [
+        line
+        for change in changes
+        if change.old_path == name
+        for line in change.removed
+        if (match := usine.ENTRY.match(line)) and match.group(1) == KEY
+    ]
+    if lifted:
+        return Result(f"{name} : {KEY}", APPLIES, f"entrée retirée ou modifiée : {lifted[0].strip()}")
+    return Result(f"{name} : {KEY}", NONE, "aucune entrée retirée ni modifiée")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument("diff", help="the unified diff of the PR, or - for the standard input")
@@ -216,7 +232,10 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     config_file = Path(args.usine) if args.usine else usine.project_root() / usine.CONFIG_PATH
     try:
-        config = usine.parse(config_file.read_text(encoding="utf-8"))
+        try:
+            config = usine.parse(config_file.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            config = {}
         text = sys.stdin.read() if args.diff == "-" else Path(args.diff).read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as error:
         print(f"never_weaken: {error}", file=sys.stderr)
@@ -225,7 +244,7 @@ def main(argv: list[str] | None = None) -> int:
     if not entries:
         print(f"sans objet (clé {KEY} absente)")
         return 0
-    results = check(entries, text)
+    results = check(entries, text) + [_guard_config(parse_diff(text))]
     for result in results:
         print(f"{result.status}\t{result.entry}\t{result.detail}")
     statuses = {result.status for result in results}

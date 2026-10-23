@@ -3,11 +3,14 @@
 import io
 import tempfile
 import unittest
+import unittest.mock
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
 import support  # noqa: F401
 from never_weaken import APPLIES, INVALID, NONE, check, main
+
+SCRIPT = support.PLUGIN / "scripts" / "never_weaken.py"
 
 
 def diff(path: str, *hunk: str, old: str | None = None) -> str:
@@ -203,6 +206,85 @@ class LoweredRank(unittest.TestCase):
             "docs/fonctions/ | lowered-rank | statut | certifie > certifie",
         ]
         self.assertEqual(statuses(entries, text), [INVALID] * len(entries))
+
+
+class Command(unittest.TestCase):
+    def run_main(self, usine_text: str | None, diff_text: str) -> tuple[int, str, str]:
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            args = [str(root / "pr.diff")]
+            (root / "pr.diff").write_text(diff_text, encoding="utf-8")
+            if usine_text is not None:
+                (root / "usine.md").write_text(usine_text, encoding="utf-8")
+                args = ["--usine", str(root / "usine.md"), *args]
+            out, err = io.StringIO(), io.StringIO()
+            with redirect_stdout(out), redirect_stderr(err):
+                code = main(args)
+            return code, out.getvalue(), err.getvalue()
+
+    def test_an_entry_that_applies_exits_1_and_is_named_with_its_detail(self) -> None:
+        code, out, _ = self.run_main(
+            f"- `never-weaken` : `{WORKFLOWS}`\n", diff(".github/workflows/t.yml", "-  lint:")
+        )
+        self.assertEqual(code, 1)
+        self.assertTrue(out.startswith(f"APPLIES\t{WORKFLOWS}\t"), out)
+
+    def test_no_entry_applying_exits_0(self) -> None:
+        code, out, _ = self.run_main(f"- `never-weaken` : `{WORKFLOWS}`\n", diff("README.md", "-a"))
+        self.assertEqual((code, out.split("\t")[0]), (0, "NONE"))
+
+    def test_a_malformed_entry_exits_2_even_when_another_one_applies(self) -> None:
+        usine_text = f"- `never-weaken` : `{WORKFLOWS}`\n- `never-weaken` : `docs/ | removed-line | x`\n"
+        code, out, _ = self.run_main(usine_text, diff(".github/workflows/t.yml", "-a"))
+        self.assertEqual(code, 2)
+        self.assertIn("APPLIES", out)
+        self.assertIn("INVALID", out)
+
+    def test_an_entry_missing_its_type_is_reported_never_completed(self) -> None:
+        code, out, _ = self.run_main("- `never-weaken` : `docs/`\n", diff("docs/a.md", "-a"))
+        self.assertEqual(code, 2)
+        self.assertTrue(out.startswith("INVALID\tdocs/\t"), out)
+
+    def test_without_the_key_the_step_is_without_object_and_names_the_key(self) -> None:
+        code, out, _ = self.run_main("- `install` : `uv sync`\n", diff(".github/x", "-a"))
+        self.assertEqual((code, out.strip()), (0, "sans objet (clé never-weaken absente)"))
+
+    def test_a_missing_diff_exits_2_and_a_missing_usine_is_an_empty_config(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            err = io.StringIO()
+            with redirect_stderr(err), redirect_stdout(io.StringIO()):
+                code = main(["--usine", str(Path(folder) / "usine.md"), str(Path(folder) / "none.diff")])
+            self.assertEqual(code, 2)
+            self.assertIn("never_weaken:", err.getvalue())
+            (Path(folder) / "pr.diff").write_text("", encoding="utf-8")
+            out = io.StringIO()
+            with redirect_stdout(out):
+                code = main(["--usine", str(Path(folder) / "usine.md"), str(Path(folder) / "pr.diff")])
+            self.assertEqual((code, out.getvalue().strip()), (0, "sans objet (clé never-weaken absente)"))
+
+    def test_a_pr_cannot_lift_the_guard_it_is_judged_by(self) -> None:
+        usine_text = f"- `never-weaken` : `{WORKFLOWS}`\n"
+        lifted = diff("docs/agents/usine.md", f"-- `never-weaken` : `{WORKFLOWS}`", "+- `install` : `x`")
+        code, out, _ = self.run_main(usine_text, lifted)
+        self.assertEqual(code, 1)
+        self.assertIn("docs/agents/usine.md", out)
+        other = diff("docs/agents/usine.md", "-- `install` : `a`", "+- `install` : `b`")
+        self.assertEqual(self.run_main(usine_text, other)[0], 0)
+
+    def test_the_diff_is_read_from_the_standard_input_with_a_dash(self) -> None:
+        stdin = io.StringIO(diff(".github/workflows/t.yml", "-a"))
+        with tempfile.TemporaryDirectory() as folder:
+            usine_file = Path(folder) / "usine.md"
+            usine_file.write_text(f"- `never-weaken` : `{WORKFLOWS}`\n", encoding="utf-8")
+            out = io.StringIO()
+            with redirect_stdout(out), unittest.mock.patch("sys.stdin", stdin):
+                code = main(["--usine", str(usine_file), "-"])
+        self.assertEqual(code, 1)
+
+    def test_the_script_runs_no_command(self) -> None:
+        source = SCRIPT.read_text(encoding="utf-8")
+        for module in ("subprocess", "os.system", "os.popen", "shlex"):
+            self.assertNotIn(module, source)
 
 
 if __name__ == "__main__":
