@@ -315,6 +315,7 @@ class NeverWeaken(unittest.TestCase):
         gate = self.read("agents", "qc-gate.md")
         self.assertIn("${CLAUDE_PLUGIN_ROOT}/scripts/never_weaken.py", gate)
         self.assertIn("--usine", gate)
+        self.assertIn("-c core.quotePath=false diff origin/<base>...<tête> > pr.diff", gate)
         self.assertIn("git show origin/<base>:docs/agents/usine.md", gate)
         self.assertIn("clé never-weaken absente", gate)
 

@@ -1,6 +1,9 @@
 """Ticket #5: the `never-weaken` entries, checked on a unified diff by `never_weaken.py`."""
 
 import io
+import os
+import shutil
+import subprocess
 import tempfile
 import unittest
 import unittest.mock
@@ -29,6 +32,42 @@ def deleted(path: str, *lines: str) -> str:
         f"diff --git a/{path} b/{path}\ndeleted file mode 100644\nindex 111..000\n"
         f"--- a/{path}\n+++ /dev/null\n@@ -1,{len(lines)} +0,0 @@\n{body}\n"
     )
+
+
+def real_diff(before: dict[str, bytes], after: dict[str, bytes], *flags: str) -> str:
+    """The `git diff` of two states of a throwaway repository, as `git` really prints it."""
+    env = {
+        "PATH": os.environ.get("PATH", ""),
+        "SYSTEMROOT": os.environ.get("SYSTEMROOT", ""),
+        "HOME": tempfile.gettempdir(),
+        "USERPROFILE": tempfile.gettempdir(),
+        "GIT_CONFIG_NOSYSTEM": "1",
+    }
+
+    def git(*args: str) -> str:
+        done = subprocess.run(
+            ["git", "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", *args],
+            cwd=folder, env=env, check=True, capture_output=True,
+        )
+        return done.stdout.decode("utf-8")
+
+    def write(state: dict[str, bytes]) -> None:
+        for child in Path(folder).iterdir():
+            if child.name == ".git":
+                continue
+            shutil.rmtree(child) if child.is_dir() else child.unlink()
+        for name, data in state.items():
+            target = Path(folder) / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(data)
+        git("add", "-A")
+        git("commit", "-q", "--allow-empty", "-m", "state")
+
+    with tempfile.TemporaryDirectory() as folder:
+        git("init", "-q")
+        write(before)
+        write(after)
+        return git(*flags, "diff", "HEAD~1", "HEAD")
 
 
 def statuses(entries: list[str], text: str) -> list[str]:
@@ -285,6 +324,58 @@ class Command(unittest.TestCase):
         source = SCRIPT.read_text(encoding="utf-8")
         for module in ("subprocess", "os.system", "os.popen", "shlex"):
             self.assertNotIn(module, source)
+
+
+class RealGitDiffs(unittest.TestCase):
+    """Ticket #5: diffs produced by `git diff` itself, where the hand-written ones are too kind."""
+
+    def test_a_deleted_binary_file_under_the_path_applies(self) -> None:
+        text = real_diff({"docs/signatures/ref.bin": b"\x00\x01\x02"}, {"README.md": b"x\n"})
+        self.assertEqual(statuses(["docs/signatures/ | removed-line"], text), [APPLIES])
+
+    def test_a_modified_binary_file_under_the_path_applies(self) -> None:
+        text = real_diff({"docs/signatures/ref.bin": b"\x00\x01"}, {"docs/signatures/ref.bin": b"\x00\x02"})
+        self.assertEqual(statuses(["docs/signatures/ | removed-line"], text), [APPLIES])
+
+    def test_a_deleted_empty_file_under_the_path_applies(self) -> None:
+        text = real_diff({"docs/signatures/ref.txt": b""}, {"README.md": b"x\n"})
+        self.assertEqual(statuses(["docs/signatures/ | removed-line"], text), [APPLIES])
+
+    def test_an_unreadable_diff_under_the_path_applies_for_the_other_types(self) -> None:
+        text = real_diff({"config/tolerances.toml": b"\x00a"}, {"config/tolerances.toml": b"\x00b"})
+        entries = [
+            "config/tolerances.toml | raised-number | ^rel_tol = (\\S+)",
+            "config/ | lowered-rank | statut | b > a",
+        ]
+        self.assertEqual(statuses(entries, text), [APPLIES, APPLIES])
+
+    def test_a_binary_file_outside_the_path_does_not_apply(self) -> None:
+        text = real_diff({"img/a.bin": b"\x00a"}, {"img/a.bin": b"\x00b"})
+        self.assertEqual(statuses(["docs/signatures/ | removed-line"], text), [NONE])
+
+    def test_a_non_ascii_path_is_matched_whatever_core_quotepath_says(self) -> None:
+        before = {"docs/références/x.md": b"a\nb\n"}
+        after = {"docs/références/x.md": b"a\n"}
+        entries = ["docs/références/ | removed-line"]
+        self.assertEqual(statuses(entries, real_diff(before, after)), [APPLIES])
+        self.assertEqual(statuses(entries, real_diff(before, after, "-c", "core.quotePath=false")), [APPLIES])
+
+    def test_a_non_ascii_file_entry_and_a_raised_number_are_matched(self) -> None:
+        before = {"config/tolérances.toml": "rel_tol = 1e-9\n".encode()}
+        after = {"config/tolérances.toml": "rel_tol = 1e-3\n".encode()}
+        entry = "config/tolérances.toml | raised-number | ^rel_tol = (\\S+)"
+        self.assertEqual(statuses([entry], real_diff(before, after)), [APPLIES])
+
+    def test_a_renamed_or_removed_usine_md_lifts_the_guard(self) -> None:
+        body = f"- `never-weaken` : `{WORKFLOWS}`\n".encode()
+        for after in ({"docs/agents/usine-ancien.md": body}, {"usine.md": body}, {"README.md": b"x\n"}):
+            text = real_diff({"docs/agents/usine.md": body}, after)
+            with tempfile.TemporaryDirectory() as folder:
+                (Path(folder) / "usine.md").write_bytes(body)
+                (Path(folder) / "pr.diff").write_text(text, encoding="utf-8")
+                with redirect_stdout(io.StringIO()):
+                    code = main(["--usine", str(Path(folder) / "usine.md"), str(Path(folder) / "pr.diff")])
+            self.assertEqual(code, 1, text)
 
 
 if __name__ == "__main__":

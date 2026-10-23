@@ -82,7 +82,7 @@ Le numéro de PR, et le numéro du tour (1 ou 2).
    `--title "<titre>" --body-file body.md` (`gh pr view <n> --json body -q .body > body.md`).
 10. **Règles `never-weaken`.** Écris le diff de la PR et le fichier de configuration de la **base**
     dans le scratchpad, puis lance le script du plugin :
-    `git diff origin/<base>...<tête> > pr.diff`,
+    `git -c core.quotePath=false diff origin/<base>...<tête> > pr.diff`,
     `git show origin/<base>:docs/agents/usine.md > usine-base.md`, puis
     `uv run --no-project --quiet python "${CLAUDE_PLUGIN_ROOT}/scripts/never_weaken.py" --usine usine-base.md pr.diff`.
     Les entrées viennent de la base, pour qu'une PR ne lève pas la règle qui la juge. Recopie

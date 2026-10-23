@@ -43,6 +43,7 @@ class FileChange:
     new_path: str | None = None
     removed: list[str] = field(default_factory=list)
     added: list[str] = field(default_factory=list)
+    unreadable: bool = False  # a binary patch: the lines are not in the diff
 
 
 @dataclass
@@ -52,8 +53,33 @@ class Result:
     detail: str
 
 
+_ESCAPES = {"a": 7, "b": 8, "t": 9, "n": 10, "v": 11, "f": 12, "r": 13, '"': 34, "\\": 92}
+
+
+def _unquote(raw: str) -> str:
+    """A path as git quotes it (`core.quotePath`): between quotes, octal bytes, UTF-8."""
+    if not (len(raw) >= 2 and raw[0] == '"' and raw[-1] == '"'):
+        return raw
+    data = bytearray()
+    body, i = raw[1:-1], 0
+    while i < len(body):
+        char = body[i]
+        if char == "\\" and i + 1 < len(body):
+            octal = re.match(r"[0-7]{1,3}", body[i + 1:])
+            if octal:
+                data.append(int(octal.group(), 8) & 0xFF)
+                i += 1 + len(octal.group())
+                continue
+            data.append(_ESCAPES.get(body[i + 1], ord(body[i + 1])))
+            i += 2
+            continue
+        data.extend(char.encode("utf-8"))
+        i += 1
+    return data.decode("utf-8", errors="replace")
+
+
 def _path(raw: str) -> str | None:
-    raw = raw.split("\t")[0].strip().strip('"')
+    raw = _unquote(raw.split("\t")[0].strip())
     if raw == "/dev/null":
         return None
     return raw[2:] if raw[:2] in ("a/", "b/") else raw
@@ -68,21 +94,28 @@ def parse_diff(text: str) -> list[FileChange]:
         if line.startswith("diff --git "):
             current, in_hunk = FileChange(), False
             changes.append(current)
-            if header := re.match(r"^diff --git (\"?a/.+?\"?) (\"?b/.+\"?)$", line):
+            quoted = r'"(?:[^"\\]|\\.)*"'
+            if header := re.match(rf"^diff --git ({quoted}|a/.+?) ({quoted}|b/.+)$", line):
                 current.old_path, current.new_path = _path(header.group(1)), _path(header.group(2))
         elif current is None:
             continue
         elif not in_hunk:
             if line.startswith("@@"):
                 in_hunk = True
+            elif line.startswith(("Binary files ", "GIT binary patch")):
+                current.unreadable = True
+            elif line.startswith("deleted file mode"):
+                current.new_path = None
+            elif line.startswith("new file mode"):
+                current.old_path = None
             elif line.startswith("--- "):
                 current.old_path = _path(line[4:])
             elif line.startswith("+++ "):
                 current.new_path = _path(line[4:])
             elif line.startswith("rename from "):
-                current.old_path = line[len("rename from "):]
+                current.old_path = _path(line[len("rename from "):])
             elif line.startswith("rename to "):
-                current.new_path = line[len("rename to "):]
+                current.new_path = _path(line[len("rename to "):])
         elif line.startswith("-"):
             current.removed.append(line[1:])
         elif line.startswith("+"):
@@ -97,6 +130,13 @@ def under(path: str | None, scope: str) -> bool:
     return path.startswith(scope) if scope.endswith("/") else path == scope
 
 
+def _unreadable(change: FileChange, scope: str) -> str | None:
+    """A binary patch under the path cannot be read: it applies, never reads as no change."""
+    if change.unreadable and (under(change.old_path, scope) or under(change.new_path, scope)):
+        return f"{change.new_path or change.old_path}: binaire modifié ou supprimé, diff illisible"
+    return None
+
+
 def _removed_line(changes: list[FileChange], scope: str) -> tuple[str, str]:
     hits: list[str] = []
     for change in changes:
@@ -104,6 +144,8 @@ def _removed_line(changes: list[FileChange], scope: str) -> tuple[str, str]:
             continue
         if change.removed:
             hits.append(f"{change.old_path}: -{change.removed[0]}")
+        elif change.unreadable:
+            hits.append(f"{change.old_path}: binaire modifié ou supprimé, diff illisible")
         elif not under(change.new_path, scope):
             hits.append(f"{change.old_path}: déplacé ou retiré du chemin")
     if hits:
@@ -122,6 +164,9 @@ def _raised_number(changes: list[FileChange], scope: str, parameter: str) -> tup
     pattern = re.compile(parameter)
     hits: list[str] = []
     for change in changes:
+        if unreadable := _unreadable(change, scope):
+            hits.append(unreadable)
+            continue
         if not under(change.new_path, scope):
             continue
         for old, new in _changed_values(change, pattern):
@@ -167,6 +212,9 @@ def _lowered_rank(
     pattern, ranks = scale
     hits: list[str] = []
     for change in changes:
+        if unreadable := _unreadable(change, scope):
+            hits.append(unreadable)
+            continue
         if not under(change.new_path, scope):
             continue
         for old, new in _changed_values(change, pattern):
@@ -222,6 +270,11 @@ def _guard_config(changes: list[FileChange]) -> Result:
     ]
     if lifted:
         return Result(f"{name} : {KEY}", APPLIES, f"entrée retirée ou modifiée : {lifted[0].strip()}")
+    for change in changes:
+        if change.old_path == name and change.new_path != name:
+            return Result(f"{name} : {KEY}", APPLIES, f"fichier supprimé ou déplacé vers {change.new_path}")
+        if change.new_path == name and change.old_path not in (None, name):
+            return Result(f"{name} : {KEY}", APPLIES, f"fichier remplacé par {change.old_path}")
     return Result(f"{name} : {KEY}", NONE, "aucune entrée retirée ni modifiée")
 
 
