@@ -1,3 +1,4 @@
+import io
 import json
 import sys
 import tempfile
@@ -7,7 +8,7 @@ from pathlib import Path
 from unittest import mock
 
 import support
-from guard_git import description_via_gh, native_directory, refusal
+from guard_git import description_via_gh, guarded_main, native_directory, refusal
 
 
 def never_green(_pr: str | None) -> bool:
@@ -246,6 +247,32 @@ class FailsClosed(unittest.TestCase):
         ]
         self.assertEqual(len(found), 1)
         self.assertTrue(found[0]["command"].endswith("|| exit 2"))
+
+    def test_a_guard_that_raises_refuses_and_says_it_failed(self) -> None:
+        stderr = io.StringIO()
+        with mock.patch("guard_git.main", side_effect=RuntimeError("boom")):
+            with mock.patch("sys.stderr", stderr):
+                code = guarded_main()
+        self.assertEqual(code, 2)
+        self.assertIn("guard_git failed", stderr.getvalue())
+        self.assertIn("refused as a precaution", stderr.getvalue())
+        self.assertIn("RuntimeError", stderr.getvalue())
+
+    def test_an_event_that_is_not_json_is_a_refusal_not_a_traceback(self) -> None:
+        stderr = io.StringIO()
+        with mock.patch("sys.stdin", io.StringIO("not json")), mock.patch("sys.stderr", stderr):
+            code = guarded_main()
+        self.assertEqual(code, 2)
+        self.assertIn("refused as a precaution", stderr.getvalue())
+
+    def test_a_refusal_of_a_rule_is_not_reworded_as_a_failure(self) -> None:
+        event = json.dumps({"tool_input": {"command": "git push --force"}, "cwd": None})
+        stderr = io.StringIO()
+        with mock.patch("sys.stdin", io.StringIO(event)), mock.patch("sys.stderr", stderr):
+            code = guarded_main()
+        self.assertEqual(code, 2)
+        self.assertIn("force push", stderr.getvalue())
+        self.assertNotIn("guard_git failed", stderr.getvalue())
 
 
 if __name__ == "__main__":

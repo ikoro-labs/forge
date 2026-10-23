@@ -428,5 +428,22 @@ def main() -> int:
     return 2
 
 
+def guarded_main() -> int:
+    """`main`, failing closed: a crash of the guard refuses the command and says so.
+
+    Without it a traceback exits 1, which Claude Code treats as a non-blocking error (the command
+    runs), or, behind `|| exit 2` in hooks.json, a refusal the agent could take for a rule.
+    """
+    try:
+        return main()
+    except Exception as error:  # noqa: BLE001 - any failure of the guard must refuse the command
+        sys.stderr.write(
+            f"guard_git failed ({type(error).__name__}: {error}): the command is refused as a"
+            " precaution. This is not a rule of the repository; retry, and tell the human if it"
+            " persists.\n"
+        )
+        return 2
+
+
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(guarded_main())
