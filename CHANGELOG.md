@@ -5,12 +5,17 @@ tag `forge--v<X.Y.Z>` sur ce dépôt ; sa version est celle de `plugins/forge/.c
 et nulle part ailleurs. Les tags `forge-v<X.Y.Z>` (un seul tiret) appartiennent à l'historique
 antérieur à ce dépôt et ne sont pas repris ici.
 
+Ce dépôt a été recréé le 2026-10-23 ; l'ancien est `ikoro-labs/forge-archive`. Jusqu'à la 1.5.0, les
+numéros de PR et de ticket nus (`#38`) renvoient à l'ancien dépôt ; un renvoi au nouveau dépôt
+porte son nom (`ikoro-labs/forge#7`).
+
 ## [1.5.0] - 2026-10-23
 
 Une session apprend dès son démarrage quelles autres sessions vivent sur son dépôt (PR #38, critère
-5 de ikoro-labs/forge#4, qui est ainsi livré en entier). `/forge:qc` retire `needs-your-attention`
+5 de ikoro-labs/forge-archive#4, qui est ainsi livré en entier). `/forge:qc` retire `needs-your-attention`
 quand un agent l'a posée et que sa raison ne tient plus (#45, #46). Hors du plugin, le `README.md`
-devient une page d'accueil et la marketplace référence un second plugin.
+devient une page d'accueil et la marketplace référence un second plugin ; le plugin prend l'identité
+d'ikoro-labs, icône et manifeste alignés sur ceux d'`ai-delivery-gates` (ikoro-labs/forge#7).
 
 ### Hooks
 
@@ -45,17 +50,29 @@ devient une page d'accueil et la marketplace référence un second plugin.
 - `tests/test_plugin_content.py` : la règle de retrait de `/forge:qc` et sa borne (#45, #46) ; les
   autres plugins du catalogue épinglés sur un tag (#47) ; le test qui garde le plugin générique ne
   compare plus que l'empreinte SHA-256 des noms qu'il refuse (#48).
-- La suite compte 169 tests sous Linux, dont 3 sautés, propres à Windows. Elle tourne en CI sous
+- La suite compte 170 tests sous Linux, dont 3 sautés, propres à Windows. Elle tourne en CI sous
   Linux et sous Windows.
+
+### Manifeste et icône
+
+- Le manifeste du plugin gagne `displayName`, `author.url` et `homepage`, dans l'ordre du manifeste
+  d'`ai-delivery-gates`, et l'icône (`plugins/forge/.claude-plugin/icon.png`, l'export de
+  `docs/logo.svg`) passe aux couleurs d'ikoro-labs (ikoro-labs/forge#7). Aucun test ne garde ces
+  trois champs.
 
 ### Hors du plugin
 
+- Le `README.md` s'ouvre sur une bannière (`docs/banniere.svg`, exportée en `docs/banniere.png`) et
+  gagne une section Limites connues ; le dépôt reçoit un `.gitignore` et un `.gitattributes` communs
+  aux plugins d'ikoro-labs, sans renormaliser aucun fichier (ikoro-labs/forge#7).
 - Le `README.md` devient une page d'accueil ; le détail passe dans `docs/installation.md`,
   `docs/sessions.md`, `docs/modeles-et-jetons.md` et `docs/contribuer.md`, qui ajoute à la
   publication la PR d'épingle et celle du tag cité par l'installation (#44).
 - La documentation ne cite plus de projet utilisateur ni de personne (#48).
 - La marketplace `ikoro-labs` n'est plus dite privée et référence `ai-delivery-gates`, publié
-  depuis son propre dépôt et épinglé sur `v0.2.3` (#47).
+  depuis son propre dépôt (#47), puis épinglé sur `ai-delivery-gates--v0.2.4` : les plugins
+  d'ikoro-labs se taguent tous `<plugin>--v<X.Y.Z>`, et le test du catalogue exige cette forme
+  (ikoro-labs/forge#7).
 - La CI n'active plus le cache de uv, qui n'avait rien à garder (#34, #32). Rien n'en change pour un
   projet consommateur.
 
@@ -78,7 +95,7 @@ devient une page d'accueil et la marketplace référence un second plugin.
 
 ## [1.4.0] - 2026-10-21
 
-Une seule session par dépôt (ikoro-labs/forge#4, en partie) : une session sait quelles autres
+Une seule session par dépôt (ikoro-labs/forge-archive#4, en partie) : une session sait quelles autres
 sessions vivent sur son dépôt, le relais de la passation refuse d'en lancer une à côté, et la
 session de fond cède à la session interactive de l'humain. Le juge rend un verdict lisible pour une
 PR sans ticket ou sans critère livré (#24, #28, #29). Le plugin gagne une icône (#26) et une
@@ -191,7 +208,7 @@ licence MIT (#31).
 ## [1.3.0] - 2026-10-21
 
 Ce que coûte chaque rôle : un niveau de modèle et un effort de réflexion par agent
-(ikoro-labs/forge#10, #12), un audit des jetons pour en mesurer l'effet (#14), et la sortie d'une
+(ikoro-labs/forge-archive#10, #12), un audit des jetons pour en mesurer l'effet (#14), et la sortie d'une
 suite de tests qui passe raccourcie (#19). Avec trois correctifs : la fermeture d'une session
 Windows depuis un job (#3), le dossier de la passation depuis un worktree, et la protection d'une
 branche lue dans ses rulesets (#17).
@@ -287,7 +304,7 @@ branche lue dans ses rulesets (#17).
 
 ## [1.2.0] - 2026-10-20
 
-La passation drainée sous Windows (ikoro-labs/forge#3) : elle ne tournait que sous Linux, parce que
+La passation drainée sous Windows (ikoro-labs/forge-archive#3) : elle ne tournait que sous Linux, parce que
 le relais était un script bash et que les questions de processus lisaient `/proc`.
 
 ### Hooks
@@ -345,7 +362,7 @@ le relais était un script bash et que les questions de processus lisaient `/pro
 
 ## [1.1.0] - 2026-10-20
 
-La passation drainée d'une session à sa limite de contexte (ikoro-labs/forge#3), décidée dans
+La passation drainée d'une session à sa limite de contexte (ikoro-labs/forge-archive#3), décidée dans
 un projet qui utilise forge, puis adoptée par les autres. Le plugin devient la source des scripts qui vivaient en copie dans `~/.claude/hooks`.
 
 ### Hooks
