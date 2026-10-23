@@ -92,7 +92,9 @@ projet.
 
 Le seul fichier où un projet décrit son usine au plugin : qui accepte, la matrice de décision,
 l'arbitre du métier, les commandes d'installation et de rejeu de la CI, les checks obligatoires, la
-grille de revue, les chemins protégés, les tolérances des hooks, les commandes dont la sortie se
+grille de revue, les chemins protégés, les changements que nul agent ne fusionne (`never-weaken` :
+une ligne retirée, un nombre relevé, un rang abaissé, mesurés sur le diff par
+`plugins/forge/scripts/never_weaken.py`), les tolérances des hooks, les commandes dont la sortie se
 raccourcit. Le gabarit, `plugins/forge/templates/usine.md`, documente chaque clé.
 
 Une clé absente ne prend jamais de valeur par défaut : l'étape qui la lit se rend « sans objet (clé

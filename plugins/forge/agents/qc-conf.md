@@ -63,6 +63,16 @@ exécutée.
 Une ligne ajoutée ou augmentée dans une liste de référence (clé `baselines`), ou une échappatoire
 que relève `forge:qc-gate`, se justifie dans la PR ; sans justification, c'est un constat.
 
+Le tableau de `forge:qc-gate` porte une sonde **Règles `never-weaken`**. Tu ne refais pas sa mesure,
+tu en dis le sens : une entrée qui s'applique (`APPLIES`) arrête la fusion par l'agent, même sur
+ACCEPT, comme un chemin protégé. Nomme chacune dans la ligne `GATES`, sous la forme
+`never-weaken : <entrée>, <entrée>` (ou `never-weaken : aucune`), pour que `/forge:qc` sache quoi
+écrire dans `Attention`. Une entrée qui s'applique n'est pas un constat et ne rend pas REJECT : la
+PR peut être bonne, c'est la décision de la fusionner qui revient à un humain. Une sonde `FAIL`
+(entrée invalide) ou `NOT RUN` est à dire dans `GATES` aussi, jamais lue comme « aucune ». Un
+tableau sans cette sonde (clé absente) se dit dans `GATES` : `never-weaken : sans objet`. Le skill
+`/forge:qc` ne revoit pas en une passe une PR qui touche un chemin d'une entrée.
+
 ## Forme d'un constat
 
 Chaque constat porte trois éléments, sans quoi il est abandonné :
