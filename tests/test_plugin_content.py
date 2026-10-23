@@ -353,6 +353,21 @@ class ArchitectureDiagram(unittest.TestCase):
                     self.assertIn(line.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"), svg)
 
 
+    def test_the_diagram_shows_that_a_never_weaken_change_stops_the_merge_like_a_protected_path(self) -> None:
+        # Ticket #5: the review box says a human merges, for a protected path or a never-weaken one.
+        docs = support.REPO_ROOT / "docs"
+        source = json.loads((docs / "architecture.excalidraw").read_text(encoding="utf-8"))
+        boxes = [
+            element["text"].replace("\n", " ")
+            for element in source["elements"]
+            if element["type"] == "text" and element.get("containerId") == "prot"
+        ]
+        self.assertEqual(len(boxes), 1)
+        self.assertIn("chemin protégé", boxes[0])
+        self.assertIn("never-weaken", boxes[0])
+        self.assertIn("un humain fusionne", boxes[0])
+
+
 class AttentionLabel(unittest.TestCase):
     def test_qc_removes_the_attention_label_once_its_reason_no_longer_holds(self) -> None:
         # Demande directe. A label left after its reason is gone (a FAILED review rerun and
