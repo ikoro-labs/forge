@@ -98,9 +98,17 @@ def matches(pattern: str, relative: str) -> bool:
     return pattern_regex(pattern).fullmatch(relative) is not None
 
 
+def split_command(command: str) -> list[str]:
+    """The command split like a POSIX shell would; empty when it cannot be (an unclosed quote)."""
+    try:
+        return shlex.split(command)
+    except ValueError:
+        return []
+
+
 def run_formatter(command: str, path: Path, root: Path, timeout: float) -> str | None:
     """Why the command failed on the file (`exit 3`, `timed out after 30s`...), or None."""
-    argv = shlex.split(command)
+    argv = split_command(command)
     executable = shutil.which(argv[0])
     if executable is None:
         return "command not found"
@@ -129,7 +137,7 @@ def format_problems(
     started = time.monotonic()
     for value in config.get(FORMAT_KEY, []):
         parts = split_value(value, 2)
-        if parts is None or not shlex.split(parts[1]):
+        if parts is None or not split_command(parts[1]):
             problems.append(f"{FORMAT_KEY}: `{value}` is not `<pattern> | <command>`, line ignored")
             continue
         pattern, command = parts

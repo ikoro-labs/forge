@@ -224,6 +224,18 @@ class FormatOnWrite(unittest.TestCase):
             err, "format-on-write: `**/*.txt` is not `<pattern> | <command>`, line ignored\n"
         )
 
+    def test_a_command_with_an_unclosed_quote_is_reported_and_the_em_dash_check_runs(self) -> None:
+        self.configure('**/*.txt | fmt "unclosed')
+        target = self.root / "a.txt"
+        target.write_text(f"x {EM_DASH} y", encoding="utf-8")
+        code, err = run_hook(self.root, target)
+        self.assertEqual(code, 2)
+        self.assertIn(
+            'format-on-write: `**/*.txt | fmt "unclosed` is not `<pattern> | <command>`, line ignored',
+            err,
+        )
+        self.assertIn("a.txt holds 1 em dash", err)
+
     def test_the_command_may_hold_a_pipe(self) -> None:
         command = self.script("fmt.py", "import sys\nopen(sys.argv[2], 'a').write(sys.argv[1])\n")
         self.configure(f"**/*.txt | {command} a|b {self.root.as_posix()}/log")
