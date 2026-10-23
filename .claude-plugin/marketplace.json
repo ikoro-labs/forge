@@ -4,13 +4,22 @@
     "name": "ikoro-labs"
   },
   "metadata": {
-    "description": "La marketplace privée d'ikoro-labs : l'usine agentique partagée par ses projets."
+    "description": "La marketplace d'ikoro-labs : l'usine agentique partagée par ses projets, et les plugins publiés par ikoro-labs."
   },
   "plugins": [
     {
       "name": "forge",
       "source": "./plugins/forge",
       "description": "La partie générique de l'usine Forge, partagée par les projets d'ikoro-labs."
+    },
+    {
+      "name": "ai-delivery-gates",
+      "source": {
+        "source": "github",
+        "repo": "ikoro-labs/ai-delivery-gates",
+        "ref": "v0.2.3"
+      },
+      "description": "Roadmap, livrables et gate de revue pour les phases 0 à 3 d'un projet IA (spike, cadrage, spécifications, system design). Trois agents de revue : Lead Tech, Product Owner, Expert métier."
     }
   ]
 }

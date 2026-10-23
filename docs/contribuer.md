@@ -37,11 +37,14 @@ Publier une version :
 
 ## Le dépôt
 
-Ce dépôt est une marketplace (`ikoro-labs`) qui sert un seul plugin (`forge`) : `forge@ikoro-labs`.
-Ses noms sont préfixés : `/forge:qc` pour un skill, `forge:coder` pour un agent.
+Ce dépôt est la marketplace `ikoro-labs`. Il contient le plugin `forge` (`forge@ikoro-labs`) et
+référence les autres plugins d'ikoro-labs, publiés depuis leur propre dépôt et épinglés sur un tag
+(`ai-delivery-gates@ikoro-labs`).
+Les noms de forge sont préfixés : `/forge:qc` pour un skill, `forge:coder` pour un agent.
 
 ```text
-.claude-plugin/marketplace.json   la marketplace ikoro-labs, un plugin à source relative
+.claude-plugin/marketplace.json   la marketplace ikoro-labs : forge en source relative, les autres
+                                  plugins en source github épinglée
 plugins/forge/                    le plugin
   .claude-plugin/plugin.json      son manifeste, seul endroit qui porte sa version
   .claude-plugin/icon.png         son icône, l'export de docs/logo.svg

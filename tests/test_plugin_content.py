@@ -335,10 +335,24 @@ class Manifests(unittest.TestCase):
         self.assertEqual(plugin["name"], "forge")
         self.assertRegex(plugin["version"], r"^\d+\.\d+\.\d+$")
         self.assertEqual(marketplace["name"], "ikoro-labs")
-        self.assertEqual([entry["name"] for entry in marketplace["plugins"]], ["forge"])
-        self.assertEqual(marketplace["plugins"][0]["source"], "./plugins/forge")
-        self.assertNotIn("version", marketplace["plugins"][0])
+        entries = {entry["name"]: entry for entry in marketplace["plugins"]}
+        self.assertEqual(entries["forge"]["source"], "./plugins/forge")
+        for entry in marketplace["plugins"]:
+            self.assertNotIn("version", entry)
         self.assertNotIn("version", marketplace.get("metadata", {}))
+
+    def test_the_other_plugins_are_pinned_on_a_tag(self) -> None:
+        # The other ikoro-labs plugins live in their own repo: the catalogue pins each one on a tag.
+        marketplace = json.loads(
+            (support.REPO_ROOT / ".claude-plugin" / "marketplace.json").read_text(encoding="utf-8")
+        )
+        for entry in marketplace["plugins"]:
+            if entry["name"] == "forge":
+                continue
+            with self.subTest(plugin=entry["name"]):
+                self.assertEqual(entry["source"]["source"], "github")
+                self.assertTrue(entry["source"]["repo"].startswith("ikoro-labs/"))
+                self.assertRegex(entry["source"]["ref"], r"^v\d+\.\d+\.\d+$")
 
     def test_the_changelog_opens_on_the_plugin_version(self) -> None:
         version = json.loads((support.PLUGIN / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))["version"]
