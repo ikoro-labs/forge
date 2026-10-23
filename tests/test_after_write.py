@@ -233,6 +233,17 @@ class FormatOnWrite(unittest.TestCase):
         self.assertIn("metacharacter", err)
         self.assertFalse((self.root / "ran.marker").exists())
 
+    def test_a_delay_under_a_second_is_shown_rounded_up_never_as_zero(self) -> None:
+        """No F-NNNN: ticket #17. The rest of a budget is 0.4 s, not 0 s."""
+        command = self.script("fmt.py", "import time\ntime.sleep(30)\n")
+        self.configure(f"**/*.txt | {command}")
+        target = self.root / "a.txt"
+        target.write_text("x", encoding="utf-8")
+        with mock.patch.object(after_write, "COMMAND_TIMEOUT", 0.4):
+            code, err = run_hook(self.root, target)
+        self.assertEqual(code, 2)
+        self.assertEqual(err, f"format-on-write: {command} failed on a.txt (timed out after 1s)\n")
+
     def test_the_total_delay_bounds_the_commands_together(self) -> None:
         slow = self.script("slow.py", "import time\ntime.sleep(30)\n")
         quick = self.script("quick.py", "import sys\nopen(sys.argv[1], 'a').write('!')\n")

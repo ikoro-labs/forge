@@ -22,6 +22,7 @@ project's commit hook is the net for those.
 from __future__ import annotations
 
 import json
+import math
 import re
 import shlex
 import shutil
@@ -139,7 +140,7 @@ def run_formatter(command: str, path: Path, root: Path, timeout: float) -> str |
                 process.wait(timeout=timeout)
             except subprocess.TimeoutExpired:
                 group.kill()
-                return f"timed out after {int(timeout)}s"
+                return f"timed out after {max(1, math.ceil(timeout))}s"
             finally:
                 group.close()
     except OSError:
