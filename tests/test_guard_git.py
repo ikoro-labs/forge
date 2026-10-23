@@ -248,6 +248,17 @@ class FailsClosed(unittest.TestCase):
         self.assertEqual(len(found), 1)
         self.assertTrue(found[0]["command"].endswith("|| exit 2"))
 
+    def test_hooks_json_blocks_the_command_when_guard_git_times_out(self) -> None:
+        # `|| exit 2` does not cover a timeout: the shell is killed before it can run it.
+        hooks = json.loads((support.PLUGIN / "hooks" / "hooks.json").read_text(encoding="utf-8"))
+        found = [
+            hook
+            for group in hooks["hooks"]["PreToolUse"]
+            for hook in group["hooks"]
+            if "guard_git.py" in hook["command"]
+        ]
+        self.assertEqual(found[0].get("onFailure"), "block")
+
     def test_a_guard_that_raises_refuses_and_says_it_failed(self) -> None:
         stderr = io.StringIO()
         with mock.patch("guard_git.main", side_effect=RuntimeError("boom")):

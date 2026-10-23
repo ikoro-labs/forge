@@ -8,8 +8,10 @@ fait, et les limites connues.
 
 - Claude Code.
 - [uv](https://docs.astral.sh/uv/) : chaque hook se lance par `uv run --no-project --quiet python`.
-  Sans uv, `guard_coder` et `guard_readonly` refusent chaque appel qu'ils filtrent (leur échec
-  vaut refus), et les autres gardes ne s'appliquent pas.
+  Sans uv, `guard_git`, `guard_coder` et `guard_readonly` refusent chaque appel qu'ils filtrent
+  (leur échec vaut refus), et les autres gardes ne s'appliquent pas. Le champ `onFailure` de
+  `guard_git` (refus aussi au dépassement du délai) demande Claude Code 2.1.295 ou plus ; pas encore
+  essayé sur une version plus ancienne.
 - [gh](https://cli.github.com/), authentifié : la revue, la chaîne des features et `guard_git`
   lisent et écrivent sur GitHub par lui.
 
