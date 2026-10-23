@@ -36,11 +36,12 @@ def deleted(path: str, *lines: str) -> str:
 
 def real_diff(before: dict[str, bytes], after: dict[str, bytes], *flags: str) -> str:
     """The `git diff` of two states of a throwaway repository, as `git` really prints it."""
+    home = tempfile.mkdtemp()  # private: never the shared temporary folder itself
     env = {
         "PATH": os.environ.get("PATH", ""),
         "SYSTEMROOT": os.environ.get("SYSTEMROOT", ""),
-        "HOME": tempfile.gettempdir(),
-        "USERPROFILE": tempfile.gettempdir(),
+        "HOME": home,
+        "USERPROFILE": home,
         "GIT_CONFIG_NOSYSTEM": "1",
     }
 
@@ -63,11 +64,14 @@ def real_diff(before: dict[str, bytes], after: dict[str, bytes], *flags: str) ->
         git("add", "-A")
         git("commit", "-q", "--allow-empty", "-m", "state")
 
-    with tempfile.TemporaryDirectory() as folder:
-        git("init", "-q")
-        write(before)
-        write(after)
-        return git(*flags, "diff", "HEAD~1", "HEAD")
+    try:
+        with tempfile.TemporaryDirectory() as folder:
+            git("init", "-q")
+            write(before)
+            write(after)
+            return git(*flags, "diff", "HEAD~1", "HEAD")
+    finally:
+        shutil.rmtree(home, ignore_errors=True)
 
 
 def statuses(entries: list[str], text: str) -> list[str]:
@@ -376,6 +380,26 @@ class RealGitDiffs(unittest.TestCase):
                 with redirect_stdout(io.StringIO()):
                     code = main(["--usine", str(Path(folder) / "usine.md"), str(Path(folder) / "pr.diff")])
             self.assertEqual(code, 1, text)
+
+
+class RenameKeepsItsPath(unittest.TestCase):
+    """Ticket #16: `rename from` and `rename to` carry no `a/` or `b/` prefix to strip."""
+
+    BODY = b"un\ndeux\ntrois\n"
+
+    def test_a_root_folder_a_moved_unchanged_applies(self) -> None:
+        text = real_diff({"a/seuils/ref.txt": self.BODY}, {"archive/ref.txt": self.BODY})
+        self.assertIn("rename from a/seuils/ref.txt", text)
+        self.assertEqual(statuses(["a/seuils/ | removed-line"], text), [APPLIES])
+
+    def test_a_root_folder_b_moved_unchanged_applies(self) -> None:
+        text = real_diff({"b/seuils/ref.txt": self.BODY}, {"archive/ref.txt": self.BODY})
+        self.assertEqual(statuses(["b/seuils/ | removed-line"], text), [APPLIES])
+
+    def test_a_file_renamed_into_a_root_folder_b_is_read_under_its_real_path(self) -> None:
+        text = real_diff({"x/ref.txt": self.BODY}, {"b/y/ref.txt": self.BODY})
+        self.assertEqual(statuses(["x/ | removed-line"], text), [APPLIES])
+        self.assertEqual(statuses(["b/y/ | removed-line"], text), [NONE])
 
 
 if __name__ == "__main__":

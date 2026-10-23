@@ -113,9 +113,9 @@ def parse_diff(text: str) -> list[FileChange]:
             elif line.startswith("+++ "):
                 current.new_path = _path(line[4:])
             elif line.startswith("rename from "):
-                current.old_path = _path(line[len("rename from "):])
+                current.old_path = _unquote(line[len("rename from "):])
             elif line.startswith("rename to "):
-                current.new_path = _path(line[len("rename to "):])
+                current.new_path = _unquote(line[len("rename to "):])
         elif line.startswith("-"):
             current.removed.append(line[1:])
         elif line.startswith("+"):
