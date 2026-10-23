@@ -32,6 +32,7 @@ import time
 from collections.abc import Mapping
 from pathlib import Path
 
+from handoff_header import ProcessGroup, group_options
 from usine import load, project_root, split_value
 
 EM_DASH = chr(0x2014)
@@ -125,19 +126,25 @@ def run_formatter(command: str, path: Path, root: Path, timeout: float) -> str |
     try:
         # The output goes to a file, not a pipe: a grandchild of `uv run` would hold a pipe open.
         with tempfile.TemporaryFile() as sink:
-            done = subprocess.run(
+            process = subprocess.Popen(
                 [executable, *argv[1:], str(path)],
                 cwd=root,
                 stdin=subprocess.DEVNULL,
                 stdout=sink,
                 stderr=subprocess.STDOUT,
-                timeout=timeout,
+                **group_options(),
             )
-    except subprocess.TimeoutExpired:
-        return f"timed out after {int(timeout)}s"
+            group = ProcessGroup(process)
+            try:
+                process.wait(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                group.kill()
+                return f"timed out after {int(timeout)}s"
+            finally:
+                group.close()
     except OSError:
         return "command not found"
-    return None if done.returncode == 0 else f"exit {done.returncode}"
+    return None if process.returncode == 0 else f"exit {process.returncode}"
 
 
 def format_problems(

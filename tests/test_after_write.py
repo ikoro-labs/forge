@@ -3,6 +3,7 @@ import json
 import shlex
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -186,6 +187,51 @@ class FormatOnWrite(unittest.TestCase):
             code, err = run_hook(self.root, target)
         self.assertEqual(code, 2)
         self.assertEqual(err, f"format-on-write: {command} failed on a.txt (timed out after 1s)\n")
+
+    def grandchild_formatter(self) -> str:
+        """A formatter that starts a grandchild holding its outputs open, which would rewrite the
+        file 2.5 s later, then hangs."""
+        return self.script(
+            "fmt.py",
+            "import subprocess, sys, time\n"
+            "code = 'import sys, time; time.sleep(2.5); open(sys.argv[1], \"a\").write(\"LATE\")'\n"
+            "subprocess.Popen([sys.executable, '-c', code, sys.argv[1]])\n"
+            "time.sleep(30)\n",
+        )
+
+    def check_group_killed_at_the_delay(self) -> None:
+        self.configure(f"**/*.txt | {self.grandchild_formatter()}")
+        target = self.root / "a.txt"
+        target.write_text("x", encoding="utf-8")
+        with mock.patch.object(after_write, "COMMAND_TIMEOUT", 1):
+            code, err = run_hook(self.root, target)
+        self.assertEqual(code, 2)
+        self.assertIn("(timed out after 1s)", err)
+        time.sleep(3.5)
+        self.assertEqual(target.read_text(encoding="utf-8"), "x")
+
+    @unittest.skipUnless(sys.platform.startswith("linux"), "process groups: tried on Linux")
+    def test_the_grandchild_is_killed_with_the_formatter_at_the_delay_on_linux(self) -> None:
+        """No F-NNNN: ticket #17. `uv run ruff` left `ruff` orphan, free to rewrite the file."""
+        self.check_group_killed_at_the_delay()
+
+    @unittest.skipUnless(sys.platform == "win32", "the Win32 job object exists on Windows only")
+    def test_the_grandchild_is_killed_with_the_formatter_at_the_delay_on_windows(self) -> None:
+        """No F-NNNN: ticket #17. Same scenario, through the job object of handoff_header."""
+        self.check_group_killed_at_the_delay()
+
+    @unittest.skipUnless(sys.platform == "win32", "a .cmd shim and cmd.exe exist on Windows only")
+    def test_a_cmd_shim_with_an_ampersand_in_the_path_is_refused_on_windows(self) -> None:
+        """No F-NNNN: ticket #17. The real cmd.exe does not get to read `R&D.txt` as a command."""
+        shim = self.root / "fmt.cmd"
+        shim.write_text("@echo ran> ran.marker\r\n", encoding="utf-8")
+        self.configure(f'**/*.txt | "{shim}"')
+        target = self.root / "R&D.txt"
+        target.write_text("x", encoding="utf-8")
+        code, err = run_hook(self.root, target)
+        self.assertEqual(code, 2)
+        self.assertIn("metacharacter", err)
+        self.assertFalse((self.root / "ran.marker").exists())
 
     def test_the_total_delay_bounds_the_commands_together(self) -> None:
         slow = self.script("slow.py", "import time\ntime.sleep(30)\n")
