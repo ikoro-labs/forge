@@ -8,12 +8,30 @@ Le dossier des features est celui de la clé `feature-dir` ; une feature y vit d
 `NNNN-<slug>/`. Les gabarits sont dans `${CLAUDE_PLUGIN_ROOT}/templates/features/`. Sans la clé
 `feature-dir`, aucune commande `/forge:feature-*` ne peut écrire : dis-le et arrête-toi.
 
+## Les valeurs que le projet déclare
+
+Trois clés changent ce que les commandes écrivent dans un en-tête. Une valeur à plusieurs parties
+se coupe au premier ` | ` (la dernière partie garde le reste).
+
+- **États de l'idée**, clé `feature-state`, une ligne `<rôle> | <valeur du projet>` par état. Les
+  rôles sont `active`, `hors-perimetre` et `abandonnee`. Ce protocole et les commandes disent le
+  rôle ; l'en-tête reçoit la valeur du projet. Une feature « `active` » est celle dont l'idée porte
+  la valeur du rôle `active`. Si la clé est présente et qu'un rôle manque (ou qu'une ligne n'a pas
+  ses deux parties), la commande s'arrête et nomme le rôle ou la ligne : elle ne retombe pas sur
+  les mots intégrés. Sans la clé, `active`, `hors-perimetre` et `abandonnee` s'écrivent tels
+  quels. Le `statut` des documents (`en-revue`, `accepte`) n'est pas couvert : il ne change pas.
+- **Approbateur**, clé `accepting-human`, une ligne par humain : `<user.name git>` seul, ou
+  `<user.name git> | <identifiant court>`. La comparaison de l'étape 1 se fait sur la partie gauche.
+  Ce que reçoit `accepte_par` (et `porteur`, pour l'humain choisi) est l'identifiant court s'il y
+  en a un, sinon le `user.name`. La forme sans ` | ` reste valide telle quelle.
+- **Catalogue**, clé `feature-catalog-command` : voir l'étape 7.
+
 ## La chaîne
 
 | Étape | Document | Entre quand | Commande |
 |---|---|---|---|
 | idée | `idee.md` | toujours | `/forge:feature-new` |
-| cadrage | `cadrage.md` | l'idée est `etat: active` | `/forge:feature-frame` |
+| cadrage | `cadrage.md` | l'idée porte l'`etat` du rôle `active` | `/forge:feature-frame` |
 | spec | `spec.md` | le cadrage est `statut: accepte` | `/forge:feature-spec` |
 | design (facultatif) | `design.md` | la spec est `statut: accepte` | `/forge:feature-design` |
 | tickets | sous-issues de l'issue de suivi | la spec, et le design s'il existe, sont `accepte` | le skill de découpage du projet |
@@ -81,12 +99,17 @@ Chaque terme nouveau entre dans le glossaire de son contexte (clé
 
 ## 7. Livrer dans une PR
 
-1. Un commit au format des règles git du projet (clé `git-rules`), par exemple
+1. **Le catalogue.** Si la commande a écrit un en-tête, lance la commande de la clé
+   `feature-catalog-command`, sans argument, depuis la racine du dépôt, avant le commit. Un code non
+   nul arrête la commande : affiche la sortie telle quelle et ne commite rien. Les fichiers qu'elle
+   change entrent dans le commit en cours. Sans la clé : « sans objet (clé feature-catalog-command
+   absente) », et rien ne se lance.
+2. Un commit au format des règles git du projet (clé `git-rules`), par exemple
    `docs(features): F-NNNN <ce qui a été fait>`, avec la ligne d'attribution du dépôt. Les hooks git
    du projet tournent : ne les contourne pas.
-2. `git push`, puis une PR dont le corps commence par `Feature: F-NNNN` et cite l'issue de suivi en
+3. `git push`, puis une PR dont le corps commence par `Feature: F-NNNN` et cite l'issue de suivi en
    `Refs #n` (jamais un mot-clé de fermeture : l'issue de suivi vit jusqu'à la clôture).
-3. Termine en disant la commande suivante, telle que `/forge:feature-status F-NNNN` la donne.
+4. Termine en disant la commande suivante, telle que `/forge:feature-status F-NNNN` la donne.
 
 ## Ce qui n'entre jamais
 

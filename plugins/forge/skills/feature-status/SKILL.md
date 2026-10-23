@@ -24,7 +24,9 @@ elle, il n'y a pas de dossier des features : dis-le et arrête-toi.
 3. `gh pr list --state open --search "Feature: F-"` : les documents en cours de relecture.
 4. Rends un tableau court : feature, étape, ce qui attend qui (une relecture, une acceptation par un
    humain de la clé `accepting-human`, une commande), et la commande suivante. Signale une feature
-   `hors-perimetre` ou `abandonnee` sans la compter comme en retard.
+   du rôle `hors-perimetre` ou `abandonnee` (clé `feature-state` : ses valeurs, sinon ces mots)
+   sans la compter comme en retard. Lis `etat` par cette clé ; une valeur qu'aucun rôle ne porte
+   est signalée telle quelle.
 
 Ne modifie rien. Si un en-tête est illisible, ou contredit un autre (une spec acceptée sous un
 cadrage en revue), dis-le tel quel au lieu de deviner l'étape.

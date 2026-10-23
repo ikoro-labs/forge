@@ -2,8 +2,8 @@
 feature: F-NNNN
 document: idee
 titre: <nom court de la feature>
-porteur: <un humain de la clé accepting-human>
-etat: active
+porteur: <un humain de la clé accepting-human : son identifiant court s'il en a un, sinon son user.name>
+etat: <valeur du rôle active, clé feature-state>
 demande_par: <qui l'a demandée, ou « interne » avec la raison>
 issue: <numéro de l'issue de suivi>
 date: AAAA-MM-JJ
@@ -11,7 +11,8 @@ date: AAAA-MM-JJ
 
 # F-NNNN : <titre>
 
-`etat` vaut `active`, `hors-perimetre` (la règle d'entrée ne l'admet pas) ou `abandonnee`.
+`etat` porte la valeur du projet (clé `feature-state`) du rôle `active`, `hors-perimetre` (la règle
+d'entrée ne l'admet pas) ou `abandonnee` ; sans la clé, ces trois mots.
 
 ## L'idée, en une phrase
 

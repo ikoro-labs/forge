@@ -34,7 +34,8 @@ solution la plus simple qui suffit, et pourquoi elle ne suffit pas si on en pren
 ## 3. Condition d'entrée
 
 <La règle de la clé `entry-gate` et ce qui l'admet ici, source citée ; ou « sans objet (clé
-entry-gate absente) ». Si la règle ne l'admet pas, la feature passe `hors-perimetre` dans
+entry-gate absente) ». Si la règle ne l'admet pas, la feature passe au rôle `hors-perimetre` (clé
+`feature-state`) dans
 `idee.md` et la chaîne s'arrête ici.>
 
 ## 4. Observabilité
