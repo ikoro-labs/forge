@@ -6,8 +6,9 @@ La grille que lisent le coder, le juge et les décideurs sur toute PR de ce dép
 ## Le contenu du plugin reste générique
 
 - Ce qui est sous `plugins/forge/` cite les clés de `docs/agents/usine.md`, jamais un numéro d'ADR,
-  un nom de personne, un nom de projet ou un chemin propre à un projet. Le `README.md` et le
-  `CHANGELOG.md` de la racine peuvent citer la décision ou le projet d'où vient un changement.
+  un nom de personne, un nom de projet ou un chemin propre à un projet. Le `README.md`, les pages
+  de `docs/` et le `CHANGELOG.md` de la racine peuvent citer la décision ou le projet d'où vient
+  un changement.
 - Une clé de `usine.md` absente rend l'étape « sans objet (clé `<nom>` absente) », jamais `PASS` ;
   aucune clé ne prend de valeur par défaut. Une nouvelle clé est documentée dans le gabarit
   `plugins/forge/templates/usine.md`.
@@ -43,7 +44,9 @@ La grille que lisent le coder, le juge et les décideurs sur toute PR de ce dép
 - Chaque version publiée ouvre son entrée en tête de `CHANGELOG.md` : ce qui est entré, par zone
   (Hooks, Agents, Skills, Tests, Gestes humains), et ce qui est resté dehors avec sa raison.
 - Un changement qu'un projet consommateur doit voir (variable, geste, comportement d'un hook) est
-  décrit dans le `README.md` ; une variable a sa ligne dans le tableau de la passation.
+  décrit dans la page de `docs/` qui en traite, que le `README.md` résume et renvoie ; une variable
+  a sa ligne dans le tableau de la passation (`docs/sessions.md`). Le `README.md` reste une page
+  d'accueil : ce que fait forge, comment l'installer, où lire la suite.
 
 ## Prose
 

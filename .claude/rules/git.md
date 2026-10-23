@@ -19,7 +19,7 @@
 
 ## Publier une version
 
-C'est la session forge qui publie, en suivant **Contribuer et publier** du `README.md` :
+C'est la session forge qui publie, en suivant `docs/contribuer.md` :
 
 1. Une PR `chore(release): forge <X.Y.Z>, <ce qu'elle apporte>` change `version` dans
    `plugins/forge/.claude-plugin/plugin.json` et ouvre l'entrée du `CHANGELOG.md`.

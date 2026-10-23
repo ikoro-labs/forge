@@ -182,10 +182,10 @@ class Declaration(unittest.TestCase):
         self.assertLessEqual(hook["timeout"], 30)
         self.assertTrue(HOOK.is_file())
 
-    def test_the_readme_describes_the_hook_in_the_common_rules_and_where_it_was_tried(self) -> None:
-        """ikoro-labs/forge#4, critère 5: what a consuming project sees is in the README, in the
+    def test_the_sessions_doc_describes_the_hook_in_the_common_rules_and_where_it_was_tried(self) -> None:
+        """ikoro-labs/forge#4, critère 5: what a consuming project sees is in docs/sessions.md, in the
         rule « une session par dépôt », with the system the hook was tried on."""
-        readme = (support.REPO_ROOT / "README.md").read_text(encoding="utf-8")
+        readme = (support.REPO_ROOT / "docs" / "sessions.md").read_text(encoding="utf-8")
         rules = " ".join(readme.split("## Règles communes", 1)[1].split("\n## ", 1)[0].split())
         self.assertIn("**Le hook** `sessions_notice.py` (`SessionStart`", rules)
         for expected in ("`agent_id`", "sort toujours en 0", "`timeout` de 10 secondes", "point 5 de l'étape 0"):

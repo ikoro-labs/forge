@@ -2,559 +2,140 @@
 
 <img src="docs/logo.svg" alt="Logo de forge : une enclume et son lingot rougeoyant" width="120" align="right">
 
-La partie générique de l'usine agentique d'ikoro-labs, en plugin Claude Code privé : le coder, la
-revue en deux temps, les décideurs délégués, la chaîne des features de l'idée à la livraison, et
-les hooks qui gardent git, les rôles et la pause, et la passation drainée d'une session à sa
-limite de contexte. Les projets (Projet A, Projet B) le consomment à
-une version épinglée et gardent dans leur dépôt tout ce qui leur est propre. La décision est
-l'ADR-0129 de Projet B.
+Un plugin Claude Code qui fait travailler une équipe d'agents sur un projet, de l'idée d'une
+feature jusqu'à la PR fusionnée. Les humains n'interviennent qu'aux points de validation :
+accepter un document, trancher une question qu'aucun agent n'a le droit de trancher.
+
+Chaque projet installe forge à une version épinglée et garde chez lui ce qui lui est propre : sa
+configuration, ses règles, ses skills de domaine. Projet A et Projet B l'utilisent ; la décision
+est l'ADR-0129 de Projet B.
 
 ![Architecture de forge : le projet et son épingle, la chaîne des features, la boucle d'un ticket jusqu'à la fusion, les hooks](docs/architecture.svg)
 
-Le schéma montre ce que le plugin monte dans un projet : la configuration et l'épingle, la chaîne
-des features, la boucle d'un ticket du coder à la fusion, et les hooks qui gardent chaque session.
-Sa source est `docs/architecture.excalidraw`, à ouvrir dans Excalidraw ; `docs/architecture.svg`
-en est l'export, refait à chaque changement de la source.
+## Comment ça marche
 
-Le logo a sa source dans `docs/logo.svg`. Son export en PNG de 1024 px,
-`plugins/forge/.claude-plugin/icon.png`, est l'icône du plugin, et se refait à chaque changement
-de la source :
+1. **On écrit la feature.** Une idée (`/forge:feature-new`) devient un cadrage, une spec puis un
+   design, chacun écrit par un skill et accepté par un humain avec `/forge:feature-accept`. Le
+   design accepté est découpé en tickets, par le skill de découpage du projet ou à la main.
+2. **Un agent code chaque ticket.** `/forge:feature-build` confie chaque ticket prêt à
+   `forge:coder`, qui le code en test-first dans son worktree jusqu'à une PR, en parallèle quand
+   les tickets ne dépendent pas les uns des autres.
+3. **Deux agents relisent la PR.** `/forge:qc` lance `forge:qc-gate`, qui rejoue la CI et mesure
+   sans donner d'avis, puis `forge:qc-conf`, qui juge le diff contre le ticket et rend ACCEPT ou
+   REJECT. Une PR acceptée est fusionnée, sauf si elle touche un chemin protégé (clé
+   `protected-path`) : un humain la fusionne alors. Une PR refusée retourne au coder pour un
+   second tour.
+4. **On vérifie et on clôt.** `/forge:feature-verify` relie chaque critère d'acceptation au test
+   qui le prouve, `/forge:feature-close` écrit ce qui a été livré.
 
-```sh
-uv run --no-project --quiet --with cairosvg python -c "import cairosvg; cairosvg.svg2png(url='docs/logo.svg', write_to='plugins/forge/.claude-plugin/icon.png', output_width=1024, output_height=1024)"
-```
+Une question technique ou produit en chemin va d'abord à `forge:staff-engineer` ou à
+`forge:product-owner`, qui la tranchent selon la matrice des droits de décision du projet, ou
+disent qu'elle revient à un humain. Des hooks gardent le tout : aucun agent ne pousse sur `main`,
+ne fusionne une PR rouge, ou ne sort de son rôle.
 
-Elle demande la bibliothèque système cairo, que cairosvg charge à l'import : `libcairo2` sous
-Linux ; sous Windows, une installation qui la fournit (GTK, MSYS2). Sans elle, `import cairosvg`
-lève `OSError: no library called "cairo-2" was found`. La commande n'a été essayée que sous Linux.
+## Ce que le plugin apporte
 
-Ce dépôt est une marketplace (`ikoro-labs`) qui sert un seul plugin (`forge`) : `forge@ikoro-labs`.
-Ses noms sont préfixés : `/forge:qc` pour un skill, `forge:coder` pour un agent.
+| Agent | Rôle |
+| --- | --- |
+| `forge:coder` | code un ticket jusqu'à une PR ouverte, sans la relire ni la fusionner |
+| `forge:qc-gate` | rejoue les portes d'une PR (CI, tests, checks) et rend un tableau de mesures |
+| `forge:qc-conf` | juge une PR : ACCEPT ou REJECT |
+| `forge:staff-engineer` | tranche une question technique ou de gouvernance |
+| `forge:product-owner` | tranche une question produit |
 
-```text
-.claude-plugin/marketplace.json   la marketplace ikoro-labs, un plugin à source relative
-plugins/forge/                    le plugin
-  .claude-plugin/plugin.json      son manifeste, seul endroit qui porte sa version
-  .claude-plugin/icon.png         son icône, l'export de docs/logo.svg
-  agents/                         coder, qc-gate, qc-conf, staff-engineer, product-owner
-  skills/                         qc, feature-build, feature-*, codebase-design, domain-modeling,
-                                  improve-codebase-architecture, audit-jetons
-  hooks/                          hooks.json, les gardes, les sorties raccourcies, la passation
-                                  drainée et l'avis des autres sessions du dépôt, en Python de la
-                                  bibliothèque standard, sous Linux comme sous Windows
-  scripts/parse_output.py         lecture du RESULT du coder et du verdict du juge
-  scripts/token_audit.py          les jetons de chaque rôle, lus dans les journaux de Claude Code
-  templates/                      usine.md, adr.md, features/
-tests/                            tests des hooks, du parseur et du contenu
-CHANGELOG.md                      une entrée par version publiée
-CLAUDE.md, .claude/               l'usine de ce dépôt : son épingle, ses règles
-docs/agents/usine.md              sa configuration
-docs/architecture.excalidraw      le schéma du README, sa source éditable
-docs/architecture.svg             son export, que le README affiche
-docs/logo.svg                     le logo, sa source
-.github/                          la CI (tests sous Linux et Windows, validation) et le modèle de PR
-```
+| Skills | Pour |
+| --- | --- |
+| `/forge:feature-new`, `-brainstorm`, `-frame`, `-spec`, `-design` | écrire une feature, de l'idée aux tickets |
+| `/forge:feature-accept` | accepter un document, geste réservé à un humain |
+| `/forge:feature-build`, `/forge:qc` | coder les tickets, relire et fusionner les PR |
+| `/forge:feature-verify`, `-close`, `-status` | la recette, la clôture, et où en est chaque feature |
+| `/forge:audit-jetons` | compter les jetons dépensés par chaque rôle |
+| `/forge:codebase-design`, `/forge:domain-modeling`, `/forge:improve-codebase-architecture` | le vocabulaire de conception que partagent les rôles |
 
-Ce qui est entré dans chaque version, et ce qui en est resté dehors avec sa raison : `CHANGELOG.md`.
+<a id="ce-que-les-hooks-gardent"></a>
 
-## Prérequis sur le poste
+| Hook | Ce qu'il garde |
+| --- | --- |
+| `guard_git` | pas de commit ni de push sur `main`, pas de `--force`, pas de fusion d'une PR dont un check n'est pas vert |
+| `guard_coder` | le coder ne fusionne pas, ne relit pas, ne ferme pas de ticket |
+| `guard_readonly` | les juges et les décideurs lisent, n'écrivent jamais |
+| `guard_pause` | tant que `.claude/PAUSED` existe, aucun agent n'est lancé |
+| `after_write` | pas de tiret cadratin au-delà de ce que le projet admet |
+| `trim_output` | la longue sortie d'une commande de tests qui réussit est raccourcie, la sortie complète gardée dans un journal |
+| `sessions_notice`, `handoff_*` | une seule session par dépôt, et la passation à une nouvelle session quand le contexte est plein |
+
+## Prérequis
 
 - Claude Code.
-- Un accès git au dépôt privé `ikoro-labs/forge` : une clé SSH, ou `gh auth login` pour HTTPS.
-  Claude Code lit une marketplace privée avec les identifiants git du poste.
-- [uv](https://docs.astral.sh/uv/) : chaque hook se lance par `uv run --no-project --quiet python`.
-  Sans uv, `guard_coder` et `guard_readonly` refusent chaque appel qu'ils filtrent (leur échec
-  vaut refus), et les autres gardes ne s'appliquent pas.
-- [gh](https://cli.github.com/), authentifié : la revue, la chaîne des features et `guard_git`
-  lisent et écrivent sur GitHub par lui.
+- Un accès git au dépôt privé `ikoro-labs/forge` (clé SSH, ou `gh auth login`).
+- [uv](https://docs.astral.sh/uv/) : chaque hook se lance par `uv run`. Sans lui, les gardes ne
+  s'appliquent pas, sauf ceux des agents, qui refusent alors chaque appel qu'ils filtrent.
+- [gh](https://cli.github.com/), authentifié : la revue et la chaîne des features passent par lui.
 
 ## Installer dans un projet
 
-1. **Épingler** la marketplace et activer le plugin dans le `.claude/settings.json` du projet, par
-   une PR :
+1. Épingler forge dans le `.claude/settings.json` du projet, par une PR :
 
    ```json
    {
-     "enabledPlugins": {
-       "forge@ikoro-labs": true
-     },
+     "enabledPlugins": { "forge@ikoro-labs": true },
      "extraKnownMarketplaces": {
        "ikoro-labs": {
-         "source": {
-           "source": "github",
-           "repo": "ikoro-labs/forge",
-           "ref": "forge--v1.4.0"
-         }
+         "source": { "source": "github", "repo": "ikoro-labs/forge", "ref": "forge--v1.4.0" }
        }
      }
    }
    ```
 
-   Le `ref` est un tag de ce dépôt. Changer de version est une PR du projet qui bouge ce `ref`,
-   relue comme une montée de dépendance.
-
-2. **Approuver le dossier** à la première session dans le projet : `extraKnownMarketplaces` n'est
-   honoré qu'une fois la confiance du dossier accordée. Une session cloud l'ignore.
-
-3. **Installer**, une fois par poste et par projet : `enabledPlugins` active le plugin sans
-   l'installer. Depuis la racine du projet, redéclarer d'abord son épingle, puis installer :
+2. Ouvrir une session dans le projet et approuver le dossier.
+3. Installer, une fois par poste, depuis la racine du projet :
 
    ```sh
    claude plugin marketplace add ikoro-labs/forge@forge--v1.4.0 --scope project
    claude plugin install forge@ikoro-labs --scope project
    ```
 
-   La première ligne remet la marketplace du poste sur le `ref` du projet : un poste ne connaît
-   qu'une source par marketplace, celle du dernier projet qui l'a déclarée (voir **Limites
-   connues**). Elle réécrit aussi le `.claude/settings.json` du projet dans sa propre forme
-   (indentation de deux espaces, `extraKnownMarketplaces` en dernière clé), sans toucher aux autres
-   clés : sous la forme de l'étape 1, `git diff` reste vide. S'il montre autre chose que de la mise
-   en forme, l'épingle tapée n'est pas celle du projet.
+4. Copier `plugins/forge/templates/usine.md` vers `docs/agents/usine.md` et le remplir (voir
+   [Configurer](#configurer)).
 
-4. **Configurer** : copier `plugins/forge/templates/usine.md` vers `docs/agents/usine.md` dans le
-   projet, puis, pour chaque clé, mettre la vraie valeur ou supprimer la ligne (voir plus bas).
+Pour **monter de version** : une PR du projet change le `ref`, puis chaque poste lance, depuis la
+racine du projet, jamais pendant un `/forge:feature-build` en cours :
 
-5. **Vérifier** : `claude plugin list --json` donne, pour l'entrée de `forge@ikoro-labs` dont le
-   `projectPath` est ce projet, la version du `ref` ; `/forge:` dans une session liste les skills.
-   Sans `--json`, la liste n'affiche qu'une entrée par plugin, celle du dernier projet installé,
-   même quand on la lance depuis un autre.
+```sh
+claude plugin marketplace add ikoro-labs/forge@<nouveau tag> --scope project
+claude plugin update forge@ikoro-labs --scope project
+```
 
-## Monter de version
+Le pourquoi de chaque étape, la vérification et les pièges (une seule source de marketplace par
+poste) : [`docs/installation.md`](docs/installation.md).
 
-1. Une PR du projet bouge le `ref` vers le nouveau tag, après lecture de son entrée au
-   `CHANGELOG.md`.
-2. Une fois fusionnée, sur chaque poste, depuis la racine du projet :
+## Configurer
 
-   ```sh
-   claude plugin marketplace add ikoro-labs/forge@<nouveau tag> --scope project
-   claude plugin update forge@ikoro-labs --scope project
-   ```
+Un projet décrit son usine dans un seul fichier, `docs/agents/usine.md` : qui accepte, la matrice
+de décision, les commandes de la CI, les checks obligatoires, la grille de revue, les chemins
+protégés. Le gabarit, [`plugins/forge/templates/usine.md`](plugins/forge/templates/usine.md),
+documente chaque clé.
 
-   `update` prend la source que le poste connaît, pas le `ref` du projet. Sans la première ligne,
-   un projet épinglé sur une version passe à celle qu'un autre projet du poste a déclarée en
-   dernier.
+Une clé absente ne prend jamais de valeur par défaut : l'étape qui la lit se dit « sans objet »,
+jamais `PASS`. Une revue vaut donc ce que la configuration déclare.
 
-**Jamais pendant un `/forge:feature-build` actif.** Une session garde les versions qu'elle a
-chargées, mais la suivante charge la nouvelle : un passage repris dans une nouvelle session
-changerait d'usine au milieu d'une feature. La mise à jour automatique de la marketplace reste
-coupée.
+Pour adapter forge sans toucher au plugin, le projet ajoute ses propres skills, agents et hooks
+dans son `.claude/` : ils coexistent avec ceux de forge, dont les noms sont préfixés (`forge:`).
+Le cache du plugin ne s'édite jamais.
 
-Un poste qui n'a pas lancé `claude plugin update` garde l'ancienne version, et rien ne l'en avertit
-en dehors de `/plugin` : après chaque montée, comparer `claude plugin list --json` au `ref` du
-projet.
+## Aller plus loin
 
-## Règles communes
-
-Ce que suit toute session d'un projet qui utilise l'usine, interactive ou de fond
-(ikoro-labs/forge#4). Le contenu du plugin la porte (`feature-build`, étape 0, le relais de la
-passation et le hook `SessionStart`) ; chaque projet la reçoit à sa montée d'épingle.
-
-- **Une session par dépôt.** Une seule session agit sur un dépôt à la fois, ses worktrees compris.
-  « Un seul passage par feature » en est un cas particulier. Des sessions de dépôts différents
-  coexistent : la règle porte sur un dépôt, pas sur le poste.
-- **Le premier geste** de toute session, depuis le dépôt :
-  `uv run --no-project --quiet python <hooks>/handoff_header.py sessions .`, puis `ListAgents`. La
-  commande lit le registre que Claude Code tient de ses sessions (`~/.claude/sessions/<pid>.json`),
-  garde les processus vivants (sous Linux, l'heure de départ notée `procStart` doit être celle du
-  processus, un pid pouvant être repris), les sessions dont le dossier se résout sur la même copie
-  principale (`.git` puis `commondir`), et laisse de côté la session appelante (`CLAUDE_PID`, le
-  processus qui lance la commande, et leurs ancêtres) ainsi que la session qui lui a passé la main :
-  l'`auteur` d'une passation du projet dont le `successeur` désigne la session appelante
-  (`CLAUDE_CODE_SESSION_ID`). Un successeur n'est pas un descendant de son prédécesseur, qui vit
-  encore pendant son délai de fermeture (`CLAUDE_HANDOFF_CLOSE_DELAY`) : sans cette exclusion, le
-  successeur se rangerait derrière une session qui va mourir. Seule cette session est laissée de
-  côté ; une passation illisible, ou sans `auteur` (écrite avant cette règle), n'en exclut aucune.
-  Elle imprime `pid kind name status cwd`
-  pour chaque autre session et sort en 0 si aucune ne vit, en code 6 sinon ; une entrée illisible
-  compte pour vivante. Si le registre manque ou change de forme, `claude agents --json` liste les
-  sessions vivantes avec leur dossier.
-- **Le hook** `sessions_notice.py` (`SessionStart`, sur toutes les sources : `startup`, `resume`,
-  `clear`, `compact`, `fork`) fait ce premier contrôle au démarrage de chaque session. Il appelle la
-  même détection que `sessions`, avec les mêmes exclusions (l'identifiant de la session est le
-  `session_id` de l'événement), et, s'il trouve une autre session vivante du dépôt, ajoute au
-  contexte de la session un avis qui la nomme et la renvoie au point 5 de l'étape 0 de
-  `feature-build`, en commençant par relancer `sessions .`. Il ne dit rien quand aucune autre
-  session ne vit, ni pour un sous-agent (`agent_id` dans l'événement), et sort toujours en 0 : il
-  observe et ne bloque jamais la session. `hooks.json` le lance avec un `timeout` de 10 secondes ;
-  au-delà, Claude Code l'annule et la session démarre sans l'avis.
-- **Une autre session agit sur le dépôt** : la nouvelle n'agit pas. Elle envoie sa demande à la
-  session en place (`SendMessage`), qui l'ajoute à sa file, puis elle s'arrête et le dit. Une
-  tâche annexe entre de même dans la file de la session en place, par message ou par ticket ; elle
-  n'ouvre jamais une deuxième session à côté.
-- **Une passation ne crée pas de session parallèle** : le relais refuse en code 6 quand une autre
-  session du dépôt vit, et ne lance aucun successeur.
-- **L'humain ouvre une session interactive** sur un dépôt où une session de fond agit : la session
-  de fond draine puis s'arrête. Elle ne lance plus rien, laisse finir ses agents en vol, écrit sa
-  passation et s'arrête en le disant, sous le plafond de drainage de la passation, puis elle est
-  arrêtée et supprimée comme au relais. La session
-  interactive le lui demande par `SendMessage` et en devient le successeur de fait : c'est
-  pourquoi le relais refuse alors en code 6. Céder tout de suite tuerait les sous-agents, et finir
-  le passage ferait attendre l'humain. Avant d'ouvrir une seconde session sur un dépôt, mieux vaut
-  suivre celle qui y agit : `claude attach <id>`, l'identifiant étant celui que donne
-  `claude agents`.
-- **Qui cède à qui.** Une session se sait interactive par
-  `uv run --no-project --quiet python <hooks>/handoff_header.py self`, qui imprime le type que le
-  registre note pour elle (`CLAUDE_PID`) et son identifiant (`CLAUDE_CODE_SESSION_ID`), `?` quand
-  il manque. Claude Code 2.1.306 écrit `"kind": "interactive"` par défaut et `"kind": "bg"` pour
-  une session lancée par `claude --bg` (relais compris) ; `daemon` et `daemon-worker` sont ses
-  propres processus. Seule la session interactive qui ne trouve en place que des sessions `bg`
-  demande à céder ; dans tout autre cas, la nouvelle session s'arrête. Sa demande, par
-  `SendMessage`, donne son identifiant et la commande que lance la session de fond depuis le
-  dépôt : `uv run --no-project --quiet python <hooks>/handoff_trigger.py yield <identifiant>`. Elle
-  imprime la conduite du drainage (ne plus rien lancer, laisser finir les agents, au plus
-  `CLAUDE_HANDOFF_DRAIN_MINUTES` minutes, la passation au même chemin et au même format qu'au
-  seuil), puis
-  `handoff_header.py set-successor <passation> <identifiant>` à la place du relais : la passation
-  nomme la session interactive successeur et la session de fond auteur, et `sessions` ne compte
-  plus celle-ci pour celle-là. La session de fond envoie ensuite le chemin de sa passation par
-  `SendMessage`, puis lance `handoff_relay.py --yield <passation>` (voir **La passation
-  drainée**) : elle est arrêtée puis supprimée après `CLAUDE_HANDOFF_CLOSE_DELAY` secondes, sans
-  qu'aucune session soit lancée. Laissée vivante, elle resterait dans le registre, et la session
-  suivante du dépôt, le relais de la session interactive compris, s'arrêterait derrière elle en
-  code 6. La session interactive reprend depuis la passation (`successor-ok`, puis le
-  sauvetage). Le contenu chargé par les projets le dit des deux
-  côtés : `feature-build`, étape 0, point 5, et la sortie de `yield`.
-
-Essayé sous Linux, avec Claude Code 2.1.306 et un registre écrit par 2.1.305 : sur le registre réel
-d'un poste, `sessions` a listé la session de fond d'un autre dépôt, lancée dans un worktree, et
-laissé de côté la session qui la lançait. Le refus du relais n'a tourné que dans la suite de tests,
-et la règle entière (premier geste, `SendMessage`, drainage de la session de fond) n'a pas encore été
-éprouvée de bout en bout. Les types du registre ont été lus sous Linux, sur trois entrées réelles
-écrites par Claude Code 2.1.305, toutes `"kind": "bg"` (des relais), et dans le code de 2.1.306,
-qui écrit `interactive` par défaut ; aucune entrée interactive vivante n'a été relue cette fois.
-`self`, `yield` et l'exclusion de l'`auteur` d'une passation n'ont tourné que dans la suite de
-tests, sous Linux et dans la CI Windows. La fermeture par `--yield` n'y a tourné que contre un
-faux `claude`, dont le `rm` retire l'entrée du registre ; qu'un vrai `claude rm` la retire n'a été
-vérifié sur aucun poste. Sous Windows, rien n'a été essayé hors de la CI ; `procStart` n'y est pas
-comparé, et un pid vivant y vaut session vivante, sans garde contre la reprise d'un pid.
-
-Le hook `sessions_notice.py` n'a tourné dans aucune session réelle de Claude Code. Il a tourné
-dans la suite de tests sous Linux, que la CI fait aussi tourner sous Windows, et à la main sous
-Linux, son événement passé sur l'entrée standard, sur le registre réel d'un poste : il s'est tu, la
-session qui le lançait exclue par ses ancêtres et les deux autres sessions vivantes du poste étant
-d'autres dépôts. Qu'il nomme une autre session du dépôt n'a été vu que dans la suite de tests. Que Claude Code 2.1.306 ne mette `agent_id` que dans l'événement d'un sous-agent a été lu
-dans sa documentation des hooks et dans le schéma d'événement que porte son binaire, pas relevé
-sur une entrée réelle de `SessionStart`.
-
-## La passation drainée
-
-Une session passe la main à une nouvelle session quand son contexte atteint le seuil
-(ikoro-labs/forge#3). Fermer une session tue ses sous-agents : la passation est donc un arrêt qui
-draine.
-
-- **Le hook** `handoff_trigger.py` (`UserPromptSubmit`, `PostToolUse`) lit le contexte du fil
-  principal dans la transcription. Au seuil, il dit à la session de ne plus rien lancer, de laisser
-  finir ses agents puis d'écrire la passation et de lancer le relais. Au plafond dur (seuil plus
-  35 k jetons, ou 45 minutes après le premier avis), il fait lister les agents encore vivants sous
-  `sauvetage` et forcer le relais. Un sous-agent n'est jamais averti.
-- **La passation** est un fichier `~/.claude/hooks/state/handoffs/<projet>/<date>-r<N>.md` (ou
-  `<CLAUDE_HANDOFF_DIR>/<projet>/<date>-r<N>.md`), `<projet>` étant le nom de la copie principale
-  du dépôt, même pour une session lancée dans un worktree, hors du cache du plugin, qui commence par un front matter de onze clés (`projet`, `feature`,
-  `passage_depart`, `jetons_agents`, `en_vol`, `file_revue`, `sauvetage`, `successeur`,
-  `hooks_version`, `seuil`, `contexte_passation`). `handoff_header.py` le valide ; son corps est le
-  prompt de reprise. Le skill `handoff` de l'utilisateur (`~/.claude/skills/handoff/`) est suivi
-  s'il existe.
-- **Le relais** `handoff_relay.py`, lancé par la session depuis le dossier du projet
-  (`uv run --no-project --quiet python <hooks>/handoff_relay.py <passation>`), refuse
-  (code 5) tant qu'un agent de la session est vivant ou que `en_vol` n'est pas vide, et n'admet
-  `--force` qu'avec `sauvetage` non vide. Il refuse aussi (code 6) quand une autre session du
-  dépôt vit (voir **Règles communes**). Il lance le successeur par `claude --bg`, écrit dans
-  l'en-tête son identifiant (`successeur`), son seuil (`seuil`) et la session appelante (`auteur`,
-  que la session ne remplit pas en écrivant sa passation), puis arrête et supprime la session
-  appelante. Le successeur vérifie d'abord qu'il est bien le successeur désigné
-  (`handoff_header.py successor-ok`), et son propre `sessions` laisse de côté l'`auteur` de la
-  passation, encore vivant pendant son délai de fermeture.
-- **La session de fond qui cède** à la session interactive (voir **Règles communes**) ne lance
-  pas le relais : sa passation nomme déjà la session interactive (`handoff_header.py
-  set-successor`). Une fois le chemin envoyé par `SendMessage`, elle lance
-  `uv run --no-project --quiet python <hooks>/handoff_relay.py --yield [--force] <passation>`, qui
-  fait les mêmes contrôles d'agents (code 5, `--force` contre `sauvetage`) et la même fermeture
-  que le relais (`claude stop` puis `claude rm` après `CLAUDE_HANDOFF_CLOSE_DELAY`), sans lancer
-  de session, sans toucher au compteur du jour et sans le code 6. Il refuse (code 1) une session
-  interactive ou un `CLAUDE_PID` inconnu, et (code 2) une passation qui ne nomme aucun
-  successeur.
-- **Le seuil** est `CLAUDE_SESSION_TOKEN_LIMIT`, 150 000 par défaut. Seul le relais le relève, à
-  400 000 pour un successeur dont la passation porte une feature, c'est-à-dire un identifiant
-  `F-NNNN` dans `feature` (du texte comme « aucune » n'en est pas une). Aucun `settings.json` ne
-  doit le fixer.
-
-Chaque refus du relais tombe avant que le compteur du jour bouge et avant `claude --bg`, sauf le
-code 4, qui suit le lancement.
-
-| Code | Sortie du relais |
+| Page | Contenu |
 | --- | --- |
-| 0 | successeur lancé, fermeture programmée par `--yield`, ou essai à blanc affiché |
-| 1 | usage, passation introuvable, ou `--yield` hors d'une session de fond connue (`CLAUDE_PID`) |
-| 2 | en-tête de la passation invalide, ou sans `successeur` pour `--yield` |
-| 3 | plafond du jour atteint (`CLAUDE_HANDOFF_RELAY_MAX`) |
-| 4 | identifiant du successeur illisible dans la sortie de `claude --bg` |
-| 5 | agents de la session encore vivants, `en_vol` non vide, ou `--force` sans `sauvetage` |
-| 6 | une autre session du dépôt vit : aucun successeur, elle l'est de fait ; les sessions trouvées sont sur stderr |
+| [`docs/installation.md`](docs/installation.md) | l'installation pas à pas, les montées de version, les gestes humains, les limites connues |
+| [`docs/sessions.md`](docs/sessions.md) | une session par dépôt, la passation drainée, les variables et les codes du relais |
+| [`docs/modeles-et-jetons.md`](docs/modeles-et-jetons.md) | le modèle et l'effort de chaque rôle, un autre fournisseur, l'audit des jetons, les sorties raccourcies |
+| [`docs/contribuer.md`](docs/contribuer.md) | modifier le plugin, publier une version, l'organisation du dépôt |
+| [`CHANGELOG.md`](CHANGELOG.md) | ce qui est entré dans chaque version, et ce qui en est resté dehors |
 
-| Variable | Défaut | Effet |
-| --- | --- | --- |
-| `CLAUDE_SESSION_TOKEN_LIMIT` | 150000 | seuil de drainage, posé par le relais seulement |
-| `CLAUDE_HANDOFF_DRAIN_MINUTES` | 45 | minutes de drainage avant le plafond dur |
-| `CLAUDE_HANDOFF_DIR` | `~/.claude/hooks/state/handoffs` | dossier des passations, `~` et variables développés (`%LOCALAPPDATA%\forge\handoffs`) ; les marqueurs et compteurs restent dans `~/.claude/hooks/state` |
-| `CLAUDE_HANDOFF_RELAY_MAX` | 5 | relais par projet et par jour (code 3 au-delà) |
-| `CLAUDE_HANDOFF_CLOSE_DELAY` | 45 | secondes avant la fermeture de la session appelante, par le relais ou par `--yield`, 0 la garde ouverte |
-| `CLAUDE_HANDOFF_TERMINAL` | aucune | commande de terminal (`ghostty -e`, `gnome-terminal --`, `wt.exe` sous Windows) où ouvrir `claude attach <id>` ; sans elle, aucune fenêtre |
-| `CLAUDE_HANDOFF_CLOSE_DRY_RUN` | aucune | affiche le lancement et la fermeture sans rien lancer, compteur et passation intacts ; `0`, `false`, `no`, `off` ou vide le laissent coupé |
-
-Le relais tourne sous Linux et sous Windows. Les questions de processus (un pid vit-il, quand
-est-il né, qui est son parent) passent par `/proc` sous Linux et par l'API Win32 (`ctypes`) sous
-Windows ; ailleurs, un processus compte pour vivant, le côté prudent. Différences sous Windows :
-
-- Claude Code y verrouille le worktree d'un agent sans heure de départ (`claude agent <nom>
-  (pid N)`) : un pid vivant y vaut détenteur du verrou, sans garde contre la réutilisation d'un pid.
-- La session interactive fermée par le relais reçoit `/exit` dans sa console, comme si on le
-  tapait : Claude Code se ferme normalement et rend le terminal propre ; sa fenêtre reste ouverte
-  sur l'invite du shell qui l'a lancée. Si elle vit encore 15 secondes plus tard, elle est tuée
-  (`taskkill /F`) et le relais coupe lui-même le suivi de la souris dans la console : tuée sans
-  cela, elle laissait chaque mouvement de souris s'écrire dans le shell. Une session de fond est
-  arrêtée puis supprimée (`claude stop`, `claude rm`) comme sous Linux, ses fenêtres
-  `claude attach` fermées d'abord.
-- Une session interactive porte elle aussi `CLAUDE_CODE_CHILD_SESSION=1` : le relais la reconnaît au
-  registre de Claude Code (`~/.claude/sessions/<pid>.json`, `"kind": "interactive"`), sous Linux
-  comme sous Windows.
-
-La session écrit la passation avec ses propres outils de fichier. Une politique gérée peut les
-interdire sous tout dossier `.claude` : le hook se déclenche, mais l'écriture est refusée et le
-relais répond `handoff document not found`. Sur un tel poste, `CLAUDE_HANDOFF_DIR` place les
-passations ailleurs. Elle se pose dans l'environnement du poste ou dans le bloc `env` du
-`~/.claude/settings.json`, pour que le hook, le relais et le successeur la voient :
-
-```json
-{ "env": { "CLAUDE_HANDOFF_DIR": "%LOCALAPPDATA%\\forge\\handoffs" } }
-```
-
-La passation ne vaut que dans les projets où le plugin est activé ; une copie de ces scripts dans
-`~/.claude/hooks` couvrait tous les projets du poste. Tant que `~/.claude/settings.json` déclare
-encore une telle copie, le hook du plugin se tait.
-
-## Les sorties de tests raccourcies
-
-Une suite de tests qui passe rend des centaines de lignes que l'agent relit et paie en jetons, alors
-que seul le résumé lui sert. Le hook `trim_output.py` (`PostToolUse`, sur `Bash`) raccourcit la
-sortie d'une commande que nomme la clé `trimmed-command` de `docs/agents/usine.md` : la commande
-lancée contient l'une de ses valeurs. Sans la clé, il ne fait rien.
-
-- Une commande nommée qui réussit et rend plus de 60 lignes (les deux flux ensemble) : sa sortie
-  complète est écrite dans un journal, `~/.claude/hooks/state/trimmed/<session>-<instant>.log`, et
-  l'agent ne reçoit que les 20 dernières lignes de chaque flux plus long que cela, précédées du
-  chemin du journal. Le dossier est commun à toutes les sessions et à tous les projets du poste ;
-  les 20 journaux les plus récents y sont gardés, rangés par l'instant inscrit dans leur nom, et
-  celui qu'une session vient d'écrire n'est jamais du nombre des supprimés.
-- Une commande qui échoue n'est jamais raccourcie : Claude Code envoie alors `PostToolUseFailure`
-  à la place de `PostToolUse`, et l'agent voit la sortie entière. Seul compte le code de sortie de
-  la commande entière : une suite qui échoue derrière un tube (`| tee log`, `| tail`) ou suivie
-  d'une autre commande (`; echo fini`) sort à 0, et sa sortie est raccourcie comme celle d'une
-  suite qui passe. Le début de ses échecs n'est alors que dans le journal.
-- `forge:qc-gate` reconnaît une sortie raccourcie à sa première ligne et relève les tests sautés
-  dans le journal qu'elle nomme : ils sont au milieu de la sortie, que l'agent ne reçoit plus.
-- Le hook observe : une entrée illisible ou un journal impossible à écrire le fait sortir à 0, la
-  sortie d'origine intacte.
-
-Éprouvé avec Claude Code 2.1.305 sous Linux, dans une session `claude -p --plugin-dir` lancée
-depuis un projet jetable : 200 lignes d'une commande nommée qui réussit arrivent à l'agent en 21
-lignes, et les mêmes 200 lignes d'une commande qui échoue arrivent entières. Pas encore essayé sous
-Windows, ni dans une session interactive. Une commande lancée par l'outil `PowerShell` n'est pas
-raccourcie.
-
-## Configurer : `docs/agents/usine.md`
-
-Le seul fichier où un projet décrit son usine au plugin : qui accepte, la matrice de décision,
-l'arbitre du métier, les commandes d'installation et de rejeu de la CI, les checks obligatoires, la
-grille de revue, les chemins protégés, les tolérances des hooks, les commandes dont la sortie se
-raccourcit. Le gabarit, `plugins/forge/templates/usine.md`, documente chaque clé.
-
-Une clé absente ne prend jamais de valeur par défaut : l'étape qui la lit se rend « sans objet (clé
-`<nom>` absente) », jamais `PASS`. La revue d'un projet vaut donc ce que sa configuration déclare :
-sans ses commandes de porte ni sa grille, `/forge:qc` rend des sondes « sans objet », plus faibles
-qu'une revue configurée, et une clé qui pointe un chemin disparu donne un `NOT RUN` à chaque PR
-jusqu'à sa correction.
-
-## Les modèles des rôles
-
-Chaque agent fixe dans son front matter un **niveau** de modèle, jamais l'identifiant d'un modèle :
-le moins cher qui fait le travail, le plus fort là seulement où une erreur coûte.
-
-| Agent | Niveau | Pourquoi |
-| --- | --- | --- |
-| `forge:qc-gate` | `haiku` | Il rejoue des commandes et recopie leurs mesures, sans avis. |
-| `forge:coder` | `sonnet` | Le plus gros consommateur ; un modèle moyen code un ticket bien découpé. |
-| `forge:qc-conf` | `opus` | Le garde-fou de la qualité ; il lit surtout le diff, sa tâche reste courte. Un autre niveau que le coder rend moins probable qu'une même erreur échappe aux deux. |
-| `forge:staff-engineer`, `forge:product-owner` | `opus` | Appelés rarement, et leur décision engage la suite. |
-
-La session principale, celle qui lance les skills, n'est pas réglée par le plugin : c'est le
-modèle choisi par `/model`, souvent le plus gros poste de consommation.
-
-**L'effort de réflexion.** Avant de répondre, un modèle réfléchit, et cette réflexion se paie
-comme du texte produit. Chaque agent fixe donc aussi son `effort` : `low` pour `forge:qc-gate`,
-qui n'a rien à peser, `high` pour `forge:staff-engineer`, qui tranche les questions techniques
-difficiles, `medium` pour les autres. `CLAUDE_CODE_EFFORT_LEVEL`, posé sur un poste, l'emporte sur
-ce réglage. `forge:qc-gate` démarre aussi sans `CLAUDE.md` (`omitClaudeMd`, Claude Code 2.1.271 et
-plus) : il lit ses portes dans `docs/agents/usine.md`. Le champ retire ceux du projet, mais aussi le
-`~/.claude/CLAUDE.md` du poste et le `CLAUDE.local.md` ; seuls les fichiers de politique gérée
-restent. Une consigne du poste dont `forge:qc-gate` aurait besoin (compte `gh`, proxy) ne lui
-parvient donc pas. Ces deux champs sont ceux que la documentation de Claude Code donne pour un
-agent ; leur gain n'est pas mesuré, et ils n'ont pas encore été essayés sur un vrai poste.
-
-**Brancher un autre fournisseur.** Les quatre niveaux (`fable`, `opus`, `sonnet`, `haiku`) sont
-des alias que chaque poste fait pointer où il veut, sans toucher au plugin :
-
-- `ANTHROPIC_DEFAULT_FABLE_MODEL`, `ANTHROPIC_DEFAULT_OPUS_MODEL`,
-  `ANTHROPIC_DEFAULT_SONNET_MODEL`, `ANTHROPIC_DEFAULT_HAIKU_MODEL` : l'identifiant du modèle
-  derrière chaque niveau ;
-- `ANTHROPIC_BASE_URL` : l'adresse où Claude Code envoie ses requêtes, par exemple une passerelle
-  compatible avec l'API Anthropic (LiteLLM, ou une autre) qui les relaie vers GPT, Grok ou un modèle
-  local.
-
-Ces variables se posent dans l'environnement du poste ou dans son `~/.claude/settings.json`, jamais
-par le plugin. Elles valent pour tout le poste : deux rôles d'un même niveau ont le même modèle.
-Sans elles, chaque niveau reste le modèle Claude du même nom.
-
-Un appel qui fixe `model` l'emporte sur le front matter de l'agent.
-
-Ces variables et la forme du champ `model` (un alias ou un identifiant) ont été lues dans Claude
-Code 2.1.305. Une usine servie par un autre fournisseur, à travers une passerelle, n'a pas encore
-été essayée : l'usage des outils et le cache de prompt peuvent s'y comporter autrement.
-
-## Mesurer les jetons de chaque rôle
-
-`/forge:audit-jetons` compte les jetons que chaque rôle a dépensés sur le projet, par modèle et par
-effort, et compare un avant et un après :
-
-```text
-/forge:audit-jetons --coupure 2026-10-20T21:52
-```
-
-Il lit les journaux que Claude Code écrit déjà sur le poste (`~/.claude/projects/`, ou le dossier
-de `CLAUDE_CONFIG_DIR`), ne garde que les réponses dont le dossier de travail est le projet ou l'un
-de ses worktrees, et compte une seule fois une réponse écrite sur plusieurs lignes. `--depuis` et
-`--jusqua` bornent la période ; `--coupure` la coupe en deux, par exemple à l'heure de fusion de la
-PR qui a changé un modèle ou un effort. Une date sans zone est en UTC, comme les heures de GitHub.
-La comparaison se fait en jetons par lancement d'agent, puisque le volume de travail change d'une
-période à l'autre. Le script ne donne aucun prix : les quatre sortes de jetons (entrée, écriture
-de cache, lecture de cache, sortie) n'ont pas le même, et chaque fournisseur a le sien.
-
-Une limite des journaux eux-mêmes : Claude Code note la plupart des réponses des sous-agents avant
-leur fin, avec la sortie connue à ce moment, bien en dessous de la vraie. Le rapport compte ces
-réponses dans sa colonne « Sortie partielle » ; leur sortie est sous-comptée, l'entrée et le cache
-ne le sont pas. Le format des journaux a été lu dans Claude Code 2.1.302 à 2.1.305 sous Linux ; il
-n'est pas documenté et peut changer. Seul le script a tourné sur un vrai poste, sous Linux : le
-skill lui-même n'a été lancé dans aucune session, et rien n'a été essayé sous Windows hors CI.
-
-## Compléter ou remplacer, sans éditer le plugin
-
-- **Un complément** est un fichier du projet : ses skills de domaine, son arbitre du métier, ses
-  propres hooks restent dans son `.claude/` et coexistent avec le plugin, dont les noms préfixés ne
-  les heurtent pas. Ses hooks de `.claude/settings.json` tournent à côté de ceux du plugin.
-- **Un remplacement** est un skill ou un agent du projet sous un autre nom, que la configuration
-  désigne.
-- **Le cache du plugin ne s'édite jamais** : il est réécrit à chaque version. Un écart qui vaut
-  pour tous les projets se propose en PR à ce dépôt.
-
-Ce qui reste forcément dans chaque projet, parce que ce n'est pas Claude Code qui le lit : les
-gardes de CI, le modèle de PR, les hooks git. La CI ne charge aucun plugin.
-
-## Contribuer et publier
-
-- **Seuls les contributeurs écrivent** : les comptes qui ont le droit d'écriture sur ce dépôt. Un
-  projet consommateur n'y écrit pas ; un besoin né dans un projet devient un ticket ou une PR d'un
-  contributeur.
-- **L'usine développe l'usine** : ce dépôt installe `forge` comme un projet consommateur, épinglé
-  dans son `.claude/settings.json`, configuré par son `docs/agents/usine.md`. La session qui tourne
-  charge la version épinglée depuis le cache ; ce qu'elle modifie, c'est `plugins/forge/`, qui
-  n'agit sur elle qu'une fois publié et l'épingle montée par une PR. Les règles du dépôt sont dans
-  `CLAUDE.md` et `.claude/rules/`.
-- **La session forge publie** : elle tient ce `CHANGELOG.md` et pose les tags.
-- Le contenu reste générique : il cite les clés de `docs/agents/usine.md`, jamais un numéro d'ADR,
-  un nom de personne ou un chemin propre à un projet.
-
-Publier une version :
-
-1. Changer `version` dans `plugins/forge/.claude-plugin/plugin.json`, et nulle part ailleurs
-   (jamais dans `marketplace.json`).
-2. Ouvrir l'entrée correspondante en tête de `CHANGELOG.md`.
-3. Vérifier :
-
-   ```sh
-   uv run --no-project --quiet python -m unittest discover -s tests
-   claude plugin validate .
-   claude plugin validate plugins/forge
-   ```
-
-4. Fusionner sur `main`, puis poser et pousser le tag annoté `forge--v<X.Y.Z>`, deux tirets : c'est
-   la forme que Claude Code lit. Les anciens tags `forge-v<X.Y.Z>` de Projet A ne changent pas.
-
-## Gestes humains
-
-Ce qu'aucun agent ne fait à la place d'un humain :
-
-1. Créer le dépôt privé `ikoro-labs/forge` (fait), et choisir ses contributeurs, seuls comptes à
-   y avoir le droit d'écriture.
-2. Sur chaque poste (bureau, PC personnel) : un accès git au dépôt privé (clé SSH, ou
-   `gh auth login`) ; puis, dans chaque projet, approuver le dossier et lancer les deux commandes
-   de l'étape 3 d'**Installer dans un projet**. Un contributeur installe le plugin : un accès en lecture
-   lui suffit, pour installer comme pour monter de version.
-3. À chaque montée d'épingle, sur chaque poste et dans chaque projet : les deux commandes de
-   **Monter de version**.
-4. Une fois `forge` 1.1.0 installé dans chaque projet du poste qui fait des passations : retirer de
-   `~/.claude/settings.json` les entrées `UserPromptSubmit` et `PostToolUse` qui lancent la copie
-   `~/.claude/hooks/handoff_trigger.py`, puis cette copie et ses deux voisins
-   (`handoff_header.py`, `handoff_relay.sh`) ; garder `~/.claude/hooks/state/`, qui porte les
-   passations et les compteurs. Remplacer la règle de permission qui autorise
-   `bash ~/.claude/hooks/handoff_relay.sh` par la même règle sur le relais du plugin
-   (`~/.claude/plugins/cache/ikoro-labs/forge/<version>/hooks/handoff_relay.sh`). Jusque-là, le
-   hook du plugin se tait et la copie reste celle qui tourne.
-5. À la montée vers `forge` 1.2.0 : remplacer la règle de permission qui autorise
-   `bash ~/.claude/plugins/cache/ikoro-labs/forge/<version>/hooks/handoff_relay.sh` par
-   `uv run --no-project --quiet python ~/.claude/plugins/cache/ikoro-labs/forge/<version>/hooks/handoff_relay.py`.
-   Le relais bash n'existe plus.
-6. Dans ce dépôt, une fois par poste qui y développe : les deux commandes de l'étape 3
-   d'**Installer dans un projet**, depuis sa racine.
-   `main` est protégée par un ruleset qui exige les checks de la clé `required-contexts` de
-   `docs/agents/usine.md` (Settings, Rules, Rulesets, ciblant la branche par défaut). Sans
-   protection, seul `guard_git` retient une fusion dont un check n'est pas vert. `forge:qc-gate`
-   lit la protection dans les rulesets comme dans l'ancienne protection de branche.
-
-## Limites connues
-
-- **Une source par marketplace et par poste** : la marketplace `ikoro-labs` n'est connue qu'une
-  fois par poste, à la source du dernier projet qui l'a déclarée (`claude plugin marketplace add`).
-  L'ouverture d'une session ne la remet pas sur le `ref` du projet. Deux projets d'un même poste
-  peuvent tourner sur deux versions, car chaque installation garde son propre dossier de cache ;
-  mais `install` et `update` prennent la source du poste. D'où la redéclaration de l'épingle avant
-  chacun d'eux.
-- **Dépendance à GitHub** : un poste neuf ou une nouvelle version ne s'installent pas si GitHub ou
-  les identifiants git du poste font défaut.
-- **Noms préfixés** : `forge:coder`, `/forge:qc`. Les commandes tapées, les tests et les mesures
-  d'un projet qui lisent un nom d'agent doivent suivre à la migration.
-- **Frontmatter des agents** : un agent de plugin ignore `hooks`, `permissionMode`, `mcpServers` et
-  `initialPrompt`. Les gardes des agents sont donc des hooks globaux du plugin, filtrés sur
-  `agent_type` (`forge:coder`, `forge:qc-gate`...) ; un filtre faux ne s'appliquerait à personne,
-  en silence, d'où les tests de `tests/`.
-- **Aucun `CLAUDE.md`** n'est chargé depuis un plugin : la constitution reste celle du projet.
-
-### Éprouvé sur un poste (Claude Code 2.1.303, 2026-10-19)
-
-Les quatre points que l'ADR-0129 laissait à confirmer, essayés dans des projets jetables :
-
-- **Deux projets, deux `ref`** : possible, avec la limite ci-dessus. Un projet épinglé sur 1.0.0,
-  un autre sur 1.0.1 : chacun a gardé sa version, jusqu'à un `update` lancé dans le premier, qui
-  l'a fait passer en 1.0.1 ; redéclarer son épingle puis relancer `update` l'a ramené en 1.0.0.
-- **`qc` du projet et `forge:qc`** : `/qc` lance le skill du projet ; `forge:qc` reste joignable
-  sous son nom préfixé, et les deux figurent dans la liste des skills. Pendant la transition, les
-  commandes qui doivent viser le plugin écrivent `/forge:qc`.
-- **`guard_coder` dans un worktree** : un `forge:coder` lancé avec `isolation: worktree` porte bien
-  `agent_type: "forge:coder"` dans l'événement du hook. Rejoué sur `guard_coder`, cet événement
-  est refusé pour `gh pr merge` comme pour le skill `forge:qc`, et le même événement avec un autre
-  `agent_type` passe.
-- **Marketplace injoignable au démarrage** : avec git coupé vers GitHub, la session charge la
-  version en cache, skills et agents compris.
+Chaque page dit ce qui a été éprouvé sur un vrai poste, et ce qui n'a tourné que dans les tests.
 
 ## Licence
 
 Privé. Trois skills adaptent mattpocock/skills sous licence MIT :
-`plugins/forge/THIRD_PARTY_NOTICES.md`.
+[`plugins/forge/THIRD_PARTY_NOTICES.md`](plugins/forge/THIRD_PARTY_NOTICES.md).

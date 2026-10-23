@@ -213,7 +213,7 @@ class OneSessionPerRepository(unittest.TestCase):
     def test_feature_build_lets_the_interactive_session_take_over_from_a_background_one(self) -> None:
         # MINOR 1 of #36, decision 1: the background session drains then stops, and the user's
         # interactive session is its successor in effect; the background session's conduct is
-        # in what projects load, not only in this repository's README.
+        # in what projects load, not only in this repository's docs/sessions.md.
         skill = (support.PLUGIN / "skills" / "feature-build" / "SKILL.md").read_text(encoding="utf-8")
         step = skill.split("## 0.", 1)[1].split("\n## ", 1)[0]
         point = re.search(r"^5\. (.*?)(?=^\d+\. )", step, re.DOTALL | re.MULTILINE)
@@ -235,9 +235,9 @@ class OneSessionPerRepository(unittest.TestCase):
         self.assertLess(background.index("`SendMessage`"), background.index(closing))
         self.assertIn("`CLAUDE_HANDOFF_CLOSE_DELAY`", interactive[: interactive.index("**Sinon**")])
 
-    def test_the_readme_states_the_common_rule_and_the_relay_code_6(self) -> None:
+    def test_the_sessions_doc_states_the_common_rule_and_the_relay_code_6(self) -> None:
         # Critère 4.
-        readme = (support.REPO_ROOT / "README.md").read_text(encoding="utf-8")
+        readme = (support.REPO_ROOT / "docs" / "sessions.md").read_text(encoding="utf-8")
         self.assertIn("\n## Règles communes\n", readme)
         rules = " ".join(readme.split("\n## Règles communes\n", 1)[1].split("\n## ", 1)[0].split())
         for expected in (
@@ -260,20 +260,20 @@ class OneSessionPerRepository(unittest.TestCase):
         self.assertEqual(codes, ["0", "1", "2", "3", "4", "5", "6"])
         self.assertRegex(relay, r"\| 6 \| [^\n]*autre session")
 
-    def test_the_readme_says_the_predecessor_of_a_handoff_does_not_count(self) -> None:
+    def test_the_sessions_doc_says_the_predecessor_of_a_handoff_does_not_count(self) -> None:
         # MINOR 2 of #36: the successor's `sessions` leaves out the `auteur` of its handoff.
-        readme = (support.REPO_ROOT / "README.md").read_text(encoding="utf-8")
+        readme = (support.REPO_ROOT / "docs" / "sessions.md").read_text(encoding="utf-8")
         rules = " ".join(readme.split("\n## Règles communes\n", 1)[1].split("\n## ", 1)[0].split())
         for expected in ("l'`auteur` d'une passation du projet", "`CLAUDE_HANDOFF_CLOSE_DELAY`", "sans `auteur`"):
             self.assertIn(expected, rules)
 
-    def test_the_readme_says_how_the_interactive_session_takes_over(self) -> None:
-        # MINOR 1 of #36: the README follows the skill.
-        readme = (support.REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    def test_the_sessions_doc_says_how_the_interactive_session_takes_over(self) -> None:
+        # MINOR 1 of #36: docs/sessions.md follows the skill.
+        readme = (support.REPO_ROOT / "docs" / "sessions.md").read_text(encoding="utf-8")
         rules = " ".join(readme.split("\n## Règles communes\n", 1)[1].split("\n## ", 1)[0].split())
         for expected in ("handoff_header.py self", "handoff_trigger.py yield", '"kind": "bg"', '"kind": "interactive"'):
             self.assertIn(expected, rules)
-        # BLOCKER of round 1 on #37: the README says the background session is closed, and how.
+        # BLOCKER of round 1 on #37: docs/sessions.md says the background session is closed, and how.
         self.assertIn("`handoff_relay.py --yield <passation>`", rules)
         drained = " ".join(readme.split("\n## La passation drainée\n", 1)[1].split("\n## ", 1)[0].split())
         for expected in ("handoff_relay.py --yield [--force] <passation>", "`claude stop` puis `claude rm`", "sans le code 6"):
