@@ -284,6 +284,98 @@ class OwnerGestures(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertIsNone(refused(command))
 
+    def test_a_write_by_gh_api_on_an_owner_endpoint_is_refused(self) -> None:
+        cases = [
+            "gh api -X PUT repos/o/r/collaborators/bob -f permission=push",
+            "gh api --method DELETE /repos/o/r/collaborators/bob",
+            "gh api -X DELETE repos/o/r/invitations/12",
+            "gh api -X PUT repos/o/r/branches/main/protection --input p.json",
+            "gh api -X PUT repos/o/r/branches/release/1.x/protection -f x=1",
+            "gh api repos/o/r/rulesets -f name=x",
+            "gh api -X PUT repos/o/r/rulesets/9 --input r.json",
+            "gh api -X POST repos/o/r/actions/runners/registration-token",
+            "gh api -X DELETE repos/o/r/actions/runners/4",
+            "gh api -X PUT repos/o/r/actions/secrets/TOKEN -f encrypted_value=x",
+            "gh api -X DELETE repos/o/r/actions/variables/NAME",
+            "gh api -X POST repos/o/r/actions/variables -f name=A -f value=1",
+            "gh api -X PATCH repos/o/r -f private=false",
+            "gh api -X DELETE repos/o/r",
+            "gh api -X POST repos/o/r/transfer -f new_owner=x",
+            "gh api -X POST repos/o/r/keys -f key=k",
+            "gh api -X POST repos/o/r/hooks --input h.json",
+            "gh api -X PUT repos/o/r/environments/prod",
+            "gh api -X PUT repos/o/r/actions/permissions -F enabled=true",
+            "gh api -X PUT orgs/o/actions/secrets/TOKEN",
+            "gh api -XDELETE repos/o/r/collaborators/bob",
+            "gh -R o/r api -X DELETE repos/{owner}/{repo}/collaborators/bob",
+            "gh api repos/o/r/collaborators/bob?permission=push -X PUT",
+            "gh api -H 'Accept: application/json' -X PUT repos/o/r/rulesets/1",
+        ]
+        for command in cases:
+            with self.subTest(command=command):
+                verdict = refused(command)
+                self.assertIn(OWNER_REFUSAL, verdict or "")
+                self.assertIn("gh api", verdict or "")
+
+    def test_a_read_by_gh_api_stays_allowed_even_on_an_owner_endpoint(self) -> None:
+        for command in (
+            "gh api repos/o/r/collaborators",
+            "gh api -X GET repos/o/r/rulesets",
+            "gh api --method HEAD repos/o/r/branches/main/protection",
+            "gh api repos/o/r/actions/secrets",
+            "gh api repos/o/r/actions/runners --jq '.runners[].name'",
+            "gh api repos/o/r",
+            "gh api repos/o/r/pulls/3 -X GET -f state=open",
+        ):
+            with self.subTest(command=command):
+                self.assertIsNone(refused(command))
+
+    def test_a_write_by_gh_api_outside_the_owner_endpoints_is_left_alone(self) -> None:
+        for command in (
+            "gh api -X POST repos/o/r/issues/3/comments -f body=x",
+            "gh api -X PUT repos/o/r/contents/plugins/forge/hooks/x.py -f message=m",
+            "gh api -X PATCH repos/o/r/issues/3 -f state=closed",
+            "gh api -X POST repos/o/r/git/refs -f ref=refs/heads/x",
+        ):
+            with self.subTest(command=command):
+                self.assertIsNone(refused(command))
+
+    def test_graphql_mutations_of_protection_ruleset_collaborator_and_repository_are_refused(
+        self,
+    ) -> None:
+        for mutation in (
+            'createBranchProtectionRule(input: {pattern: "main"})',
+            "updateBranchProtectionRule(input: {})",
+            'deleteBranchProtectionRule(input: {id: "x"})',
+            "createRepositoryRuleset(input: {})",
+            "updateRepositoryRuleset(input: {})",
+            "deleteRepositoryRuleset(input: {})",
+            'updateRepository(input: {repositoryId: "x", hasIssuesEnabled: false})',
+            'deleteRepository(input: {repositoryId: "x"})',
+            'archiveRepository(input: {repositoryId: "x"})',
+            "transferRepository(input: {})",
+            "addRepositoryCollaborator(input: {})",
+            "removeRepositoryCollaborator(input: {})",
+        ):
+            command = f"gh api graphql -f query='mutation {{ {mutation} {{ clientMutationId }} }}'"
+            with self.subTest(mutation=mutation):
+                verdict = refused(command)
+                self.assertIn(OWNER_REFUSAL, verdict or "")
+                self.assertIn("gh api graphql", verdict or "")
+
+    def test_the_sub_issue_mutations_the_plugin_uses_and_graphql_reads_pass(self) -> None:
+        for command in (
+            "gh api graphql -f query='mutation { addSubIssue(input: {issueId: \"a\", "
+            "subIssueId: \"b\"}) { issue { id } } }'",
+            "gh api graphql -f query='mutation { removeSubIssue(input: {}) { issue { id } } }'",
+            "gh api graphql -f query='mutation { reprioritizeSubIssue(input: {}) { id } }'",
+            "gh api graphql -f query='query { repository(owner: \"o\", name: \"r\") { id } }'",
+            "gh api graphql -f query='query { repository(owner: \"o\", name: \"r\") "
+            "{ branchProtectionRules(first: 5) { nodes { pattern } } } }'",
+        ):
+            with self.subTest(command=command):
+                self.assertIsNone(refused(command))
+
 
 if __name__ == "__main__":
     unittest.main()

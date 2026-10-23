@@ -293,6 +293,87 @@ def read_text_or_none(path: str) -> str | None:
         return None
 
 
+# The fields and bodies of `gh api`: any of them makes gh send a POST unless `-X` says otherwise.
+API_FIELDS = frozenset({"-f", "-F", "--field", "--raw-field", "--input"})
+
+
+def _gh_api_reads(args: list[str]) -> bool:
+    """A `gh api` call that gh sends as a GET: no `-X` other than GET, no field, no `--input`."""
+    for index, word in enumerate(args):
+        name, _, value = word.partition("=")
+        if name in API_FIELDS or (name.startswith("-f") or name.startswith("-F")) and len(name) > 2:
+            return False
+        if name in ("-X", "--method"):
+            method = value or (args[index + 1] if index + 1 < len(args) else "")
+            if method.upper() not in ("GET", "HEAD"):
+                return False
+        elif name.startswith("-X") and name[2:].lstrip("=").upper() not in ("GET", "HEAD"):
+            return False
+    return True
+
+
+# The options of `gh api` that take their value as the next word (`--flag=value` is one word).
+API_OPTIONS_WITH_VALUE = frozenset(
+    {"-X", "--method", "-H", "--header", "-f", "-F", "--field", "--raw-field", "--input"}
+    | {"-q", "--jq", "-t", "--template", "--cache", "--hostname", "-p", "--preview"}
+)
+# What follows `repos/<owner>/<repo>/` or `orgs/<org>/` that belongs to the owner: a write there
+# is a human's. Anchored at the start, so a file named `hooks` under `contents/` is not one.
+OWNER_ENDPOINT = re.compile(
+    r"(?:collaborators|invitations|rulesets|hooks|keys|environments|transfer"
+    r"|branches/.+/protection|actions/(?:runners|secrets|variables|permissions)"
+    r"|dependabot/secrets)(?:/|$)"
+)
+OWNER_SCOPE = re.compile(r"^(?:repos/[^/]+/[^/]+|orgs/[^/]+)(?:/(.*))?$")
+# GraphQL mutations that change protection, rulesets, collaborators or the repository itself. The
+# sub-issue mutations the plugin uses (`addSubIssue`...) are not among them.
+OWNER_MUTATION = re.compile(
+    r"\b(?:(?:create|update|delete)(?:BranchProtectionRule|RepositoryRuleset)"
+    r"|(?:update|delete|archive|unarchive|transfer)Repository"
+    r"|\w*(?:add|remove|update|invite|create|delete)\w*Collaborator\w*)\b",
+    re.IGNORECASE,
+)
+
+
+def _api_endpoint(args: list[str]) -> str:
+    index = 0
+    while index < len(args):
+        word = args[index]
+        if word.startswith("-"):
+            index += 2 if word in API_OPTIONS_WITH_VALUE else 1
+            continue
+        return word
+    return ""
+
+
+def _api_method(args: list[str]) -> str:
+    for index, word in enumerate(args):
+        name, _, value = word.partition("=")
+        if name in ("-X", "--method"):
+            return (value or (args[index + 1] if index + 1 < len(args) else "")).upper()
+        if name.startswith("-X") and len(name) > 2:
+            return name[2:].lstrip("=").upper()
+    return "POST"
+
+
+def _api_gesture(args: list[str]) -> str | None:
+    """The owner gesture of a `gh api` call (the words after `api`), or None."""
+    endpoint = _api_endpoint(args).split("?", 1)[0].strip("/")
+    if endpoint.lower() == "graphql":
+        if OWNER_MUTATION.search(" ".join(args)):
+            return "gh api graphql (mutation de protection, de ruleset, de collaborateur ou du dépôt)"
+        return None
+    if _gh_api_reads(args):
+        return None
+    scope = OWNER_SCOPE.match(endpoint)
+    if scope is not None and (
+        (scope.group(1) is None and endpoint.startswith("repos/"))
+        or (scope.group(1) and OWNER_ENDPOINT.match(scope.group(1)))
+    ):
+        return f"gh api {_api_method(args)} {endpoint}"
+    return None
+
+
 # The gestures that belong to the owner of the repository, which no agent makes: a human does,
 # and the agent lists them at the end of its report. `(group, verb)` of a gh call.
 OWNER_GH_GESTURES = frozenset(
@@ -323,6 +404,9 @@ def _gh_gesture(words: list[str]) -> str | None:
 
 def owner_gesture(words: list[str]) -> str | None:
     """The owner gesture a simple command makes, named for the refusal, or None."""
+    call = gh_command(words)
+    if call and call[0] == "api":
+        return _api_gesture(call[1:])
     return _gh_gesture(words)
 
 
