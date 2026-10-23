@@ -5,6 +5,77 @@ tag `forge--v<X.Y.Z>` sur ce dépôt ; sa version est celle de `plugins/forge/.c
 et nulle part ailleurs. Les tags `forge-v<X.Y.Z>` (un seul tiret) appartiennent à l'historique
 antérieur à ce dépôt et ne sont pas repris ici.
 
+## [1.5.0] - 2026-10-23
+
+Une session apprend dès son démarrage quelles autres sessions vivent sur son dépôt (PR #38, critère
+5 de ikoro-labs/forge#4, qui est ainsi livré en entier). `/forge:qc` retire `needs-your-attention`
+quand un agent l'a posée et que sa raison ne tient plus (#45, #46). Hors du plugin, le `README.md`
+devient une page d'accueil et la marketplace référence un second plugin.
+
+### Hooks
+
+- `sessions_notice.py`, nouveau, déclaré sous `SessionStart` dans `hooks.json` (`timeout` 10, sans
+  matcher : toutes les sources, `compact` comprise) (#38). Il appelle la détection de
+  `handoff_header.py sessions`, sur le même registre et avec les mêmes exclusions, et, s'il trouve
+  une autre session vivante du dépôt, ajoute un `additionalContext` qui nomme chacune et renvoie au
+  point 5 de l'étape 0 de `feature-build` sans le réécrire. Il ne dit rien sans autre session, ni
+  pour un sous-agent (`agent_id` présent), et sort toujours en 0. Il n'a tourné dans aucune session
+  réelle de Claude Code : à la main sous Linux (Claude Code 2.1.306), l'événement passé sur l'entrée
+  standard, sur le registre réel d'un poste, il est resté silencieux, les autres sessions vivantes
+  étant d'autres dépôts. Qu'il nomme une autre session du dépôt n'a été vu que dans la suite de
+  tests ; sous Windows, seulement en CI.
+
+### Skills
+
+- `/forge:qc` ne dit plus « Ne la retire jamais » de `needs-your-attention`. L'agent la retire quand
+  la raison écrite dans `Attention` ne tient plus (une revue `FAILED` relancée qui aboutit, un écart
+  corrigé), et écrit dans `Attention` ce qu'il a retiré et pourquoi ; la ligne gagne la forme
+  `retirée : <raison>` (#45). Seulement une étiquette dont un agent a écrit la raison, dans la ligne
+  `Attention` d'un `Rapport d'agent` ou dans un commentaire de revue `FAILED` : l'agent agit sous le
+  compte de l'humain, et GitHub ne les distingue pas ; une étiquette sans texte d'agent vient d'un
+  humain et reste (#46). Sur une PR qui touche un chemin de la clé `protected-path`, elle reste
+  jusqu'à la fusion humaine. Aucun retrait n'a encore été fait par un agent qui lit cette règle.
+
+### Tests
+
+- `tests/test_sessions_notice.py`, nouveau (9 tests) : registre factice sous `HOME` et
+  `USERPROFILE` isolés, une autre session du dépôt nommée, silence sans elle et pour un sous-agent,
+  le prédécesseur d'une passation exclu, une entrée illisible nommée comme vivante, sortie 0 sur
+  toute entrée ou tout échec, et la déclaration dans `hooks.json`.
+- `tests/test_plugin_content.py` : la règle de retrait de `/forge:qc` et sa borne (#45, #46) ; les
+  autres plugins du catalogue épinglés sur un tag (#47) ; le test qui garde le plugin générique ne
+  compare plus que l'empreinte SHA-256 des noms qu'il refuse (#48).
+- La suite compte 169 tests sous Linux, dont 3 sautés, propres à Windows. Elle tourne en CI sous
+  Linux et sous Windows.
+
+### Hors du plugin
+
+- Le `README.md` devient une page d'accueil ; le détail passe dans `docs/installation.md`,
+  `docs/sessions.md`, `docs/modeles-et-jetons.md` et `docs/contribuer.md`, qui ajoute à la
+  publication la PR d'épingle et celle du tag cité par l'installation (#44).
+- La documentation ne cite plus de projet utilisateur ni de personne (#48).
+- La marketplace `ikoro-labs` n'est plus dite privée et référence `ai-delivery-gates`, publié
+  depuis son propre dépôt et épinglé sur `v0.2.3` (#47).
+- La CI n'active plus le cache de uv, qui n'avait rien à garder (#34, #32). Rien n'en change pour un
+  projet consommateur.
+
+### Gestes humains
+
+- Aucun geste n'est obligatoire à la montée, en dehors des deux commandes de **Monter de version**.
+- Pour qu'un agent retire l'étiquette en mode auto, le poste doit l'autoriser : sur un poste, le
+  classifieur du mode auto a refusé `gh pr edit --remove-label` comme écriture externe, et des
+  règles `Bash(gh pr edit:*)` et `Bash(gh issue edit:*)` ont levé ce refus.
+- Une étiquette `needs-your-attention` posée par `/forge:feature-build` avec un simple commentaire
+  de PR passe pour humaine et reste : l'humain la retire.
+
+### Restés dehors
+
+- Dire en toutes lettres qu'une raison déjà marquée `retirée` ne compte plus quand un humain repose
+  l'étiquette, et reconnaître les étiquettes que `/forge:feature-build` pose par commentaire : deux
+  NOTE du verdict de la #46, sans ticket. L'erreur va dans le sens prudent, l'étiquette reste.
+- Une entrée réelle de `SessionStart`, dans une session `claude --plugin-dir` lancée depuis un
+  projet jetable : pas encore faite.
+
 ## [1.4.0] - 2026-10-21
 
 Une seule session par dépôt (ikoro-labs/forge#4, en partie) : une session sait quelles autres
