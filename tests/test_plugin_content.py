@@ -124,6 +124,14 @@ class Frontmatter(unittest.TestCase):
         self.assertNotIn("Task", tools)
 
 
+class CoderReportsFormatFailures(unittest.TestCase):
+    def test_the_coder_carries_format_on_write_failures_into_its_notes(self) -> None:
+        text = (support.PLUGIN / "agents" / "coder.md").read_text(encoding="utf-8")
+        self.assertIn("format-on-write: ", text)
+        self.assertIn("failed on", text)
+        self.assertIn("NOTES", text.split("format-on-write: ", 1)[1].split("\n## ", 1)[0])
+
+
 class CitedNames(unittest.TestCase):
     def test_every_forge_name_the_plugin_cites_exists(self) -> None:
         known = names()

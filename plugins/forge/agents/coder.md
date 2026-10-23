@@ -78,6 +78,10 @@ lançant. Charge aussi le skill de chaque domaine que le ticket touche, parmi ce
   `git push -u origin <branche>`. Jamais un commit « wip » ni un message sans type : chaque commit
   dit le critère qu'il tient. Si la session qui t'a lancé se ferme, tu t'arrêtes avec elle ; ce
   qui est poussé se reprend, le reste se perd.
+- **Un formateur qui échoue se reporte.** Chaque ligne `format-on-write: ... failed on ...` que le
+  hook te montre après une écriture, tu la recopies dans les `NOTES` de ta sortie (sur la ligne
+  `NOTES:`, séparées par ` ; `, pour que `parse_output.py` la lise). Le fichier reste écrit : la
+  revue doit voir que le projet n'a pas pu le formater.
 
 ## 4. Vérifier comme la CI
 

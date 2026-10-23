@@ -5,7 +5,7 @@ from pathlib import Path
 from unittest import mock
 
 import support
-from usine import load, parse, project_root
+from usine import load, parse, project_root, split_value
 
 TEMPLATE = support.PLUGIN / "templates" / "usine.md"
 
@@ -36,6 +36,21 @@ class Config(unittest.TestCase):
         with mock.patch.dict("os.environ", {}, clear=True):
             self.assertEqual(project_root({"cwd": "/c"}), Path("/c"))
             self.assertEqual(project_root(None), Path("."))
+
+    def test_a_value_is_cut_at_its_first_separators_and_the_last_part_keeps_the_rest(self) -> None:
+        self.assertEqual(
+            split_value("**/*.py | uv run ruff format", 2), ["**/*.py", "uv run ruff format"]
+        )
+        self.assertEqual(split_value("a | b | c | d", 2), ["a", "b | c | d"])
+        self.assertEqual(split_value("a | b | c | d", 3), ["a", "b", "c | d"])
+        self.assertEqual(split_value("solo", 1), ["solo"])
+
+    def test_a_value_missing_a_part_is_reported_never_completed(self) -> None:
+        self.assertIsNone(split_value("**/*.py", 2))
+        self.assertIsNone(split_value("a | b", 3))
+        self.assertIsNone(split_value("a |b", 2))
+        self.assertIsNone(split_value("a | ", 2))
+        self.assertIsNone(split_value(" | b", 2))
 
     def test_the_template_documents_every_key_the_plugin_reads(self) -> None:
         """The agents and skills cite a key as "clé `name`"; the hooks hold theirs in strings."""

@@ -59,7 +59,7 @@ ne fusionne une PR rouge, ou ne sort de son rôle.
 | `guard_coder` | le coder ne fusionne pas, ne relit pas, ne ferme pas de ticket |
 | `guard_readonly` | les juges et les décideurs lisent, n'écrivent jamais |
 | `guard_pause` | tant que `.claude/PAUSED` existe, aucun agent n'est lancé |
-| `after_write` | pas de tiret cadratin au-delà de ce que le projet admet |
+| `after_write` | formate chaque fichier écrit avec les formateurs que le projet déclare (clé `format-on-write`), puis refuse le tiret cadratin au-delà de ce que le projet admet |
 | `trim_output` | la longue sortie d'une commande de tests qui réussit est raccourcie, la sortie complète gardée dans un journal |
 | `sessions_notice`, `handoff_*` | une seule session par dépôt, et la passation à une nouvelle session quand le contexte est plein |
 

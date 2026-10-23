@@ -166,3 +166,16 @@ Les commandes que ces agents en lecture seule peuvent lancer en plus des lecture
 calculateur du projet, par exemple), chacune comme un préfixe. Une par ligne.
 
 - `readonly-command` : `<uv run python -m scripts.calcul>`
+
+Les formateurs lancés après chaque écriture d'un agent (Edit, Write, MultiEdit) : une ligne
+`<motif> | <commande>` par formateur. Le motif se compare au chemin relatif entier, en POSIX, casse
+comprise : `**/` (des dossiers, ou aucun), `*` et `?` (jamais un `/`), `{a,b}` (non imbriqué), tout
+le reste est littéral. La commande est découpée comme par un shell POSIX, lancée sans shell depuis la
+racine du dépôt, le chemin absolu du fichier ajouté en dernier argument ; elle peut contenir `|`
+(la coupe se fait au premier ` | `). Plusieurs motifs qui correspondent : toutes les commandes,
+dans l'ordre du fichier, avant le contrôle du tiret cadratin. Chacune a 30 s, 120 s au total.
+Un échec ou un délai dépassé ne défait pas l'écriture : une ligne sur stderr, `format-on-write:
+<commande> failed on <chemin> (exit <n>)`, que l'agent voit. Sans la clé, rien n'est formaté.
+
+- `format-on-write` : `<**/*.py | uv run ruff format>`
+- `format-on-write` : `<apps/web/**/*.{ts,tsx} | pnpm --dir apps/web exec prettier --write>`
