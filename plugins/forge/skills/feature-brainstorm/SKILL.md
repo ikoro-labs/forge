@@ -12,7 +12,7 @@ qui n'est pas dans le dossier de la feature n'a pas été décidé.
 
 Applique `${CLAUDE_PLUGIN_ROOT}/templates/features/protocole.md`. Étape 3 : la feature doit
 seulement exister ; une séance est permise à toute étape, y compris sur une feature
-`hors-perimetre` qu'on voudrait relancer.
+`hors-perimetre` (rôle de la clé `feature-state`) qu'on voudrait relancer.
 
 1. **Ouvrir la séance** `seances/AAAA-MM-JJ-<auteur>-<sujet>.md` depuis le gabarit `seance.md`,
    avant la première question. Participants : l'auteur, l'agent, et toute personne que l'auteur

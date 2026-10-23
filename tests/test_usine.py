@@ -52,6 +52,14 @@ class Config(unittest.TestCase):
         self.assertIsNone(split_value("a | ", 2))
         self.assertIsNone(split_value(" | b", 2))
 
+    def test_the_feature_keys_split_into_role_and_value_and_name_and_identifier(self) -> None:
+        self.assertEqual(
+            split_value("hors-perimetre | hors_perimetre", 2), ["hors-perimetre", "hors_perimetre"]
+        )
+        self.assertEqual(split_value("Kevin Simo | ksimo", 2), ["Kevin Simo", "ksimo"])
+        # The plain form of `accepting-human` has no separator: the caller keeps it as it is.
+        self.assertIsNone(split_value("Kevin Simo", 2))
+
     def test_the_template_documents_every_key_the_plugin_reads(self) -> None:
         """The agents and skills cite a key as "clé `name`"; the hooks hold theirs in strings."""
         documented = set(parse(TEMPLATE.read_text(encoding="utf-8")))

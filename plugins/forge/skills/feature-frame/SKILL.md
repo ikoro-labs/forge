@@ -15,8 +15,8 @@ Les tours de questions couvrent, dans cet ordre de dépendance :
 1. **La condition d'entrée d'abord.** La règle que désigne la clé `entry-gate` : qui l'a demandée,
    ou quelle exception de la règle s'applique, et qui le décide. `forge:product-owner` l'applique à
    la lettre avant que la question parte vers un humain. **Si la règle ne l'admet pas** : écris
-   `etat: hors-perimetre` dans `idee.md` avec la raison, livre, et arrête-toi. La chaîne s'arrête
-   là. Sans la clé, la condition est « sans objet (clé entry-gate absente) » : écris-le dans la
+   `etat` à la valeur du projet du rôle `hors-perimetre` (clé `feature-state`) dans `idee.md` avec
+   la raison, livre, et arrête-toi. La chaîne s'arrête là. Sans la clé, la condition est « sans objet (clé entry-gate absente) » : écris-le dans la
    section 3 du cadrage, et l'humain qui acceptera le cadrage en décide.
 2. **Le problème** : qui souffre, de quoi, chiffré si possible ; le cas d'usage unique.
 3. **La solution la plus simple** : pourquoi pas une règle, une requête, une configuration ; et

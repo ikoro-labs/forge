@@ -15,13 +15,14 @@ condition d'entrée).
    minuscules et tirets.
 2. **Un seul tour de questions**, avec ta recommandation pour chacune :
    - le titre court ;
-   - le porteur, parmi les humains de la clé `accepting-human` ;
+   - le porteur, parmi les humains de la clé `accepting-human` (`porteur` reçoit son identifiant
+     court s'il en a un, sinon son `user.name`) ;
    - **qui l'a demandée** : un utilisateur ou un client, nommé ; sinon « interne » et pourquoi. Le
      cadrage dira si la règle d'entrée (clé `entry-gate`) l'admet ;
    - les documents qui l'accompagnent (note, PDF, échange, fichier) ;
    - les premières questions à trancher.
-3. **L'idée.** `<feature-dir>/NNNN-slug/idee.md` depuis le gabarit `idee.md`, `etat: active`. Un
-   document apporté entre dans `sources/` s'il ne contient rien de ce que le protocole exclut ;
+3. **L'idée.** `<feature-dir>/NNNN-slug/idee.md` depuis le gabarit `idee.md`, `etat` à la valeur
+   du rôle `active` de la clé `feature-state` (sans la clé, `active`). Un document apporté entre dans `sources/` s'il ne contient rien de ce que le protocole exclut ;
    sinon, seulement sa référence et son empreinte.
 4. **L'issue de suivi.** `gh label create feature --color 5319E7 --description "Feature suivie de
    l'idée à la livraison"` si l'étiquette manque, puis

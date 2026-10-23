@@ -20,9 +20,13 @@ relatifs à la racine du dépôt.
 ## Personnes et décisions
 
 Les humains qui acceptent un document de feature et à qui reviennent les décisions réservées. Une
-ligne par humain, sa valeur égale à son `git config user.name`.
+ligne par humain, sa valeur égale à son `git config user.name`. Un identifiant court peut suivre,
+après ` | ` : c'est lui qu'écrivent `accepte_par` et `porteur`, à la place du `user.name`, que la
+comparaison garde pour reconnaître l'humain. Sans ` | `, le `user.name` est écrit tel quel. Une
+version du plugin antérieure à cette forme lirait la ligne entière comme un nom et refuserait
+l'acceptation (échec sûr, rien n'est écrit).
 
-- `accepting-human` : `<user.name git du premier humain>`
+- `accepting-human` : `<user.name git du premier humain> | <identifiant court>`
 - `accepting-human` : `<user.name git du second humain>`
 
 La matrice des droits de décision : ce que `forge:staff-engineer` et `forge:product-owner` tranchent
@@ -94,6 +98,24 @@ La commande qui vérifie qu'un document peut s'ouvrir ou s'accepter : appelée a
 elle, la vérification se fait à la main, dans les en-têtes.
 
 - `feature-gate` : `<uv run python -m scripts.features gate>`
+
+Les états qu'une feature peut porter dans l'`etat` de son `idee.md`, dans le vocabulaire du
+projet : une ligne `<rôle> | <valeur du projet>`, les rôles étant `active`, `hors-perimetre` et
+`abandonnee`. Les commandes disent le rôle et écrivent la valeur. Une clé présente doit déclarer les
+trois rôles : un rôle manquant arrête la commande, qui ne revient pas aux mots intégrés. Sans la
+clé, les trois mots s'écrivent tels quels. Le `statut` des documents (`en-revue`, `accepte`) reste
+fixe.
+
+- `feature-state` : `<active | actif>`
+- `feature-state` : `<hors-perimetre | hors_perimetre>`
+- `feature-state` : `<abandonnee | abandonne>`
+
+La commande qui régénère le catalogue des features, lancée sans argument depuis la racine du dépôt
+après chaque commande `/forge:feature-*` qui écrit un en-tête (acceptation comprise) et à l'étape 3
+de la clôture, avant le commit et le push. Un code non nul arrête la commande avant le commit ; les
+fichiers qu'elle change entrent dans le commit en cours. Sans la clé, rien ne se lance.
+
+- `feature-catalog-command` : `<uv run python -m scripts.features catalog>`
 
 ## Rejeu et contrôles
 

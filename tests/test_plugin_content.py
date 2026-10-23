@@ -132,6 +132,60 @@ class CoderReportsFormatFailures(unittest.TestCase):
         self.assertIn("NOTES", text.split("format-on-write: ", 1)[1].split("\n## ", 1)[0])
 
 
+class FeatureHeaders(unittest.TestCase):
+    """Ticket 6: the feature commands write the states, approvers and catalog the project declares."""
+
+    @staticmethod
+    def read(*parts: str) -> str:
+        return " ".join(support.PLUGIN.joinpath(*parts).read_text(encoding="utf-8").split())
+
+    def test_the_template_documents_the_three_keys_and_their_forms(self) -> None:
+        template = self.read("templates", "usine.md")
+        for role in ("active", "hors-perimetre", "abandonnee"):
+            self.assertIn(f"`feature-state` : `<{role} | ", template)
+        self.assertIn("`feature-catalog-command` : `<", template)
+        self.assertIn("<user.name git du premier humain> | <identifiant court>", template)
+
+    def test_a_declared_feature_state_key_must_declare_the_three_roles(self) -> None:
+        protocol = self.read("templates", "features", "protocole.md")
+        self.assertIn("clé `feature-state`", protocol)
+        self.assertIn("un rôle manque", protocol)
+        self.assertIn("la commande s'arrête", protocol)
+        self.assertIn("Sans la clé, `active`, `hors-perimetre` et `abandonnee`", protocol)
+
+    def test_the_commands_write_the_project_state_of_a_role_not_a_fixed_word(self) -> None:
+        for name in ("feature-new", "feature-frame", "feature-status", "feature-brainstorm"):
+            self.assertIn("clé `feature-state`", self.read("skills", name, "SKILL.md"), name)
+        self.assertIn("valeur du projet", self.read("skills", "feature-frame", "SKILL.md"))
+        for name in ("idee.md", "cadrage.md"):
+            self.assertIn("clé `feature-state`", self.read("templates", "features", name), name)
+
+    def test_accept_writes_the_short_identifier_when_the_key_gives_one(self) -> None:
+        accept = self.read("skills", "feature-accept", "SKILL.md")
+        self.assertIn("`<user.name git> | <identifiant court>`", accept)
+        self.assertIn("identifiant court", accept.split("**Écrire**", 1)[1])
+        self.assertIn("sans ` | `", accept)
+        protocol = self.read("templates", "features", "protocole.md")
+        self.assertIn("la partie gauche", protocol)
+        new = self.read("skills", "feature-new", "SKILL.md")
+        self.assertIn("identifiant court", new)
+
+    def test_the_catalog_command_runs_after_each_header_write_and_before_the_push(self) -> None:
+        protocol = self.read("templates", "features", "protocole.md")
+        delivery = protocol.split("## 7. Livrer dans une PR", 1)[1]
+        self.assertIn("clé `feature-catalog-command`", delivery)
+        self.assertIn("racine du dépôt", delivery)
+        self.assertIn("sans argument", delivery)
+        self.assertIn("code non nul", delivery)
+        self.assertIn("avant le commit", delivery)
+        self.assertIn("sans objet (clé feature-catalog-command absente)", delivery)
+        accept = self.read("skills", "feature-accept", "SKILL.md")
+        self.assertIn("clé `feature-catalog-command`", accept)
+        close = self.read("skills", "feature-close", "SKILL.md")
+        self.assertIn("clé `feature-catalog-command`", close)
+        self.assertLess(close.index("feature-catalog-command"), close.index("**L'issue de suivi**"))
+
+
 class CitedNames(unittest.TestCase):
     def test_every_forge_name_the_plugin_cites_exists(self) -> None:
         known = names()
