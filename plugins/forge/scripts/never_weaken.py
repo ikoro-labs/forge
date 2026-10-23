@@ -146,6 +146,40 @@ def _pattern(parameter: str) -> str | None:
     return None if groups == 1 else "le paramètre doit contenir un seul groupe de capture"
 
 
+def _scale(parameter: str) -> tuple[re.Pattern[str], list[str]] | str:
+    """The field pattern and the ranks (best first) of `<field> | <a> > <b> > ...`, or why not."""
+    parts = usine.split_value(parameter, 2)
+    if parts is None:
+        return "le paramètre est `<champ> | <rang> > <rang> [> ...]`"
+    ranks = [rank.strip() for rank in parts[1].split(">")]
+    if len(ranks) < 2 or not all(ranks) or len(set(ranks)) != len(ranks):
+        return "l'échelle demande au moins deux rangs distincts, séparés par `>`"
+    pattern = re.compile(
+        r"^[\s>*_#-]*" + re.escape(parts[0]) + r"[\s*_]*[:=]\s*[\"'`]?([^\s\"'`,]+)"
+    )
+    return pattern, ranks
+
+
+def _lowered_rank(
+    changes: list[FileChange], scope: str, scale: tuple[re.Pattern[str], list[str]]
+) -> tuple[str, str]:
+    pattern, ranks = scale
+    hits: list[str] = []
+    for change in changes:
+        if not under(change.new_path, scope):
+            continue
+        for old, new in _changed_values(change, pattern):
+            if old == new:
+                continue
+            if old not in ranks or new not in ranks:
+                hits.append(f"{change.new_path}: rang hors échelle, {old} puis {new}")
+            elif ranks.index(new) > ranks.index(old):
+                hits.append(f"{change.new_path}: {old} abaissé à {new}")
+    if hits:
+        return APPLIES, "; ".join(hits)
+    return NONE, "aucun rang abaissé sous le chemin"
+
+
 def check_entry(entry: str, changes: list[FileChange]) -> Result:
     parts = usine.split_value(entry, 3) or usine.split_value(entry, 2)
     if parts is None:
@@ -162,7 +196,12 @@ def check_entry(entry: str, changes: list[FileChange]) -> Result:
         if problem := _pattern(parameter):
             return Result(entry, INVALID, problem)
         return Result(entry, *_raised_number(changes, scope, parameter))
-    return Result(entry, INVALID, f"type inconnu `{kind}` (removed-line, raised-number)")
+    if kind == "lowered-rank":
+        scale = _scale(parameter) if parameter else "le type `lowered-rank` demande `<champ> | <échelle>`"
+        if isinstance(scale, str):
+            return Result(entry, INVALID, scale)
+        return Result(entry, *_lowered_rank(changes, scope, scale))
+    return Result(entry, INVALID, f"type inconnu `{kind}` (removed-line, raised-number, lowered-rank)")
 
 
 def check(entries: list[str], diff_text: str) -> list[Result]:

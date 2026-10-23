@@ -144,5 +144,66 @@ class RaisedNumber(unittest.TestCase):
         self.assertEqual(statuses([missing, no_group, broken], text), [INVALID] * 3)
 
 
+RANKED = "docs/fonctions/ | lowered-rank | statut | certifie > valide > brouillon"
+
+
+class LoweredRank(unittest.TestCase):
+    def test_a_lowered_rank_applies(self) -> None:
+        text = diff("docs/fonctions/tva.md", "-statut: certifie", "+statut: brouillon")
+        results = check([RANKED], text)
+        self.assertEqual([result.status for result in results], [APPLIES])
+        self.assertIn("certifie", results[0].detail)
+        self.assertIn("brouillon", results[0].detail)
+
+    def test_a_raised_or_unchanged_rank_does_not_apply(self) -> None:
+        raised = diff("docs/fonctions/tva.md", "-statut: brouillon", "+statut: valide")
+        same = diff("docs/fonctions/tva.md", "-statut: valide", "+statut: valide")
+        self.assertEqual(statuses([RANKED], raised), [NONE])
+        self.assertEqual(statuses([RANKED], same), [NONE])
+
+    def test_a_rank_lowered_outside_the_path_or_on_another_field_does_not_apply(self) -> None:
+        elsewhere = diff("docs/autre/tva.md", "-statut: certifie", "+statut: brouillon")
+        other_field = diff("docs/fonctions/tva.md", "-niveau: certifie", "+niveau: brouillon")
+        self.assertEqual(statuses([RANKED], elsewhere), [NONE])
+        self.assertEqual(statuses([RANKED], other_field), [NONE])
+
+    def test_the_field_is_read_with_quotes_bold_or_an_equal_sign(self) -> None:
+        for before, after in (
+            ('statut = "certifie"', 'statut = "valide"'),
+            ("- **statut** : certifie", "- **statut** : valide"),
+            ("  statut:   certifie  ", "  statut:   valide  "),
+        ):
+            with self.subTest(before=before):
+                text = diff("docs/fonctions/tva.md", f"-{before}", f"+{after}")
+                self.assertEqual(statuses([RANKED], text), [APPLIES])
+
+    def test_a_field_name_is_matched_whole(self) -> None:
+        text = diff("docs/fonctions/tva.md", "-statut_ancien: certifie", "+statut_ancien: brouillon")
+        self.assertEqual(statuses([RANKED], text), [NONE])
+
+    def test_a_value_outside_the_scale_is_not_taken_for_a_safe_change(self) -> None:
+        text = diff("docs/fonctions/tva.md", "-statut: certifie", "+statut: obsolete")
+        results = check([RANKED], text)
+        self.assertEqual([result.status for result in results], [APPLIES])
+        self.assertIn("obsolete", results[0].detail)
+
+    def test_a_new_file_or_a_removed_field_is_not_a_lowered_rank(self) -> None:
+        added = diff("docs/fonctions/tva.md", "+statut: brouillon")
+        removed = diff("docs/fonctions/tva.md", "-statut: certifie")
+        self.assertEqual(statuses([RANKED], added), [NONE])
+        self.assertEqual(statuses([RANKED], removed), [NONE])
+
+    def test_the_parameter_names_a_field_and_a_scale_of_two_ranks_at_least(self) -> None:
+        text = diff("docs/fonctions/tva.md", "-statut: certifie", "+statut: brouillon")
+        entries = [
+            "docs/fonctions/ | lowered-rank",
+            "docs/fonctions/ | lowered-rank | statut",
+            "docs/fonctions/ | lowered-rank | statut | certifie",
+            "docs/fonctions/ | lowered-rank | statut | certifie > > brouillon",
+            "docs/fonctions/ | lowered-rank | statut | certifie > certifie",
+        ]
+        self.assertEqual(statuses(entries, text), [INVALID] * len(entries))
+
+
 if __name__ == "__main__":
     unittest.main()
