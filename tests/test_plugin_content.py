@@ -235,6 +235,22 @@ class DomainOwner(unittest.TestCase):
         self.assertIn("partiel justifié", judge)
 
 
+class ArchitectureDiagram(unittest.TestCase):
+    def test_the_svg_export_carries_every_text_of_the_excalidraw_source(self) -> None:
+        # Ticket 4: the diagram shows the domain arbiter and the owner notified on OPEN; the
+        # export the README displays must not lag behind its source.
+        docs = support.REPO_ROOT / "docs"
+        source = json.loads((docs / "architecture.excalidraw").read_text(encoding="utf-8"))
+        svg = (docs / "architecture.svg").read_text(encoding="utf-8")
+        texts = [element["text"] for element in source["elements"] if element["type"] == "text"]
+        self.assertIn("domain-arbiter", " ".join(texts))
+        self.assertIn("domain-owner", " ".join(texts))
+        for text in texts:
+            for line in text.splitlines():
+                with self.subTest(line=line):
+                    self.assertIn(line.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"), svg)
+
+
 class AttentionLabel(unittest.TestCase):
     def test_qc_removes_the_attention_label_once_its_reason_no_longer_holds(self) -> None:
         # Demande directe. A label left after its reason is gone (a FAILED review rerun and
