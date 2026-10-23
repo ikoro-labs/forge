@@ -105,6 +105,11 @@ Retire-la quand la raison écrite dans `Attention` ne tient plus (une revue `FAI
 aboutit, un écart corrigé), et écris dans `Attention` ce que tu as retiré et pourquoi. Sur une PR
 qui touche un chemin protégé, elle reste jusqu'à la fusion humaine.
 
+Retire seulement une étiquette dont un agent a écrit la raison, dans la ligne `Attention` d'un
+`Rapport d'agent` ou dans un commentaire de revue `FAILED`. Tu agis sous le compte de l'humain :
+l'auteur de l'étiquette sur GitHub ne vous distingue pas. Une étiquette dont aucun texte d'agent ne
+donne la raison vient d'un humain : elle reste, même si un commentaire l'explique.
+
 ## Rapport d'agent
 
 En français, six lignes, aucune vide :

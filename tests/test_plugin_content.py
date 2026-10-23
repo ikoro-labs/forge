@@ -200,6 +200,19 @@ class AttentionLabel(unittest.TestCase):
         self.assertIn("Sur une PR qui touche un chemin protégé, elle reste jusqu'à la fusion humaine", skill)
         self.assertIn("**Attention :** aucune | une raison par needs-your-attention | retirée : <raison>", skill)
 
+    def test_qc_leaves_an_attention_label_no_agent_text_explains(self) -> None:
+        # The agent acts under the human's account: the label's author on GitHub cannot tell
+        # them apart, so an agent text giving the reason is the only mark of an agent's label.
+        # Without that bound, a label the human set with a comment would read as "no reason
+        # left" and be taken off before the human was read.
+        skill = " ".join((support.PLUGIN / "skills" / "qc" / "SKILL.md").read_text(encoding="utf-8").split())
+        self.assertIn(
+            "Retire seulement une étiquette dont un agent a écrit la raison, dans la ligne `Attention` "
+            "d'un `Rapport d'agent` ou dans un commentaire de revue `FAILED`",
+            skill,
+        )
+        self.assertIn("Une étiquette dont aucun texte d'agent ne donne la raison vient d'un humain : elle reste", skill)
+
 
 class OneSessionPerRepository(unittest.TestCase):
     """ikoro-labs/forge#4: one session acts on a repository at a time."""
