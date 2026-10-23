@@ -6,8 +6,8 @@ Each key is a Markdown list item, the key and its value in backticks:
     - `install` : `uv sync --locked`
     - `install` : `pnpm install --frozen-lockfile`
 
-A repeated key is a list, in the file's order. Any other line is prose and is ignored. An absent
-key has no default: whoever reads it says the step is "sans objet" and names the key.
+A repeated key is a list, in the file's order. A value of several parts is `<part> | <part>`,
+which `split_value` cuts. Any other line is prose and is ignored. An absent key has no default: whoever reads it says the step is "sans objet" and names the key.
 """
 
 from __future__ import annotations
@@ -26,6 +26,18 @@ def parse(text: str) -> dict[str, list[str]]:
         if match := ENTRY.match(line):
             config.setdefault(match.group(1), []).append(match.group(2).strip())
     return config
+
+
+def split_value(value: str, parts: int) -> list[str] | None:
+    """A value of `parts` parts joined by ` | `, or None when one is missing or empty.
+
+    The cut is at the first separators only, so the last part keeps the rest (a command may hold
+    a `|`). A value short of a part is never completed: the caller reports it.
+    """
+    pieces = [piece.strip() for piece in value.split(" | ", parts - 1)]
+    if len(pieces) != parts or not all(pieces):
+        return None
+    return pieces
 
 
 def project_root(event: dict[str, object] | None = None) -> Path:
