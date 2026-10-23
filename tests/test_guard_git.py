@@ -234,5 +234,56 @@ class SplitTicket(unittest.TestCase):
         self.assertIn("closes #322", verdict or "")
 
 
+OWNER_REFUSAL = "geste du propriétaire du dépôt, à lister pour l'humain en fin de compte rendu"
+
+
+class OwnerGestures(unittest.TestCase):
+    """Les gestes du propriétaire du dépôt, refusés à tout agent."""
+
+    def test_the_gh_commands_of_the_owner_are_refused_and_named(self) -> None:
+        cases = [
+            ("gh secret set TOKEN --body x", "gh secret set"),
+            ("gh secret delete TOKEN", "gh secret delete"),
+            ("gh variable set NAME --body x", "gh variable set"),
+            ("gh variable delete NAME", "gh variable delete"),
+            ("gh repo edit --visibility public", "gh repo edit --visibility"),
+            ("gh repo edit o/r --visibility=private --accept-visibility-change-consequences",
+             "gh repo edit --visibility"),
+            ("gh repo delete o/r --yes", "gh repo delete"),
+            ("gh repo rename new-name", "gh repo rename"),
+            ("gh repo archive o/r --yes", "gh repo archive"),
+            ("gh repo deploy-key add key.pub", "gh repo deploy-key add"),
+            ("cd /work && gh secret set X", "gh secret set"),
+            ("echo ok; gh variable set X --body 1", "gh variable set"),
+        ]
+        for command, gesture in cases:
+            with self.subTest(command=command):
+                verdict = refused(command)
+                self.assertIn(gesture, verdict or "")
+                self.assertIn(OWNER_REFUSAL, verdict or "")
+
+    def test_gh_global_options_and_environment_do_not_hide_a_gesture(self) -> None:
+        for command in (
+            "gh -R o/r secret set TOKEN --body x",
+            "gh --repo=o/r secret set TOKEN",
+            "GH_TOKEN=x gh -R o/r variable delete NAME",
+            "gh secret -R o/r set TOKEN",
+        ):
+            with self.subTest(command=command):
+                self.assertIn(OWNER_REFUSAL, refused(command) or "")
+
+    def test_the_reads_of_the_same_commands_stay_allowed(self) -> None:
+        for command in (
+            "gh secret list",
+            "gh variable list",
+            "gh variable get NAME",
+            "gh repo view o/r",
+            "gh repo edit --description 'x'",
+            "gh repo list",
+        ):
+            with self.subTest(command=command):
+                self.assertIsNone(refused(command))
+
+
 if __name__ == "__main__":
     unittest.main()

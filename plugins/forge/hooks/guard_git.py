@@ -293,6 +293,43 @@ def read_text_or_none(path: str) -> str | None:
         return None
 
 
+# The gestures that belong to the owner of the repository, which no agent makes: a human does,
+# and the agent lists them at the end of its report. `(group, verb)` of a gh call.
+OWNER_GH_GESTURES = frozenset(
+    {("secret", "set"), ("secret", "delete"), ("secret", "remove")}
+    | {("variable", "set"), ("variable", "delete"), ("variable", "remove")}
+    | {("repo", "delete"), ("repo", "rename"), ("repo", "archive")}
+    | {("repo", "deploy-key")}
+)
+
+
+def _gh_gesture(words: list[str]) -> str | None:
+    """The owner gesture of a gh call, named as the agent typed it, or None."""
+    act = gh_act(words)
+    if act is None:
+        return None
+    group, verb, rest = act
+    if (group, verb) == ("repo", "deploy-key"):
+        action = next((word for word in rest if not word.startswith("-")), "")
+        return f"gh repo deploy-key {action}" if action in ("add", "delete") else None
+    if (group, verb) in OWNER_GH_GESTURES:
+        return f"gh {group} {verb}"
+    if (group, verb) == ("repo", "edit") and any(
+        word == "--visibility" or word.startswith("--visibility=") for word in rest
+    ):
+        return "gh repo edit --visibility"
+    return None
+
+
+def owner_gesture(words: list[str]) -> str | None:
+    """The owner gesture a simple command makes, named for the refusal, or None."""
+    return _gh_gesture(words)
+
+
+def _owner_refusal(gesture: str) -> str:
+    return f"{gesture} : geste du propriétaire du dépôt, à lister pour l'humain en fin de compte rendu"
+
+
 def refusal(
     command: str,
     branch: str | Callable[[str | None], str],
@@ -341,6 +378,8 @@ def refusal(
                 switched = True
             if reason := _git_refusal(args, branch_where(_directory_of(args, here)), switched):
                 return reason
+        if gesture := owner_gesture(words):
+            return _owner_refusal(gesture)
         act = gh_act(words)
         if act is not None and act[:2] == ("pr", "merge"):
             rest = act[2]
