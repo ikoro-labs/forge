@@ -38,8 +38,8 @@ Publier une version :
 ## Le dépôt
 
 Ce dépôt est la marketplace `ikoro-labs`. Il contient le plugin `forge` (`forge@ikoro-labs`) et
-référence les autres plugins d'ikoro-labs, publiés depuis leur propre dépôt et épinglés sur un tag
-(`ai-delivery-gates@ikoro-labs`).
+référence les autres plugins d'ikoro-labs, publiés depuis leur propre dépôt et épinglés sur leur tag
+`<plugin>--v<X.Y.Z>` (`ai-delivery-gates@ikoro-labs`, tag `ai-delivery-gates--v<X.Y.Z>`).
 Les noms de forge sont préfixés : `/forge:qc` pour un skill, `forge:coder` pour un agent.
 
 ```text
@@ -66,10 +66,11 @@ docs/agents/usine.md              sa configuration
 docs/architecture.excalidraw      le schéma du README, sa source éditable
 docs/architecture.svg             son export, que le README affiche
 docs/logo.svg                     le logo, sa source
+docs/banniere.svg                 la bannière du README et de l'aperçu GitHub, sa source
 .github/                          la CI (tests sous Linux et Windows, validation) et le modèle de PR
 ```
 
-## Le schéma et le logo
+## Le schéma, le logo et la bannière
 
 Le schéma du `README.md` a sa source dans `docs/architecture.excalidraw`, à ouvrir dans Excalidraw ;
 `docs/architecture.svg` en est l'export, refait à chaque changement de la source.
@@ -82,6 +83,11 @@ de la source :
 uv run --no-project --quiet --with cairosvg python -c "import cairosvg; cairosvg.svg2png(url='docs/logo.svg', write_to='plugins/forge/.claude-plugin/icon.png', output_width=1024, output_height=1024)"
 ```
 
-Elle demande la bibliothèque système cairo, que cairosvg charge à l'import : `libcairo2` sous
+La bannière, `docs/banniere.png` (1280 × 640), s'exporte de même depuis `docs/banniere.svg`, avec
+`output_width=1280, output_height=640`. Son texte demande la police JetBrains Mono installée sur le
+poste. C'est aussi l'aperçu social du dépôt, à téléverser à la main dans **Settings → General →
+Social preview**.
+
+L'export demande la bibliothèque système cairo, que cairosvg charge à l'import : `libcairo2` sous
 Linux ; sous Windows, une installation qui la fournit (GTK, MSYS2). Sans elle, `import cairosvg`
 lève `OSError: no library called "cairo-2" was found`. La commande n'a été essayée que sous Linux.

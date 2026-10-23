@@ -352,7 +352,7 @@ class Manifests(unittest.TestCase):
             with self.subTest(plugin=entry["name"]):
                 self.assertEqual(entry["source"]["source"], "github")
                 self.assertTrue(entry["source"]["repo"].startswith("ikoro-labs/"))
-                self.assertRegex(entry["source"]["ref"], r"^v\d+\.\d+\.\d+$")
+                self.assertRegex(entry["source"]["ref"], rf"^{re.escape(entry['name'])}--v\d+\.\d+\.\d+$")
 
     def test_the_changelog_opens_on_the_plugin_version(self) -> None:
         version = json.loads((support.PLUGIN / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))["version"]

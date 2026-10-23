@@ -17,7 +17,7 @@
       "source": {
         "source": "github",
         "repo": "ikoro-labs/ai-delivery-gates",
-        "ref": "v0.2.3"
+        "ref": "ai-delivery-gates--v0.2.4"
       },
       "description": "Roadmap, livrables et gate de revue pour les phases 0 à 3 d'un projet IA (spike, cadrage, spécifications, system design). Trois agents de revue : Lead Tech, Product Owner, Expert métier."
     }
