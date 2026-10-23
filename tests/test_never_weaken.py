@@ -88,5 +88,61 @@ class RemovedLine(unittest.TestCase):
         self.assertEqual(statuses(entries, text), [NONE, APPLIES])
 
 
+TOLERANCES = "config/tolerances.toml | raised-number | ^rel_tol = (\\S+)"
+
+
+class RaisedNumber(unittest.TestCase):
+    def test_a_raised_value_applies(self) -> None:
+        text = diff("config/tolerances.toml", "-rel_tol = 0.01", "+rel_tol = 0.05")
+        results = check([TOLERANCES], text)
+        self.assertEqual([result.status for result in results], [APPLIES])
+        self.assertIn("0.01", results[0].detail)
+        self.assertIn("0.05", results[0].detail)
+
+    def test_a_lowered_or_unchanged_value_does_not_apply(self) -> None:
+        lowered = diff("config/tolerances.toml", "-rel_tol = 0.05", "+rel_tol = 0.01")
+        same = diff("config/tolerances.toml", "-rel_tol = 0.01", "+rel_tol = 0.01")
+        self.assertEqual(statuses([TOLERANCES], lowered), [NONE])
+        self.assertEqual(statuses([TOLERANCES], same), [NONE])
+
+    def test_a_line_the_pattern_does_not_match_is_ignored(self) -> None:
+        text = diff("config/tolerances.toml", "-abs_tol = 1", "+abs_tol = 9")
+        self.assertEqual(statuses([TOLERANCES], text), [NONE])
+
+    def test_a_raised_value_in_another_file_does_not_apply(self) -> None:
+        text = diff("config/other.toml", "-rel_tol = 0.01", "+rel_tol = 0.05")
+        self.assertEqual(statuses([TOLERANCES], text), [NONE])
+
+    def test_values_are_paired_in_order_within_the_file(self) -> None:
+        text = diff(
+            "config/tolerances.toml",
+            "-rel_tol = 1", "-rel_tol = 2", "+rel_tol = 1", "+rel_tol = 3",
+        )
+        self.assertEqual(statuses([TOLERANCES], text), [APPLIES])
+        text = diff(
+            "config/tolerances.toml",
+            "-rel_tol = 1", "-rel_tol = 2", "+rel_tol = 1", "+rel_tol = 2",
+        )
+        self.assertEqual(statuses([TOLERANCES], text), [NONE])
+
+    def test_scientific_notation_and_a_directory_path_are_read(self) -> None:
+        entry = "config/ | raised-number | tol=(\\S+)"
+        text = diff("config/a.cfg", "-tol=1e-6", "+tol=1e-3")
+        self.assertEqual(statuses([entry], text), [APPLIES])
+
+    def test_an_unreadable_value_on_a_changed_line_is_not_taken_for_no_change(self) -> None:
+        text = diff("config/tolerances.toml", "-rel_tol = 0.01", "+rel_tol = beaucoup")
+        results = check([TOLERANCES], text)
+        self.assertEqual([result.status for result in results], [APPLIES])
+        self.assertIn("illisible", results[0].detail)
+
+    def test_the_parameter_is_required_and_holds_one_group(self) -> None:
+        text = diff("config/tolerances.toml", "-rel_tol = 1", "+rel_tol = 2")
+        missing = "config/tolerances.toml | raised-number"
+        no_group = "config/tolerances.toml | raised-number | ^rel_tol = \\S+"
+        broken = "config/tolerances.toml | raised-number | ^rel_tol = ("
+        self.assertEqual(statuses([missing, no_group, broken], text), [INVALID] * 3)
+
+
 if __name__ == "__main__":
     unittest.main()

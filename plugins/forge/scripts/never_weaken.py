@@ -34,7 +34,6 @@ import usine  # noqa: E402
 
 KEY = "never-weaken"
 APPLIES, NONE, INVALID = "APPLIES", "NONE", "INVALID"
-TYPES = ("removed-line",)
 
 
 @dataclass
@@ -111,16 +110,59 @@ def _removed_line(changes: list[FileChange], scope: str) -> tuple[str, str]:
     return NONE, "aucune ligne retirée sous le chemin"
 
 
+def _changed_values(change: FileChange, pattern: re.Pattern[str]) -> list[tuple[str, str]]:
+    """The (old, new) captures of the removed and added lines the pattern matches, in order."""
+    old = [m.group(1) for line in change.removed if (m := pattern.search(line))]
+    new = [m.group(1) for line in change.added if (m := pattern.search(line))]
+    return list(zip(old, new))
+
+
+def _raised_number(changes: list[FileChange], scope: str, parameter: str) -> tuple[str, str]:
+    pattern = re.compile(parameter)
+    hits: list[str] = []
+    for change in changes:
+        if not under(change.new_path, scope):
+            continue
+        for old, new in _changed_values(change, pattern):
+            try:
+                raised = float(new) > float(old)
+            except ValueError:
+                if old != new:
+                    hits.append(f"{change.new_path}: valeur illisible, {old} puis {new}")
+                continue
+            if raised:
+                hits.append(f"{change.new_path}: {old} relevé à {new}")
+    if hits:
+        return APPLIES, "; ".join(hits)
+    return NONE, "aucune valeur relevée sous le chemin"
+
+
+def _pattern(parameter: str) -> str | None:
+    """Why `parameter` is not a regular expression with exactly one group, or None."""
+    try:
+        groups = re.compile(parameter).groups
+    except re.error as error:
+        return f"le paramètre n'est pas une expression régulière ({error})"
+    return None if groups == 1 else "le paramètre doit contenir un seul groupe de capture"
+
+
 def check_entry(entry: str, changes: list[FileChange]) -> Result:
     parts = usine.split_value(entry, 3) or usine.split_value(entry, 2)
     if parts is None:
         return Result(entry, INVALID, "il manque une partie : `<chemin> | <type> [| <paramètre>]`")
     scope, kind = parts[0], parts[1]
-    if kind not in TYPES:
-        return Result(entry, INVALID, f"type inconnu `{kind}` ({', '.join(TYPES)})")
-    if len(parts) == 3:
-        return Result(entry, INVALID, f"le type `{kind}` ne prend pas de paramètre")
-    return Result(entry, *_removed_line(changes, scope))
+    parameter = parts[2] if len(parts) == 3 else None
+    if kind == "removed-line":
+        if parameter is not None:
+            return Result(entry, INVALID, "le type `removed-line` ne prend pas de paramètre")
+        return Result(entry, *_removed_line(changes, scope))
+    if kind == "raised-number":
+        if parameter is None:
+            return Result(entry, INVALID, "le type `raised-number` demande une expression régulière")
+        if problem := _pattern(parameter):
+            return Result(entry, INVALID, problem)
+        return Result(entry, *_raised_number(changes, scope, parameter))
+    return Result(entry, INVALID, f"type inconnu `{kind}` (removed-line, raised-number)")
 
 
 def check(entries: list[str], diff_text: str) -> list[Result]:
