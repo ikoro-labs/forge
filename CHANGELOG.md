@@ -61,8 +61,10 @@ licence MIT (#31).
   s'accrocher à une PR ou un ticket qu'elle ne cite pas (#24). Une PR qui cite des tickets sans en
   livrer aucun critère, comme une PR de publication, se juge contre les règles du projet qui
   décrivent ce type de PR (clés `domain-rules`, `git-rules`) et rend
-  `SPEC: none (<règles>: <n> critères couverts, <n> partiels, <n> absents)` (#28). Aucun juge n'a
-  encore suivi ces consignes sur une vraie PR.
+  `SPEC: none (<règles>: <n> critères couverts, <n> partiels, <n> absents)` (#28). Les juges des
+  PR #39 à #42 ont rendu ces deux formes, celui de #39 la seconde ; c'était un `qc-conf` antérieur
+  à 1.4.0, à qui l'appelant dictait la consigne. Aucun juge ne l'a encore lue dans son propre
+  `qc-conf.md`.
 
 ### Skills
 
