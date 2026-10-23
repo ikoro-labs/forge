@@ -402,5 +402,33 @@ class RenameKeepsItsPath(unittest.TestCase):
         self.assertEqual(statuses(["b/y/ | removed-line"], text), [NONE])
 
 
+class RenameWithEdit(unittest.TestCase):
+    """Ticket #16: a file leaving or entering the path while it changes is read under the entry."""
+
+    TOLERANCES = b"[tol]\nrel_tol = 1e-3\nabs_tol = 1e-6\nname = 'seuils'\nother = 1\nmore = 2\n"
+    RAISED = TOLERANCES.replace(b"1e-3", b"1e-2")
+    NUMBER = "config/tolerances.toml | raised-number | ^rel_tol = (\\S+)"
+    RANK = "docs/fonctions/ | lowered-rank | statut | certifie > valide > brouillon"
+    FICHE = b"# Fonction\n\nstatut: certifie\nUne ligne\nUne autre\nEncore une\n"
+
+    def test_a_renamed_file_with_a_raised_number_applies(self) -> None:
+        text = real_diff({"config/tolerances.toml": self.TOLERANCES}, {"config/tol.toml": self.RAISED})
+        self.assertIn("rename from config/tolerances.toml", text)
+        self.assertEqual(statuses([self.NUMBER], text), [APPLIES])
+
+    def test_a_renamed_file_with_a_lowered_rank_applies(self) -> None:
+        after = {"docs/archive/f.md": self.FICHE.replace(b"certifie", b"brouillon")}
+        text = real_diff({"docs/fonctions/f.md": self.FICHE}, after)
+        self.assertEqual(statuses([self.RANK], text), [APPLIES])
+
+    def test_a_file_entering_the_path_by_rename_is_still_read(self) -> None:
+        text = real_diff({"x/tol.toml": self.TOLERANCES}, {"config/tolerances.toml": self.RAISED})
+        self.assertEqual(statuses([self.NUMBER], text), [APPLIES])
+
+    def test_a_renamed_file_without_a_raise_does_not_apply(self) -> None:
+        text = real_diff({"config/tolerances.toml": self.TOLERANCES}, {"config/tol.toml": self.TOLERANCES})
+        self.assertEqual(statuses([self.NUMBER], text), [NONE])
+
+
 if __name__ == "__main__":
     unittest.main()

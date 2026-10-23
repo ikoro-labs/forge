@@ -12,10 +12,11 @@ script launches no command the project declares. Each `never-weaken` entry is
 
 `<path>` is a file, or a directory when it ends with `/`. One line per entry is printed, `<status>`,
 `<entry>` and `<detail>` separated by tabs, the status being APPLIES (the diff weakens what the
-entry guards), NONE, or INVALID (the entry is malformed, or its diff cannot be read: it is never
-read as NONE). A last line, `docs/agents/usine.md : never-weaken`, says whether the diff removes
-or edits an entry (APPLIES) : a PR cannot lift the guard it is judged by. Exit code 0 when no entry applies, 1 when one does, 2 when one is invalid or the
-call is wrong. Without the key, the step is "sans objet" and the exit code is 0.
+entry guards), NONE, or INVALID (the entry is malformed). A diff that cannot be read (a binary
+patch under the path) is APPLIES, never NONE and never INVALID. A last line,
+`docs/agents/usine.md : never-weaken`, says whether the diff removes or edits an entry (APPLIES) :
+a PR cannot lift the guard it is judged by. Exit code 0 when no entry applies, 1 when one does
+(an unreadable diff included), 2 when one is invalid or the call is wrong. Without the key, the step is "sans objet" and the exit code is 0.
 
 The entries are read from the base (`--usine`, `git show origin/<base>:docs/agents/usine.md`), so a
 PR cannot lift the guard it is judged by. The standard library only.
@@ -130,6 +131,13 @@ def under(path: str | None, scope: str) -> bool:
     return path.startswith(scope) if scope.endswith("/") else path == scope
 
 
+def _scoped(change: FileChange, scope: str) -> str | None:
+    """The path of the file under `scope`, after or before the change: a rename is read at both ends."""
+    if under(change.new_path, scope):
+        return change.new_path
+    return change.old_path if under(change.old_path, scope) else None
+
+
 def _unreadable(change: FileChange, scope: str) -> str | None:
     """A binary patch under the path cannot be read: it applies, never reads as no change."""
     if change.unreadable and (under(change.old_path, scope) or under(change.new_path, scope)):
@@ -167,17 +175,18 @@ def _raised_number(changes: list[FileChange], scope: str, parameter: str) -> tup
         if unreadable := _unreadable(change, scope):
             hits.append(unreadable)
             continue
-        if not under(change.new_path, scope):
+        path = _scoped(change, scope)
+        if path is None:
             continue
         for old, new in _changed_values(change, pattern):
             try:
                 raised = float(new) > float(old)
             except ValueError:
                 if old != new:
-                    hits.append(f"{change.new_path}: valeur illisible, {old} puis {new}")
+                    hits.append(f"{path}: valeur illisible, {old} puis {new}")
                 continue
             if raised:
-                hits.append(f"{change.new_path}: {old} relevé à {new}")
+                hits.append(f"{path}: {old} relevé à {new}")
     if hits:
         return APPLIES, "; ".join(hits)
     return NONE, "aucune valeur relevée sous le chemin"
@@ -215,15 +224,16 @@ def _lowered_rank(
         if unreadable := _unreadable(change, scope):
             hits.append(unreadable)
             continue
-        if not under(change.new_path, scope):
+        path = _scoped(change, scope)
+        if path is None:
             continue
         for old, new in _changed_values(change, pattern):
             if old == new:
                 continue
             if old not in ranks or new not in ranks:
-                hits.append(f"{change.new_path}: rang hors échelle, {old} puis {new}")
+                hits.append(f"{path}: rang hors échelle, {old} puis {new}")
             elif ranks.index(new) > ranks.index(old):
-                hits.append(f"{change.new_path}: {old} abaissé à {new}")
+                hits.append(f"{path}: {old} abaissé à {new}")
     if hits:
         return APPLIES, "; ".join(hits)
     return NONE, "aucun rang abaissé sous le chemin"
