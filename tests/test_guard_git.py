@@ -363,6 +363,38 @@ class OwnerGestures(unittest.TestCase):
                 self.assertIn(OWNER_REFUSAL, verdict or "")
                 self.assertIn("gh api graphql", verdict or "")
 
+    def test_the_runner_scripts_are_refused_behind_a_wrapper_too(self) -> None:
+        for command in (
+            "./config.sh --url https://github.com/o/r --token T",
+            "cd actions-runner && ./config.sh remove --token T",
+            ".\\config.cmd --url https://github.com/o/r --token T",
+            "config.cmd remove",
+            "sudo ./svc.sh install",
+            "sudo -u runner ./svc.sh start",
+            "sudo bash ./config.sh --token T",
+            "bash config.sh --token T",
+            "sh -x ./svc.sh uninstall",
+            "cmd /c config.cmd --token T",
+            "C:\\actions-runner\\config.cmd --token T",
+            "/home/runner/actions-runner/svc.sh stop",
+        ):
+            with self.subTest(command=command):
+                verdict = refused(command)
+                self.assertIn(OWNER_REFUSAL, verdict or "")
+                self.assertRegex(verdict or "", r"config\.(sh|cmd)|svc\.sh")
+
+    def test_a_runner_status_and_other_scripts_stay_allowed(self) -> None:
+        for command in (
+            "sudo ./svc.sh status",
+            "./run.sh",
+            "bash ./build.sh",
+            "cat config.sh",
+            "grep -n token config.cmd",
+            "sudo apt update",
+        ):
+            with self.subTest(command=command):
+                self.assertIsNone(refused(command))
+
     def test_the_sub_issue_mutations_the_plugin_uses_and_graphql_reads_pass(self) -> None:
         for command in (
             "gh api graphql -f query='mutation { addSubIssue(input: {issueId: \"a\", "

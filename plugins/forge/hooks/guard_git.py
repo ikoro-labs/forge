@@ -402,12 +402,56 @@ def _gh_gesture(words: list[str]) -> str | None:
     return None
 
 
+# The scripts of a self-hosted runner: `config` registers or removes it, `svc` installs and starts
+# it as a service. The wrappers they are run behind, and the options of those that take a value.
+RUNNER_SCRIPT = re.compile(r"(?:^|[/\\])(config\.(?:sh|cmd)|svc\.sh)$", re.IGNORECASE)
+# shlex reads a backslash as an escape, so `.\config.cmd` and `C:\runner\config.cmd` reach the hook
+# with their separators gone: a word that starts with `.` or a drive letter still names the script.
+MANGLED_RUNNER_SCRIPT = re.compile(r"^(?:\.|[A-Za-z]:).*?(config\.(?:sh|cmd)|svc\.sh)$", re.IGNORECASE)
+SHELLS = frozenset({"bash", "sh", "zsh", "dash"})
+WRAPPERS = SHELLS | {"sudo", "cmd", "cmd.exe", "powershell", "pwsh", "powershell.exe", "pwsh.exe"}
+SUDO_OPTIONS_WITH_VALUE = frozenset({"-u", "-g", "-h", "-p", "-C", "-D", "-R", "-T", "-U"})
+
+
+def _runner_gesture(words: list[str]) -> str | None:
+    index = 0
+    while index < len(words):
+        word = words[index]
+        if word in WRAPPERS:
+            if word in SHELLS and "-c" in words[index + 1 :]:
+                position = words.index("-c", index + 1) + 1
+                if position < len(words):
+                    return _commands_gesture(words[position])
+            index += 1
+            while index < len(words) and (
+                words[index].startswith("-") or (word.startswith("cmd") and words[index] == "/c")
+            ):
+                index += 2 if word == "sudo" and words[index] in SUDO_OPTIONS_WITH_VALUE else 1
+            continue
+        match = RUNNER_SCRIPT.search(word) or MANGLED_RUNNER_SCRIPT.match(word)
+        if match is None:
+            return None
+        script = match.group(1).lower()
+        if script == "svc.sh" and words[index + 1 : index + 2] == ["status"]:
+            return None
+        return script
+    return None
+
+
+def _commands_gesture(command: str) -> str | None:
+    """The owner gesture of the first simple command of `command` that makes one."""
+    for words in segments(command):
+        if gesture := owner_gesture(words):
+            return gesture
+    return None
+
+
 def owner_gesture(words: list[str]) -> str | None:
     """The owner gesture a simple command makes, named for the refusal, or None."""
     call = gh_command(words)
     if call and call[0] == "api":
         return _api_gesture(call[1:])
-    return _gh_gesture(words)
+    return _gh_gesture(words) or _runner_gesture(words)
 
 
 def _owner_refusal(gesture: str) -> str:
