@@ -21,8 +21,18 @@ on purpose.
 The branch that matters is the one of the directory git acts on: `cd <dir> &&` and `git -C
 <dir>` move it, so each command is judged against the branch checked out there.
 
-A project's own gestures (runners, protection, labels reserved to a human) are not here: the
-project keeps them in its own `.claude/settings.json` hooks, which run beside this one.
+Also refused, to every agent, are the gestures of the owner of the repository: a write by
+`gh api` (any method but GET and HEAD) on collaborators, invitations, branch protection,
+rulesets, runners, secrets, variables, Actions permissions, keys, webhooks, environments, a
+transfer or the repository itself; the GraphQL mutations of protection, rulesets, collaborators
+and the repository (the sub-issue mutations the plugin uses are not among them); `gh secret` and
+`gh variable` `set` and `delete`; `gh repo` `delete`, `rename`, `archive`, `edit --visibility`
+and `deploy-key add` and `delete`; the runner scripts `config.sh`, `config.cmd` and `svc.sh`,
+also behind `sudo`, `bash`, `sh` and `cmd /c`. A reading is always allowed. The refusal names the
+gesture and says it is the human's, to list at the end of the report. A project adds its own with
+the `owner-gesture` key of `docs/agents/usine.md`, one `<command prefix> | <reason>` per line;
+the built-in list holds without it. This replaces the earlier choice to leave every owner gesture
+to the project's own hooks.
 """
 
 from __future__ import annotations
