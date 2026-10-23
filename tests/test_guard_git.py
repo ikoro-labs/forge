@@ -1,3 +1,4 @@
+import json
 import sys
 import tempfile
 import unittest
@@ -5,7 +6,7 @@ from collections.abc import Callable
 from pathlib import Path
 from unittest import mock
 
-import support  # noqa: F401
+import support
 from guard_git import description_via_gh, native_directory, refusal
 
 
@@ -232,6 +233,19 @@ class SplitTicket(unittest.TestCase):
                 description = description_via_gh(folder)
                 verdict = refusal("gh pr merge 506", "feat/x", always_green, description=description)
         self.assertIn("closes #322", verdict or "")
+
+
+class FailsClosed(unittest.TestCase):
+    def test_hooks_json_turns_a_crash_of_guard_git_into_a_refusal(self) -> None:
+        hooks = json.loads((support.PLUGIN / "hooks" / "hooks.json").read_text(encoding="utf-8"))
+        found = [
+            hook
+            for group in hooks["hooks"]["PreToolUse"]
+            for hook in group["hooks"]
+            if "guard_git.py" in hook["command"]
+        ]
+        self.assertEqual(len(found), 1)
+        self.assertTrue(found[0]["command"].endswith("|| exit 2"))
 
 
 if __name__ == "__main__":
