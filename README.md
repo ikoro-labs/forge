@@ -22,8 +22,9 @@ configuration, ses règles, ses skills de domaine.
 3. **Deux agents relisent la PR.** `/forge:qc` lance `forge:qc-gate`, qui rejoue la CI et mesure
    sans donner d'avis, puis `forge:qc-conf`, qui juge le diff contre le ticket et rend ACCEPT ou
    REJECT. Une PR acceptée est fusionnée, sauf si elle touche un chemin protégé (clé
-   `protected-path`) : un humain la fusionne alors. Une PR refusée retourne au coder pour un
-   second tour.
+   `protected-path`) ou retire un droit que le projet déclare (clé `never-weaken` : une ligne
+   retirée, un nombre relevé, un rang abaissé) : un humain la fusionne alors. Une PR refusée
+   retourne au coder pour un second tour.
 4. **On vérifie et on clôt.** `/forge:feature-verify` relie chaque critère d'acceptation au test
    qui le prouve, `/forge:feature-close` écrit ce qui a été livré.
 

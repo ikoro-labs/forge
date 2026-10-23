@@ -163,6 +163,28 @@ par ligne.
 
 - `protected-path` : `<docs/signatures/>`
 
+Les changements qui retirent un droit, et qu'aucun agent ne fusionne non plus même sur ACCEPT : un
+humain le fait. Une ligne `<chemin> | <type> [| <paramètre>]` par règle, le chemin étant un fichier,
+ou un dossier quand il finit par `/`. Les types sont fermés, et se décident sur le diff seul :
+
+- `removed-line` : une ligne est retirée sous le chemin, un fichier y est supprimé ou en sort. Sans
+  paramètre.
+- `raised-number` : un nombre monte. Le paramètre est une expression régulière à un seul groupe, qui
+  isole le nombre sur sa ligne ; les lignes retirées et ajoutées d'un fichier s'apparient dans
+  l'ordre. Une valeur qui n'est pas un nombre et qui change s'applique aussi.
+- `lowered-rank` : un rang baisse. Le paramètre est `<champ> | <rang> > <rang> [> ...]`, le meilleur
+  rang d'abord ; une valeur hors de l'échelle qui change s'applique aussi.
+
+`forge:qc-gate` lance `scripts/never_weaken.py` sur le diff de la PR, avec les entrées lues sur la
+base : une PR ne peut pas lever la règle qui la juge, et retirer ou modifier une entrée dans
+`docs/agents/usine.md` s'applique elle-même. Le script lit le diff et ne lance aucune commande du
+projet. Une entrée à qui il manque une partie, ou dont le type est inconnu, est signalée, jamais
+complétée. Sans la clé, la règle est sans objet.
+
+- `never-weaken` : `<.github/workflows/ | removed-line>`
+- `never-weaken` : `<config/tolerances.toml | raised-number | ^rel_tol = (\S+)>`
+- `never-weaken` : `<docs/fonctions/ | lowered-rank | statut | certifie > valide > brouillon>`
+
 ## Hooks
 
 Le fichier des tirets cadratins tolérés, une ligne `<nombre> <chemin>` par fichier. Sans lui, aucun

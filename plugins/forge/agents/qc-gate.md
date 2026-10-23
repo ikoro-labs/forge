@@ -80,6 +80,17 @@ Le numéro de PR, et le numéro du tour (1 ou 2).
 9. **Trace.** La conclusion du check que nomme la clé `trace-check` ; s'il n'a pas tourné, rejoue
    la commande de la clé `trace-replay` dans la copie de la tête, avec
    `--title "<titre>" --body-file body.md` (`gh pr view <n> --json body -q .body > body.md`).
+10. **Règles `never-weaken`.** Écris le diff de la PR et le fichier de configuration de la **base**
+    dans le scratchpad, puis lance le script du plugin :
+    `git diff origin/<base>...<tête> > pr.diff`,
+    `git show origin/<base>:docs/agents/usine.md > usine-base.md`, puis
+    `uv run --no-project --quiet python "${CLAUDE_PLUGIN_ROOT}/scripts/never_weaken.py" --usine usine-base.md pr.diff`.
+    Les entrées viennent de la base, pour qu'une PR ne lève pas la règle qui la juge. Recopie
+    chaque ligne du script, verbatim, et son code de sortie : 0 rien ne s'applique, 1 une entrée
+    s'applique (rends `APPLIES` et l'entrée), 2 une entrée est invalide ou l'appel a échoué
+    (`FAIL`, jamais `PASS`). Quand la base n'a pas `docs/agents/usine.md`, ou que le script rend
+    `sans objet (clé never-weaken absente)`, la sonde se rend `sans objet (clé never-weaken absente)`.
+    Tu ne juges pas l'entrée : tu rends ce que le script a mesuré.
 
 Au tour 2, rejoue toutes les sondes : une correction peut casser ce qui passait.
 
@@ -95,5 +106,5 @@ Un tableau, rien d'autre, au plus trente lignes :
 | ... | ... | ... |
 ```
 
-Puis, sous le tableau, les éléments verbatim des sondes 2, 5, 6 et 7. Une sonde que tu n'as pas
+Puis, sous le tableau, les éléments verbatim des sondes 2, 5, 6, 7 et 10. Une sonde que tu n'as pas
 pu exécuter s'écrit `NOT RUN` avec la commande et sa sortie d'erreur : jamais `PASS`.

@@ -17,13 +17,16 @@ rien, pose `needs-your-attention` avec l'écart, arrête-toi.
 Toi, tu orchestres, tu postes et tu fusionnes. Personne ne relit après toi : l'humain n'est
 qu'alerté.
 
-Le projet décrit son usine dans `docs/agents/usine.md` ; ce skill en lit la clé `protected-path`.
+Le projet décrit son usine dans `docs/agents/usine.md` ; ce skill en lit les clés `protected-path`
+et `never-weaken`.
 
 ## Une passe ou deux
 
 Une PR dont le diff ne touche que des fichiers de verrou et les lignes de version d'une montée
 Dependabot mineure ou corrective, ou que du Markdown hors `CLAUDE.md`, `.claude/`, `docs/adr/` et
-les chemins de la clé `protected-path`, est revue en **une passe** : pas de `forge:qc-gate`,
+les chemins de la clé `protected-path` et ceux des entrées de la clé `never-weaken` (le chemin est
+la première partie de l'entrée : seul `forge:qc-gate` les mesure), est revue en **une passe** : pas
+de `forge:qc-gate`,
 `forge:qc-conf` seul, qui relève lui-même les checks de la PR et `git merge-tree` avec la base. Le
 verdict, le rapport et la suite sont les mêmes. Tout le reste passe par les deux temps ci-dessous.
 
@@ -99,11 +102,23 @@ certification, une référence de contre-validation, un fichier de signatures...
 sur ACCEPT : pose `needs-your-attention`, écris le chemin touché dans `Attention`, arrête-toi. Un
 humain fusionne. Sans la clé, la règle est sans objet : dis-le dans `REX`.
 
-`needs-your-attention` alerte ; hors des chemins protégés, elle ne bloque pas la fusion. Pose-la
+La clé `never-weaken` arrête la fusion de la même façon, pour un changement qui retire un droit (une
+ligne retirée, un nombre relevé, un rang abaissé). `forge:qc-gate` mesure chaque entrée sur le
+diff, `forge:qc-conf` dit dans la ligne `GATES` (`never-weaken : <entrée>, ...`) celles qui
+s'appliquent. Dès qu'une entrée s'applique, même sur ACCEPT : pose `needs-your-attention`, écris
+l'entrée et ce que le script a mesuré dans `Attention`, `fusionnée par l'agent : non` dans
+`Verdict`, arrête-toi. Un humain fusionne. Le verdict reste ACCEPT : la PR peut être bonne, c'est
+la décision qui lui revient. Une sonde en `FAIL` (entrée invalide) ou `NOT RUN` ne vaut pas
+« aucune entrée » : arrête la fusion de même, avec la raison dans `Attention`. Sans la clé, la
+règle est sans objet : dis-le dans `REX`.
+
+`needs-your-attention` alerte ; hors des chemins protégés et des entrées `never-weaken`, elle ne
+bloque pas la fusion. Pose-la
 toi-même quand un point mérite le regard humain, et écris-en la raison dans `Attention`.
 Retire-la quand la raison écrite dans `Attention` ne tient plus (une revue `FAILED` relancée qui
 aboutit, un écart corrigé), et écris dans `Attention` ce que tu as retiré et pourquoi. Sur une PR
-qui touche un chemin protégé, elle reste jusqu'à la fusion humaine.
+qui touche un chemin protégé, elle reste jusqu'à la fusion humaine. Sur une PR dont une entrée
+`never-weaken` s'applique, de même.
 
 Retire seulement une étiquette dont un agent a écrit la raison, dans la ligne `Attention` d'un
 `Rapport d'agent` ou dans un commentaire de revue `FAILED`. Tu agis sous le compte de l'humain :

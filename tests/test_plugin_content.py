@@ -297,6 +297,46 @@ class DomainOwner(unittest.TestCase):
         self.assertIn("partiel justifié", judge)
 
 
+class NeverWeaken(unittest.TestCase):
+    """Ticket #5: a change `never-weaken` names stops the agent's merge, as a protected path does."""
+
+    @staticmethod
+    def read(*parts: str) -> str:
+        return " ".join(support.PLUGIN.joinpath(*parts).read_text(encoding="utf-8").split())
+
+    def test_the_template_documents_the_key_its_form_and_its_three_types(self) -> None:
+        template = self.read("templates", "usine.md")
+        self.assertIn("`never-weaken` : `<", template)
+        self.assertIn("<chemin> | <type> [| <paramètre>]", template)
+        for kind in ("removed-line", "raised-number", "lowered-rank"):
+            self.assertIn(f"`{kind}`", template)
+
+    def test_the_gate_runs_the_script_on_the_diff_with_the_entries_of_the_base(self) -> None:
+        gate = self.read("agents", "qc-gate.md")
+        self.assertIn("${CLAUDE_PLUGIN_ROOT}/scripts/never_weaken.py", gate)
+        self.assertIn("--usine", gate)
+        self.assertIn("git show origin/<base>:docs/agents/usine.md", gate)
+        self.assertIn("clé never-weaken absente", gate)
+
+    def test_the_judge_names_the_entry_that_applies_in_the_gates_line(self) -> None:
+        judge = self.read("agents", "qc-conf.md")
+        self.assertIn("never-weaken", judge)
+        self.assertIn("GATES", judge)
+        self.assertIn("une entrée qui s'applique", judge)
+
+    def test_qc_stops_the_merge_on_accept_and_writes_the_reason(self) -> None:
+        skill = self.read("skills", "qc", "SKILL.md")
+        self.assertIn("clé `never-weaken`", skill)
+        section = skill[skill.index("## Chemins protégés"):]
+        self.assertIn("never-weaken", section)
+        self.assertIn("même sur ACCEPT", section)
+        self.assertIn("`Attention`", section)
+
+    def test_the_readme_tells_it(self) -> None:
+        readme = " ".join((support.REPO_ROOT / "README.md").read_text(encoding="utf-8").split())
+        self.assertIn("`never-weaken`", readme)
+
+
 class ArchitectureDiagram(unittest.TestCase):
     def test_the_svg_export_carries_every_text_of_the_excalidraw_source(self) -> None:
         # Ticket 4: the diagram shows the domain arbiter and the owner notified on OPEN; the
