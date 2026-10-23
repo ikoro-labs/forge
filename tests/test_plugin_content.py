@@ -189,6 +189,18 @@ class JudgeOutput(unittest.TestCase):
         self.assertNotIn("git.md", judge)
 
 
+class AttentionLabel(unittest.TestCase):
+    def test_qc_removes_the_attention_label_once_its_reason_no_longer_holds(self) -> None:
+        # Demande directe. A label left after its reason is gone (a FAILED review rerun and
+        # merged) alerts the human for nothing; one taken off a protected path would let a PR
+        # that a human must merge look settled.
+        skill = " ".join((support.PLUGIN / "skills" / "qc" / "SKILL.md").read_text(encoding="utf-8").split())
+        self.assertNotIn("Ne la retire jamais", skill)
+        self.assertIn("Retire-la quand la raison écrite dans `Attention` ne tient plus", skill)
+        self.assertIn("Sur une PR qui touche un chemin protégé, elle reste jusqu'à la fusion humaine", skill)
+        self.assertIn("**Attention :** aucune | une raison par needs-your-attention | retirée : <raison>", skill)
+
+
 class OneSessionPerRepository(unittest.TestCase):
     """ikoro-labs/forge#4: one session acts on a repository at a time."""
 

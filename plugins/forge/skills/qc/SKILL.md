@@ -100,8 +100,10 @@ sur ACCEPT : pose `needs-your-attention`, écris le chemin touché dans `Attenti
 humain fusionne. Sans la clé, la règle est sans objet : dis-le dans `REX`.
 
 `needs-your-attention` alerte ; hors des chemins protégés, elle ne bloque pas la fusion. Pose-la
-toi-même quand un point mérite le regard humain, et écris-en la raison dans `Attention`. Ne la
-retire jamais.
+toi-même quand un point mérite le regard humain, et écris-en la raison dans `Attention`.
+Retire-la quand la raison écrite dans `Attention` ne tient plus (une revue `FAILED` relancée qui
+aboutit, un écart corrigé), et écris dans `Attention` ce que tu as retiré et pourquoi. Sur une PR
+qui touche un chemin protégé, elle reste jusqu'à la fusion humaine.
 
 ## Rapport d'agent
 
@@ -114,7 +116,7 @@ En français, six lignes, aucune vide :
 - **Pourquoi :** le ticket, et la raison qui le porte
 - **REX :** ce qui a résisté, ce qui a surpris, ce que le prochain agent doit savoir
 - **Reprise :** aucune | reportée sur #<issue> | à refaire (agent-rework)
-- **Attention :** aucune | une raison par needs-your-attention
+- **Attention :** aucune | une raison par needs-your-attention | retirée : <raison>
 - **Verdict :** ACCEPT | REJECT au tour <n> ; fusionnée par l'agent : oui | non
 ```
 
