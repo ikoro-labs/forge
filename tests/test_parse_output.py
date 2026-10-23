@@ -3,7 +3,7 @@ import unittest
 from unittest import mock
 
 import support  # noqa: F401
-from parse_output import OutputError, main, parse_result, parse_verdict
+from parse_output import OutputError, main, parse_domain, parse_result, parse_verdict
 
 PR_RESULT = """J'ai ouvert la PR.
 
@@ -124,6 +124,56 @@ class Verdict(unittest.TestCase):
                 with self.assertRaises(OutputError) as raised:
                     parse_verdict(text)
                 self.assertIn(words, str(raised.exception))
+
+
+OPEN_ANSWER = """Voici ma réponse.
+
+```
+ANSWER: OPEN
+QUESTION: quel taux appliquer au lot B ?
+OPTIONS: 1) 3 % ; 2) 4 %
+RECOMMENDATION: 3 %
+PRUDENT_PATH: ne pas produire le chiffre, lever une erreur explicite
+```
+"""
+
+
+class Domain(unittest.TestCase):
+    def test_open_answer_is_read_with_its_prudent_path(self) -> None:
+        parsed = parse_domain(OPEN_ANSWER)
+        self.assertEqual(parsed["ANSWER"], "OPEN")
+        self.assertEqual(parsed["PRUDENT_PATH"], "ne pas produire le chiffre, lever une erreur explicite")
+
+    def test_decided_and_inferred_carry_a_decision_and_its_source(self) -> None:
+        for kind in ("DECIDED", "INFERRED"):
+            text = f"ANSWER: {kind}\nQUESTION: q\nDECISION: d\nSOURCE: corpus, section 2\n"
+            with self.subTest(kind=kind):
+                self.assertEqual(parse_domain(text)["SOURCE"], "corpus, section 2")
+
+    def test_not_domain_names_its_decider(self) -> None:
+        parsed = parse_domain("ANSWER: NOT_DOMAIN\nQUESTION: q\nDECIDER: forge:product-owner\n")
+        self.assertEqual(parsed["DECIDER"], "forge:product-owner")
+
+    def test_each_defect_is_named(self) -> None:
+        for text, words in [
+            ("nothing", "no line starts with `ANSWER:`"),
+            ("ANSWER: MAYBE\nQUESTION: q\n", "DECIDED, INFERRED, OPEN or NOT_DOMAIN"),
+            ("ANSWER: OPEN\nQUESTION: q\nOPTIONS: o\nRECOMMENDATION: r\n", "`PRUDENT_PATH:`"),
+            ("ANSWER: DECIDED\nQUESTION: q\nDECISION: d\n", "`SOURCE:`"),
+            ("ANSWER: NOT_DOMAIN\nQUESTION: q\n", "`DECIDER:`"),
+            ("ANSWER: DECIDED\nQUESTION: q\nDECISION: d\nSOURCE: s\nDECIDER: x\n", "takes no `DECIDER:`"),
+            ("ANSWER: OPEN\nQUESTION: q\nOPTIONS: o\nRECOMMENDATION: r\nPRUDENT_PATH:\n", "non-empty `PRUDENT_PATH:`"),
+        ]:
+            with self.subTest(text=text):
+                with self.assertRaises(OutputError) as raised:
+                    parse_domain(text)
+                self.assertIn(words, str(raised.exception))
+
+    def test_cli_reads_the_domain_mode(self) -> None:
+        out = io.StringIO()
+        with mock.patch("sys.stdin", io.StringIO(OPEN_ANSWER)), mock.patch("sys.stdout", out):
+            self.assertEqual(main(["domain", "-"]), 0)
+        self.assertIn('"ANSWER": "OPEN"', out.getvalue())
 
 
 class Cli(unittest.TestCase):

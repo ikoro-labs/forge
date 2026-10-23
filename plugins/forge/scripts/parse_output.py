@@ -1,7 +1,9 @@
-"""Read the coder's RESULT block or qc-conf's verdict, and say exactly what is wrong with it.
+"""Read the coder's RESULT block, qc-conf's verdict or the domain arbiter's answer, and say exactly
+what is wrong with it.
 
     python parse_output.py result <file | ->
     python parse_output.py verdict <file | ->
+    python parse_output.py domain <file | ->
 
 On success, prints the block as JSON and exits 0. On failure, prints the first problem found
 and exits 1: the skill that launched the agent relaunches it once with that sentence, then
@@ -34,6 +36,13 @@ RESULT_KEYS = {
 VERDICT_KEYS = ("VERDICT", "ROUND", "HEAD", "SPEC", "FINDINGS", "GATES")
 VERDICT_OPTIONAL = ("BATTERY CORRECTION",)
 REPEATED = frozenset({"SPEC"})
+# The domain arbiter's answer: the keys each `ANSWER:` takes after `QUESTION:`.
+DOMAIN_KEYS = {
+    "DECIDED": ("DECISION", "SOURCE"),
+    "INFERRED": ("DECISION", "SOURCE"),
+    "OPEN": ("OPTIONS", "RECOMMENDATION", "PRUDENT_PATH"),
+    "NOT_DOMAIN": ("DECIDER",),
+}
 
 
 class OutputError(ValueError):
@@ -145,12 +154,28 @@ def parse_verdict(text: str) -> dict[str, object]:
     }
 
 
-PARSERS = {"result": parse_result, "verdict": parse_verdict}
+def parse_domain(text: str) -> dict[str, str]:
+    known = {"ANSWER", "QUESTION", *(key for keys in DOMAIN_KEYS.values() for key in keys)}
+    fields = _fields(text, "ANSWER", known)
+    kind = fields["ANSWER"][0]
+    if kind not in DOMAIN_KEYS:
+        raise OutputError(f"`ANSWER: {kind}`: the value must be DECIDED, INFERRED, OPEN or NOT_DOMAIN")
+    expected = ("QUESTION", *DOMAIN_KEYS[kind])
+    for key in expected:
+        if key not in fields or not fields[key][0]:
+            raise OutputError(f"`ANSWER: {kind}` needs a non-empty `{key}:` line")
+    extra = sorted(set(fields) - {"ANSWER", *expected})
+    if extra:
+        raise OutputError(f"`ANSWER: {kind}` takes no `{extra[0]}:` line")
+    return {"ANSWER": kind, **{key: fields[key][0] for key in expected}}
+
+
+PARSERS = {"result": parse_result, "verdict": parse_verdict, "domain": parse_domain}
 
 
 def main(argv: list[str]) -> int:
     if len(argv) != 2 or argv[0] not in PARSERS:
-        sys.stderr.write("usage: parse_output.py result|verdict <file | ->\n")
+        sys.stderr.write("usage: parse_output.py result|verdict|domain <file | ->\n")
         return 2
     text = sys.stdin.read() if argv[1] == "-" else Path(argv[1]).read_text(encoding="utf-8")
     try:
