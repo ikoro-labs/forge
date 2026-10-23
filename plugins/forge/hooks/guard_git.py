@@ -33,8 +33,13 @@ import shlex
 import shutil
 import subprocess
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from pathlib import Path, PurePosixPath, PureWindowsPath
+
+from usine import load, project_root, split_value
+
+# The project's own owner gestures, one per line: `<command prefix> | <reason>`.
+OWNER_KEY = "owner-gesture"
 
 # Every external call has a timeout: a hook that hangs blocks the agent's command.
 TIMEOUT_SECONDS = 20
@@ -455,7 +460,31 @@ def owner_gesture(words: list[str]) -> str | None:
 
 
 def _owner_refusal(gesture: str) -> str:
-    return f"{gesture} : geste du propriétaire du dépôt, à lister pour l'humain en fin de compte rendu"
+    return (
+        f"{gesture} : geste du propriétaire du dépôt, à lister pour l'humain en fin de compte rendu"
+    )
+
+
+def _declared_gesture(words: list[str], declared: Iterable[str]) -> str | None:
+    """The refusal of the first `owner-gesture` line whose prefix opens the command, or None.
+
+    Compared word by word, after the environment assignments and gh's global options, so that
+    `gh -R o/r label delete` matches `gh label delete`. A line without a reason still refuses,
+    and says so: it is never completed.
+    """
+    call = gh_command(words)
+    normalised = ["gh", *call] if call is not None else words
+    for value in declared:
+        parts = split_value(value, 2)
+        prefix_text = parts[0] if parts else re.sub(r"\s*\|\s*$", "", value).strip()
+        try:
+            prefix = shlex.split(prefix_text)
+        except ValueError:
+            prefix = prefix_text.split()
+        if prefix and normalised[: len(prefix)] == prefix:
+            reason = parts[1] if parts else "la ligne `owner-gesture` de ce geste est sans raison"
+            return f"{_owner_refusal(prefix_text)} : {reason}"
+    return None
 
 
 def refusal(
@@ -465,13 +494,16 @@ def refusal(
     cwd: str | None = None,
     read_text: Callable[[str], str | None] = read_text_or_none,
     description: Callable[[str | None], str] = lambda _pr: "",
+    owner_gestures: Iterable[str] = (),
 ) -> str | None:
     """Why the command is refused, or None when it may run.
 
     `branch` is the branch of a directory: a callable is asked about the directory each git
     command acts on (after `cd` and `-C`); a string is that branch wherever git runs.
     `description` is the body of a PR, by its number (None for the current branch's PR).
+    `owner_gestures` are the values of the project's `owner-gesture` key, beside the built-in list.
     """
+    declared = list(owner_gestures)
     branch_of = branch if callable(branch) else (lambda _directory: branch)
 
     def branch_where(directory: str | None) -> str:
@@ -508,6 +540,8 @@ def refusal(
                 return reason
         if gesture := owner_gesture(words):
             return _owner_refusal(gesture)
+        if declared_refusal := _declared_gesture(words, declared):
+            return declared_refusal
         act = gh_act(words)
         if act is not None and act[:2] == ("pr", "merge"):
             rest = act[2]
@@ -584,10 +618,13 @@ def main() -> int:
     event = json.load(sys.stdin)
     command = str(event.get("tool_input", {}).get("command", ""))
     cwd = event.get("cwd")
-    if "git" not in command and "gh" not in command:
-        return 0
     reason = refusal(
-        command, current_branch, checks_green_via_gh(cwd), cwd, description=description_via_gh(cwd)
+        command,
+        current_branch,
+        checks_green_via_gh(cwd),
+        cwd,
+        description=description_via_gh(cwd),
+        owner_gestures=load(project_root(event)).get(OWNER_KEY, []),
     )
     if reason is None:
         return 0

@@ -1,3 +1,5 @@
+import io
+import json
 import sys
 import tempfile
 import unittest
@@ -6,7 +8,7 @@ from pathlib import Path
 from unittest import mock
 
 import support  # noqa: F401
-from guard_git import description_via_gh, native_directory, refusal
+from guard_git import OWNER_KEY, description_via_gh, main, native_directory, refusal
 
 
 def never_green(_pr: str | None) -> bool:
@@ -235,6 +237,11 @@ class SplitTicket(unittest.TestCase):
 
 
 OWNER_REFUSAL = "geste du propriétaire du dépôt, à lister pour l'humain en fin de compte rendu"
+OWNER_KEY_VALUE = "gh label delete | les étiquettes sont au propriétaire"
+
+
+def owner_refused(command: str, lines: list[str]) -> str | None:
+    return refusal(command, "feat/x", always_green, owner_gestures=lines)
 
 
 class OwnerGestures(unittest.TestCase):
@@ -394,6 +401,60 @@ class OwnerGestures(unittest.TestCase):
         ):
             with self.subTest(command=command):
                 self.assertIsNone(refused(command))
+
+    def test_a_gesture_the_project_declares_is_refused_with_its_reason(self) -> None:
+        lines = [OWNER_KEY_VALUE, "uv run python -m scripts.release | la publication est humaine"]
+        for command in (
+            "gh label delete bug",
+            "gh -R o/r label delete bug",
+            "GH_TOKEN=x gh --repo=o/r label delete bug",
+            "cd /work && gh label delete bug --yes",
+            "uv run python -m scripts.release --tag v1",
+        ):
+            with self.subTest(command=command):
+                verdict = owner_refused(command, lines)
+                self.assertIn(OWNER_REFUSAL, verdict or "")
+                self.assertRegex(verdict or "", "les étiquettes sont au propriétaire|publication")
+
+    def test_a_declared_prefix_is_compared_word_by_word(self) -> None:
+        for command in ("gh label deleted bug", "gh label list", "gh issue delete 3", "ghx label delete"):
+            with self.subTest(command=command):
+                self.assertIsNone(owner_refused(command, [OWNER_KEY_VALUE]))
+
+    def test_a_declared_gesture_without_a_reason_still_refuses_and_says_so(self) -> None:
+        for value in ("gh label delete", "gh label delete | ", "gh label delete |"):
+            with self.subTest(value=value):
+                verdict = owner_refused("gh label delete bug", [value])
+                self.assertIn(OWNER_REFUSAL, verdict or "")
+                self.assertIn("sans raison", verdict or "")
+
+    def test_a_declared_gesture_with_no_command_refuses_nothing(self) -> None:
+        self.assertIsNone(owner_refused("gh label delete bug", [" | une raison", ""]))
+
+    def test_the_hook_reads_the_gestures_from_the_project_configuration(self) -> None:
+        event = json.dumps({"tool_input": {"command": "gh label delete bug"}, "cwd": "/nowhere"})
+
+        def run(project: str | None) -> tuple[int, str]:
+            env = {"CLAUDE_PROJECT_DIR": project} if project else {}
+            err = io.StringIO()
+            with (
+                mock.patch.dict("os.environ", env, clear=True),
+                mock.patch("sys.stdin", io.StringIO(event)),
+                mock.patch("sys.stderr", err),
+                mock.patch("guard_git.current_branch", lambda _cwd: "feat/x"),
+                mock.patch("guard_git.checks_green_via_gh", lambda _cwd: always_green),
+            ):
+                return main(), err.getvalue()
+
+        with tempfile.TemporaryDirectory() as root:
+            config = Path(root) / "docs" / "agents"
+            config.mkdir(parents=True)
+            (config / "usine.md").write_text(f"- `{OWNER_KEY}` : `{OWNER_KEY_VALUE}`\n", "utf-8")
+            code, message = run(root)
+            self.assertEqual(code, 2)
+            self.assertIn("les étiquettes sont au propriétaire", message)
+        with tempfile.TemporaryDirectory() as root:
+            self.assertEqual(run(root)[0], 0)
 
     def test_the_sub_issue_mutations_the_plugin_uses_and_graphql_reads_pass(self) -> None:
         for command in (
