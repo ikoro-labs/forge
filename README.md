@@ -80,7 +80,7 @@ ne fusionne une PR rouge, ou ne sort de son rôle.
      "enabledPlugins": { "forge@ikoro-labs": true },
      "extraKnownMarketplaces": {
        "ikoro-labs": {
-         "source": { "source": "github", "repo": "ikoro-labs/forge", "ref": "forge--v1.4.0" }
+         "source": { "source": "github", "repo": "ikoro-labs/forge", "ref": "forge--v1.5.0" }
        }
      }
    }
@@ -90,7 +90,7 @@ ne fusionne une PR rouge, ou ne sort de son rôle.
 3. Installer, une fois par poste, depuis la racine du projet :
 
    ```sh
-   claude plugin marketplace add ikoro-labs/forge@forge--v1.4.0 --scope project
+   claude plugin marketplace add ikoro-labs/forge@forge--v1.5.0 --scope project
    claude plugin install forge@ikoro-labs --scope project
    ```
 
