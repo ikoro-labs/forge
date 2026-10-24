@@ -1,14 +1,29 @@
+import contextlib
 import io
 import json
+import os
+import shutil
+import subprocess
+import stat
 import sys
 import tempfile
+import time
 import unittest
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from unittest import mock
 
 import support
-from guard_git import OWNER_KEY, description_via_gh, guarded_main, main, native_directory, refusal
+from guard_git import (
+    OWNER_KEY,
+    _gh_api_reads,
+    description_via_gh,
+    device_path_kind,
+    guarded_main,
+    main,
+    native_directory,
+    refusal,
+)
 
 
 def never_green(_pr: str | None) -> bool:
@@ -236,17 +251,84 @@ class SplitTicket(unittest.TestCase):
         self.assertIn("closes #322", verdict or "")
 
 
+@contextlib.contextmanager
+def isolated_environment() -> Iterator[None]:
+    """HOME and USERPROFILE in an empty folder, and no `CLAUDE_` variable of the session running us."""
+    with tempfile.TemporaryDirectory() as home:
+        env = {name: value for name, value in os.environ.items() if not name.startswith("CLAUDE_")}
+        env.update(HOME=home, USERPROFILE=home)
+        with mock.patch.dict("os.environ", env, clear=True):
+            yield
+
+
+def guard_git_hook() -> dict[str, str]:
+    hooks = json.loads((support.PLUGIN / "hooks" / "hooks.json").read_text(encoding="utf-8"))
+    found = [
+        hook
+        for group in hooks["hooks"]["PreToolUse"]
+        for hook in group["hooks"]
+        if "guard_git.py" in hook["command"]
+    ]
+    assert len(found) == 1
+    return found[0]
+
+
 class FailsClosed(unittest.TestCase):
     def test_hooks_json_turns_a_crash_of_guard_git_into_a_refusal(self) -> None:
-        hooks = json.loads((support.PLUGIN / "hooks" / "hooks.json").read_text(encoding="utf-8"))
-        found = [
-            hook
-            for group in hooks["hooks"]["PreToolUse"]
-            for hook in group["hooks"]
-            if "guard_git.py" in hook["command"]
-        ]
-        self.assertEqual(len(found), 1)
-        self.assertTrue(found[0]["command"].endswith("|| exit 2"))
+        command = guard_git_hook()["command"]
+        # The exit code 2 of a rule and the 2 of a script that is missing or of a usage error of
+        # uv are told apart by what the guard writes, not by the code alone.
+        self.assertIn("Blocked by the forge plugin (guard_git)", command)
+        self.assertIn("exit 2", command)
+        self.assertNotIn("|| {", command)
+
+    @unittest.skipUnless(
+        shutil.which("bash") and sys.platform != "win32",
+        "the command of hooks.json is run by the POSIX shell of Linux and macOS; under Windows"
+        " Claude Code runs it in Git Bash, which this suite has not tried",
+    )
+    def test_a_failure_before_the_guard_runs_is_refused_and_says_so(self) -> None:
+        def run(uv_script: str | None) -> subprocess.CompletedProcess[str]:
+            with tempfile.TemporaryDirectory() as folder:
+                if uv_script is not None:
+                    fake = Path(folder) / "uv"
+                    fake.write_text(f"#!/bin/sh\n{uv_script}\n", encoding="utf-8")
+                    fake.chmod(0o755)
+                return subprocess.run(  # noqa: S603 - the shell is found by shutil.which
+                    [str(shutil.which("bash")), "-c", guard_git_hook()["command"]],
+                    env={"PATH": folder, "CLAUDE_PLUGIN_ROOT": str(support.PLUGIN)},
+                    input="EVENT",  # never the runner's own standard input
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    timeout=30,
+                )
+
+        for name, script in (
+            ("uv is missing", None),
+            ("uv fails", "echo 'ModuleNotFoundError: usine' >&2; exit 1"),
+            ("python cannot open the script", "echo \"python: can't open file 'g.py': [Errno 2]\" >&2; exit 2"),
+            ("uv is called wrongly", "echo 'error: unexpected argument --no-project' >&2; exit 2"),
+            ("uv fails without a word", "exit 2"),
+            ("a rule is quoted by a failure", "echo 'x Blocked by the forge plugin (guard_git)' >&2; exit 2"),
+        ):
+            with self.subTest(case=name):
+                done = run(script)
+                self.assertEqual(done.returncode, 2)
+                self.assertIn("guard_git failed", done.stderr)
+                self.assertIn("refused as a precaution", done.stderr)
+        # A refusal of a rule is already worded by the guard: not reworded as a failure.
+        done = run("echo 'Blocked by the forge plugin (guard_git): force push.' >&2; exit 2")
+        self.assertEqual(done.returncode, 2)
+        self.assertIn("force push", done.stderr)
+        self.assertNotIn("guard_git failed", done.stderr)
+        done = run("echo 'Blocked by the forge plugin (guard_git): a rule.' >&2; exit 2")
+        self.assertEqual(done.stderr.count("a rule"), 1)
+        done = run("exit 0")
+        self.assertEqual((done.returncode, done.stderr), (0, ""))
+        # The event reaches the guard: the command reads its standard input.
+        done = run("read line; echo \"$line\" >&2; exit 2")
+        self.assertIn("EVENT", done.stderr)
 
     def test_hooks_json_blocks_the_command_when_guard_git_times_out(self) -> None:
         # `|| exit 2` does not cover a timeout: the shell is killed before it can run it.
@@ -276,14 +358,74 @@ class FailsClosed(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertIn("refused as a precaution", stderr.getvalue())
 
+    def test_an_ordinary_command_never_makes_the_guard_fail(self) -> None:
+        # The real `main`, on commands that are none of its business: a crash would refuse them.
+        for name, command in (
+            ("empty", ""),
+            ("a heredoc without gh", "cat > notes.md <<'EOF'\nline one\nline two\nEOF"),
+            ("a heredoc never closed", "cat <<EOF\nline one"),
+            ("a heredoc to a shell", "bash <<'EOF'\necho hello\nEOF"),
+            ("an unclosed quote", 'echo "unclosed'),
+            ("an unclosed quote on gh", "gh api graphql -f query='query { viewer"),
+            ("an unclosed substitution", 'echo "$(cat <<EOF'),
+            ("a very long line", "echo " + "a" * 300_000),
+            ("a very long heredoc line", "cat <<EOF\n" + "b" * 300_000 + "\nEOF"),
+            ("a very long gh line", "gh api graphql -f query='query { " + "viewer " * 40_000 + "}'"),
+            ("only operators", "&& || ; |"),
+            ("a dangling sudo", "sudo -u"),
+            ("a dangling env", "env"),
+            ("a null byte", "ls \x00 ./config.sh"),
+            ("non-ASCII", "echo 'été ✓' && ls"),
+        ):
+            event = json.dumps({"tool_input": {"command": command}, "cwd": None})
+            stderr = io.StringIO()
+            with (
+                self.subTest(case=name),
+                isolated_environment(),
+                mock.patch("sys.stdin", io.StringIO(event)),
+                mock.patch("sys.stderr", stderr),
+            ):
+                code = guarded_main()
+                self.assertNotIn("guard_git failed", stderr.getvalue())
+                self.assertEqual(code, 0, stderr.getvalue())
+
     def test_a_refusal_of_a_rule_is_not_reworded_as_a_failure(self) -> None:
         event = json.dumps({"tool_input": {"command": "git push --force"}, "cwd": None})
         stderr = io.StringIO()
-        with mock.patch("sys.stdin", io.StringIO(event)), mock.patch("sys.stderr", stderr):
+        with (
+            isolated_environment(),
+            mock.patch("sys.stdin", io.StringIO(event)),
+            mock.patch("sys.stderr", stderr),
+        ):
             code = guarded_main()
         self.assertEqual(code, 2)
         self.assertIn("force push", stderr.getvalue())
         self.assertNotIn("guard_git failed", stderr.getvalue())
+
+
+@contextlib.contextmanager
+def runner_folder() -> Iterator[str]:
+    """A folder laid out like an unpacked Actions runner: `run.sh` and `bin/Runner.Listener`."""
+    with tempfile.TemporaryDirectory() as folder:
+        (Path(folder) / "bin").mkdir()
+        (Path(folder) / "bin" / "Runner.Listener").write_text("", encoding="utf-8")
+        (Path(folder) / "run.sh").write_text("", encoding="utf-8")
+        yield Path(folder).as_posix()
+
+
+@contextlib.contextmanager
+def windows_runner_folder() -> Iterator[str]:
+    """A folder laid out like an unpacked Windows runner: `run.cmd` and `bin/Runner.Listener.exe`."""
+    with tempfile.TemporaryDirectory() as folder:
+        (Path(folder) / "bin").mkdir()
+        (Path(folder) / "bin" / "Runner.Listener.exe").write_text("", encoding="utf-8")
+        (Path(folder) / "bin" / "Runner.Listener.dll").write_text("", encoding="utf-8")
+        (Path(folder) / "run.cmd").write_text("", encoding="utf-8")
+        yield Path(folder).as_posix()
+
+
+def refused_in(command: str, cwd: str) -> str | None:
+    return refusal(command, "feat/x", always_green, cwd)
 
 
 OWNER_REFUSAL = "geste du propriétaire du dépôt, à lister pour l'humain en fin de compte rendu"
@@ -387,6 +529,45 @@ class OwnerGestures(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertIsNone(refused(command))
 
+    def test_an_explicit_get_or_head_stays_a_read_even_with_fields(self) -> None:
+        for command in (
+            "gh api -X GET repos/o/r/collaborators -f per_page=100",
+            "gh api --method GET repos/o/r/collaborators -F per_page=100",
+            "gh api --method=get repos/o/r/rulesets --raw-field includes_parents=true",
+            "gh api -XGET repos/o/r/actions/secrets -f per_page=100",
+            "gh api -X HEAD repos/o/r/keys -f per_page=1",
+        ):
+            with self.subTest(command=command):
+                self.assertIsNone(refused(command))
+
+    def test_a_repeated_method_counts_as_the_last_one_like_gh_does(self) -> None:
+        for command in (
+            "gh api -X GET repos/o/r/collaborators/bob -X PUT",
+            "gh api --method GET --method PUT repos/o/r/collaborators/bob",
+            "gh api -XGET repos/o/r/collaborators/bob --method=PUT",
+        ):
+            with self.subTest(command=command):
+                verdict = refused(command) or ""
+                self.assertIn(OWNER_REFUSAL, verdict)
+                self.assertIn("PUT", verdict)
+        for command in (
+            "gh api -X PUT repos/o/r/collaborators/bob -X GET",
+            "gh api --method PUT --method GET repos/o/r/collaborators",
+        ):
+            with self.subTest(command=command):
+                self.assertIsNone(refused(command))
+
+    def test_fields_without_a_method_are_a_post_and_the_refusal_says_so(self) -> None:
+        for command in (
+            "gh api repos/o/r/collaborators -f per_page=100",
+            "gh api repos/o/r/rulesets --input r.json",
+        ):
+            with self.subTest(command=command):
+                verdict = refused(command) or ""
+                self.assertIn(OWNER_REFUSAL, verdict)
+                self.assertIn("POST", verdict)
+                self.assertNotIn("GET", verdict)
+
     def test_a_write_by_gh_api_outside_the_owner_endpoints_is_left_alone(self) -> None:
         for command in (
             "gh api -X POST repos/o/r/issues/3/comments -f body=x",
@@ -452,6 +633,151 @@ class OwnerGestures(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertIsNone(refused(command))
 
+    def test_a_script_with_a_runner_argument_is_refused_wherever_it_stands(self) -> None:
+        for command in (
+            "./config.sh --url https://github.com/o/r --token T",
+            "scripts/config.sh --token=T",
+            "bash scripts/config.sh --url=https://github.com/o/r",
+            "./svc.sh install",
+            "sudo ./svc.sh uninstall",
+            "./svc.sh start",
+            "./svc.sh stop",
+        ):
+            with self.subTest(command=command):
+                self.assertIn(OWNER_REFUSAL, refused(command) or "")
+
+    def test_a_config_script_of_a_project_is_not_a_runner_script(self) -> None:
+        with runner_folder() as runner, tempfile.TemporaryDirectory() as plain:
+            for command in (
+                "bash scripts/config.sh",
+                "bash scripts/config.sh --verbose",
+                "./config.sh --dry-run",
+                f"cd {plain} && ./config.sh",
+                f"{plain}/svc.sh",
+                f"{plain}/svc.sh status",
+                f"cd {runner} && ./svc.sh status",
+            ):
+                with self.subTest(command=command):
+                    self.assertIsNone(refused_in(command, plain))
+
+    def test_a_script_in_a_runner_folder_is_refused_without_any_argument(self) -> None:
+        with runner_folder() as runner, tempfile.TemporaryDirectory() as plain:
+            for command, cwd in (
+                ("./config.sh", runner),
+                ("bash ./svc.sh", runner),
+                ("./config.cmd", runner),
+                (f"{runner}/config.sh", plain),
+                (f"cd {runner} && ./config.sh", plain),
+                (f"sudo -u runner {runner}/svc.sh", plain),
+            ):
+                with self.subTest(command=command):
+                    self.assertIn(OWNER_REFUSAL, refused_in(command, cwd) or "")
+
+    def test_a_script_in_a_windows_runner_folder_is_refused_without_any_argument(self) -> None:
+        with windows_runner_folder() as runner, tempfile.TemporaryDirectory() as plain:
+            for command, cwd in (
+                ("./config.cmd", runner),
+                ("cmd /c config.cmd", runner),
+                (f"{runner}/config.cmd", plain),
+                (f"cd {runner} && ./config.cmd", plain),
+                (f"cd {runner} && cd bin/.. && ./config.cmd", plain),
+            ):
+                with self.subTest(command=command):
+                    self.assertIn(OWNER_REFUSAL, refused_in(command, cwd) or "")
+            for command, cwd in (("./config.cmd", plain), (f"{plain}/config.cmd", plain)):
+                with self.subTest(command=command):
+                    self.assertIsNone(refused_in(command, cwd))
+
+    def test_a_folder_with_only_one_marker_is_not_a_runner_folder(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            (Path(folder) / "bin").mkdir()
+            (Path(folder) / "bin" / "Runner.Listener.exe").write_text("", encoding="utf-8")
+            self.assertIsNone(refused_in("./config.cmd", Path(folder).as_posix()))
+            (Path(folder) / "run.cmd").write_text("", encoding="utf-8")
+            self.assertIn(OWNER_REFUSAL, refused_in("./config.cmd", Path(folder).as_posix()) or "")
+
+    def test_a_runner_registered_by_its_environment_or_by_other_options_is_refused(self) -> None:
+        for command in (
+            "./config.sh --unattended",
+            "./config.sh --unattended --pat=P",
+            "./config.sh --pat P",
+            "scripts/config.sh --pat=P",
+            "ACTIONS_RUNNER_INPUT_URL=https://github.com/o/r ACTIONS_RUNNER_INPUT_TOKEN=T ./config.sh",
+            "ACTIONS_RUNNER_INPUT_TOKEN=T ./config.sh --unattended",
+            "env ACTIONS_RUNNER_INPUT_TOKEN=T ./config.sh",
+            "sudo env ACTIONS_RUNNER_INPUT_URL=u bash ./config.sh",
+            "export ACTIONS_RUNNER_INPUT_TOKEN=T",
+            "export ACTIONS_RUNNER_INPUT_TOKEN=T && ./config.sh",
+            "ACTIONS_RUNNER_INPUT_TOKEN=T",
+            "bash -c 'ACTIONS_RUNNER_INPUT_TOKEN=T ./config.sh'",
+            "bash <<'EOF'\nACTIONS_RUNNER_INPUT_TOKEN=T ./config.sh\nEOF",
+            "echo x; ACTIONS_RUNNER_INPUT_NAME=n ./config.sh",
+        ):
+            with self.subTest(command=command):
+                self.assertIn(OWNER_REFUSAL, refused(command) or "")
+        for command in (
+            "echo ACTIONS_RUNNER_INPUT_URL",
+            "grep -r ACTIONS_RUNNER_INPUT_ docs",
+            "./config.sh --dry-run",
+            "ACTIONS_RUNNER=1 ./build.sh",
+        ):
+            with self.subTest(command=command):
+                self.assertIsNone(refused(command))
+
+    def test_gh_global_options_before_deploy_key_do_not_hide_its_action(self) -> None:
+        for command in (
+            "gh repo deploy-key -R o/r add key.pub",
+            "gh repo deploy-key --repo=o/r delete 5",
+            "gh -R o/r repo deploy-key -R o/r add key.pub",
+        ):
+            with self.subTest(command=command):
+                self.assertIn("deploy-key", refused(command) or "")
+        for command in ("gh repo deploy-key -R o/r list", "gh repo deploy-key list"):
+            with self.subTest(command=command):
+                self.assertIsNone(refused(command))
+
+    def test_sudo_with_a_joined_option_env_and_nohup_do_not_hide_a_runner_script(self) -> None:
+        for command in (
+            "sudo -iu runner ./svc.sh install",
+            "sudo -u runner -H ./svc.sh start",
+            "sudo -urunner ./svc.sh start",
+            "env ./config.sh --token T",
+            "env -i HOME=/x ./svc.sh stop",
+            "env -u FOO ./svc.sh stop",
+            "nohup ./svc.sh start",
+            "nohup sudo ./svc.sh start",
+            "nohup env A=1 bash ./config.sh --url u",
+            "sudo env PATH=/bin ./svc.sh uninstall",
+        ):
+            with self.subTest(command=command):
+                self.assertIn(OWNER_REFUSAL, refused(command) or "")
+        for command in (
+            "sudo -iu runner ./svc.sh status",
+            "env FOO=1 ./build.sh",
+            "nohup ./run.sh",
+            "sudo -iu runner ls",
+        ):
+            with self.subTest(command=command):
+                self.assertIsNone(refused(command))
+
+    def test_a_heredoc_fed_to_a_shell_is_read_as_the_script_it_is(self) -> None:
+        for command in (
+            "bash <<'EOF'\n./config.sh --url u --token T\nEOF",
+            "sudo bash <<EOF\ncd /srv/runner && ./svc.sh install\nEOF",
+            "sh -s <<'EOF'\ngh secret set TOKEN\nEOF",
+            "bash <<'EOF' && echo done\n./svc.sh start\nEOF",
+        ):
+            with self.subTest(command=command):
+                self.assertIn(OWNER_REFUSAL, refused(command) or "")
+        for command in (
+            "bash <<'EOF'\necho hello\nEOF",
+            "cat <<'EOF'\n./config.sh --token T\nEOF",
+            "git commit -m \"$(cat <<'EOF'\nfix: gh secret set\nEOF\n)\"",
+            "bash scripts/build.sh <<'EOF'\nyes\nEOF",
+        ):
+            with self.subTest(command=command):
+                self.assertIsNone(refused(command))
+
     def test_a_gesture_the_project_declares_is_refused_with_its_reason(self) -> None:
         lines = [OWNER_KEY_VALUE, "uv run python -m scripts.release | la publication est humaine"]
         for command in (
@@ -506,6 +832,99 @@ class OwnerGestures(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             self.assertEqual(run(root)[0], 0)
 
+    def test_a_mutation_written_in_a_heredoc_is_read(self) -> None:
+        for body in (
+            "mutation { deleteRepository(input: {repositoryId: \"x\"}) { clientMutationId } }",
+            "mutation { updateBranchProtectionRule(input: {}) { clientMutationId } }",
+            "mutation { createRepositoryRuleset(input: {}) { clientMutationId } }",
+            "mutation { addRepositoryCollaborator(input: {}) { clientMutationId } }",
+        ):
+            for command in (
+                f"gh api graphql -f query=\"$(cat <<'EOF'\n{body}\nEOF\n)\"",
+                f"gh api graphql -f query=\"$(cat <<EOF\n{body}\nEOF\n)\" -F owner=o",
+                f"gh api graphql --input - <<'EOF'\n{json.dumps({'query': body})}\nEOF",
+                f"cd /w && gh api graphql --input - <<-'EOF'\n\t{body}\n\tEOF",
+            ):
+                with self.subTest(command=command):
+                    verdict = refused(command) or ""
+                    self.assertIn(OWNER_REFUSAL, verdict)
+                    self.assertIn("gh api graphql", verdict)
+
+    def test_a_mutation_written_in_a_readable_file_is_read(self) -> None:
+        texts = {
+            "/w/m.graphql": "mutation { deleteRepository(input: {}) { clientMutationId } }",
+            "/w/m.json": '{"query": "mutation { updateRepository(input: {}) { id } }"}',
+            "/w/q.graphql": "query { viewer { login } }",
+            "/w/sub.graphql": "mutation { addSubIssue(input: {}) { issue { id } } }",
+        }
+        for command in (
+            "gh api graphql -F query=@m.graphql",
+            "gh api graphql -f query=@m.graphql",
+            "gh api graphql --field query=@/w/m.graphql",
+            "gh api graphql --input m.json",
+            "gh api graphql --input=m.json",
+            "cd /w/sub && gh api graphql --input ../m.json",
+        ):
+            with self.subTest(command=command):
+                verdict = refusal(command, "feat/x", always_green, "/w", read_text=files(texts))
+                self.assertIn(OWNER_REFUSAL, verdict or "")
+        for command in (
+            "gh api graphql -F query=@q.graphql",
+            "gh api graphql --input q.graphql",
+            "gh api graphql -F query=@sub.graphql",
+        ):
+            with self.subTest(command=command):
+                self.assertIsNone(
+                    refusal(command, "feat/x", always_green, "/w", read_text=files(texts))
+                )
+
+    def test_a_graphql_form_that_cannot_be_read_is_refused_as_a_precaution(self) -> None:
+        for command in (
+            "gh api graphql --input missing.json",
+            "gh api graphql -F query=@missing.graphql",
+            "cat q.json | gh api graphql --input -",
+            "echo \"$QUERY\" | gh api graphql -F query=@-",
+            "gh api graphql -f query=\"$(cat q.graphql)\"",
+            "gh api graphql -f query=\"`cat q.graphql`\"",
+            "gh api graphql -f query=\"$QUERY\"",
+            "gh api graphql -f query=${QUERY}",
+            "gh api graphql --input - <<<\"$QUERY\"",
+            "cd \"$DIR\" && gh api graphql --input m.json",
+        ):
+            with self.subTest(command=command):
+                verdict = refused(command) or ""
+                self.assertIn("gh api graphql", verdict)
+                self.assertIn("par précaution", verdict)
+
+    def test_the_standard_input_under_another_name_is_the_heredoc(self) -> None:
+        mutation = '{"query": "mutation { updateRepository(input: {}) { clientMutationId } }"}'
+        sub_issue = '{"query": "mutation { addSubIssue(input: {}) { issue { id } } }"}'
+        for name in ("/dev/stdin", "/dev/fd/0", "/proc/self/fd/0"):
+            for form in (f"--input {name}", f"-F query=@{name}", f"--input={name}"):
+                with self.subTest(form=form):
+                    verdict = refused(f"gh api graphql {form} <<'EOF'\n{mutation}\nEOF") or ""
+                    self.assertIn("mutation", verdict)
+                    self.assertNotIn("par précaution", verdict)
+                    self.assertIsNone(refused(f"gh api graphql {form} <<'EOF'\n{sub_issue}\nEOF"))
+
+    def test_the_standard_input_under_another_name_without_a_heredoc_is_refused(self) -> None:
+        verdict = refused("cat q.json | gh api graphql --input /dev/stdin") or ""
+        self.assertIn("par précaution", verdict)
+
+    def test_a_graphql_read_in_a_heredoc_or_with_variables_passes(self) -> None:
+        for command in (
+            "gh api graphql -f query=\"$(cat <<'EOF'\nquery { viewer { login } }\nEOF\n)\"",
+            "gh api graphql --input - <<'EOF'\n{\"query\": \"query { viewer { login } }\"}\nEOF",
+            "gh api graphql -f query=\"$(cat <<'EOF'\nmutation { addSubIssue(input: {}) { issue { id } } }\n"
+            "EOF\n)\"",
+            "gh api graphql -f query='query($o: String!) { repository(owner: $o, name: \"r\") { id } }'"
+            " -F o=x",
+            "gh api graphql -f query='query { viewer { login } }' -F cursor=\"$CURSOR\"",
+            "gh api repos/o/r/issues --jq '.[].title' <<'EOF'\nupdateRepository\nEOF",
+        ):
+            with self.subTest(command=command):
+                self.assertIsNone(refused(command))
+
     def test_the_sub_issue_mutations_the_plugin_uses_and_graphql_reads_pass(self) -> None:
         for command in (
             "gh api graphql -f query='mutation { addSubIssue(input: {issueId: \"a\", "
@@ -518,6 +937,462 @@ class OwnerGestures(unittest.TestCase):
         ):
             with self.subTest(command=command):
                 self.assertIsNone(refused(command))
+
+
+MUTATION_JSON = '{"query": "mutation { updateRepository(input: {}) { clientMutationId } }"}'
+SUB_ISSUE_JSON = '{"query": "mutation { addSubIssue(input: {}) { issue { id } } }"}'
+STDIN_SPELLINGS = (
+    "/dev/stdin",
+    "/dev/fd/0",
+    "/proc/self/fd/0",
+    "/dev/./stdin",
+    "//dev/stdin",
+    "///dev/stdin",
+    "/dev//stdin",
+    "/dev/fd/../fd/0",
+    "/dev/../dev/stdin",
+    "/proc/self/../self/fd/0",
+    "/tmp/../dev/stdin",
+    "/proc/thread-self/fd/0",
+)
+
+
+def _refuse_unsafe_open(path: object) -> None:
+    """Raise rather than open what could read without end or block: a device, /proc, a pipe.
+
+    The check is a `stat`, which never blocks, and it runs before any real open: a test written
+    against code that still opens such a path fails here, red, instead of filling the memory.
+    """
+    if isinstance(path, int):
+        raise AssertionError(f"opened the descriptor {path}")
+    text = os.fspath(path)  # type: ignore[arg-type]
+    if isinstance(text, bytes):
+        text = os.fsdecode(text)
+    for candidate in (text, os.path.realpath(text)):
+        normal = os.path.normpath(candidate).replace("\\", "/")
+        if normal.lstrip("/").startswith(("dev/", "proc/")) or normal in ("/dev", "/proc"):
+            raise AssertionError(f"opened {text} ({normal})")
+    try:
+        mode = os.stat(text).st_mode
+    except (OSError, ValueError):
+        return  # it cannot be opened either
+    if not (stat.S_ISREG(mode) or stat.S_ISDIR(mode)):
+        raise AssertionError(f"opened {text}, which is not an ordinary file")
+
+
+@contextlib.contextmanager
+def no_open_under_devices() -> Iterator[None]:
+    """Fail the test if the guard opens a device, /proc or any file that is not an ordinary one.
+
+    `pathlib` opens through `io.open`, which does not call `os.open` or `builtins.open` by name:
+    all three are patched, so that no road to a real open is left.
+    """
+    real_io_open, real_os_open = io.open, os.open
+
+    def checked_io_open(path: object, *args: object, **kwargs: object) -> object:
+        _refuse_unsafe_open(path)
+        return real_io_open(path, *args, **kwargs)  # type: ignore[arg-type]
+
+    def checked_os_open(path: object, *args: object, **kwargs: object) -> int:
+        _refuse_unsafe_open(path)
+        return real_os_open(path, *args, **kwargs)  # type: ignore[arg-type]
+
+    with (
+        mock.patch("io.open", checked_io_open),
+        mock.patch("builtins.open", checked_io_open),
+        mock.patch("os.open", checked_os_open),
+    ):
+        yield
+
+
+class StandardInputIsNeverOpened(unittest.TestCase):
+    """Un chemin qui vaut l'entrée standard n'est jamais ouvert : le garde l'a déjà lue."""
+
+    def test_every_spelling_of_the_standard_input_reads_the_heredoc(self) -> None:
+        for name in STDIN_SPELLINGS:
+            for form in (
+                f"--input {name}",
+                f"--input={name}",
+                f"-F query=@{name}",
+                f"-f query=@{name}",
+                f"--field=query=@{name}",
+            ):
+                with self.subTest(name=name, form=form), no_open_under_devices():
+                    heredoc = f"gh api graphql {form} <<'EOF'\n%s\nEOF"
+                    verdict = refused(heredoc % MUTATION_JSON) or ""
+                    self.assertIn("mutation", verdict)
+                    self.assertNotIn("par précaution", verdict)
+                    self.assertIsNone(refused(heredoc % SUB_ISSUE_JSON))
+                    self.assertIn("par précaution", refused(f"cat q | gh api graphql {form}") or "")
+
+    def test_a_relative_name_is_resolved_where_the_command_stands(self) -> None:
+        for command, cwd in (
+            ("gh api graphql --input stdin", "/dev"),
+            ("gh api graphql --input 0", "/dev/fd"),
+            ("gh api graphql --input 0", "/proc/self/fd"),
+            ("gh api graphql --input fd/0", "/proc/self"),
+            ("gh api graphql --input dev/stdin", "/"),
+            ("gh api graphql --input ../dev/stdin", "/tmp"),
+            ("cd /dev && gh api graphql --input stdin", "/work"),
+            ("cd /dev/fd && gh api graphql -F query=@0", "/work"),
+            ("cd /dev && cd . && gh api graphql --input ./stdin", "/work"),
+            ("cd /w && cd /dev && gh api graphql --input ./stdin", "/work"),
+            ("cd /proc && cd self/fd && gh api graphql --input 0", "/work"),
+        ):
+            with self.subTest(command=command, cwd=cwd), no_open_under_devices():
+                full = f"{command} <<'EOF'\n{MUTATION_JSON}\nEOF"
+                verdict = refusal(full, "feat/x", always_green, cwd) or ""
+                self.assertIn("mutation", verdict)
+                self.assertNotIn("par précaution", verdict)
+                harmless = f"{command} <<'EOF'\n{SUB_ISSUE_JSON}\nEOF"
+                self.assertIsNone(refusal(harmless, "feat/x", always_green, cwd))
+
+    @unittest.skipIf(sys.platform == "win32", "a symbolic link to /dev/stdin is a POSIX thing")
+    def test_a_link_to_the_standard_input_is_the_standard_input(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            link = Path(folder) / "in"
+            link.symlink_to("/dev/stdin")
+            with no_open_under_devices():
+                command = f"gh api graphql --input {link} <<'EOF'\n%s\nEOF"
+                self.assertIn("mutation", refused(command % MUTATION_JSON) or "")
+                self.assertIsNone(refused(command % SUB_ISSUE_JSON))
+
+    def test_a_heredoc_of_another_command_is_not_the_standard_input_of_the_call(self) -> None:
+        texts = {"/w/q.json": SUB_ISSUE_JSON, "/w/m.json": MUTATION_JSON}
+        other = "&& cat <<'EOF'\nupdateRepository\nEOF"
+        for command, expected_mutation in (
+            (f"gh api graphql --input - < q.json {other}", False),
+            (f"gh api graphql --input - < m.json {other}", True),
+            (f"gh api graphql --input - < /w/m.json {other}", True),
+            (f"gh api graphql -F query=@- < m.json {other}", True),
+        ):
+            with self.subTest(command=command):
+                verdict = refusal(command, "feat/x", always_green, "/w", read_text=files(texts))
+                if expected_mutation:
+                    self.assertIn("mutation", verdict or "")
+                    self.assertNotIn("par précaution", verdict or "")
+                else:
+                    self.assertIsNone(verdict)
+        for command in (
+            f"gh api graphql --input - {other}",
+            "gh api graphql --input - < missing.json",
+            'gh api graphql --input - <<< "$QUERY"',
+            f"echo '{SUB_ISSUE_JSON}' | gh api graphql --input - {other}",
+        ):
+            with self.subTest(command=command):
+                verdict = refusal(command, "feat/x", always_green, "/w", read_text=files(texts))
+                self.assertIn("par précaution", verdict or "")
+
+    def test_a_file_that_is_not_an_ordinary_small_file_is_not_read(self) -> None:
+        with tempfile.TemporaryDirectory() as folder, no_open_under_devices():
+            root = Path(folder)
+            big = root / "big.json"
+            big.write_text(" " * (2 * 1024 * 1024) + MUTATION_JSON, encoding="utf-8")
+            small = root / "small.json"
+            small.write_text(MUTATION_JSON, encoding="utf-8")
+            forms = {
+                "a file over the cap": (big.as_posix(), "par précaution"),
+                "a directory": (root.as_posix(), "par précaution"),
+                "an ordinary small file": (small.as_posix(), "mutation"),
+            }
+            if sys.platform != "win32":
+                forms["/dev/zero"] = ("/dev/zero", "par précaution")
+                forms["/dev/null"] = ("/dev/null", "par précaution")
+                forms["/dev/urandom"] = ("/dev/urandom", "par précaution")
+            if hasattr(os, "mkfifo"):
+                fifo = root / "pipe"
+                os.mkfifo(fifo)
+                forms["a FIFO nobody writes to"] = (fifo.as_posix(), "par précaution")
+            for name, (path, expected) in forms.items():
+                for form in (f"--input {path}", f"-F query=@{path}"):
+                    with self.subTest(case=name, form=form):
+                        started = time.monotonic()
+                        verdict = refused(f"gh api graphql {form}") or ""
+                        self.assertLess(time.monotonic() - started, 5)
+                        self.assertIn(expected, verdict)
+
+    def test_a_body_file_of_a_merge_under_a_device_path_is_not_opened(self) -> None:
+        for name in ("/dev/stdin", "/dev/./stdin", "//dev/stdin", "/dev/zero", "/proc/self/fd/0"):
+            for option in (f"--body-file {name}", f"-F {name}", f"--body-file={name}"):
+                with self.subTest(name=name, option=option), no_open_under_devices():
+                    self.assertIsNone(refused(f"gh pr merge 5 {option}", green=True))
+
+
+COLLABORATOR = "repos/o/r/collaborators/bob"
+
+
+class GhApiArgumentsLikeGh(unittest.TestCase):
+    """Un seul découpeur des arguments de `gh api`, comme pflag : la méthode, le point d'accès et
+    les champs ne se lisent pas autrement que gh les lit."""
+
+    def test_the_value_of_an_option_is_never_taken_for_the_method(self) -> None:
+        # gh (pflag) prend le mot suivant pour la valeur de l'option, même s'il commence par `-`.
+        for tail in (
+            "--jq -XGET",
+            "-q -XGET",
+            "-q --method=GET",
+            "-t --method=GET",
+            "-t -X=GET",
+            "--template -XGET",
+            "-p -XGET",
+            "--preview -XGET",
+            "--cache -XGET",
+            "--hostname -XGET",
+            "-H -XGET",
+            "--header -X=GET",
+            "--jq=. -q -XGET",
+        ):
+            with self.subTest(tail=tail):
+                verdict = refused(f"gh api -X PUT {COLLABORATOR} {tail}") or ""
+                self.assertIn(OWNER_REFUSAL, verdict)
+                self.assertIn("PUT", verdict)
+        for command in (
+            f"gh api {COLLABORATOR} --jq -XPUT",
+            f"gh api {COLLABORATOR} -q -X",
+            f"gh api {COLLABORATOR} --template --method=DELETE",
+            f"gh api {COLLABORATOR} --jq -f",
+            f"gh api {COLLABORATOR} -H -F",
+            f"gh api -X GET --jq -XPUT {COLLABORATOR}",
+        ):
+            with self.subTest(command=command):
+                self.assertIsNone(refused(command))
+
+    def test_every_spelling_of_the_method_is_read_and_the_last_one_counts(self) -> None:
+        for command, method in (
+            (f"gh api -XPUT {COLLABORATOR}", "PUT"),
+            (f"gh api -X=PUT {COLLABORATOR}", "PUT"),
+            (f"gh api --method=PUT {COLLABORATOR}", "PUT"),
+            (f"gh api --method PUT {COLLABORATOR}", "PUT"),
+            (f"gh api -iXPUT {COLLABORATOR}", "PUT"),
+            (f"gh api -X GET -XPUT {COLLABORATOR}", "PUT"),
+            (f"gh api -XGET -X=PUT {COLLABORATOR}", "PUT"),
+            (f"gh api -X GET {COLLABORATOR} -f a=b -X DELETE", "DELETE"),
+            (f"gh api -X GET {COLLABORATOR} -fa=b -iXDELETE", "DELETE"),
+            (f"gh api --method=GET --method=PUT {COLLABORATOR}", "PUT"),
+            (f"gh api -X PUT -- {COLLABORATOR}", "PUT"),
+            (f"gh api -X PUT --jq . {COLLABORATOR}", "PUT"),
+            (f"gh api -pXGET {COLLABORATOR} -f permission=admin", "POST"),
+        ):
+            with self.subTest(command=command):
+                verdict = refused(command) or ""
+                self.assertIn(OWNER_REFUSAL, verdict)
+                self.assertIn(f"gh api {method} ", verdict)
+        for command in (
+            f"gh api -XGET {COLLABORATOR}",
+            f"gh api -X=get {COLLABORATOR} -f per_page=1",
+            f"gh api --method=HEAD {COLLABORATOR}",
+            f"gh api -iXGET {COLLABORATOR} -F a=b",
+            f"gh api -X PUT -X GET {COLLABORATOR} -f a=b",
+            f"gh api -X PUT {COLLABORATOR} -XGET",
+            f"gh api -pXGET {COLLABORATOR}",
+            f"gh api -X GET -- {COLLABORATOR}",
+        ):
+            with self.subTest(command=command):
+                self.assertIsNone(refused(command))
+
+    def test_a_redirection_does_not_hide_the_endpoint_or_the_method(self) -> None:
+        for command in (
+            f"gh api 2>/dev/null -X PUT {COLLABORATOR}",
+            f"gh api > out.json -X PUT {COLLABORATOR}",
+            f"gh api -X PUT {COLLABORATOR} > out.json 2>&1",
+            f"gh api >> log.txt {COLLABORATOR} -f permission=admin",
+        ):
+            with self.subTest(command=command):
+                self.assertIn(OWNER_REFUSAL, refused(command) or "")
+        for command in (
+            f"gh api {COLLABORATOR} > out.json",
+            f"gh api -X GET {COLLABORATOR} -f per_page=1 2>&1",
+        ):
+            with self.subTest(command=command):
+                self.assertIsNone(refused(command))
+
+
+VALUE_OPTIONS = ("-t", "--template", "-q", "--jq", "-p", "--preview", "-H", "--header", "--cache", "--hostname")
+OPERATOR_WORDS = (">", "<", ">>", "&", "<&", ">&", "<<", "&&", "|", ";", "||", "(", ")")
+GRAPHQL_MUTATION = "mutation{updateRepository(input:{repositoryId:\"x\"}){clientMutationId}}"
+
+
+class AnOperatorWordMayBeTheValueOfAnOption(unittest.TestCase):
+    """#18 : `-t '>'` et `-q 1 > out` : le mot `>` ou `1` peut être la valeur d'une option ou une
+    redirection, et shlex ne le dit pas. Le garde juge les deux lectures et refuse si l'une refuse."""
+
+    def test_a_quoted_operator_is_the_value_of_the_option_and_the_endpoint_is_kept(self) -> None:
+        for option in VALUE_OPTIONS:
+            for operator in OPERATOR_WORDS:
+                command = f"gh api -X PUT {option} '{operator}' {COLLABORATOR}"
+                with self.subTest(command=command):
+                    self.assertIn(OWNER_REFUSAL, refused(command) or "")
+                attached = f"gh api -X PUT {option}={operator!r} {COLLABORATOR}"
+                with self.subTest(command=attached):
+                    self.assertIn(OWNER_REFUSAL, refused(attached) or "")
+
+    def test_a_quoted_operator_does_not_hide_graphql(self) -> None:
+        for option in VALUE_OPTIONS:
+            for operator in OPERATOR_WORDS:
+                command = f"gh api {option} '{operator}' graphql -f query='{GRAPHQL_MUTATION}'"
+                with self.subTest(command=command):
+                    self.assertIn("mutation", refused(command) or "")
+
+    def test_a_number_after_an_option_is_its_value_not_a_descriptor(self) -> None:
+        for option in VALUE_OPTIONS:
+            for command in (
+                f"gh api {option} 1 > /dev/null -X PUT {COLLABORATOR}",
+                f"gh api {option} 1 >> /dev/null -X PUT {COLLABORATOR}",
+                f"gh api {option} 2 >&1 -X PUT {COLLABORATOR}",
+                f"gh api {option} 1 < /dev/null -X PUT {COLLABORATOR}",
+            ):
+                with self.subTest(command=command):
+                    self.assertIn(OWNER_REFUSAL, refused(command) or "")
+
+    def test_a_shell_operator_in_quotes_does_not_split_the_command(self) -> None:
+        for operator in (";", "&", "|", "&&", "||", "(", ")"):
+            command = f"gh api -X PUT -H '{operator}' {COLLABORATOR}"
+            with self.subTest(operator=operator):
+                self.assertIn(OWNER_REFUSAL, refused(command) or "")
+        self.assertIn(OWNER_REFUSAL, refused(f"gh api -X PUT -H \\; {COLLABORATOR}") or "")
+
+    def test_real_redirections_are_read_as_before(self) -> None:
+        for command in (
+            f"gh api -X PUT 2>&1 {COLLABORATOR}",
+            f"gh api -X PUT {COLLABORATOR} -q .name > out.json 2>&1",
+            f"gh api -q .name -X PUT {COLLABORATOR} 2>/dev/null",
+            f"gh api graphql --input - < m.json 2>/dev/null",
+        ):
+            with self.subTest(command=command):
+                self.assertIsNotNone(
+                    refusal(command, "feat/x", always_green, "/w", read_text=files({"/w/m.json": MUTATION_JSON}))
+                )
+        for command in (
+            f"gh api {COLLABORATOR} -q .name > out.json 2>&1",
+            f"gh api -q .name {COLLABORATOR} 2>/dev/null",
+            f"gh api -H 'Accept: x' {COLLABORATOR} >> out.json",
+            f"gh api -t '{{{{.name}}}}' {COLLABORATOR} > out.json",
+            f"gh api {COLLABORATOR} --jq 1 > out.json",
+        ):
+            with self.subTest(command=command):
+                self.assertIsNone(refused(command))
+
+    def test_readonly_reads_every_reading(self) -> None:
+        self.assertFalse(_gh_api_reads(["-X", "PUT", "-t", ">", COLLABORATOR]))
+        self.assertFalse(_gh_api_reads(["-q", "1", ">", "/dev/null", "-X", "PUT", COLLABORATOR]))
+        self.assertTrue(_gh_api_reads([COLLABORATOR, ">", "out.json"]))
+        self.assertTrue(_gh_api_reads(["-q", ".name", COLLABORATOR, "2", ">&", "1"]))
+
+    def test_too_many_operator_words_are_refused_not_guessed(self) -> None:
+        command = f"gh api {COLLABORATOR}" + " > a" * 6
+        self.assertIn("trop de redirections", refused(command) or "")
+
+
+FD_NOT_ZERO = (
+    "/dev/fd/3",
+    "/dev/fd/4",
+    "/dev/fd/9",
+    "/proc/self/fd/3",
+    "/proc/thread-self/fd/3",
+    "/proc/123/fd/3",
+    "/proc/self/fd/9",
+    "/dev/./fd/3",
+    "//dev/fd/3",
+    "/dev/fd/../fd/3",
+    "/dev/../dev/fd/3",
+    "/tmp/../dev/fd/3",
+    "/proc/self/../self/fd/3",
+    "/dev/fd/03",
+    "/dev/fd/00",
+    "/proc/self/fd/00",
+    "/dev/tty",
+    "/dev/stdout",
+    "/dev/stderr",
+    "/dev/zero",
+    "/dev/fd/../../tmp/x",
+)
+FD_FORMS = ("--input {}", "--input={}", "-F query=@{}", "-f query=@{}", "--field=query=@{}")
+
+
+class OnlyTheDescriptorZeroIsTheStandardInput(unittest.TestCase):
+    """#18 : `/dev/fd/3` n'est pas l'entrée standard : gh lit un autre fichier que le heredoc."""
+
+    def test_any_other_path_under_devices_is_refused_not_read(self) -> None:
+        for name in FD_NOT_ZERO:
+            for form in FD_FORMS:
+                option = form.format(name)
+                with self.subTest(name=name, form=option), no_open_under_devices():
+                    harmless = f"gh api graphql {option} <<'EOF'\n{SUB_ISSUE_JSON}\nEOF"
+                    self.assertIn("par précaution", refused(harmless) or "")
+                    redirect = f"exec 3< m.json; gh api graphql {option} < q.json"
+                    verdict = merge_refused(redirect, {"/w/q.json": SUB_ISSUE_JSON}, "/w")
+                    self.assertIn("par précaution", verdict or "")
+
+    def test_a_descriptor_redirected_to_a_file_is_refused(self) -> None:
+        for command in (
+            "gh api graphql --input /dev/fd/3 3< m.json < q.json",
+            "gh api graphql --input /dev/fd/3 3< m.json",
+            "gh api graphql -F query=@/proc/self/fd/3 3< m.json <<'EOF'\n" + SUB_ISSUE_JSON + "\nEOF",
+        ):
+            with self.subTest(command=command), no_open_under_devices():
+                verdict = merge_refused(command, {"/w/q.json": SUB_ISSUE_JSON, "/w/m.json": MUTATION_JSON}, "/w")
+                self.assertIn("par précaution", verdict or "")
+
+    def test_a_relative_name_of_another_descriptor_is_refused(self) -> None:
+        for command, cwd in (
+            ("gh api graphql --input 3", "/dev/fd"),
+            ("gh api graphql --input 3", "/proc/self/fd"),
+            ("gh api graphql --input fd/3", "/dev"),
+            ("gh api graphql --input fd/3", "/proc/self"),
+            ("gh api graphql --input tty", "/dev"),
+            ("cd /dev/fd && gh api graphql -F query=@4", "/work"),
+            ("cd /proc && cd self/fd && gh api graphql --input 9", "/work"),
+        ):
+            with self.subTest(command=command, cwd=cwd), no_open_under_devices():
+                full = f"{command} <<'EOF'\n{SUB_ISSUE_JSON}\nEOF"
+                self.assertIn("par précaution", refusal(full, "feat/x", always_green, cwd) or "")
+
+    @unittest.skipIf(sys.platform == "win32", "a symbolic link to /dev/fd/3 is a POSIX thing")
+    def test_a_link_to_another_descriptor_is_refused(self) -> None:
+        with tempfile.TemporaryDirectory() as folder, no_open_under_devices():
+            root = Path(folder)
+            (root / "direct").symlink_to("/dev/fd/3")
+            (root / "chain").symlink_to(root / "direct")
+            (root / "proc").symlink_to("/proc/self/fd/3")
+            (root / "dir").symlink_to("/dev/fd")
+            for target in (root / "direct", root / "chain", root / "proc", root / "dir" / "3"):
+                with self.subTest(target=target.name):
+                    harmless = f"gh api graphql --input {target} <<'EOF'\n{SUB_ISSUE_JSON}\nEOF"
+                    self.assertIn("par précaution", refused(harmless) or "")
+
+    @unittest.skipIf(sys.platform == "win32", "a symbolic link to /dev/stdin is a POSIX thing")
+    def test_a_loop_of_links_is_refused_without_looping(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            (Path(folder) / "a").symlink_to(Path(folder) / "b")
+            (Path(folder) / "b").symlink_to(Path(folder) / "a")
+            self.assertEqual(device_path_kind(str(Path(folder) / "a")), "other")
+
+    def test_the_kind_of_a_path(self) -> None:
+        for name in (
+            "/dev/stdin",
+            "/dev/fd/0",
+            "/proc/self/fd/0",
+            "/proc/thread-self/fd/0",
+            "/proc/123/fd/0",
+            "/proc/self/task/5/fd/0",
+            "/dev/./stdin",
+            "//dev/stdin",
+            "/dev/fd/../fd/0",
+        ):
+            with self.subTest(name=name):
+                self.assertEqual(device_path_kind(name), "stdin")
+        for name in FD_NOT_ZERO:
+            with self.subTest(name=name):
+                self.assertEqual(device_path_kind(name), "other")
+        for name in ("/tmp/x", "/devices/x", "/procedure", "q.json"):
+            with self.subTest(name=name):
+                self.assertIsNone(device_path_kind(name, "/w"))
+
+    def test_a_body_file_of_a_merge_under_another_descriptor_is_not_opened(self) -> None:
+        for name in ("/dev/fd/3", "/proc/self/fd/3", "/dev/tty"):
+            for option in (f"--body-file {name}", f"-F {name}"):
+                with self.subTest(name=name, option=option), no_open_under_devices():
+                    self.assertIsNone(refused(f"gh pr merge 5 {option}", green=True))
 
 
 if __name__ == "__main__":

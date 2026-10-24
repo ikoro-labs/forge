@@ -21,10 +21,13 @@ La grille que lisent le coder, le juge et les décideurs sur toute PR de ce dép
   sous Windows, à partir de Python 3.10. Une question de processus passe par `handoff_header.py`
   (`/proc` sous Linux, API Win32 sous Windows), jamais par `/proc` seul. Aucun `python3` cité : sous
   Windows, c'est un alias du Microsoft Store.
-- Un garde (`guard_git`, `guard_coder`, `guard_readonly`) vaut refus quand il échoue : `|| exit 2`
-  dans sa commande de `hooks.json`, et `guard_git` ajoute `"onFailure": "block"` pour le dépassement
-  du `timeout`, que `|| exit 2` ne couvre pas. Un hook qui
-  avertit ou observe ne bloque jamais la session : son échec sort à 0.
+- Un garde de rôle ou de commande (`guard_git`, `guard_coder`, `guard_readonly`) vaut refus quand il
+  échoue : `|| exit 2` dans sa commande de `hooks.json` ; celle de `guard_git` lit ce que le garde
+  écrit, et dit que le garde a échoué et que la commande est refusée par précaution quand ce n'est
+  pas un refus de règle (le code 2 seul ne le dit pas : un script absent ou une erreur d'usage de
+  `uv` sortent aussi en 2). Elle est écrite pour un shell POSIX (`docs/installation.md`). Il ajoute `"onFailure": "block"` pour le dépassement du `timeout`, que
+  `|| exit 2` ne couvre pas. `guard_pause` n'en est pas un : il échoue ouvert, comme tout hook qui
+  avertit ou observe, et ne bloque jamais la session (son échec sort à 0).
 - Un garde d'agent filtre sur le nom préfixé (`forge:coder`, `forge:qc-gate`...) : un agent de
   plugin ignore `hooks` dans son front matter. Chaque filtre a son test, car un filtre faux ne
   s'appliquerait à personne, en silence.

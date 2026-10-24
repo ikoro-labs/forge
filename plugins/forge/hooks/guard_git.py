@@ -22,29 +22,36 @@ The branch that matters is the one of the directory git acts on: `cd <dir> &&` a
 <dir>` move it, so each command is judged against the branch checked out there.
 
 Also refused, to every agent, are the gestures of the owner of the repository: a write by
-`gh api` (any method but GET and HEAD) on collaborators, invitations, branch protection,
-rulesets, runners, secrets, variables, Actions permissions, keys, webhooks, environments, a
-transfer or the repository itself; the GraphQL mutations of protection, rulesets, collaborators
-and the repository (the sub-issue mutations the plugin uses are not among them); `gh secret` and
-`gh variable` `set` and `delete`; `gh repo` `delete`, `rename`, `archive`, `edit --visibility`
-and `deploy-key add` and `delete`; the runner scripts `config.sh`, `config.cmd` and `svc.sh`,
-also behind `sudo`, `bash`, `sh` and `cmd /c`. A reading is always allowed. The refusal names the
-gesture and says it is the human's, to list at the end of the report. A project adds its own with
-the `owner-gesture` key of `docs/agents/usine.md`, one `<command prefix> | <reason>` per line;
-the built-in list holds without it. This replaces the earlier choice to leave every owner gesture
-to the project's own hooks.
+`gh api` (any method but an explicit GET or HEAD) on collaborators, invitations, branch
+protection, rulesets, runners, secrets, variables, Actions permissions, keys, webhooks,
+environments, a transfer or the repository itself; the GraphQL mutations of protection, rulesets,
+collaborators and the repository (the sub-issue mutations the plugin uses are not among them),
+read in the arguments, in the heredocs of the command and in the files `--input` and `-F
+query=@file` name, a form aimed at `graphql` that cannot be read being refused as a precaution;
+`gh secret` and `gh variable` `set` and `delete`; `gh repo` `delete`, `rename`, `archive`, `edit
+--visibility` and `deploy-key add` and `delete`; the runner scripts `config.sh`, `config.cmd` and
+`svc.sh`, only in a runner's folder or with a runner's argument, also behind `sudo`, `env`,
+`nohup`, `bash`, `sh`, `cmd /c` and a heredoc fed to a shell. A reading is always allowed. The
+refusal names the gesture and says it is the human's, to list at the end of the report. A project
+adds its own with the `owner-gesture` key of `docs/agents/usine.md`, one `<command prefix> |
+<reason>` per line; the built-in list holds without it. This replaces the earlier choice to leave
+every owner gesture to the project's own hooks.
 """
 
 from __future__ import annotations
 
 import json
+import os
+import posixpath
 import re
 import shlex
 import shutil
+import stat
 import subprocess
 import sys
 from collections.abc import Callable, Iterable
 from pathlib import Path, PurePosixPath, PureWindowsPath
+from typing import NamedTuple
 
 from usine import load, project_root, split_value
 
@@ -59,23 +66,66 @@ OPERATORS = {";", "&&", "||", "|", "&", "(", ")"}
 BRANCH_SWITCH = ({"checkout", "-b"}, {"checkout", "-B"}, {"switch", "-c"}, {"switch", "-C"})
 
 
-def without_heredoc_bodies(command: str) -> str:
+def split_heredocs(command: str) -> tuple[str, str]:
+    """The command without its heredoc bodies, and those bodies, one after the other."""
     kept: list[str] = []
+    bodies: list[str] = []
     delimiter: str | None = None
     for line in command.splitlines():
         if delimiter is not None:
             if line.strip() == delimiter:
                 delimiter = None
+            else:
+                bodies.append(line)
             continue
         kept.append(line)
         if match := HEREDOC.search(line):
             delimiter = match.group(2)
-    return "\n".join(kept)
+    return "\n".join(kept), "\n".join(bodies)
+
+
+def without_heredoc_bodies(command: str) -> str:
+    return split_heredocs(command)[0]
+
+
+# shlex hands over a quoted `'&'` and a bare `&` as the same token. The shell characters are
+# swapped for private-use ones where they are quoted or escaped, then swapped back in each word:
+# `-H '|'` is the value of an option, not a pipe.
+_SHELL_CHARACTERS = ";&|()<>"
+_MASK = str.maketrans({char: chr(0xE000 + index) for index, char in enumerate(_SHELL_CHARACTERS)})
+_UNMASK = str.maketrans({chr(0xE000 + index): char for index, char in enumerate(_SHELL_CHARACTERS)})
+
+
+def _mask_quoted(text: str) -> str:
+    """`text` with the shell characters that are quoted or escaped replaced by private-use ones."""
+    out: list[str] = []
+    quote = ""
+    index = 0
+    while index < len(text):
+        char = text[index]
+        if quote == "'":
+            quote = "" if char == "'" else quote
+            out.append(char if char == "'" else char.translate(_MASK))
+        elif char == "\\" and index + 1 < len(text):
+            index += 1
+            following = text[index]
+            masked = following.translate(_MASK)
+            if quote == '"' or masked == following:
+                out.append(char)  # shlex keeps the backslash in double quotes, and before a letter
+            out.append(masked)
+        elif quote == '"':
+            quote = "" if char == '"' else quote
+            out.append(char if char == '"' else char.translate(_MASK))
+        else:
+            quote = char if char in "'\"" else ""
+            out.append(char)
+        index += 1
+    return "".join(out)
 
 
 def _commands(command: str) -> list[list[str] | str]:
     """Simple commands as their words, with `(` and `)` kept as markers of a subshell."""
-    lexer = shlex.shlex(without_heredoc_bodies(command), posix=True, punctuation_chars=True)
+    lexer = shlex.shlex(_mask_quoted(without_heredoc_bodies(command)), posix=True, punctuation_chars=True)
     lexer.whitespace_split = True
     lexer.whitespace = " \t\r\n"
     result: list[list[str] | str] = []
@@ -88,7 +138,7 @@ def _commands(command: str) -> list[list[str] | str]:
                     result.append(token)
                 current = []
             else:
-                current.append(token)
+                current.append(token.translate(_UNMASK))
         result.append(current)
     except ValueError:
         # Unbalanced quotes: fall back to plain words rather than let the command through.
@@ -294,44 +344,255 @@ def _merge_message(
                 parts.append(value)
             elif value and value != "-":
                 path = _moved(here, value)
-                text = read_text(path) if path is not None and path != UNKNOWN else None
-                parts.append(text or "")
+                reads = path is not None and path != UNKNOWN and device_path_kind(path, here) is None
+                parts.append((read_text(path) if reads else None) or "")
         index += 1
     return "\n".join(parts)
 
 
+# The most a file read for its text may weigh: a query or a message is far smaller.
+READ_CAP = 1024 * 1024
+
+
+_STANDARD_INPUT = re.compile(r"^/(?:dev/(?:stdin|fd/0)|proc/(?:self|thread-self|\d+)(?:/task/\d+)?/fd/0)$")
+_MOST_LINKS = 40
+
+
+def device_path_kind(path: str, here: str | None = None) -> str | None:
+    """`"stdin"`, `"other"` or None: what a path names once written out in full.
+
+    `"stdin"` is a spelling of the descriptor 0 (`/dev/stdin`, `/dev/fd/0`, `/proc/self/fd/0`,
+    `/proc/<pid>/fd/0`), which the guard has read already as the input of the command. `"other"`
+    is anything else under `/dev/` or `/proc/` (`/dev/fd/3`, `/dev/tty`, `/dev/zero`): it is never
+    opened, because it is not the standard input and a device never ends or blocks. None is a path
+    elsewhere. The path is made absolute from `here` (or the working directory), normalised
+    (`//`, `/./`, `..`) and its symbolic links followed one component at a time, up to the
+    entry in `/dev` or `/proc`, which the guard never looks into.
+    """
+    text = path.replace("\\", "/")
+    if not text.startswith("/") and here not in (None, UNKNOWN):
+        text = posixpath.join(str(here).replace("\\", "/"), text)
+    if not text.startswith("/"):
+        try:
+            text = posixpath.join(os.getcwd().replace("\\", "/"), text)
+        except OSError:
+            return "other"  # a directory that cannot be told: not a path to open
+    pending = [part for part in reversed(text.split("/")) if part]
+    resolved = "/"
+    links = 0
+    while pending:
+        part = pending.pop()
+        if part == ".":
+            continue
+        if part == "..":
+            resolved = posixpath.dirname(resolved)
+            continue
+        candidate = posixpath.join(resolved, part)
+        if candidate in ("/dev", "/proc"):
+            rest = list(reversed(pending))
+            final = posixpath.normpath("/".join([candidate, *rest]))
+            if _STANDARD_INPUT.match(final):
+                return "stdin"
+            return "other"  # under /dev or /proc, or out of it through `..`: never opened
+        try:
+            is_link = os.path.islink(candidate)
+        except (OSError, ValueError):
+            return "other"
+        if is_link:
+            links += 1
+            try:
+                target = os.readlink(candidate).replace("\\", "/")
+            except (OSError, ValueError):
+                return "other"
+            if links > _MOST_LINKS:
+                return "other"
+            if target.startswith("/"):
+                resolved = "/"
+            pending.extend(part for part in reversed(target.split("/")) if part)
+        else:
+            resolved = candidate
+    return None
+
+
+def is_standard_input_path(path: str, here: str | None = None) -> bool:
+    """Whether `path` is a spelling of the standard input (the descriptor 0), nothing else."""
+    return device_path_kind(path, here) == "stdin"
+
+
 def read_text_or_none(path: str) -> str | None:
-    """The file's text, or None when it cannot be read: gh reports a missing file itself."""
+    """The text of an ordinary file of at most `READ_CAP` bytes, or None.
+
+    None when it cannot be read: gh reports a missing file itself. A device, a FIFO, a directory
+    and a file over the cap are not read, and the open never waits: `stat` rules first.
+    """
     try:
-        return Path(native_directory(path) or path).read_text(encoding="utf-8")
+        target = Path(native_directory(path) or path)
+        if device_path_kind(str(target)) is not None or not stat.S_ISREG(target.stat().st_mode):
+            return None
+        with target.open("rb") as stream:
+            data = stream.read(READ_CAP + 1)
+        return None if len(data) > READ_CAP else data.decode("utf-8")
     except (OSError, UnicodeDecodeError, ValueError):
         return None
 
 
-# The fields and bodies of `gh api`: any of them makes gh send a POST unless `-X` says otherwise.
-API_FIELDS = frozenset({"-f", "-F", "--field", "--raw-field", "--input"})
+# The options of `gh api` as pflag, the library gh parses with, reads them. The ones that take a
+# value consume the next word whatever it looks like (`--jq -XGET` is a filter, not a method), and
+# a short one takes the rest of its word (`-XGET`, `-X=GET`, `-iXGET`). The other ones are flags.
+API_LONG_VALUE_OPTIONS = {
+    "method": "method",
+    "header": "header",
+    "raw-field": "raw-field",
+    "field": "field",
+    "input": "input",
+    "jq": "jq",
+    "template": "template",
+    "cache": "cache",
+    "hostname": "hostname",
+    "preview": "preview",
+}
+API_SHORT_VALUE_OPTIONS = {
+    "X": "method",
+    "H": "header",
+    "f": "raw-field",
+    "F": "field",
+    "q": "jq",
+    "t": "template",
+    "p": "preview",
+}
+# What makes gh send a body, or fields: a POST unless `-X` says otherwise.
+API_BODY_OPTIONS = frozenset({"raw-field", "field", "input"})
+# A redirection operator, which takes the next word as its target: `>`, `2>&1`'s `>&`, `<<`, `<<<`.
+REDIRECTION = re.compile(r"^[<>&]+$")
+
+
+class ApiCall(NamedTuple):
+    """A `gh api` call as gh reads it: its method, its endpoint and its body options in order."""
+
+    method: str | None  # the last `-X` or `--method`; None when there is none
+    endpoint: str
+    options: list[tuple[str, str]]  # `(name, value)` of each field and `--input`, as typed
+
+
+# More operator-like words than this in a `gh api` call and the guard refuses: each one doubles or
+# triples the readings to judge.
+MOST_OPERATOR_WORDS = 5
+Reading = tuple[list[str], list[tuple[str, str]]]
+
+
+def _awaits_value(word: str) -> bool:
+    """Whether `word` is an option of `gh api` that takes the next word as its value."""
+    if word.startswith("--"):
+        return "=" not in word and word[2:] in API_LONG_VALUE_OPTIONS
+    if word.startswith("-") and len(word) > 1:
+        for position, letter in enumerate(word[1:], start=1):
+            if letter in API_SHORT_VALUE_OPTIONS:
+                return position == len(word) - 1
+    return False
+
+
+def api_readings(words: list[str]) -> list[Reading] | None:
+    """Every way the shell may have split `words` into arguments and redirections, or None.
+
+    shlex hands over `'>'` and `>` alike, and `1 >` as it does `1>`: a word made of `<`, `>` or
+    `&` is a redirection (which takes the next word as its target, and a bare number before it as
+    its descriptor) or the value of an option (`-t '>'`, `-q 1 > out`): that is a reading only
+    after an option that awaits a value. The words cannot tell, so a reading is made of each
+    choice, as `(arguments, [(operator, target)])`. The caller judges them all and refuses when
+    one refuses. None when there are too many to judge.
+    """
+    if sum(1 for word in words if REDIRECTION.match(word)) > MOST_OPERATOR_WORDS:
+        return None
+    readings: list[Reading] = []
+
+    def walk(index: int, kept: list[str], redirections: list[tuple[str, str]]) -> None:
+        if index >= len(words):
+            readings.append((kept, redirections))
+            return
+        word = words[index]
+        if not REDIRECTION.match(word) or (kept and _awaits_value(kept[-1])):
+            walk(index + 1, [*kept, word], redirections)  # an argument, or the value of an option
+        if REDIRECTION.match(word):
+            target = words[index + 1] if index + 1 < len(words) else ""
+            redirected = [*redirections, (word, target)]
+            walk(index + 2, kept, redirected)
+            if kept and kept[-1].isdigit():  # `2>/dev/null`: the number is the descriptor
+                walk(index + 2, kept[:-1], redirected)
+
+    walk(0, [], [])
+    return readings
+
+
+def parse_api(words: list[str]) -> ApiCall:
+    """Split the arguments of `gh api` (redirections removed) the way gh does.
+
+    The one place that knows its options.
+    """
+    method: str | None = None
+    endpoint: str | None = None
+    options: list[tuple[str, str]] = []
+
+    def take(name: str, value: str) -> None:
+        nonlocal method
+        if name == "method":
+            method = value
+        elif name in API_BODY_OPTIONS:
+            options.append((name, value))
+
+    index = 0
+    while index < len(words):
+        word = words[index]
+        index += 1
+        if word == "--":
+            endpoint = endpoint if endpoint is not None else (words[index] if index < len(words) else "")
+            break
+        if word.startswith("--"):
+            name, equals, value = word[2:].partition("=")
+            if name in API_LONG_VALUE_OPTIONS:
+                if not equals:
+                    value = words[index] if index < len(words) else ""
+                    index += 1
+                take(API_LONG_VALUE_OPTIONS[name], value)
+        elif word.startswith("-") and len(word) > 1:
+            position = 1
+            while position < len(word):
+                letter = word[position]
+                position += 1
+                if letter not in API_SHORT_VALUE_OPTIONS:
+                    continue
+                rest = word[position:]
+                if rest.startswith("=") and len(rest) > 1:
+                    value = rest[1:]
+                elif rest:
+                    value = rest
+                else:
+                    value = words[index] if index < len(words) else ""
+                    index += 1
+                take(API_SHORT_VALUE_OPTIONS[letter], value)
+                break
+        elif endpoint is None:
+            endpoint = word
+    return ApiCall(method, endpoint or "", options)
 
 
 def _gh_api_reads(args: list[str]) -> bool:
-    """A `gh api` call that gh sends as a GET: no `-X` other than GET, no field, no `--input`."""
-    for index, word in enumerate(args):
-        name, _, value = word.partition("=")
-        if name in API_FIELDS or (name.startswith("-f") or name.startswith("-F")) and len(name) > 2:
-            return False
-        if name in ("-X", "--method"):
-            method = value or (args[index + 1] if index + 1 < len(args) else "")
-            if method.upper() not in ("GET", "HEAD"):
-                return False
-        elif name.startswith("-X") and name[2:].lstrip("=").upper() not in ("GET", "HEAD"):
-            return False
-    return True
+    """A `gh api` call that is a read in every reading of its words (see `api_readings`)."""
+    readings = api_readings(args)
+    return readings is not None and all(_reads(words) for words, _ in readings)
 
 
-# The options of `gh api` that take their value as the next word (`--flag=value` is one word).
-API_OPTIONS_WITH_VALUE = frozenset(
-    {"-X", "--method", "-H", "--header", "-f", "-F", "--field", "--raw-field", "--input"}
-    | {"-q", "--jq", "-t", "--template", "--cache", "--hostname", "-p", "--preview"}
-)
+def _reads(words: list[str]) -> bool:
+    """An explicit GET or HEAD, or no method, field or `--input`.
+
+    An explicit `-X GET` keeps its fields as query parameters, so it is a read with `-f` too;
+    without a method, a field or a body makes gh send a POST.
+    """
+    call = parse_api(words)
+    if call.method is not None:
+        return call.method.upper() in ("GET", "HEAD")
+    return not call.options
+
+
 # What follows `repos/<owner>/<repo>/` or `orgs/<org>/` that belongs to the owner: a write there
 # is a human's. Anchored at the start, so a file named `hooks` under `contents/` is not one.
 OWNER_ENDPOINT = re.compile(
@@ -350,42 +611,148 @@ OWNER_MUTATION = re.compile(
 )
 
 
-def _api_endpoint(args: list[str]) -> str:
-    index = 0
-    while index < len(args):
-        word = args[index]
-        if word.startswith("-"):
-            index += 2 if word in API_OPTIONS_WITH_VALUE else 1
+def _api_method(words: list[str]) -> str:
+    method = parse_api(words).method
+    return method.upper() if method is not None else "POST"
+
+
+GRAPHQL_MUTATION_GESTURE = (
+    "gh api graphql (mutation de protection, de ruleset, de collaborateur ou du dépôt)"
+)
+_VARIABLE = re.compile(r"\$\{?\w+\}?")
+
+
+def _graphql_inputs(words: list[str]) -> list[tuple[str, str]]:
+    """What a `gh api graphql` call is fed: `(kind, value)` per `--input` and per field.
+
+    The kind is `input` for `--input <value>` and `query` for a field named `query`; the value of
+    any other field cannot hold the query, except `name=@file`, which reads one.
+    """
+    inputs: list[tuple[str, str]] = []
+    for name, value in parse_api(words).options:
+        if name == "input":
+            if value:  # `--input` with nothing after it: gh fails, it opens nothing
+                inputs.append(("input", value))
             continue
-        return word
-    return ""
+        key, _, content = value.partition("=")
+        if content.startswith("@"):
+            inputs.append(("file", content[1:]))
+        elif key == "query":
+            inputs.append(("query", content))
+    return inputs
 
 
-def _api_method(args: list[str]) -> str:
-    for index, word in enumerate(args):
-        name, _, value = word.partition("=")
-        if name in ("-X", "--method"):
-            return (value or (args[index + 1] if index + 1 < len(args) else "")).upper()
-        if name.startswith("-X") and len(name) > 2:
-            return name[2:].lstrip("=").upper()
-    return "POST"
+def _standard_input_text(
+    redirections: list[tuple[str, str]], here: str | None, bodies: str, read_text: Callable[[str], str | None]
+) -> str | None:
+    """What the shell feeds to the standard input of this very command, or None when unknown.
 
-
-def _api_gesture(args: list[str]) -> str | None:
-    """The owner gesture of a `gh api` call (the words after `api`), or None."""
-    endpoint = _api_endpoint(args).split("?", 1)[0].strip("/")
-    if endpoint.lower() == "graphql":
-        if OWNER_MUTATION.search(" ".join(args)):
-            return "gh api graphql (mutation de protection, de ruleset, de collaborateur ou du dépôt)"
+    Its own redirection counts, the last one as the shell applies it: a file (`< q.json`) is read,
+    a heredoc (`<<EOF`) is the bodies of the command. A heredoc of another command, a pipe and a
+    here-string (`<<<`) are not known.
+    """
+    last = next(
+        (item for item in reversed(redirections) if item[0] in ("<", "<<", "<<-")),
+        None,
+    )
+    if last is None:
         return None
-    if _gh_api_reads(args):
+    operator, target = last
+    if operator == "<":
+        path = _moved(here, target)
+        if path is None or path == UNKNOWN or device_path_kind(path, here) is not None:
+            return None
+        return read_text(path)
+    return bodies or None
+
+
+def _graphql_gesture(
+    args: list[str],
+    words: list[str],
+    redirections: list[tuple[str, str]],
+    here: str | None,
+    bodies: str,
+    read_text: Callable[[str], str | None],
+) -> str | None:
+    """The owner gesture of a `gh api graphql` call: a mutation of the owner, read wherever it is.
+
+    The query is read in the arguments, in the heredocs of the command (`--input - <<EOF`, or
+    `query="$(cat <<EOF ...)"`) and in the files it names. What cannot be read (a file that is not
+    there, stdin from a pipe, a substitution or a variable) is refused as a precaution: a mutation
+    of the owner could hide in it, and a guard that fails closed.
+    """
+    texts = [" ".join(args)]
+    unread = ""
+    for kind, value in _graphql_inputs(words):
+        if kind == "query" and not (
+            "`" in value or "$(" in value or _VARIABLE.fullmatch(value.strip())
+        ):
+            continue
+        if kind == "query" and "<<" in value and bodies:
+            texts.append(bodies)  # `$(cat <<EOF ...)`: the heredoc of this command
+        elif kind == "query":
+            unread = unread or "la requête vient d'une substitution ou d'une variable du shell"
+        elif value != "-" and device_path_kind(value, here) == "other":
+            unread = unread or f"le chemin `{value}` est un descripteur ou un périphérique, qui ne s'ouvre pas"
+        elif value == "-" or is_standard_input_path(value, here):
+            text = _standard_input_text(redirections, here, bodies, read_text)
+            if text is None:
+                unread = unread or "la requête vient de l'entrée standard"
+            else:
+                texts.append(text)
+        else:
+            path = _moved(here, value)
+            text = read_text(path) if path is not None and path != UNKNOWN else None
+            if text is None:
+                unread = unread or f"le fichier `{value}` ne peut pas être lu"
+            else:
+                texts.append(text)
+    if OWNER_MUTATION.search("\n".join(texts)):
+        return GRAPHQL_MUTATION_GESTURE
+    if unread:
+        return f"gh api graphql ({unread} ; refusée par précaution, car une mutation du propriétaire pourrait s'y cacher)"
+    return None
+
+
+def _api_gesture(
+    args: list[str],
+    here: str | None = None,
+    bodies: str = "",
+    read_text: Callable[[str], str | None] = read_text_or_none,
+) -> str | None:
+    """The owner gesture of a `gh api` call (the words after `api`), or None.
+
+    Judged in every reading of its words (see `api_readings`): the first that refuses wins.
+    """
+    readings = api_readings(args)
+    if readings is None:
+        return "gh api (trop de redirections pour être lues ; refusée par précaution)"
+    for words, redirections in readings:
+        gesture = _api_gesture_of(args, words, redirections, here, bodies, read_text)
+        if gesture is not None:
+            return gesture
+    return None
+
+
+def _api_gesture_of(
+    args: list[str],
+    words: list[str],
+    redirections: list[tuple[str, str]],
+    here: str | None,
+    bodies: str,
+    read_text: Callable[[str], str | None],
+) -> str | None:
+    endpoint = parse_api(words).endpoint.split("?", 1)[0].strip("/")
+    if endpoint.lower() == "graphql":
+        return _graphql_gesture(args, words, redirections, here, bodies, read_text)
+    if _reads(words):
         return None
     scope = OWNER_SCOPE.match(endpoint)
     if scope is not None and (
         (scope.group(1) is None and endpoint.startswith("repos/"))
         or (scope.group(1) and OWNER_ENDPOINT.match(scope.group(1)))
     ):
-        return f"gh api {_api_method(args)} {endpoint}"
+        return f"gh api {_api_method(words)} {endpoint}"
     return None
 
 
@@ -406,7 +773,8 @@ def _gh_gesture(words: list[str]) -> str | None:
         return None
     group, verb, rest = act
     if (group, verb) == ("repo", "deploy-key"):
-        action = next((word for word in rest if not word.startswith("-")), "")
+        index = _skip_options(rest, 0)
+        action = rest[index] if index < len(rest) else ""
         return f"gh repo deploy-key {action}" if action in ("add", "delete") else None
     if (group, verb) in OWNER_GH_GESTURES:
         return f"gh {group} {verb}"
@@ -424,11 +792,81 @@ RUNNER_SCRIPT = re.compile(r"(?:^|[/\\])(config\.(?:sh|cmd)|svc\.sh)$", re.IGNOR
 # with their separators gone: a word that starts with `.` or a drive letter still names the script.
 MANGLED_RUNNER_SCRIPT = re.compile(r"^(?:\.|[A-Za-z]:).*?(config\.(?:sh|cmd)|svc\.sh)$", re.IGNORECASE)
 SHELLS = frozenset({"bash", "sh", "zsh", "dash"})
-WRAPPERS = SHELLS | {"sudo", "cmd", "cmd.exe", "powershell", "pwsh", "powershell.exe", "pwsh.exe"}
-SUDO_OPTIONS_WITH_VALUE = frozenset({"-u", "-g", "-h", "-p", "-C", "-D", "-R", "-T", "-U"})
+WRAPPERS = SHELLS | {"sudo", "env", "nohup", "cmd", "cmd.exe", "powershell", "pwsh"} | {
+    "powershell.exe",
+    "pwsh.exe",
+}
+# The letters of sudo's short options that take a value, alone (`-u runner`), joined to other
+# letters (`-iu runner`) or followed by it (`-urunner`).
+SUDO_VALUE_LETTERS = frozenset("ughpCDRTU")
+ENV_OPTIONS_WITH_VALUE = frozenset({"-u", "-C", "-S", "--unset", "--chdir", "--split-string"})
 
 
-def _runner_gesture(words: list[str]) -> str | None:
+def _option_width(wrapper: str, option: str) -> int:
+    """How many words an option of a wrapper takes: itself, and its value when it is the next word."""
+    if wrapper == "env":
+        return 2 if option in ENV_OPTIONS_WITH_VALUE else 1
+    if wrapper == "sudo" and not option.startswith("--"):
+        for position, letter in enumerate(option[1:], start=1):
+            if letter in SUDO_VALUE_LETTERS:
+                return 2 if position == len(option) - 1 else 1
+    return 1
+
+
+def _skip_wrapper_options(wrapper: str, words: list[str], index: int) -> int:
+    while index < len(words):
+        word = words[index]
+        if wrapper == "env" and "=" in word and not word.startswith("-"):
+            index += 1  # an assignment `env` sets for the command
+        elif word.startswith("-"):
+            index += _option_width(wrapper, word)
+        elif wrapper.startswith("cmd") and word.lower() == "/c":
+            index += 1
+        else:
+            break
+    return index
+
+
+# What only a runner's script is called with, and the files that make a folder a runner's.
+RUNNER_ARGUMENTS = frozenset(
+    {"--url", "--token", "--pat", "--unattended", "install", "uninstall", "start", "stop", "remove"}
+)
+# The registration can also come from the environment: the runner reads `ACTIONS_RUNNER_INPUT_*`.
+RUNNER_INPUT_VARIABLE = re.compile(r"^ACTIONS_RUNNER_INPUT_\w+=")
+RUNNER_REGISTRATION_GESTURE = "ACTIONS_RUNNER_INPUT_* (enregistrement d'un runner par l'environnement)"
+# The unpacked runner has a launcher and its listener: `.exe` is the Windows build's.
+RUNNER_MARKERS = (("run.sh", "run.cmd"), ("bin/Runner.Listener", "bin/Runner.Listener.exe"))
+
+
+def is_runner_directory(directory: str | None) -> bool:
+    """Whether `directory` holds an unpacked runner: `run.sh` or `run.cmd`, and `bin/Runner.Listener`."""
+    if directory is None or directory == UNKNOWN:
+        return False
+    try:
+        base = Path(native_directory(directory) or directory)
+        return all(any((base / name).exists() for name in names) for names in RUNNER_MARKERS)
+    except (OSError, ValueError):
+        return False
+
+
+def _is_runner_call(word: str, arguments: list[str], here: str | None) -> bool:
+    """A `config` or `svc` script that is a runner's: its folder, or an argument only a runner takes."""
+    if any(argument.split("=", 1)[0] in RUNNER_ARGUMENTS for argument in arguments):
+        return True
+    folder = _moved(here, str(PurePosixPath(word.replace("\\", "/")).parent)) if "/" in word else here
+    return is_runner_directory(folder)
+
+
+def runner_registration_gesture(words: list[str]) -> str | None:
+    """The refusal of a word that sets a registration variable of the runner, wherever it stands."""
+    if any(RUNNER_INPUT_VARIABLE.match(word) for word in words):
+        return RUNNER_REGISTRATION_GESTURE
+    return None
+
+
+def _runner_gesture(words: list[str], here: str | None = None, bodies: str = "") -> str | None:
+    if gesture := runner_registration_gesture(words):
+        return gesture
     index = 0
     while index < len(words):
         word = words[index]
@@ -436,12 +874,10 @@ def _runner_gesture(words: list[str]) -> str | None:
             if word in SHELLS and "-c" in words[index + 1 :]:
                 position = words.index("-c", index + 1) + 1
                 if position < len(words):
-                    return _commands_gesture(words[position])
-            index += 1
-            while index < len(words) and (
-                words[index].startswith("-") or (word.startswith("cmd") and words[index] == "/c")
-            ):
-                index += 2 if word == "sudo" and words[index] in SUDO_OPTIONS_WITH_VALUE else 1
+                    return _commands_gesture(words[position], here)
+            index = _skip_wrapper_options(word, words, index + 1)
+            if word in SHELLS and bodies and (index >= len(words) or words[index] in ("<<", "<<-")):
+                return _commands_gesture(bodies, here)  # a script read from a heredoc
             continue
         match = RUNNER_SCRIPT.search(word) or MANGLED_RUNNER_SCRIPT.match(word)
         if match is None:
@@ -449,24 +885,32 @@ def _runner_gesture(words: list[str]) -> str | None:
         script = match.group(1).lower()
         if script == "svc.sh" and words[index + 1 : index + 2] == ["status"]:
             return None
-        return script
+        return script if _is_runner_call(word, words[index + 1 :], here) else None
     return None
 
 
-def _commands_gesture(command: str) -> str | None:
+def _commands_gesture(command: str, here: str | None = None) -> str | None:
     """The owner gesture of the first simple command of `command` that makes one."""
     for words in segments(command):
-        if gesture := owner_gesture(words):
+        if gesture := owner_gesture(words, here=here):
             return gesture
     return None
 
 
-def owner_gesture(words: list[str]) -> str | None:
-    """The owner gesture a simple command makes, named for the refusal, or None."""
+def owner_gesture(
+    words: list[str],
+    here: str | None = None,
+    bodies: str = "",
+    read_text: Callable[[str], str | None] = read_text_or_none,
+) -> str | None:
+    """The owner gesture a simple command makes, named for the refusal, or None.
+
+    `here` is the directory the command runs in, where a runner's folder is told from a project's.
+    """
     call = gh_command(words)
     if call and call[0] == "api":
-        return _api_gesture(call[1:])
-    return _gh_gesture(words) or _runner_gesture(words)
+        return _api_gesture(call[1:], here, bodies, read_text)
+    return _gh_gesture(words) or _runner_gesture(words, here, bodies)
 
 
 def _owner_refusal(gesture: str) -> str:
@@ -514,6 +958,7 @@ def refusal(
     `owner_gestures` are the values of the project's `owner-gesture` key, beside the built-in list.
     """
     declared = list(owner_gestures)
+    bodies = split_heredocs(command)[1]
     branch_of = branch if callable(branch) else (lambda _directory: branch)
 
     def branch_where(directory: str | None) -> str:
@@ -535,6 +980,8 @@ def refusal(
                 here = saved.pop() if saved else cwd
             continue
         words = item
+        if gesture := runner_registration_gesture(words):
+            return _owner_refusal(gesture)  # before the assignments are set aside
         while words and "=" in words[0] and not words[0].startswith("-"):
             words = words[1:]
         if not words:
@@ -548,7 +995,7 @@ def refusal(
                 switched = True
             if reason := _git_refusal(args, branch_where(_directory_of(args, here)), switched):
                 return reason
-        if gesture := owner_gesture(words):
+        if gesture := owner_gesture(words, here, bodies, read_text):
             return _owner_refusal(gesture)
         if declared_refusal := _declared_gesture(words, declared):
             return declared_refusal
