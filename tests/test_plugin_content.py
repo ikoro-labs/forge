@@ -876,6 +876,19 @@ class PrShowsChangeDoorAndRadius(unittest.TestCase):
         self.assertIn("même quand le gabarit", step)
         self.assertIn("fin du résumé", step)
 
+    def test_a_template_carries_the_sections_and_usine_offers_it_without_defaulting(self) -> None:
+        """No F-NNNN: ticket #45, critère 2 (gabarit dans templates/, valeur possible)."""
+        template = self.read("templates", "pr.md")
+        for heading in ("## Résumé", "## Porte", "## Rayon d'impact", "## Preuves"):
+            self.assertIn(heading, template)
+        self.assertIn("double sens", template)
+        self.assertIn("sens unique", template)
+        usine = self.read("templates", "usine.md")
+        block = usine.split("Le modèle de description de PR", 1)[1].split("- `pr-template` :", 1)[0]
+        self.assertIn("templates/pr.md", block)
+        self.assertIn("pas une valeur par défaut", block)
+        self.assertIn("- `pr-template` : `<.github/pull_request_template.md>`", usine)
+
 
 if __name__ == "__main__":
     unittest.main()

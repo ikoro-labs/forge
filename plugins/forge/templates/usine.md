@@ -86,7 +86,9 @@ Les règles git du projet : nommage des branches, format des commits, ligne d'at
 
 - `git-rules` : `<.claude/rules/git.md>`
 
-Le modèle de description de PR que `forge:coder` remplit.
+Le modèle de description de PR que `forge:coder` remplit. Le plugin en propose un,
+`templates/pr.md` (vue du changement, porte, rayon d'impact, preuves), à copier dans le dépôt : une valeur
+possible de la clé, pas une valeur par défaut. Sans la clé, l'étape est sans objet.
 
 - `pr-template` : `<.github/pull_request_template.md>`
 
