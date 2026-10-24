@@ -46,5 +46,36 @@ class ProofsShowBeforeAndAfter(unittest.TestCase):
         self.assertIn("vrai poste", body)
 
 
+class GateAndBlastRadius(unittest.TestCase):
+    def test_porte_et_rayon_d_impact_sont_deux_sections(self):
+        """Porte et Rayon d'impact suivent les noms du gabarit du plugin (#46)."""
+        titles = headings(REPO_TEMPLATE)
+        self.assertIn("Porte", titles)
+        self.assertIn("Rayon d'impact", titles)
+        porte = " ".join(section(REPO_TEMPLATE, "Porte").split())
+        for word in ("double sens", "sens unique"):
+            self.assertIn(word, porte)
+        rayon = " ".join(section(REPO_TEMPLATE, "Rayon d'impact").split())
+        for word in ("variable", "geste", "hook"):
+            self.assertIn(word, rayon)
+
+    def test_sections_du_gabarit_du_plugin_toutes_presentes(self):
+        """Chaque section du gabarit du plugin existe dans celui du dépôt, dans le même ordre (#46)."""
+        repo = headings(REPO_TEMPLATE)
+        plugin = [title for title in headings(PLUGIN_TEMPLATE)]
+        self.assertTrue(set(plugin) <= set(repo), set(plugin) - set(repo))
+        self.assertEqual([t for t in repo if t in plugin], plugin)
+
+    def test_sections_propres_au_depot_conservees(self):
+        """Ce que le gabarit du dépôt a en propre reste (#46)."""
+        titles = headings(REPO_TEMPLATE)
+        for title in ("Ce qui ne change pas", "Suite"):
+            self.assertIn(title, titles)
+
+    def test_sans_tiret_cadratin(self):
+        """Le gabarit reste sans tiret cadratin (#46)."""
+        self.assertNotIn("—", REPO_TEMPLATE.read_text(encoding="utf-8"))
+
+
 if __name__ == "__main__":
     unittest.main()
