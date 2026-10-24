@@ -48,6 +48,7 @@ import subprocess
 import sys
 from collections.abc import Callable, Iterable
 from pathlib import Path, PurePosixPath, PureWindowsPath
+from typing import NamedTuple
 
 from usine import load, project_root, split_value
 
@@ -319,8 +320,115 @@ def read_text_or_none(path: str) -> str | None:
         return None
 
 
-# The fields and bodies of `gh api`: any of them makes gh send a POST unless `-X` says otherwise.
-API_FIELDS = frozenset({"-f", "-F", "--field", "--raw-field", "--input"})
+# The options of `gh api` as pflag, the library gh parses with, reads them. The ones that take a
+# value consume the next word whatever it looks like (`--jq -XGET` is a filter, not a method), and
+# a short one takes the rest of its word (`-XGET`, `-X=GET`, `-iXGET`). The other ones are flags.
+API_LONG_VALUE_OPTIONS = {
+    "method": "method",
+    "header": "header",
+    "raw-field": "raw-field",
+    "field": "field",
+    "input": "input",
+    "jq": "jq",
+    "template": "template",
+    "cache": "cache",
+    "hostname": "hostname",
+    "preview": "preview",
+}
+API_SHORT_VALUE_OPTIONS = {
+    "X": "method",
+    "H": "header",
+    "f": "raw-field",
+    "F": "field",
+    "q": "jq",
+    "t": "template",
+    "p": "preview",
+}
+# What makes gh send a body, or fields: a POST unless `-X` says otherwise.
+API_BODY_OPTIONS = frozenset({"raw-field", "field", "input"})
+# A redirection operator, which takes the next word as its target: `>`, `2>&1`'s `>&`, `<<`, `<<<`.
+REDIRECTION = re.compile(r"^[<>&]+$")
+
+
+class ApiCall(NamedTuple):
+    """A `gh api` call as gh reads it: its method, its endpoint and its body options in order."""
+
+    method: str | None  # the last `-X` or `--method`; None when there is none
+    endpoint: str
+    options: list[tuple[str, str]]  # `(name, value)` of each field and `--input`, as typed
+
+
+def without_redirections(words: list[str]) -> tuple[list[str], list[tuple[str, str]]]:
+    """The words without the redirections, and the redirections as `(operator, target)`.
+
+    The shell removes them before gh sees its arguments: `gh api > out -X PUT x` has no `out`.
+    A bare number in front of an operator is a file descriptor (`2>/dev/null`).
+    """
+    kept: list[str] = []
+    redirections: list[tuple[str, str]] = []
+    index = 0
+    while index < len(words):
+        word = words[index]
+        if REDIRECTION.match(word):
+            target = words[index + 1] if index + 1 < len(words) else ""
+            redirections.append((word, target))
+            if kept and kept[-1].isdigit():
+                kept.pop()
+            index += 2
+            continue
+        kept.append(word)
+        index += 1
+    return kept, redirections
+
+
+def parse_api(args: list[str]) -> ApiCall:
+    """Split the words after `api` the way gh does: the one place that knows its options."""
+    words, _ = without_redirections(args)
+    method: str | None = None
+    endpoint: str | None = None
+    options: list[tuple[str, str]] = []
+
+    def take(name: str, value: str) -> None:
+        nonlocal method
+        if name == "method":
+            method = value
+        elif name in API_BODY_OPTIONS:
+            options.append((name, value))
+
+    index = 0
+    while index < len(words):
+        word = words[index]
+        index += 1
+        if word == "--":
+            endpoint = endpoint if endpoint is not None else (words[index] if index < len(words) else "")
+            break
+        if word.startswith("--"):
+            name, equals, value = word[2:].partition("=")
+            if name in API_LONG_VALUE_OPTIONS:
+                if not equals:
+                    value = words[index] if index < len(words) else ""
+                    index += 1
+                take(API_LONG_VALUE_OPTIONS[name], value)
+        elif word.startswith("-") and len(word) > 1:
+            position = 1
+            while position < len(word):
+                letter = word[position]
+                position += 1
+                if letter not in API_SHORT_VALUE_OPTIONS:
+                    continue
+                rest = word[position:]
+                if rest.startswith("=") and len(rest) > 1:
+                    value = rest[1:]
+                elif rest:
+                    value = rest
+                else:
+                    value = words[index] if index < len(words) else ""
+                    index += 1
+                take(API_SHORT_VALUE_OPTIONS[letter], value)
+                break
+        elif endpoint is None:
+            endpoint = word
+    return ApiCall(method, endpoint or "", options)
 
 
 def _gh_api_reads(args: list[str]) -> bool:
@@ -329,32 +437,12 @@ def _gh_api_reads(args: list[str]) -> bool:
     An explicit `-X GET` keeps its fields as query parameters, so it is a read with `-f` too;
     without a method, a field or a body makes gh send a POST.
     """
-    sends_a_body = any(
-        word.partition("=")[0] in API_FIELDS
-        or word.startswith(("-f", "-F")) and not word.startswith("--") and len(word) > 2
-        for word in args
-    )
-    method = _explicit_method(args)
-    return method.upper() in ("GET", "HEAD") if method is not None else not sends_a_body
+    call = parse_api(args)
+    if call.method is not None:
+        return call.method.upper() in ("GET", "HEAD")
+    return not call.options
 
 
-def _explicit_method(args: list[str]) -> str | None:
-    """The method `-X` or `--method` names, the last one when repeated (gh keeps the last)."""
-    method: str | None = None
-    for index, word in enumerate(args):
-        name, _, value = word.partition("=")
-        if name in ("-X", "--method"):
-            method = value or (args[index + 1] if index + 1 < len(args) else "")
-        elif name.startswith("-X") and not name.startswith("--") and len(name) > 2:
-            method = name[2:].lstrip("=")
-    return method
-
-
-# The options of `gh api` that take their value as the next word (`--flag=value` is one word).
-API_OPTIONS_WITH_VALUE = frozenset(
-    {"-X", "--method", "-H", "--header", "-f", "-F", "--field", "--raw-field", "--input"}
-    | {"-q", "--jq", "-t", "--template", "--cache", "--hostname", "-p", "--preview"}
-)
 # What follows `repos/<owner>/<repo>/` or `orgs/<org>/` that belongs to the owner: a write there
 # is a human's. Anchored at the start, so a file named `hooks` under `contents/` is not one.
 OWNER_ENDPOINT = re.compile(
@@ -373,19 +461,8 @@ OWNER_MUTATION = re.compile(
 )
 
 
-def _api_endpoint(args: list[str]) -> str:
-    index = 0
-    while index < len(args):
-        word = args[index]
-        if word.startswith("-"):
-            index += 2 if word in API_OPTIONS_WITH_VALUE else 1
-            continue
-        return word
-    return ""
-
-
 def _api_method(args: list[str]) -> str:
-    method = _explicit_method(args)
+    method = parse_api(args).method
     return method.upper() if method is not None else "POST"
 
 
@@ -404,33 +481,15 @@ def _graphql_inputs(args: list[str]) -> list[tuple[str, str]]:
     any other field cannot hold the query, except `name=@file`, which reads one.
     """
     inputs: list[tuple[str, str]] = []
-    index = 0
-    while index < len(args):
-        word = args[index]
-        name, equals, value = word.partition("=")
-        field: str | None = None
-        if name == "--input":
-            if not equals:
-                index += 1
-                value = args[index] if index < len(args) else ""
+    for name, value in parse_api(args).options:
+        if name == "input":
             inputs.append(("input", value))
-        elif name in ("--field", "--raw-field") or word in ("-f", "-F"):
-            if not equals or word in ("-f", "-F"):
-                index += 1
-                field = args[index] if index < len(args) else ""
-            else:
-                field = value
-        elif word.startswith(("-f", "-F")) and not word.startswith("--"):
-            field = word[2:]
-        elif word.startswith("-") and word in API_OPTIONS_WITH_VALUE:
-            index += 1
-        if field is not None:
-            key, _, content = field.partition("=")
-            if content.startswith("@"):
-                inputs.append(("file", content[1:]))
-            elif key == "query":
-                inputs.append(("query", content))
-        index += 1
+            continue
+        key, _, content = value.partition("=")
+        if content.startswith("@"):
+            inputs.append(("file", content[1:]))
+        elif key == "query":
+            inputs.append(("query", content))
     return inputs
 
 
@@ -481,7 +540,7 @@ def _api_gesture(
     read_text: Callable[[str], str | None] = read_text_or_none,
 ) -> str | None:
     """The owner gesture of a `gh api` call (the words after `api`), or None."""
-    endpoint = _api_endpoint(args).split("?", 1)[0].strip("/")
+    endpoint = parse_api(args).endpoint.split("?", 1)[0].strip("/")
     if endpoint.lower() == "graphql":
         return _graphql_gesture(args, here, bodies, read_text)
     if _gh_api_reads(args):

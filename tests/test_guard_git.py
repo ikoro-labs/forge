@@ -853,5 +853,94 @@ class OwnerGestures(unittest.TestCase):
                 self.assertIsNone(refused(command))
 
 
+COLLABORATOR = "repos/o/r/collaborators/bob"
+
+
+class GhApiArgumentsLikeGh(unittest.TestCase):
+    """Un seul découpeur des arguments de `gh api`, comme pflag : la méthode, le point d'accès et
+    les champs ne se lisent pas autrement que gh les lit."""
+
+    def test_the_value_of_an_option_is_never_taken_for_the_method(self) -> None:
+        # gh (pflag) prend le mot suivant pour la valeur de l'option, même s'il commence par `-`.
+        for tail in (
+            "--jq -XGET",
+            "-q -XGET",
+            "-q --method=GET",
+            "-t --method=GET",
+            "-t -X=GET",
+            "--template -XGET",
+            "-p -XGET",
+            "--preview -XGET",
+            "--cache -XGET",
+            "--hostname -XGET",
+            "-H -XGET",
+            "--header -X=GET",
+            "--jq=. -q -XGET",
+        ):
+            with self.subTest(tail=tail):
+                verdict = refused(f"gh api -X PUT {COLLABORATOR} {tail}") or ""
+                self.assertIn(OWNER_REFUSAL, verdict)
+                self.assertIn("PUT", verdict)
+        for command in (
+            f"gh api {COLLABORATOR} --jq -XPUT",
+            f"gh api {COLLABORATOR} -q -X",
+            f"gh api {COLLABORATOR} --template --method=DELETE",
+            f"gh api {COLLABORATOR} --jq -f",
+            f"gh api {COLLABORATOR} -H -F",
+            f"gh api -X GET --jq -XPUT {COLLABORATOR}",
+        ):
+            with self.subTest(command=command):
+                self.assertIsNone(refused(command))
+
+    def test_every_spelling_of_the_method_is_read_and_the_last_one_counts(self) -> None:
+        for command, method in (
+            (f"gh api -XPUT {COLLABORATOR}", "PUT"),
+            (f"gh api -X=PUT {COLLABORATOR}", "PUT"),
+            (f"gh api --method=PUT {COLLABORATOR}", "PUT"),
+            (f"gh api --method PUT {COLLABORATOR}", "PUT"),
+            (f"gh api -iXPUT {COLLABORATOR}", "PUT"),
+            (f"gh api -X GET -XPUT {COLLABORATOR}", "PUT"),
+            (f"gh api -XGET -X=PUT {COLLABORATOR}", "PUT"),
+            (f"gh api -X GET {COLLABORATOR} -f a=b -X DELETE", "DELETE"),
+            (f"gh api -X GET {COLLABORATOR} -fa=b -iXDELETE", "DELETE"),
+            (f"gh api --method=GET --method=PUT {COLLABORATOR}", "PUT"),
+            (f"gh api -X PUT -- {COLLABORATOR}", "PUT"),
+            (f"gh api -X PUT --jq . {COLLABORATOR}", "PUT"),
+            (f"gh api -pXGET {COLLABORATOR} -f permission=admin", "POST"),
+        ):
+            with self.subTest(command=command):
+                verdict = refused(command) or ""
+                self.assertIn(OWNER_REFUSAL, verdict)
+                self.assertIn(f"gh api {method} ", verdict)
+        for command in (
+            f"gh api -XGET {COLLABORATOR}",
+            f"gh api -X=get {COLLABORATOR} -f per_page=1",
+            f"gh api --method=HEAD {COLLABORATOR}",
+            f"gh api -iXGET {COLLABORATOR} -F a=b",
+            f"gh api -X PUT -X GET {COLLABORATOR} -f a=b",
+            f"gh api -X PUT {COLLABORATOR} -XGET",
+            f"gh api -pXGET {COLLABORATOR}",
+            f"gh api -X GET -- {COLLABORATOR}",
+        ):
+            with self.subTest(command=command):
+                self.assertIsNone(refused(command))
+
+    def test_a_redirection_does_not_hide_the_endpoint_or_the_method(self) -> None:
+        for command in (
+            f"gh api 2>/dev/null -X PUT {COLLABORATOR}",
+            f"gh api > out.json -X PUT {COLLABORATOR}",
+            f"gh api -X PUT {COLLABORATOR} > out.json 2>&1",
+            f"gh api >> log.txt {COLLABORATOR} -f permission=admin",
+        ):
+            with self.subTest(command=command):
+                self.assertIn(OWNER_REFUSAL, refused(command) or "")
+        for command in (
+            f"gh api {COLLABORATOR} > out.json",
+            f"gh api -X GET {COLLABORATOR} -f per_page=1 2>&1",
+        ):
+            with self.subTest(command=command):
+                self.assertIsNone(refused(command))
+
+
 if __name__ == "__main__":
     unittest.main()
