@@ -28,6 +28,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+from typing import cast
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "hooks"))
@@ -153,7 +154,7 @@ class Factory:
     @property
     def prs(self) -> list[dict]:
         fields = "number,title,body,state,createdAt,mergedAt,closedAt,labels,mergeCommit,closingIssuesReferences,comments"
-        return self.cached("prs", lambda: self.gh("pr", "list", "--state", "all", "--limit", "1000", "--json", fields))  # type: ignore[return-value]
+        return cast("list[dict]", self.cached("prs", lambda: self.gh("pr", "list", "--state", "all", "--limit", "1000", "--json", fields)))
 
     @property
     def defects(self) -> list[dict]:
@@ -163,7 +164,7 @@ class Factory:
             "defects",
             lambda: self.gh("issue", "list", "--state", "all", "--label", ESCAPED, "--limit", "1000", "--json", fields),
         )
-        return [item for item in found if self.inside(when(item, "createdAt"))]  # type: ignore[union-attr]
+        return [item for item in cast("list[dict]", found) if self.inside(when(item, "createdAt"))]
 
     @property
     def created(self) -> list[dict]:
@@ -176,7 +177,7 @@ class Factory:
     @property
     def base(self) -> str:
         info = self.cached("repo", lambda: self.gh("repo", "view", "--json", "nameWithOwner,defaultBranchRef"))
-        return str(info[0]["defaultBranchRef"]["name"])  # type: ignore[index]
+        return str(cast("list[dict]", info)[0]["defaultBranchRef"]["name"])
 
     def git(self, *args: str) -> str | None:
         try:
@@ -190,7 +191,7 @@ class Factory:
 
     def events(self, ticket: int) -> list[dict]:
         key = f"events{ticket}"
-        return self.cached(key, lambda: self.gh("api", f"repos/{{owner}}/{{repo}}/issues/{ticket}/events", "--paginate"))  # type: ignore[return-value]
+        return cast("list[dict]", self.cached(key, lambda: self.gh("api", f"repos/{{owner}}/{{repo}}/issues/{ticket}/events", "--paginate")))
 
     def required(self, key: str) -> list[str] | None:
         return self.config.get(key) or None
@@ -253,8 +254,8 @@ def lead_time(f: Factory) -> Sli:
                 for e in f.events(ticket)
                 if e.get("event") == "labeled" and (e.get("label") or {}).get("name") == READY
             )
-            if posed and posed[0] <= merged:  # type: ignore[operator]
-                samples.append((merged - posed[0]).total_seconds())  # type: ignore[operator]
+            if posed and merged is not None and posed[0] <= merged:
+                samples.append((merged - posed[0]).total_seconds())
             else:
                 no_event += 1
     return durations("lead-time", samples, "aucun ticket fusionné avec une pose de `ready-for-agent`", sans_evenement=no_event)
@@ -279,8 +280,9 @@ def release_lag(f: Factory) -> Sli:
             name, _, date = row.partition("\t")
             if date and any(pattern.match(name) for pattern in patterns):
                 tags.append(token_audit.parse_time(date))
-        if tags:
-            samples.append((min(tags) - when(item, "mergedAt")).total_seconds())  # type: ignore[operator]
+        merged = when(item, "mergedAt")
+        if tags and merged is not None:
+            samples.append((min(tags) - merged).total_seconds())
         else:
             unpublished += 1
     if not f.merged:
@@ -318,8 +320,11 @@ def restore_time(f: Factory) -> Sli:
         if fixed is None:
             open_ones += 1
             continue
+        opened = when(defect, "createdAt")
+        if opened is None:
+            continue
         severity = next((m.group(1) for name in sorted(label_names(defect)) if (m := SEVERITY.match(name))), "sans gravité")
-        groups.setdefault(severity, []).append((fixed - when(defect, "createdAt")).total_seconds())  # type: ignore[operator]
+        groups.setdefault(severity, []).append((fixed - opened).total_seconds())
     if not groups:
         return Sli("restore-time", reason="aucun `escaped-defect` de la fenêtre n'a encore de correctif fusionné")
     by = {

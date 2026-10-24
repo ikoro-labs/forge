@@ -14,7 +14,7 @@ from unittest import mock
 import support
 from test_token_audit import line
 
-from factory_slo import compute, main, percentile, run_command
+from factory_slo import Factory, compute, lead_time, main, percentile, release_lag, restore_time, run_command
 
 SINCE = datetime(2026, 10, 1, tzinfo=timezone.utc)
 UNTIL = datetime(2026, 11, 1, tzinfo=timezone.utc)
@@ -24,6 +24,20 @@ USINE = """# Usine
 - `required-contexts` : `tests`
 - `protected-path` : `.github/`
 """
+
+
+def isolate(case: unittest.TestCase, folder: str, **extra: str) -> None:
+    """Pose `HOME`, `USERPROFILE` et git sans configuration, retire les `CLAUDE_` de la session lanceuse.
+
+    `os.environ` est remplacé pour la durée du test : les `git` du runner et les sous-processus
+    l'héritent, et le vrai `~/.claude` comme le vrai `~/.gitconfig` ne sont jamais lus.
+    """
+    env = {"HOME": folder, "USERPROFILE": folder, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_SYSTEM": os.devnull, **extra}
+    patcher = mock.patch.dict(os.environ, env)
+    patcher.start()
+    case.addCleanup(patcher.stop)
+    for key in [name for name in os.environ if name.startswith("CLAUDE_") and name not in extra]:
+        del os.environ[key]
 
 
 def verdict(round_: int, result: str, when: str) -> dict:
@@ -148,13 +162,7 @@ class Sli(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.world = build(Path(self.tmp.name))
-        env = {
-            "HOME": self.tmp.name, "USERPROFILE": self.tmp.name,
-            "CLAUDE_CONFIG_DIR": str(Path(self.tmp.name) / "claude"),
-        }
-        patcher = mock.patch.dict(os.environ, env)
-        patcher.start()
-        self.addCleanup(patcher.stop)
+        isolate(self, self.tmp.name, CLAUDE_CONFIG_DIR=str(Path(self.tmp.name) / "claude"))
         logs = Path(self.tmp.name) / "claude" / "projects" / "p"
         logs.mkdir(parents=True)
         calls = [
@@ -265,9 +273,7 @@ class NotApplicable(unittest.TestCase):
             "repo view": {"nameWithOwner": "o/r", "defaultBranchRef": {"name": "main"}},
             "pr list": [], "issue list": [],
         }
-        patcher = mock.patch.dict(os.environ, {"CLAUDE_CONFIG_DIR": str(Path(self.tmp.name) / "vide")})
-        patcher.start()
-        self.addCleanup(patcher.stop)
+        isolate(self, self.tmp.name, CLAUDE_CONFIG_DIR=str(Path(self.tmp.name) / "vide"))
 
     def results(self) -> dict:
         return {i.name: i.to_dict() for i in compute(self.world.root, SINCE, UNTIL, self.world.runner)}
@@ -294,12 +300,37 @@ class Helpers(unittest.TestCase):
         self.assertEqual(percentile([5], 90), 5)
         self.assertEqual(percentile([24, 48], 50), 24)
 
+    def test_a_pr_without_merge_date_is_counted_apart_never_a_traceback(self) -> None:
+        """Ticket #57 : un `mergedAt` absent n'est pas un `TypeError` hors du `except` de `main`."""
+        with tempfile.TemporaryDirectory() as folder:
+            world = World(Path(folder))
+            world.answers = {"api repos/{owner}/{repo}/issues/7/events": [event("ready-for-agent", "2026-10-01T00:00:00Z")]}
+            open_pr = pr(5, "2026-10-02T00:00:00Z", closingIssuesReferences=[{"number": 7}], mergeCommit={"oid": "a" * 40})
+            factory = Factory(world.root, SINCE, UNTIL, world.runner)
+            with mock.patch.object(Factory, "merged", new_callable=mock.PropertyMock, return_value=[open_pr]):
+                self.assertEqual(lead_time(factory).to_dict()["statut"], "sans objet")
+                self.assertEqual(release_lag(factory).to_dict()["statut"], "sans objet")
+
+    def test_a_defect_without_creation_date_does_not_raise(self) -> None:
+        """Ticket #57 : `restore-time` ignore un défaut sans `createdAt` au lieu de lever."""
+        with tempfile.TemporaryDirectory() as folder:
+            world = World(Path(folder))
+            defect = issue(4, "2026-10-02T00:00:00Z", ("escaped-defect",))
+            del defect["createdAt"]
+            fixed = pr(6, "2026-10-02T00:00:00Z", mergedAt="2026-10-03T00:00:00Z", closingIssuesReferences=[{"number": 4}])
+            world.answers = {"pr list": [fixed]}
+            factory = Factory(world.root, SINCE, UNTIL, world.runner)
+            with mock.patch.object(Factory, "defects", new_callable=mock.PropertyMock, return_value=[defect]):
+                self.assertEqual(restore_time(factory).to_dict()["statut"], "sans objet")
+
     def test_script_runs_from_the_command_line(self) -> None:
         script = support.PLUGIN / "scripts" / "factory_slo.py"
-        done = subprocess.run(
-            ["uv", "run", "--no-project", "--quiet", "python", str(script), "--help"],
-            capture_output=True, text=True,
-        )
+        with tempfile.TemporaryDirectory() as folder:
+            isolate(self, folder)
+            done = subprocess.run(
+                ["uv", "run", "--no-project", "--quiet", "python", str(script), "--help"],
+                capture_output=True, text=True, env=dict(os.environ),
+            )
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertIn("sli", done.stdout)
 
