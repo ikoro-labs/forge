@@ -118,9 +118,12 @@ dit que l'humain les fait et que l'agent les liste en fin de compte rendu. La li
   pas les autres : le plugin s'en sert pour les sous-issues. La requête est lue dans les arguments,
   dans le heredoc ou la redirection `<` de cette commande quand elle lit son entrée standard
   (`--input -`, `-F query=@-`), dans un heredoc `query="$(cat <<EOF ...)"`, et dans le fichier que
-  nomment `--input` ou `-F query=@fichier`. Un chemin sous `/dev/` ou `/proc/` vaut `-` une fois
-  écrit en entier (`/dev/stdin`, `/dev/./stdin`, `//dev/stdin`, `/dev/fd/0`, `stdin` après
-  `cd /dev`, un lien symbolique vers l'un d'eux) : le garde ne l'ouvre jamais. Il ne lit qu'un
+  nomment `--input` ou `-F query=@fichier`. Seul le descripteur 0 vaut `-`, une fois le
+  chemin écrit en entier (`/dev/stdin`, `/dev/./stdin`, `//dev/stdin`, `/dev/fd/0`,
+  `/proc/self/fd/0`, `stdin` après `cd /dev`, un lien symbolique vers l'un d'eux). Tout autre
+  chemin sous `/dev/` ou `/proc/` (`/dev/fd/3`, `/proc/self/fd/3`, `/dev/tty`, `/dev/zero`) n'est
+  pas l'entrée standard : le garde ne l'ouvre jamais et, s'il vise `graphql`, le refuse par
+  précaution. Il ne lit qu'un
   fichier ordinaire de 1 Mo au plus. Une forme qui vise `graphql` et ne se lit pas est refusée par
   précaution, même si ce n'était pas une mutation : fichier absent, trop gros, qui n'est pas
   ordinaire (périphérique, FIFO, dossier), entrée standard d'un tube ou d'une chaîne

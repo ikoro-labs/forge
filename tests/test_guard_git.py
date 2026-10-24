@@ -18,6 +18,7 @@ from guard_git import (
     OWNER_KEY,
     _gh_api_reads,
     description_via_gh,
+    device_path_kind,
     guarded_main,
     main,
     native_directory,
@@ -1280,6 +1281,118 @@ class AnOperatorWordMayBeTheValueOfAnOption(unittest.TestCase):
     def test_too_many_operator_words_are_refused_not_guessed(self) -> None:
         command = f"gh api {COLLABORATOR}" + " > a" * 6
         self.assertIn("trop de redirections", refused(command) or "")
+
+
+FD_NOT_ZERO = (
+    "/dev/fd/3",
+    "/dev/fd/4",
+    "/dev/fd/9",
+    "/proc/self/fd/3",
+    "/proc/thread-self/fd/3",
+    "/proc/123/fd/3",
+    "/proc/self/fd/9",
+    "/dev/./fd/3",
+    "//dev/fd/3",
+    "/dev/fd/../fd/3",
+    "/dev/../dev/fd/3",
+    "/tmp/../dev/fd/3",
+    "/proc/self/../self/fd/3",
+    "/dev/fd/03",
+    "/dev/fd/00",
+    "/proc/self/fd/00",
+    "/dev/tty",
+    "/dev/stdout",
+    "/dev/stderr",
+    "/dev/zero",
+    "/dev/fd/../../tmp/x",
+)
+FD_FORMS = ("--input {}", "--input={}", "-F query=@{}", "-f query=@{}", "--field=query=@{}")
+
+
+class OnlyTheDescriptorZeroIsTheStandardInput(unittest.TestCase):
+    """#18 : `/dev/fd/3` n'est pas l'entrée standard : gh lit un autre fichier que le heredoc."""
+
+    def test_any_other_path_under_devices_is_refused_not_read(self) -> None:
+        for name in FD_NOT_ZERO:
+            for form in FD_FORMS:
+                option = form.format(name)
+                with self.subTest(name=name, form=option), no_open_under_devices():
+                    harmless = f"gh api graphql {option} <<'EOF'\n{SUB_ISSUE_JSON}\nEOF"
+                    self.assertIn("par précaution", refused(harmless) or "")
+                    redirect = f"exec 3< m.json; gh api graphql {option} < q.json"
+                    verdict = merge_refused(redirect, {"/w/q.json": SUB_ISSUE_JSON}, "/w")
+                    self.assertIn("par précaution", verdict or "")
+
+    def test_a_descriptor_redirected_to_a_file_is_refused(self) -> None:
+        for command in (
+            "gh api graphql --input /dev/fd/3 3< m.json < q.json",
+            "gh api graphql --input /dev/fd/3 3< m.json",
+            "gh api graphql -F query=@/proc/self/fd/3 3< m.json <<'EOF'\n" + SUB_ISSUE_JSON + "\nEOF",
+        ):
+            with self.subTest(command=command), no_open_under_devices():
+                verdict = merge_refused(command, {"/w/q.json": SUB_ISSUE_JSON, "/w/m.json": MUTATION_JSON}, "/w")
+                self.assertIn("par précaution", verdict or "")
+
+    def test_a_relative_name_of_another_descriptor_is_refused(self) -> None:
+        for command, cwd in (
+            ("gh api graphql --input 3", "/dev/fd"),
+            ("gh api graphql --input 3", "/proc/self/fd"),
+            ("gh api graphql --input fd/3", "/dev"),
+            ("gh api graphql --input fd/3", "/proc/self"),
+            ("gh api graphql --input tty", "/dev"),
+            ("cd /dev/fd && gh api graphql -F query=@4", "/work"),
+            ("cd /proc && cd self/fd && gh api graphql --input 9", "/work"),
+        ):
+            with self.subTest(command=command, cwd=cwd), no_open_under_devices():
+                full = f"{command} <<'EOF'\n{SUB_ISSUE_JSON}\nEOF"
+                self.assertIn("par précaution", refusal(full, "feat/x", always_green, cwd) or "")
+
+    @unittest.skipIf(sys.platform == "win32", "a symbolic link to /dev/fd/3 is a POSIX thing")
+    def test_a_link_to_another_descriptor_is_refused(self) -> None:
+        with tempfile.TemporaryDirectory() as folder, no_open_under_devices():
+            root = Path(folder)
+            (root / "direct").symlink_to("/dev/fd/3")
+            (root / "chain").symlink_to(root / "direct")
+            (root / "proc").symlink_to("/proc/self/fd/3")
+            (root / "dir").symlink_to("/dev/fd")
+            for target in (root / "direct", root / "chain", root / "proc", root / "dir" / "3"):
+                with self.subTest(target=target.name):
+                    harmless = f"gh api graphql --input {target} <<'EOF'\n{SUB_ISSUE_JSON}\nEOF"
+                    self.assertIn("par précaution", refused(harmless) or "")
+
+    @unittest.skipIf(sys.platform == "win32", "a symbolic link to /dev/stdin is a POSIX thing")
+    def test_a_loop_of_links_is_refused_without_looping(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            (Path(folder) / "a").symlink_to(Path(folder) / "b")
+            (Path(folder) / "b").symlink_to(Path(folder) / "a")
+            self.assertEqual(device_path_kind(str(Path(folder) / "a")), "other")
+
+    def test_the_kind_of_a_path(self) -> None:
+        for name in (
+            "/dev/stdin",
+            "/dev/fd/0",
+            "/proc/self/fd/0",
+            "/proc/thread-self/fd/0",
+            "/proc/123/fd/0",
+            "/proc/self/task/5/fd/0",
+            "/dev/./stdin",
+            "//dev/stdin",
+            "/dev/fd/../fd/0",
+        ):
+            with self.subTest(name=name):
+                self.assertEqual(device_path_kind(name), "stdin")
+        for name in FD_NOT_ZERO:
+            with self.subTest(name=name):
+                self.assertEqual(device_path_kind(name), "other")
+        for name in ("/tmp/x", "/devices/x", "/procedure", "q.json"):
+            with self.subTest(name=name):
+                self.assertIsNone(device_path_kind(name, "/w"))
+
+    def test_a_body_file_of_a_merge_under_another_descriptor_is_not_opened(self) -> None:
+        for name in ("/dev/fd/3", "/proc/self/fd/3", "/dev/tty"):
+            for option in (f"--body-file {name}", f"-F {name}"):
+                with self.subTest(name=name, option=option), no_open_under_devices():
+                    self.assertIsNone(refused(f"gh pr merge 5 {option}", green=True))
 
 
 if __name__ == "__main__":

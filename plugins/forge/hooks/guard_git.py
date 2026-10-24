@@ -344,7 +344,7 @@ def _merge_message(
                 parts.append(value)
             elif value and value != "-":
                 path = _moved(here, value)
-                reads = path is not None and path != UNKNOWN and not is_standard_input_path(path, here)
+                reads = path is not None and path != UNKNOWN and device_path_kind(path, here) is None
                 parts.append((read_text(path) if reads else None) or "")
         index += 1
     return "\n".join(parts)
@@ -354,33 +354,69 @@ def _merge_message(
 READ_CAP = 1024 * 1024
 
 
-def is_standard_input_path(path: str, here: str | None = None) -> bool:
-    """Whether `path` is under `/dev/` or `/proc/` once written out in full, so it may be the input.
+_STANDARD_INPUT = re.compile(r"^/(?:dev/(?:stdin|fd/0)|proc/(?:self|thread-self|\d+)(?:/task/\d+)?/fd/0)$")
+_MOST_LINKS = 40
 
-    The path is made absolute from `here` (or the working directory), normalised (`//`, `/./`,
-    `..`) and its symbolic links resolved. `/dev/stdin`, `/dev/fd/0`, `/proc/self/fd/0`, and any
-    other way to name the standard input are among them: the guard has read its own, and a
-    device or a `/proc` entry is not a file to read (`/dev/zero` never ends, a FIFO blocks).
+
+def device_path_kind(path: str, here: str | None = None) -> str | None:
+    """`"stdin"`, `"other"` or None: what a path names once written out in full.
+
+    `"stdin"` is a spelling of the descriptor 0 (`/dev/stdin`, `/dev/fd/0`, `/proc/self/fd/0`,
+    `/proc/<pid>/fd/0`), which the guard has read already as the input of the command. `"other"`
+    is anything else under `/dev/` or `/proc/` (`/dev/fd/3`, `/dev/tty`, `/dev/zero`): it is never
+    opened, because it is not the standard input and a device never ends or blocks. None is a path
+    elsewhere. The path is made absolute from `here` (or the working directory), normalised
+    (`//`, `/./`, `..`) and its symbolic links followed one component at a time, up to the
+    entry in `/dev` or `/proc`, which the guard never looks into.
     """
     text = path.replace("\\", "/")
     if not text.startswith("/") and here not in (None, UNKNOWN):
-        text = posixpath.join(here.replace("\\", "/"), text)  # type: ignore[union-attr]
+        text = posixpath.join(str(here).replace("\\", "/"), text)
     if not text.startswith("/"):
         try:
             text = posixpath.join(os.getcwd().replace("\\", "/"), text)
         except OSError:
-            return True  # a directory that cannot be told: not a path to open
-    candidates = [posixpath.normpath(text)]
-    try:
-        candidates.append(os.path.realpath(text).replace("\\", "/"))
-    except (OSError, ValueError):
-        return True
-    for candidate in candidates:
-        # POSIX keeps a leading `//` apart (`//dev/stdin`), the shell does not.
-        candidate = "/" + candidate.lstrip("/")
-        if candidate in ("/dev", "/proc") or candidate.startswith(("/dev/", "/proc/")):
-            return True
-    return False
+            return "other"  # a directory that cannot be told: not a path to open
+    pending = [part for part in reversed(text.split("/")) if part]
+    resolved = "/"
+    links = 0
+    while pending:
+        part = pending.pop()
+        if part == ".":
+            continue
+        if part == "..":
+            resolved = posixpath.dirname(resolved)
+            continue
+        candidate = posixpath.join(resolved, part)
+        if candidate in ("/dev", "/proc"):
+            rest = list(reversed(pending))
+            final = posixpath.normpath("/".join([candidate, *rest]))
+            if _STANDARD_INPUT.match(final):
+                return "stdin"
+            return "other"  # under /dev or /proc, or out of it through `..`: never opened
+        try:
+            is_link = os.path.islink(candidate)
+        except (OSError, ValueError):
+            return "other"
+        if is_link:
+            links += 1
+            try:
+                target = os.readlink(candidate).replace("\\", "/")
+            except (OSError, ValueError):
+                return "other"
+            if links > _MOST_LINKS:
+                return "other"
+            if target.startswith("/"):
+                resolved = "/"
+            pending.extend(part for part in reversed(target.split("/")) if part)
+        else:
+            resolved = candidate
+    return None
+
+
+def is_standard_input_path(path: str, here: str | None = None) -> bool:
+    """Whether `path` is a spelling of the standard input (the descriptor 0), nothing else."""
+    return device_path_kind(path, here) == "stdin"
 
 
 def read_text_or_none(path: str) -> str | None:
@@ -391,7 +427,7 @@ def read_text_or_none(path: str) -> str | None:
     """
     try:
         target = Path(native_directory(path) or path)
-        if is_standard_input_path(str(target)) or not stat.S_ISREG(target.stat().st_mode):
+        if device_path_kind(str(target)) is not None or not stat.S_ISREG(target.stat().st_mode):
             return None
         with target.open("rb") as stream:
             data = stream.read(READ_CAP + 1)
@@ -624,7 +660,7 @@ def _standard_input_text(
     operator, target = last
     if operator == "<":
         path = _moved(here, target)
-        if path is None or path == UNKNOWN or is_standard_input_path(path, here):
+        if path is None or path == UNKNOWN or device_path_kind(path, here) is not None:
             return None
         return read_text(path)
     return bodies or None
@@ -656,6 +692,8 @@ def _graphql_gesture(
             texts.append(bodies)  # `$(cat <<EOF ...)`: the heredoc of this command
         elif kind == "query":
             unread = unread or "la requête vient d'une substitution ou d'une variable du shell"
+        elif value != "-" and device_path_kind(value, here) == "other":
+            unread = unread or f"le chemin `{value}` est un descripteur ou un périphérique, qui ne s'ouvre pas"
         elif value == "-" or is_standard_input_path(value, here):
             text = _standard_input_text(redirections, here, bodies, read_text)
             if text is None:
