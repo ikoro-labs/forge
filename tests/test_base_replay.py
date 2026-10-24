@@ -138,5 +138,46 @@ class WithoutItsKeys(unittest.TestCase):
         self.assertEqual(neither.stdout.strip(), "sans objet (clé test-path absente)")
 
 
+class BoundedReplay(unittest.TestCase):
+    """Ticket #43, critère 4: the replay runs test code against code that does not expect it."""
+
+    def fixture(self) -> tuple[Repo, str, str]:
+        repo = Repo(self)
+        base = repo.commit({"code_under_test.py": CODE_V1, "tests/__init__.py": ""})
+        return repo, base, repo.commit({"tests/test_new.py": PASSING})
+
+    def command(self, source: str) -> str:
+        # The file name is passed on so the command holds the `{name}` placeholder.
+        return f'"{sys.executable}" -c "{source}" {{name}}'
+
+    def test_a_command_over_its_delay_is_not_run_and_never_passes(self) -> None:
+        """No F-NNNN: ticket #43, critère 4: un délai dépassé se rend NOT RUN avec sa commande."""
+        repo, base, head = self.fixture()
+        done = repo.replay(base, head, usine(self.command("import time; time.sleep(60)")), "--timeout", "2")
+        self.assertEqual(done.returncode, 2, done.stdout + done.stderr)
+        self.assertRegex(done.stdout, r"(?m)^NOT RUN\ttests/test_new\.py\t.*time\.sleep.*délai de 2 s")
+        self.assertNotIn("PASSES", done.stdout)
+
+    @unittest.skipUnless(
+        sys.platform == "linux" or os.name == "nt",
+        "the memory limit is set with RLIMIT_AS on Linux and a job object on Windows; macOS is not covered",
+    )
+    def test_a_command_over_its_memory_limit_fails_instead_of_passing(self) -> None:
+        """No F-NNNN: ticket #43, critère 4: la mémoire est bornée, la commande qui la dépasse échoue."""
+        repo, base, head = self.fixture()
+        # 700 MB asked, 400 MB allowed: without the limit this command exits 0.
+        done = repo.replay(base, head, usine(self.command("bytearray(700 * 10**6)")), "--memory-mb", "400")
+        self.assertNotIn("PASSES", done.stdout, done.stdout + done.stderr)
+        self.assertRegex(done.stdout, r"(?m)^RED\ttests/test_new\.py\t")
+
+    def test_the_limits_have_defaults_and_are_documented(self) -> None:
+        """No F-NNNN: ticket #43, critère 4: mémoire et délai ont une valeur par défaut, dite dans le script."""
+        text = SCRIPT.read_text(encoding="utf-8")
+        self.assertIn('"--memory-mb", type=int, default=2000', text)
+        self.assertIn('"--timeout", type=int, default=300', text)
+        self.assertIn("Linux", text)
+        self.assertIn("Windows", text)
+
+
 if __name__ == "__main__":
     unittest.main()

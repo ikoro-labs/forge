@@ -23,6 +23,14 @@ Exit code 0 when no file passes on the base, 1 when one does, 2 when a replay co
 call is wrong. Without the key `test-path` or `red-replay`, the step is "sans objet (clé <nom>
 absente)" and the exit code is 0.
 
+Bounds. Each command (install ones included) runs under a memory limit (`--memory-mb`, 2000 by
+default) and a delay (`--timeout`, 300 s by default), because it runs test code against code that
+does not expect it. On Linux the limit is `RLIMIT_AS` and the process group is killed at the delay;
+on Windows the command is put in a job object with a per-process memory limit that kills what is
+left when it closes. The Linux side was run on a Linux workstation; the Windows side is written from
+the Win32 documentation and runs in the CI of this repository only, and macOS is not covered. A
+command whose limit cannot be set is `NOT RUN`, never run unbounded.
+
 The entries are read from the base (`--usine`, `git show origin/<base>:docs/agents/usine.md`), so a
 PR cannot lift the guard it is judged by. The standard library only.
 """
@@ -94,16 +102,110 @@ def command_for(template: str, path: str) -> str:
     return template.replace("{file}", quote(path)).replace("{name}", quote(PurePosixPath(path).name))
 
 
+def _limit_windows(process: subprocess.Popen, memory_mb: int) -> object:
+    """Put the process in a job object that caps the memory of each process and dies with its handle."""
+    import ctypes
+    from ctypes import wintypes
+
+    class Basic(ctypes.Structure):
+        _fields_ = [
+            ("PerProcessUserTimeLimit", ctypes.c_int64), ("PerJobUserTimeLimit", ctypes.c_int64),
+            ("LimitFlags", wintypes.DWORD), ("MinimumWorkingSetSize", ctypes.c_size_t),
+            ("MaximumWorkingSetSize", ctypes.c_size_t), ("ActiveProcessLimit", wintypes.DWORD),
+            ("Affinity", ctypes.c_size_t), ("PriorityClass", wintypes.DWORD), ("SchedulingClass", wintypes.DWORD),
+        ]
+
+    class Counters(ctypes.Structure):
+        _fields_ = [(name, ctypes.c_uint64) for name in (
+            "ReadOperationCount", "WriteOperationCount", "OtherOperationCount",
+            "ReadTransferCount", "WriteTransferCount", "OtherTransferCount")]
+
+    class Extended(ctypes.Structure):
+        _fields_ = [
+            ("BasicLimitInformation", Basic), ("IoInfo", Counters), ("ProcessMemoryLimit", ctypes.c_size_t),
+            ("JobMemoryLimit", ctypes.c_size_t), ("PeakProcessMemoryUsed", ctypes.c_size_t),
+            ("PeakJobMemoryUsed", ctypes.c_size_t),
+        ]
+
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel.CreateJobObjectW.restype = wintypes.HANDLE
+    kernel.CreateJobObjectW.argtypes = [wintypes.LPVOID, wintypes.LPCWSTR]
+    kernel.SetInformationJobObject.argtypes = [wintypes.HANDLE, ctypes.c_int, wintypes.LPVOID, wintypes.DWORD]
+    kernel.AssignProcessToJobObject.argtypes = [wintypes.HANDLE, wintypes.HANDLE]
+    job = kernel.CreateJobObjectW(None, None)
+    if not job:
+        raise OSError(f"CreateJobObject: erreur {ctypes.get_last_error()}")
+    info = Extended()
+    # JOB_OBJECT_LIMIT_PROCESS_MEMORY | JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+    info.BasicLimitInformation.LimitFlags = 0x0100 | 0x2000
+    info.ProcessMemoryLimit = memory_mb * 1024 * 1024
+    ok = kernel.SetInformationJobObject(job, 9, ctypes.byref(info), ctypes.sizeof(info))
+    ok = ok and kernel.AssignProcessToJobObject(job, int(process._handle))  # type: ignore[attr-defined]
+    if not ok:
+        kernel.CloseHandle(job)
+        raise OSError(f"limite de mémoire non posée: erreur {ctypes.get_last_error()}")
+    return lambda: kernel.CloseHandle(job)  # closing the job kills every process left in it
+
+
+def _limit_posix(memory_mb: int):
+    """A `preexec_fn` that caps the address space of the command and drops core dumps."""
+    import resource
+
+    def apply() -> None:
+        limit = memory_mb * 1024 * 1024
+        _, hard = resource.getrlimit(resource.RLIMIT_AS)
+        if hard != resource.RLIM_INFINITY:
+            limit = min(limit, hard)  # the session's own limit stays the ceiling
+        resource.setrlimit(resource.RLIMIT_AS, (limit, limit))
+        resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+
+    return apply
+
+
 def run(command: str, cwd: Path, timeout: int, memory_mb: int) -> tuple[int | None, str, str]:
-    """The exit code (None when the command did not run), the end of its output, and why not."""
+    """The exit code (None when the command did not run), the end of its output, and why not.
+
+    The command runs under a memory limit and a delay, and its process group (a job object on
+    Windows) is killed when the delay passes. A limit that cannot be set is a command not run.
+    """
     with tempfile.TemporaryFile() as log:
+        kill = None
         try:
-            done = subprocess.run(command, shell=True, cwd=cwd, stdout=log, stderr=subprocess.STDOUT, timeout=timeout)
+            if os.name == "nt":
+                process = subprocess.Popen(command, shell=True, cwd=cwd, stdout=log, stderr=subprocess.STDOUT)
+                try:
+                    kill = _limit_windows(process, memory_mb)
+                except OSError:
+                    process.kill()
+                    raise
+            else:
+                process = subprocess.Popen(
+                    command, shell=True, cwd=cwd, stdout=log, stderr=subprocess.STDOUT,
+                    start_new_session=True, preexec_fn=_limit_posix(memory_mb),
+                )
+        except (OSError, subprocess.SubprocessError) as error:
+            return None, "", f"limite non posée ou commande non lancée ({error})"
+        try:
+            code = process.wait(timeout=timeout)
         except subprocess.TimeoutExpired:
+            if kill:
+                kill()
+            elif os.name != "nt":
+                os.killpg(process.pid, 9)
+            process.kill()
+            process.wait()
             return None, "", f"délai de {timeout} s dépassé"
+        finally:
+            if kill:
+                kill()
+            elif os.name != "nt":
+                try:
+                    os.killpg(process.pid, 9)  # what the command left running
+                except ProcessLookupError:
+                    pass
         log.seek(0)
         lines = log.read().decode("utf-8", errors="replace").splitlines()
-    return done.returncode, "\\n".join(lines[-TAIL_LINES:]), ""
+    return code, "\\n".join(lines[-TAIL_LINES:]), ""
 
 
 def replay(args: argparse.Namespace, config: dict[str, list[str]]) -> tuple[list[tuple[str, str, str]], int]:
