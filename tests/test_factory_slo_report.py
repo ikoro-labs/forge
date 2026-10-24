@@ -2,13 +2,14 @@
 
 import io
 import json
+import re
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from datetime import datetime, timezone
 from pathlib import Path
 
-import support  # noqa: F401  met le plugin sur le chemin d'import
+import support  # met le plugin sur le chemin d'import, et sert aussi à lire ses fichiers (`support.PLUGIN`)
 from test_factory_slo import USINE, build, isolate
 
 from factory_slo import main
@@ -16,6 +17,7 @@ from factory_slo import main
 NOW = datetime(2026, 11, 1, tzinfo=timezone.utc)
 COMMENTS = "repos/{owner}/{repo}/issues/55/comments"
 ATTENTION = "needs-your-attention"
+LATER = datetime(2027, 1, 1, tzinfo=timezone.utc)
 HELD = ("accept-round-1 | >= 5 % | 31",)
 THREATENED = ("accept-round-1 | >= 30 % | 31",)
 EXHAUSTED = ("accept-round-1 | >= 30 % | 31", "main-green | >= 90 % | 31")
@@ -29,6 +31,8 @@ class Issue:
         self.comments: list[dict] = []
         self.labels: set[str] = set()
         self.writes: list[list[str]] = []
+        self.pinned: list[str] = []
+        self.pin_fails = False
 
     def __call__(self, cmd: list[str], cwd: Path) -> str:
         if cmd[0] != "gh":
@@ -38,10 +42,16 @@ class Issue:
             return json.dumps(self.comments)
         if args[:2] == ["issue", "view"]:
             return json.dumps({"labels": [{"name": name} for name in sorted(self.labels)]})
+        if args[:2] == ["api", "graphql"]:
+            if self.pin_fails:
+                raise RuntimeError("`gh api graphql` a échoué : Resource not accessible")
+            self.pinned.append(args[-1].removeprefix("id="))
+            return "{}"
         if args[0] == "api" and args[1] == COMMENTS:
             self.writes.append(args)
-            self.comments.append({"id": 700 + len(self.comments), "body": args[3].removeprefix("body=")})
-            return "{}"
+            ident = 700 + len(self.comments)
+            self.comments.append({"id": ident, "body": args[3].removeprefix("body=")})
+            return json.dumps({"id": ident, "node_id": f"IC_{ident}"})
         if args[:3] == ["api", "-X", "PATCH"]:
             self.writes.append(args)
             ident = int(args[3].rsplit("/", 1)[1])
@@ -74,14 +84,18 @@ class Report(unittest.TestCase):
             text += f"- `slo-issue` : `{issue}`\n"
         (self.world.root / "docs" / "agents" / "usine.md").write_text(text, encoding="utf-8")
 
-    def run_main(self, *args: str) -> tuple[int, str, str]:
+    def run_main(self, *args: str, now: datetime = NOW) -> tuple[int, str, str]:
         out, err = io.StringIO(), io.StringIO()
         with redirect_stdout(out), redirect_stderr(err):
-            code = main([*args[:1], str(self.world.root), *args[1:]], run=self.issue, now=NOW)
+            code = main([*args[:1], str(self.world.root), *args[1:]], run=self.issue, now=now)
         return code, out.getvalue(), err.getvalue()
 
-    def report(self, *extra: str) -> tuple[int, str, str]:
-        return self.run_main("report", *extra)
+    def report(self, *extra: str, now: datetime = NOW) -> tuple[int, str, str]:
+        return self.run_main("report", *extra, now=now)
+
+    def stored_states(self) -> dict:
+        body = next(c["body"] for c in self.issue.comments if "forge-slo-report" in c["body"])
+        return json.loads(re.search(r"<!-- forge-slo-etats: (.*?) -->", body).group(1))
 
     def attention_comments(self) -> list[str]:
         return [c["body"] for c in self.issue.comments if "forge-slo-report" not in c["body"]]
@@ -240,6 +254,82 @@ class Report(unittest.TestCase):
         self.report("--publier")
         self.assertNotIn(ATTENTION, self.issue.labels)
         self.assertIn("repassés à `tenu`", self.attention_comments()[-1])
+
+    def test_the_stored_set_is_kept_while_an_objective_is_sans_objet(self) -> None:
+        """Ticket #58 : la même ligne devient « sans objet » faute de PR ; l'ensemble mémorisé reste celui du rapport précédent."""
+        self.configure(THREATENED)
+        self.report("--publier")
+        self.assertEqual(self.stored_states(), {THREATENED[0]: "menacé"})
+        _, out, _ = self.report("--publier", now=LATER)
+        self.assertIn("sans objet", out)
+        self.assertEqual(self.stored_states(), {THREATENED[0]: "menacé"})
+        self.assertIn(ATTENTION, self.issue.labels)
+        self.assertNotIn("retirée", out)
+        self.assertFalse([c for c in self.attention_comments() if "repassés" in c])
+        self.report("--publier")
+        self.assertEqual(len(self.attention_comments()), 1)
+
+    def test_an_objective_sans_objet_beside_a_new_threatened_one_keeps_the_label_and_gives_the_new_reason(self) -> None:
+        """Ticket #58 : un objectif « sans objet » côtoie un nouvel objectif `menacé` ; l'ensemble mémorisé devient le nouveau."""
+        self.configure(THREATENED)
+        self.report("--publier")
+        self.configure(("accept-round-1 | >= 30 % | 5", "main-green | >= 90 % | 31"))
+        _, out, _ = self.report("--publier")
+        self.assertIn(ATTENTION, self.issue.labels)
+        self.assertNotIn("retirée", out)
+        self.assertEqual(self.stored_states(), {"main-green | >= 90 % | 31": "épuisé"})
+        self.assertIn("main-green", self.attention_comments()[-1])
+        self.assertFalse([c for c in self.attention_comments() if "repassés" in c])
+
+    def test_a_label_a_human_put_before_a_threatened_slo_is_not_removed_later(self) -> None:
+        """Ticket #58 : une étiquette qu'aucun rapport n'a posée n'est jamais retirée, même après un objectif `menacé`."""
+        self.issue.labels.add(ATTENTION)
+        self.configure(THREATENED)
+        self.report("--publier")
+        self.assertEqual(self.stored_states(), {THREATENED[0]: "menacé"})
+        self.configure(HELD)
+        _, out, _ = self.report("--publier")
+        self.assertIn(ATTENTION, self.issue.labels)
+        self.assertNotIn("retirée", out)
+
+    def test_the_label_set_by_a_report_survives_a_sans_objet_report_and_is_then_removed(self) -> None:
+        self.configure(THREATENED)
+        self.report("--publier")
+        self.report("--publier", now=LATER)
+        self.configure(HELD)
+        self.report("--publier")
+        self.assertNotIn(ATTENTION, self.issue.labels)
+
+    def test_the_report_comment_is_pinned_when_created_and_not_pinned_again(self) -> None:
+        """Ticket #58 : le rapport est réécrit dans un commentaire épinglé de l'issue de suivi."""
+        self.configure(HELD)
+        _, out, _ = self.report("--publier")
+        self.assertEqual(self.issue.pinned, ["IC_700"])
+        self.assertIn("commentaire épinglé", out)
+        self.report("--publier")
+        self.assertEqual(self.issue.pinned, ["IC_700"])
+
+    def test_a_refused_pin_is_reported_and_does_not_stop_the_publication(self) -> None:
+        self.configure(THREATENED)
+        self.issue.pin_fails = True
+        code, out, _ = self.report("--publier")
+        self.assertEqual(code, 0)
+        self.assertIn("commentaire non épinglé", out)
+        self.assertIn(ATTENTION, self.issue.labels)
+
+    def test_json_with_publish_leaves_standard_output_parsable(self) -> None:
+        """Ticket #58 : `--json --publier` laisse un seul document JSON sur la sortie standard."""
+        self.configure(THREATENED)
+        code, out, err = self.report("--json", "--publier")
+        self.assertEqual(code, 0)
+        self.assertIn("objectifs", json.loads(out))
+        self.assertIn("rapport posté dans un commentaire du ticket #55", err)
+
+    def test_json_with_publish_without_the_issue_key_stays_parsable(self) -> None:
+        self.configure(HELD, issue=None)
+        _, out, err = self.report("--json", "--publier")
+        json.loads(out)
+        self.assertIn("sans objet (clé `slo-issue` absente)", err)
 
     def test_a_label_a_human_put_for_another_reason_is_left_alone(self) -> None:
         self.configure(HELD)
