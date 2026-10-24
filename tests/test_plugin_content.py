@@ -857,5 +857,25 @@ class FeatureDesignSlicing(unittest.TestCase):
         self.assertIn("feature-design", rule)
 
 
+class PrShowsChangeDoorAndRadius(unittest.TestCase):
+    """Ticket #45 : la description de PR montre le changement, dit sa porte et son rayon d'impact."""
+
+    @staticmethod
+    def read(*parts: str) -> str:
+        return support.PLUGIN.joinpath(*parts).read_text(encoding="utf-8")
+
+    def test_the_coder_writes_a_view_a_door_and_a_radius(self) -> None:
+        """No F-NNNN: ticket #45, critère 1 (§5 de coder.md)."""
+        text = self.read("agents", "coder.md")
+        step = text.split("## 5. Livrer", 1)[1].split("\n## ", 1)[0]
+        self.assertIn("vue du changement", step)
+        self.assertIn("quelques lignes", step)
+        self.assertIn("`double sens`", step)
+        self.assertIn("`sens unique`", step)
+        self.assertIn("rayon d'impact", step)
+        self.assertIn("même quand le gabarit", step)
+        self.assertIn("fin du résumé", step)
+
+
 if __name__ == "__main__":
     unittest.main()
