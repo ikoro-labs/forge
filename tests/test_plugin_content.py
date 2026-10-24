@@ -288,6 +288,66 @@ class JudgeOutput(unittest.TestCase):
         self.assertNotIn("git.md", judge)
 
 
+class JudgeReadsTests(unittest.TestCase):
+    """Ticket #42: the judge reads the tests the diff adds or changes, not only their citation."""
+
+    def judge(self) -> str:
+        return " ".join((support.PLUGIN / "agents" / "qc-conf.md").read_text(encoding="utf-8").split())
+
+    def test_the_judge_reads_every_test_the_diff_adds_or_changes(self) -> None:
+        """No F-NNNN: ticket #42, critère 1: chaque test ajouté ou changé est lu."""
+        judge = self.judge()
+        self.assertIn("## Lecture des tests", judge)
+        self.assertIn("Chaque test ajouté ou changé par le diff est lu", judge)
+        self.assertIn("un test qui cite un critère ne le prouve pas pour autant", judge)
+
+    def test_the_three_cases_are_findings(self) -> None:
+        """No F-NNNN: ticket #42, critère 2: tautologique, couplé à l'implémentation, hors couture."""
+        judge = self.judge()
+        for text in [
+            "**Tautologique**",
+            "la valeur attendue est dérivée comme dans le code",
+            "littéral connu, d'un exemple travaillé ou de la spec",
+            "**Couplé à l'implémentation**",
+            "mocke un collaborateur interne",
+            "l'ordre ou le nombre des appels",
+            "par un autre chemin que l'interface",
+            "**Hors couture**",
+            "§6 du design",
+        ]:
+            with self.subTest(text=text):
+                self.assertIn(text, judge)
+
+    def test_the_finding_names_the_rule_and_a_failure_scenario(self) -> None:
+        """No F-NNNN: ticket #42, critère 3: règle (clé test-skill, sinon ce rôle) et scénario d'échec."""
+        judge = self.judge()
+        self.assertIn("le skill de la clé `test-skill` quand elle est déclarée, sinon ce rôle", judge)
+        self.assertIn("la mauvaise implémentation que le test laisserait passer", judge)
+        self.assertIn("la refonte sans changement de comportement qui le ferait casser", judge)
+
+    def test_severity_is_blocker_when_the_test_is_the_only_proof_of_a_criterion(self) -> None:
+        """No F-NNNN: ticket #42, critère 4: BLOCKER si seule preuve (critère absent), sinon MINOR."""
+        from parse_output import parse_verdict
+
+        judge = self.judge()
+        self.assertIn("`BLOCKER` quand ce test est la seule preuve d'un critère", judge)
+        self.assertIn("ce critère compte alors pour absent dans `SPEC`", judge)
+        self.assertIn("`MINOR` sinon", judge)
+        # The output keys and severities parse_output.py reads stay as they were.
+        for key in ("VERDICT:", "ROUND:", "HEAD:", "SPEC:", "FINDINGS:", "GATES:"):
+            self.assertIn(key, judge)
+        verdict = (
+            "VERDICT: REJECT\nROUND: 1\nHEAD: 3f2a9c1\nSPEC: #42: 0 criteria covered, 0 partial, 1 missing\n"
+            "FINDINGS:\n- [BLOCKER] a.py:1 | tautologique | passe sur une mauvaise implémentation\nGATES: vertes\n"
+        )
+        self.assertEqual(parse_verdict(verdict)["VERDICT"], "REJECT")
+
+    def test_the_role_stays_generic(self) -> None:
+        """No F-NNNN: ticket #42, critère 5: aucune personne ni aucun projet cité."""
+        judge = self.judge()
+        self.assertNotIn("mattpocock", judge)
+
+
 class DomainOwner(unittest.TestCase):
     """Ticket 4: an open domain question notifies the owner and follows the prudent path."""
 
