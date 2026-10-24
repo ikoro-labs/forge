@@ -125,6 +125,19 @@ Retire seulement une étiquette dont un agent a écrit la raison, dans la ligne 
 l'auteur de l'étiquette sur GitHub ne vous distingue pas. Une étiquette dont aucun texte d'agent ne
 donne la raison vient d'un humain : elle reste, même si un commentaire l'explique.
 
+## Porte à sens unique
+
+Une PR dont la porte est `sens unique` (geste destructif, publication, migration de données,
+décision difficile à défaire) alerte l'humain. Lis la ligne `GATES` du verdict, entrée
+`one-way-door` : `déclarée` (la PR le dit) ou `relevée` (`forge:qc-conf` l'a trouvée dans le diff,
+la PR ne la déclarait pas). Dans les deux cas, pose `needs-your-attention` et écris la raison dans
+`Attention` : la porte et le geste qui ne se défait pas. `one-way-door : aucune`, ou la mention
+absente, ne pose rien.
+
+Cette étiquette alerte et ne bloque pas la fusion : hors des chemins protégés et des entrées
+`never-weaken`, un ACCEPT se fusionne. L'humain peut durcir ce choix en ajoutant le chemin concerné
+à la clé `protected-path`. Sur ACCEPT fusionné, l'étiquette reste jusqu'à ce qu'un humain la retire.
+
 ## Rapport d'agent
 
 En français, six lignes, aucune vide :

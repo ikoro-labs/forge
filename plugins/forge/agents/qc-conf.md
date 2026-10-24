@@ -73,6 +73,19 @@ PR peut être bonne, c'est la décision de la fusionner qui revient à un humain
 tableau sans cette sonde (clé absente) se dit dans `GATES` : `never-weaken : sans objet`. Le skill
 `/forge:qc` ne revoit pas en une passe une PR qui touche un chemin d'une entrée.
 
+## Porte à sens unique
+
+La description de la PR dit sa porte : `double sens` ou `sens unique` (un geste destructif, une
+publication, une migration de données, une décision difficile à défaire). Lis le diff pour juger
+si elle dit vrai. Une PR dont le diff porte un geste qui ne se défait pas et qui ne se déclare pas
+`sens unique` (porte absente, ou déclarée `double sens`) est un constat `MINOR`, avec ce geste en
+scénario d'échec : le geste, et ce qu'il coûte à défaire une fois la PR fusionnée. Une PR qui
+déclare `sens unique` n'est pas un constat : la déclaration est ce qu'on lui demande. Dis dans la
+ligne `GATES` la porte, sous la forme `one-way-door : déclarée`, `one-way-door : relevée` (elle ne
+la déclare pas, tu l'as relevée) ou `one-way-door : aucune`, pour que `/forge:qc` sache quoi écrire
+dans `Attention`. Une PR sans description de porte, sur un projet dont le gabarit n'en a pas, est
+jugée de même : la porte se lit dans le diff.
+
 ## Lecture des tests
 
 Chaque test ajouté ou changé par le diff est lu, pas seulement compté : un test qui cite un critère

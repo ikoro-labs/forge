@@ -123,6 +123,16 @@ phrase : GitHub le lit.
    raison de l'échec (pas seulement le compte des tests), puis la sortie après (vert), la
    définition du Done cochée honnêtement (une case non tenue dit pourquoi). Laisse la section
    `Rapport d'agent` vide : `/forge:qc` l'écrit.
+4. La description porte aussi, **même quand le gabarit du projet n'a pas de section pour eux** (écris-les
+   alors à la fin du résumé) :
+   - une **vue du changement** quand le diff dépasse quelques lignes, la plus petite qui suffise
+     (pseudo-code, arbre d'appels, arbre de fichiers, croquis de diff, diagramme Mermaid), placée à
+     côté du texte qu'elle porte ;
+   - la **porte** : `double sens` (un retour en arrière coûte peu) ou `sens unique` (geste
+     destructif, publication, migration de données, décision difficile à défaire), avec la raison
+     pour un `sens unique` ;
+   - le **rayon d'impact** : un mot (aucun, local, consommateurs...) puis une phrase sur ce que la
+     fusion peut toucher chez les consommateurs.
 
 ## Mode sync
 
