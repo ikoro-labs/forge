@@ -163,6 +163,17 @@ version corrigée n'est pas encore vue verte.
 
 - `red-replay` : `<uv run pytest {file}>`
 
+Le motif des tags de version, lu par `scripts/factory_slo.py` pour l'indicateur `release-lag` : `{version}`
+tient pour la version (`<plugin>--v{version}`). Une ligne par motif. Sans la clé, `release-lag` est
+« sans objet (clé `release-tag` absente) », sans motif supposé.
+
+- `release-tag` : `<monplugin--v{version}>`
+
+`factory_slo.py` lit aussi `required-contexts` (`main-green`) et `protected-path` (`human-touch`), et
+deux conventions du projet : l'étiquette `escaped-defect`, posée sur un ticket de défaut trouvé après la
+fusion, avec dans son corps la ligne `Échappé de #<pr>` qui nomme la PR en cause ; et, pour la gravité
+de `restore-time`, une étiquette `gravite:<classe>`. Voir `docs/indicateurs-de-service.md`.
+
 Les noms des checks obligatoires de la branche protégée, un par ligne, comparés par
 `forge:qc-gate` aux check-runs de la PR et à la protection en place.
 
