@@ -329,17 +329,25 @@ def _gh_api_reads(args: list[str]) -> bool:
     An explicit `-X GET` keeps its fields as query parameters, so it is a read with `-f` too;
     without a method, a field or a body makes gh send a POST.
     """
-    sends_a_body = False
+    sends_a_body = any(
+        word.partition("=")[0] in API_FIELDS
+        or word.startswith(("-f", "-F")) and not word.startswith("--") and len(word) > 2
+        for word in args
+    )
+    method = _explicit_method(args)
+    return method.upper() in ("GET", "HEAD") if method is not None else not sends_a_body
+
+
+def _explicit_method(args: list[str]) -> str | None:
+    """The method `-X` or `--method` names, the last one when repeated (gh keeps the last)."""
+    method: str | None = None
     for index, word in enumerate(args):
         name, _, value = word.partition("=")
-        if name in API_FIELDS or (name.startswith("-f") or name.startswith("-F")) and len(name) > 2:
-            sends_a_body = True
         if name in ("-X", "--method"):
             method = value or (args[index + 1] if index + 1 < len(args) else "")
-            return method.upper() in ("GET", "HEAD")
-        if name.startswith("-X") and len(name) > 2:
-            return name[2:].lstrip("=").upper() in ("GET", "HEAD")
-    return not sends_a_body
+        elif name.startswith("-X") and not name.startswith("--") and len(name) > 2:
+            method = name[2:].lstrip("=")
+    return method
 
 
 # The options of `gh api` that take their value as the next word (`--flag=value` is one word).
@@ -377,15 +385,12 @@ def _api_endpoint(args: list[str]) -> str:
 
 
 def _api_method(args: list[str]) -> str:
-    for index, word in enumerate(args):
-        name, _, value = word.partition("=")
-        if name in ("-X", "--method"):
-            return (value or (args[index + 1] if index + 1 < len(args) else "")).upper()
-        if name.startswith("-X") and len(name) > 2:
-            return name[2:].lstrip("=").upper()
-    return "POST"
+    method = _explicit_method(args)
+    return method.upper() if method is not None else "POST"
 
 
+# The standard input under another name: it is the heredoc, and the guard never opens its own.
+STDIN_PATHS = frozenset({"/dev/stdin", "/dev/fd/0", "/proc/self/fd/0"})
 GRAPHQL_MUTATION_GESTURE = (
     "gh api graphql (mutation de protection, de ruleset, de collaborateur ou du dépôt)"
 )
@@ -450,7 +455,7 @@ def _graphql_gesture(
             texts.append(bodies)  # `$(cat <<EOF ...)`: the heredoc of this command
         elif kind == "query":
             unread = unread or "la requête vient d'une substitution ou d'une variable du shell"
-        elif value == "-":
+        elif value == "-" or value in STDIN_PATHS:
             if bodies:
                 texts.append(bodies)
             else:

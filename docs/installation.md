@@ -116,7 +116,7 @@ dit que l'humain les fait et que l'agent les liste en fin de compte rendu. La li
   environnements, le transfert, et sur le dépôt lui-même (`PATCH`, `DELETE`) ;
 - les mutations GraphQL de protection de branche, de ruleset, de collaborateur et de dépôt, mais
   pas les autres : le plugin s'en sert pour les sous-issues. La requête est lue dans les arguments,
-  dans un heredoc de la commande (`--input - <<EOF`, `query="$(cat <<EOF ...)"`) et dans le fichier
+  dans un heredoc de la commande (`--input - <<EOF`, `/dev/stdin`, `/dev/fd/0` et `/proc/self/fd/0` valant `-`, `query="$(cat <<EOF ...)"`) et dans le fichier
   que nomment `--input` ou `-F query=@fichier` quand il est lisible. Une forme qui vise `graphql`
   et ne se lit pas (fichier absent, entrée standard d'un tube, substitution `$(...)` ou variable du
   shell pour la requête) est refusée par précaution, même si ce n'était pas une mutation ;
@@ -130,7 +130,8 @@ dit que l'humain les fait et que l'agent les liste en fin de compte rendu. La li
   `--token`, `install`, `uninstall`, `start`, `stop` ou `remove` : un `scripts/config.sh` de projet
   passe.
 
-La lecture passe toujours : un `GET` ou `HEAD` explicite, avec `-f`/`-F` ou non, ou l'absence de
+La lecture passe toujours : un `GET` ou `HEAD` explicite (le dernier `-X`/`--method` compte, comme pour
+gh), avec `-f`/`-F` ou non, ou l'absence de
 méthode, de champ et de `--input` (avec un champ ou `--input`, gh envoie un `POST`). Un projet
 ajoute ses gestes avec la clé `owner-gesture` de `docs/agents/usine.md`, une ligne
 `<préfixe de commande> | <raison>` chacune ; sans la clé, la liste intégrée s'applique seule. Ce

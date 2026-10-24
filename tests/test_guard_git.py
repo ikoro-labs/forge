@@ -505,6 +505,23 @@ class OwnerGestures(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertIsNone(refused(command))
 
+    def test_a_repeated_method_counts_as_the_last_one_like_gh_does(self) -> None:
+        for command in (
+            "gh api -X GET repos/o/r/collaborators/bob -X PUT",
+            "gh api --method GET --method PUT repos/o/r/collaborators/bob",
+            "gh api -XGET repos/o/r/collaborators/bob --method=PUT",
+        ):
+            with self.subTest(command=command):
+                verdict = refused(command) or ""
+                self.assertIn(OWNER_REFUSAL, verdict)
+                self.assertIn("PUT", verdict)
+        for command in (
+            "gh api -X PUT repos/o/r/collaborators/bob -X GET",
+            "gh api --method PUT --method GET repos/o/r/collaborators",
+        ):
+            with self.subTest(command=command):
+                self.assertIsNone(refused(command))
+
     def test_fields_without_a_method_are_a_post_and_the_refusal_says_so(self) -> None:
         for command in (
             "gh api repos/o/r/collaborators -f per_page=100",
@@ -792,6 +809,21 @@ class OwnerGestures(unittest.TestCase):
                 verdict = refused(command) or ""
                 self.assertIn("gh api graphql", verdict)
                 self.assertIn("par précaution", verdict)
+
+    def test_the_standard_input_under_another_name_is_the_heredoc(self) -> None:
+        mutation = '{"query": "mutation { updateRepository(input: {}) { clientMutationId } }"}'
+        sub_issue = '{"query": "mutation { addSubIssue(input: {}) { issue { id } } }"}'
+        for name in ("/dev/stdin", "/dev/fd/0", "/proc/self/fd/0"):
+            for form in (f"--input {name}", f"-F query=@{name}", f"--input={name}"):
+                with self.subTest(form=form):
+                    verdict = refused(f"gh api graphql {form} <<'EOF'\n{mutation}\nEOF") or ""
+                    self.assertIn("mutation", verdict)
+                    self.assertNotIn("par précaution", verdict)
+                    self.assertIsNone(refused(f"gh api graphql {form} <<'EOF'\n{sub_issue}\nEOF"))
+
+    def test_the_standard_input_under_another_name_without_a_heredoc_is_refused(self) -> None:
+        verdict = refused("cat q.json | gh api graphql --input /dev/stdin") or ""
+        self.assertIn("par précaution", verdict)
 
     def test_a_graphql_read_in_a_heredoc_or_with_variables_passes(self) -> None:
         for command in (
