@@ -102,10 +102,51 @@ réseau. Une ligne de `slo` mal formée ou qui nomme un SLI inconnu fait échoue
 chaque ligne fautive, et n'écrit rien : jamais un objectif ignoré en silence. Sans la clé `slo`, la
 sortie est « sans objet (clé `slo` absente) », sans fichier.
 
+Un ratio ne dépasse pas 100 % : `>= 120 %` (ou `>= 800 %`, faute de frappe pour 80,0) est une ligne
+mal formée, qui fait échouer la commande, au lieu d'un objectif hors d'atteinte rendu `tenu`.
+
+## Le rapport des SLO
+
+Une mesure que personne ne lit ne change rien. `factory_slo.py report` rend, pour chaque objectif, sa
+valeur, son budget restant, son état et sa tendance ; le skill `/forge:slo` le lance et le commente.
+
+```sh
+uv run --no-project --quiet python plugins/forge/scripts/factory_slo.py report <projet> [--json] [--reference <fichier>] [--publier]
+```
+
+- **La tendance** compare la part du budget consommée à celle de la fenêtre précédente, de même
+  durée (les `<jours>` qui précèdent la fenêtre courante) : `amélioration`, `dégradation`, `stable`,
+  ou `sans point de comparaison` quand la fenêtre précédente n'a pas de données. Le jeu de référence
+  (`judge-recall`, `false-accept`) n'a pas d'historique : sa tendance est toujours sans point de
+  comparaison.
+- **Sans `--publier`**, `report` ne modifie rien : ni GitHub, ni le fichier d'état de `status`.
+- **Avec `--publier`**, le rapport est réécrit dans l'unique commentaire du ticket de suivi que
+  désigne la clé `slo-issue` (un numéro). Le script retrouve son commentaire par un marqueur caché
+  et le réécrit, il n'en empile pas ; il ne l'épingle pas (aucune commande `gh` n'a été essayée
+  pour cela). Sans la clé, la publication est « sans objet (clé `slo-issue` absente) ».
+- **L'étiquette `needs-your-attention`** est posée sur ce ticket quand un objectif est `menacé` ou
+  `épuisé`, et un commentaire en donne la raison (une fois par changement de l'ensemble des objectifs
+  en cause). Elle est retirée, avec un commentaire qui dit pourquoi, quand aucun objectif n'est plus
+  `menacé` ni `épuisé` et que le rapport précédent l'avait posée : une étiquette posée pour une autre
+  raison n'est pas touchée. Un objectif « sans objet » ne la pose pas et ne la retient pas.
+
+### La section du CHANGELOG
+
+```sh
+uv run --no-project --quiet python plugins/forge/scripts/factory_slo.py changelog <projet> --depuis <date de la version précédente> [--le <date de cette version>]
+```
+
+Elle imprime la section « Objectifs de service » de l'entrée d'une version : l'état de chaque objectif
+à la date de la version (`--le`, maintenant par défaut) et les `escaped-defect` ouverts depuis la
+précédente. La PR `chore(release)` la colle sous l'entrée qu'elle ouvre (`docs/contribuer.md`).
+
 ## Éprouvé, et pas encore
 
 Le script est éprouvé dans les tests, sur des réponses `gh` fictives et des dépôts git jetables, sous
 Linux. Il n'a pas encore tourné contre l'API réelle de GitHub : les noms de champs de
 `gh pr list --json` (dont `closingIssuesReferences` et `comments`) et la forme des événements
 (`gh api .../issues/<n>/events`) sont ceux de la documentation. `gh` plafonne la liste à 1000 PR et
-1000 tickets ; une fenêtre qui en demande plus est tronquée sans avertissement.
+1000 tickets ; une fenêtre qui en demande plus est tronquée sans avertissement. Pour `report
+--publier`, les appels d'écriture (`gh api` sur les commentaires, `gh issue edit`, `gh issue comment`)
+sont ceux de la documentation de `gh`, essayés seulement contre un faux `gh` : le rapport n'a jamais
+été publié sur un vrai ticket.
