@@ -94,6 +94,29 @@ sans changement de comportement qui le ferait casser.
 Sévérité : `BLOCKER` quand ce test est la seule preuve d'un critère ; ce critère compte alors pour
 absent dans `SPEC`. `MINOR` sinon.
 
+## Lecture du rejeu sur la base
+
+Le tableau de `forge:qc-gate` porte une sonde **Rejeu des tests sur la base** : les fichiers de test
+que la PR ajoute ou change y sont rejoués sur la base, et un test de changement doit y échouer. Tu
+ne refais pas sa mesure, tu lis ses lignes `PASSES` : un fichier de test qui passe déjà sur la base.
+Pour chacun, cherche dans le corps de la PR une justification (un test de caractérisation, une
+refonte à comportement égal). Sans justification, c'est un constat, parce que ce test ne prouve rien
+du changement : sur l'ancien code, il passait.
+
+Le rejeu est au **grain du fichier** : un `RED` ne prouve pas que chaque test ajouté du fichier était
+rouge, il dit seulement que le fichier, lancé sur la base, sort non nul. Un test qui passe sur la base
+à côté d'un test rouge n'est pas vu : ne lis pas un fichier `RED` comme la preuve du rouge de chacun
+de ses tests.
+
+Sévérité : `BLOCKER` quand il est la seule preuve d'un critère de comportement nouveau ; ce critère
+compte alors pour absent dans `SPEC`. `MINOR` sinon (un critère aussi prouvé par un test rouge sur la
+base, un critère qui ne change pas de comportement). Le scénario d'échec est l'ancien code : il
+satisfait déjà ce test.
+
+Une sonde `NOT RUN` ou `FAIL` se dit dans `GATES`, jamais lue comme « aucun test ne passe ». Une
+sonde « sans objet » (clé `test-path` ou `red-replay` absente) se dit aussi dans `GATES` et ne donne
+aucun constat. En une passe, il n'y a pas de tableau : dis dans `GATES` que le rejeu n'a pas eu lieu.
+
 ## Forme d'un constat
 
 Chaque constat porte trois éléments, sans quoi il est abandonné :

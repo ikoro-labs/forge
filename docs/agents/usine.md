@@ -24,6 +24,12 @@ La configuration de l'usine qui développe le plugin `forge` dans ce dépôt. Le
 - `ci-replay` : `claude plugin validate .`
 - `ci-replay` : `claude plugin validate plugins/forge`
 
+Les tests que la PR ajoute, rejoués par `forge:qc-gate` sur une copie de la base, où chacun doit
+échouer. Le motif `-p {name}` choisit le fichier dans `tests/`.
+
+- `test-path` : `tests/`
+- `red-replay` : `uv run --no-project --quiet python -m unittest discover -s tests -p {name}`
+
 Les jobs de `.github/workflows/tests.yml`.
 
 - `required-contexts` : `tests (ubuntu-latest)`

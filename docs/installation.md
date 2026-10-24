@@ -99,6 +99,16 @@ une ligne retirée, un nombre relevé, un rang abaissé, mesurés sur le diff pa
 `plugins/forge/scripts/never_weaken.py`), les tolérances des hooks, les commandes dont la sortie se
 raccourcit. Le gabarit, `plugins/forge/templates/usine.md`, documente chaque clé.
 
+Deux clés, `test-path` (un préfixe de chemin des fichiers de test, une ligne par préfixe) et
+`red-replay` (la commande qui lance un fichier de test, avec `{file}` ou `{name}`), ouvrent la sonde
+de rejeu de `forge:qc-gate` : `plugins/forge/scripts/base_replay.py` pose les tests que la PR ajoute
+ou change dans une copie de la base et les y lance, et `forge:qc-conf` lit ceux qui y passent déjà,
+parce qu'un test qui ne peut pas échouer sur l'ancien code ne prouve rien du changement. Le script
+borne la mémoire (2000 Mo) et le délai (300 s) de chaque commande, puisqu'il exécute du code de test
+contre un code qui ne l'attend pas : éprouvé sous Linux seulement : le côté Windows (un objet de
+tâche, la commande démarrée suspendue) n'a tourné que dans la CI, où sa première version a échoué (borne
+non tenue) ; la version corrigée n'est pas encore vue verte. Il juge au grain du fichier, qu'il rejoue en entier.
+
 Le skill de découpage en tickets du projet se déclare avec `ticket-skill` : `/forge:feature-design`
 l'utilise à son étape de découpage. Sans la clé, il découpe à la main, dans l'ordre du §7 du
 design, et le dit.
