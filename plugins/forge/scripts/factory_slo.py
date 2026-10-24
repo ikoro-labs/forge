@@ -694,6 +694,7 @@ def changelog_section(document: dict, defects: list[dict], since: datetime, at: 
 
 MARKER = "<!-- forge-slo-report -->"
 STATES_MARKER = re.compile(r"<!-- forge-slo-etats: (.*?) -->")
+POSED_MARKER = re.compile(r"<!-- forge-slo-pose: (oui|non) -->")
 WORSE = (MENACE, EPUISE)
 
 
@@ -723,9 +724,10 @@ def publish(project: Path, document: dict, run: Runner = run_command) -> list[st
     """Rewrite the report comment of the tracking issue and keep its attention label true; the actions taken.
 
     The label is set when an objective goes `menacé` or `épuisé` (a comment gives the reason, once per
-    change of the set), and removed only when the previous report had set it and every objective is `tenu`
-    (a comment says why). An objective "sans objet" is neither held nor spent: the label stays. A label
-    that no report of ours had justified is left alone.
+    change of the set), and removed only when a report of ours had set it (the hidden marker `forge-slo-pose`
+    says so) and every objective is `tenu` (a comment says why). An objective "sans objet" is neither held
+    nor spent: the label stays. A label that a human set is left alone, even when a later report finds an
+    objective `menacé`. The comment is pinned when it is created; a refusal of `gh` is reported, not fatal.
     """
     ticket = issue_number(project)
     if ticket is None:
@@ -738,20 +740,31 @@ def publish(project: Path, document: dict, run: Runner = run_command) -> list[st
     mine = next((c for c in comments if MARKER in str(c.get("body"))), None)
     found = STATES_MARKER.search(str(mine.get("body"))) if mine else None
     before: dict[str, str] = json.loads(found.group(1)) if found else {}
+    was_set = bool(mine) and (m := POSED_MARKER.search(str(mine.get("body")))) is not None and m.group(1) == "oui"
+    info = gh("issue", "view", str(ticket), "--json", "labels")
+    posed = ATTENTION in label_names(info[0] if info else {})
     now_bad = bad_states(document)
     all_held = all(item.get("etat") == TENU for item in document["objectifs"])
     # Un objectif « sans objet » n'est ni tenu ni épuisé : l'ensemble reste ce qu'il était.
     states = json.dumps(now_bad if now_bad or all_held else before, ensure_ascii=False).replace("--", "\\u002d\\u002d")
-    body = f"{MARKER}\n<!-- forge-slo-etats: {states} -->\n{report_markdown(document)}"
+    # Posée par un de nos rapports : posée par nous maintenant, ou déjà posée par nous et toujours là.
+    set_by_us = (bool(now_bad) and not posed) or (was_set and posed and not all_held)
+    body = f"{MARKER}\n<!-- forge-slo-etats: {states} -->\n<!-- forge-slo-pose: {'oui' if set_by_us else 'non'} -->\n{report_markdown(document)}"
     actions: list[str] = []
     if mine:
         gh("api", "-X", "PATCH", f"repos/{{owner}}/{{repo}}/issues/comments/{mine['id']}", "-f", f"body={body}")
         actions.append(f"rapport réécrit dans le commentaire {mine['id']} du ticket #{ticket}")
     else:
-        gh("api", f"repos/{{owner}}/{{repo}}/issues/{ticket}/comments", "-f", f"body={body}")
+        created = gh("api", f"repos/{{owner}}/{{repo}}/issues/{ticket}/comments", "-f", f"body={body}")
         actions.append(f"rapport posté dans un commentaire du ticket #{ticket}")
-    info = gh("issue", "view", str(ticket), "--json", "labels")
-    posed = ATTENTION in label_names(info[0] if info else {})
+        node = created[0].get("node_id") if created and isinstance(created[0], dict) else None
+        try:
+            if not node:
+                raise RuntimeError("la réponse ne donne pas l'identifiant du commentaire")
+            gh("api", "graphql", "-f", "query=mutation($id: ID!) { pinIssueComment(input: {issueCommentId: $id}) { clientMutationId } }", "-f", f"id={node}")
+            actions.append("commentaire épinglé")
+        except RuntimeError as error:
+            actions.append(f"commentaire non épinglé : {error}")
     if now_bad:
         if not posed:
             gh("issue", "edit", str(ticket), "--add-label", ATTENTION)
@@ -759,7 +772,7 @@ def publish(project: Path, document: dict, run: Runner = run_command) -> list[st
         if now_bad != before:
             gh("issue", "comment", str(ticket), "--body", f"`{ATTENTION}` : des objectifs de service ne tiennent plus.\n\n{reasons(document)}")
             actions.append(f"raison commentée sur #{ticket}")
-    elif posed and before and all_held:
+    elif posed and was_set and all_held:
         gh("issue", "edit", str(ticket), "--remove-label", ATTENTION)
         gh("issue", "comment", str(ticket), "--body", f"`{ATTENTION}` retirée : tous les objectifs de service sont repassés à `tenu`.")
         actions.append(f"étiquette `{ATTENTION}` retirée de #{ticket}, avec sa raison")
@@ -790,11 +803,13 @@ def run_report(args: argparse.Namespace, run: Runner, now: datetime) -> int:
         return 0
     print(json.dumps(document, ensure_ascii=False, indent=2) if args.json else report_markdown(document))
     if args.publier:
+        # Avec --json, la sortie standard reste un seul document JSON : la publication va sur l'erreur standard.
+        out = sys.stderr if args.json else sys.stdout
         actions = publish(args.projet, document, run)
         if actions is None:
-            print("\nPublication : sans objet (clé `slo-issue` absente).")
+            print("\nPublication : sans objet (clé `slo-issue` absente).", file=out)
         else:
-            print("\nPublication :\n" + "\n".join(f"- {action}" for action in actions))
+            print("\nPublication :\n" + "\n".join(f"- {action}" for action in actions), file=out)
     return 0
 
 
