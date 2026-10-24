@@ -36,11 +36,12 @@ def deleted(path: str, *lines: str) -> str:
 
 def real_diff(before: dict[str, bytes], after: dict[str, bytes], *flags: str) -> str:
     """The `git diff` of two states of a throwaway repository, as `git` really prints it."""
+    home = tempfile.mkdtemp()  # private: never the shared temporary folder itself
     env = {
         "PATH": os.environ.get("PATH", ""),
         "SYSTEMROOT": os.environ.get("SYSTEMROOT", ""),
-        "HOME": tempfile.gettempdir(),
-        "USERPROFILE": tempfile.gettempdir(),
+        "HOME": home,
+        "USERPROFILE": home,
         "GIT_CONFIG_NOSYSTEM": "1",
     }
 
@@ -63,11 +64,14 @@ def real_diff(before: dict[str, bytes], after: dict[str, bytes], *flags: str) ->
         git("add", "-A")
         git("commit", "-q", "--allow-empty", "-m", "state")
 
-    with tempfile.TemporaryDirectory() as folder:
-        git("init", "-q")
-        write(before)
-        write(after)
-        return git(*flags, "diff", "HEAD~1", "HEAD")
+    try:
+        with tempfile.TemporaryDirectory() as folder:
+            git("init", "-q")
+            write(before)
+            write(after)
+            return git(*flags, "diff", "HEAD~1", "HEAD")
+    finally:
+        shutil.rmtree(home, ignore_errors=True)
 
 
 def statuses(entries: list[str], text: str) -> list[str]:
@@ -376,6 +380,54 @@ class RealGitDiffs(unittest.TestCase):
                 with redirect_stdout(io.StringIO()):
                     code = main(["--usine", str(Path(folder) / "usine.md"), str(Path(folder) / "pr.diff")])
             self.assertEqual(code, 1, text)
+
+
+class RenameKeepsItsPath(unittest.TestCase):
+    """Ticket #16: `rename from` and `rename to` carry no `a/` or `b/` prefix to strip."""
+
+    BODY = b"un\ndeux\ntrois\n"
+
+    def test_a_root_folder_a_moved_unchanged_applies(self) -> None:
+        text = real_diff({"a/seuils/ref.txt": self.BODY}, {"archive/ref.txt": self.BODY})
+        self.assertIn("rename from a/seuils/ref.txt", text)
+        self.assertEqual(statuses(["a/seuils/ | removed-line"], text), [APPLIES])
+
+    def test_a_root_folder_b_moved_unchanged_applies(self) -> None:
+        text = real_diff({"b/seuils/ref.txt": self.BODY}, {"archive/ref.txt": self.BODY})
+        self.assertEqual(statuses(["b/seuils/ | removed-line"], text), [APPLIES])
+
+    def test_a_file_renamed_into_a_root_folder_b_is_read_under_its_real_path(self) -> None:
+        text = real_diff({"x/ref.txt": self.BODY}, {"b/y/ref.txt": self.BODY})
+        self.assertEqual(statuses(["x/ | removed-line"], text), [APPLIES])
+        self.assertEqual(statuses(["b/y/ | removed-line"], text), [NONE])
+
+
+class RenameWithEdit(unittest.TestCase):
+    """Ticket #16: a file leaving or entering the path while it changes is read under the entry."""
+
+    TOLERANCES = b"[tol]\nrel_tol = 1e-3\nabs_tol = 1e-6\nname = 'seuils'\nother = 1\nmore = 2\n"
+    RAISED = TOLERANCES.replace(b"1e-3", b"1e-2")
+    NUMBER = "config/tolerances.toml | raised-number | ^rel_tol = (\\S+)"
+    RANK = "docs/fonctions/ | lowered-rank | statut | certifie > valide > brouillon"
+    FICHE = b"# Fonction\n\nstatut: certifie\nUne ligne\nUne autre\nEncore une\n"
+
+    def test_a_renamed_file_with_a_raised_number_applies(self) -> None:
+        text = real_diff({"config/tolerances.toml": self.TOLERANCES}, {"config/tol.toml": self.RAISED})
+        self.assertIn("rename from config/tolerances.toml", text)
+        self.assertEqual(statuses([self.NUMBER], text), [APPLIES])
+
+    def test_a_renamed_file_with_a_lowered_rank_applies(self) -> None:
+        after = {"docs/archive/f.md": self.FICHE.replace(b"certifie", b"brouillon")}
+        text = real_diff({"docs/fonctions/f.md": self.FICHE}, after)
+        self.assertEqual(statuses([self.RANK], text), [APPLIES])
+
+    def test_a_file_entering_the_path_by_rename_is_still_read(self) -> None:
+        text = real_diff({"x/tol.toml": self.TOLERANCES}, {"config/tolerances.toml": self.RAISED})
+        self.assertEqual(statuses([self.NUMBER], text), [APPLIES])
+
+    def test_a_renamed_file_without_a_raise_does_not_apply(self) -> None:
+        text = real_diff({"config/tolerances.toml": self.TOLERANCES}, {"config/tol.toml": self.TOLERANCES})
+        self.assertEqual(statuses([self.NUMBER], text), [NONE])
 
 
 if __name__ == "__main__":

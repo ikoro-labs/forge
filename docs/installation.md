@@ -30,7 +30,7 @@ fait, et les limites connues.
          "source": {
            "source": "github",
            "repo": "ikoro-labs/forge",
-           "ref": "forge--v1.4.0"
+           "ref": "forge--v1.5.0"
          }
        }
      }
@@ -47,7 +47,7 @@ fait, et les limites connues.
    l'installer. Depuis la racine du projet, redéclarer d'abord son épingle, puis installer :
 
    ```sh
-   claude plugin marketplace add ikoro-labs/forge@forge--v1.4.0 --scope project
+   claude plugin marketplace add ikoro-labs/forge@forge--v1.5.0 --scope project
    claude plugin install forge@ikoro-labs --scope project
    ```
 
@@ -104,6 +104,29 @@ Une clé absente ne prend jamais de valeur par défaut : l'étape qui la lit se 
 sans ses commandes de porte ni sa grille, `/forge:qc` rend des sondes « sans objet », plus faibles
 qu'une revue configurée, et une clé qui pointe un chemin disparu donne un `NOT RUN` à chaque PR
 jusqu'à sa correction.
+
+## Les gestes du propriétaire du dépôt
+
+`guard_git` refuse à tout agent les gestes qui reviennent au propriétaire du dépôt, et le refus
+dit que l'humain les fait et que l'agent les liste en fin de compte rendu. La liste intégrée :
+
+- les écritures de `gh api` (toute méthode sauf `GET` et `HEAD`, comme `guard_readonly` les lit) sur
+  les collaborateurs, les invitations, la protection d'une branche, les rulesets, les runners, les
+  secrets et variables d'Actions, ses permissions, les clés de déploiement, les webhooks, les
+  environnements, le transfert, et sur le dépôt lui-même (`PATCH`, `DELETE`) ;
+- les mutations GraphQL de protection de branche, de ruleset, de collaborateur et de dépôt, mais
+  pas les autres : le plugin s'en sert pour les sous-issues ;
+- `gh secret` et `gh variable` (`set`, `delete`), `gh repo` (`delete`, `rename`, `archive`,
+  `edit --visibility`, `deploy-key add` et `delete`) ;
+- `config.sh`, `config.cmd` et `svc.sh` d'un runner, aussi derrière `sudo`, `bash`, `sh` ou
+  `cmd /c` (`svc.sh status` reste une lecture).
+
+La lecture passe toujours. Un projet ajoute ses gestes avec la clé `owner-gesture` de
+`docs/agents/usine.md`, une ligne `<préfixe de commande> | <raison>` chacune ; sans la clé, la liste
+intégrée s'applique seule. Ce comportement resserre celui des projets qui gardaient ces gestes dans
+leurs propres hooks : ceux-ci peuvent rester, ils tournent à côté. Cette garde protège d'un
+accident, pas d'une intention : un wrapper (`env gh`, `/usr/bin/gh`) et une mutation GraphQL lue
+dans un fichier (`--input`, `query=@fichier`) ne sont pas lus.
 
 ## Compléter ou remplacer, sans éditer le plugin
 

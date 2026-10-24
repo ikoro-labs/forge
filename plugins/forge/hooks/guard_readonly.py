@@ -27,6 +27,7 @@ from guard_git import (
     GLOBAL_OPTIONS_WITH_VALUE,
     UNKNOWN,
     _commands,
+    _gh_api_reads,
     _moved,
     _subcommand_and_args,
     gh_act,
@@ -70,7 +71,6 @@ BRANCH_LIST_MODE = frozenset(
     {"-a", "-r", "--all", "--remotes", "--list", "-l", "--points-at"}
     | {"--contains", "--no-contains", "--merged", "--no-merged"}
 )
-API_FIELDS = frozenset({"-f", "-F", "--field", "--raw-field", "--input"})
 
 
 def _words(item: list[str]) -> list[str]:
@@ -106,21 +106,6 @@ def split_redirections(words: list[str]) -> tuple[list[str], list[str]]:
             written.append(target)
         index += 2
     return plain, written
-
-
-def _gh_api_reads(args: list[str]) -> bool:
-    """A `gh api` call that gh sends as a GET: no `-X` other than GET, no field, no `--input`."""
-    for index, word in enumerate(args):
-        name, _, value = word.partition("=")
-        if name in API_FIELDS or (name.startswith("-f") or name.startswith("-F")) and len(name) > 2:
-            return False
-        if name in ("-X", "--method"):
-            method = value or (args[index + 1] if index + 1 < len(args) else "")
-            if method.upper() not in ("GET", "HEAD"):
-                return False
-        elif name.startswith("-X") and name[2:].lstrip("=").upper() not in ("GET", "HEAD"):
-            return False
-    return True
 
 
 def _gh_reads(words: list[str]) -> bool:

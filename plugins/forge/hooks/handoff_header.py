@@ -48,6 +48,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import signal
 import subprocess
 import sys
 import time
@@ -188,13 +189,17 @@ def _win32():
     kernel32.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
     kernel32.Process32FirstW.argtypes = (wintypes.HANDLE, ctypes.c_void_p)
     kernel32.Process32NextW.argtypes = (wintypes.HANDLE, ctypes.c_void_p)
+    kernel32.CreateJobObjectW.argtypes = (ctypes.c_void_p, wintypes.LPCWSTR)
+    kernel32.CreateJobObjectW.restype = wintypes.HANDLE
+    kernel32.AssignProcessToJobObject.argtypes = (wintypes.HANDLE, wintypes.HANDLE)
+    kernel32.TerminateJobObject.argtypes = (wintypes.HANDLE, wintypes.UINT)
     return ctypes, wintypes, kernel32
 
 
-def _win_process(pid: int, query):
+def _win_process(pid: int, query, access: int = 0x1000):
     """query(handle) on a process opened for limited queries, None when it cannot be opened."""
     ctypes, wintypes, kernel32 = _win32()
-    handle = kernel32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+    handle = kernel32.OpenProcess(access, False, pid)  # 0x1000: PROCESS_QUERY_LIMITED_INFORMATION
     if not handle:
         return None
     try:
@@ -272,6 +277,62 @@ def parent_pid(pid: int) -> int | None:
         return None
     finally:
         kernel32.CloseHandle(snapshot)
+
+
+def group_options() -> dict[str, object]:
+    """`subprocess.Popen` options that make a command the leader of its own process group.
+
+    Linux: a new session, so `os.killpg` reaches the command and what it started. Windows: the
+    group is a job object, see `ProcessGroup`; nothing to ask of Popen. Elsewhere: nothing.
+    """
+    return {"start_new_session": True} if LINUX else {}
+
+
+class ProcessGroup:
+    """A started command and everything it starts, killed together.
+
+    Linux: the process group `group_options` made. Windows: a job object the command is assigned
+    to right after it starts; a child it spawned in that instant escapes, a window the API leaves
+    open without a suspended start. A job nested in the job of the session needs Windows 8 or
+    later. Anything the platform refuses leaves the command alone to be killed, the prudent side.
+    """
+
+    def __init__(self, process: subprocess.Popen) -> None:
+        self.process = process
+        self.job = None
+        if WINDOWS:
+            try:
+                _, _, kernel32 = _win32()
+                job = kernel32.CreateJobObjectW(None, None)
+
+                def assign(ctypes, wintypes, kernel32, handle) -> bool:
+                    return bool(kernel32.AssignProcessToJobObject(job, handle))
+
+                # 0x0101: PROCESS_SET_QUOTA | PROCESS_TERMINATE, what the assignment asks for.
+                if job and _win_process(process.pid, assign, 0x0101):
+                    self.job = job
+                elif job:
+                    kernel32.CloseHandle(job)
+            except (OSError, AttributeError, ValueError):
+                self.job = None
+
+    def kill(self) -> None:
+        """Kill the command and its descendants, then reap the command."""
+        try:
+            if WINDOWS and self.job:
+                _win32()[2].TerminateJobObject(self.job, 1)
+            elif LINUX:
+                os.killpg(self.process.pid, signal.SIGKILL)
+            else:
+                self.process.kill()
+        except (OSError, AttributeError):
+            self.process.kill()
+        self.process.wait()
+
+    def close(self) -> None:
+        if WINDOWS and self.job:
+            _win32()[2].CloseHandle(self.job)
+            self.job = None
 
 
 def ancestors(pid: int) -> set[int]:

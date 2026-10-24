@@ -21,8 +21,18 @@ on purpose.
 The branch that matters is the one of the directory git acts on: `cd <dir> &&` and `git -C
 <dir>` move it, so each command is judged against the branch checked out there.
 
-A project's own gestures (runners, protection, labels reserved to a human) are not here: the
-project keeps them in its own `.claude/settings.json` hooks, which run beside this one.
+Also refused, to every agent, are the gestures of the owner of the repository: a write by
+`gh api` (any method but GET and HEAD) on collaborators, invitations, branch protection,
+rulesets, runners, secrets, variables, Actions permissions, keys, webhooks, environments, a
+transfer or the repository itself; the GraphQL mutations of protection, rulesets, collaborators
+and the repository (the sub-issue mutations the plugin uses are not among them); `gh secret` and
+`gh variable` `set` and `delete`; `gh repo` `delete`, `rename`, `archive`, `edit --visibility`
+and `deploy-key add` and `delete`; the runner scripts `config.sh`, `config.cmd` and `svc.sh`,
+also behind `sudo`, `bash`, `sh` and `cmd /c`. A reading is always allowed. The refusal names the
+gesture and says it is the human's, to list at the end of the report. A project adds its own with
+the `owner-gesture` key of `docs/agents/usine.md`, one `<command prefix> | <reason>` per line;
+the built-in list holds without it. This replaces the earlier choice to leave every owner gesture
+to the project's own hooks.
 """
 
 from __future__ import annotations
@@ -33,8 +43,13 @@ import shlex
 import shutil
 import subprocess
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from pathlib import Path, PurePosixPath, PureWindowsPath
+
+from usine import load, project_root, split_value
+
+# The project's own owner gestures, one per line: `<command prefix> | <reason>`.
+OWNER_KEY = "owner-gesture"
 
 # Every external call has a timeout: a hook that hangs blocks the agent's command.
 TIMEOUT_SECONDS = 20
@@ -293,6 +308,195 @@ def read_text_or_none(path: str) -> str | None:
         return None
 
 
+# The fields and bodies of `gh api`: any of them makes gh send a POST unless `-X` says otherwise.
+API_FIELDS = frozenset({"-f", "-F", "--field", "--raw-field", "--input"})
+
+
+def _gh_api_reads(args: list[str]) -> bool:
+    """A `gh api` call that gh sends as a GET: no `-X` other than GET, no field, no `--input`."""
+    for index, word in enumerate(args):
+        name, _, value = word.partition("=")
+        if name in API_FIELDS or (name.startswith("-f") or name.startswith("-F")) and len(name) > 2:
+            return False
+        if name in ("-X", "--method"):
+            method = value or (args[index + 1] if index + 1 < len(args) else "")
+            if method.upper() not in ("GET", "HEAD"):
+                return False
+        elif name.startswith("-X") and name[2:].lstrip("=").upper() not in ("GET", "HEAD"):
+            return False
+    return True
+
+
+# The options of `gh api` that take their value as the next word (`--flag=value` is one word).
+API_OPTIONS_WITH_VALUE = frozenset(
+    {"-X", "--method", "-H", "--header", "-f", "-F", "--field", "--raw-field", "--input"}
+    | {"-q", "--jq", "-t", "--template", "--cache", "--hostname", "-p", "--preview"}
+)
+# What follows `repos/<owner>/<repo>/` or `orgs/<org>/` that belongs to the owner: a write there
+# is a human's. Anchored at the start, so a file named `hooks` under `contents/` is not one.
+OWNER_ENDPOINT = re.compile(
+    r"(?:collaborators|invitations|rulesets|hooks|keys|environments|transfer"
+    r"|branches/.+/protection|actions/(?:runners|secrets|variables|permissions)"
+    r"|dependabot/secrets)(?:/|$)"
+)
+OWNER_SCOPE = re.compile(r"^(?:repos/[^/]+/[^/]+|orgs/[^/]+)(?:/(.*))?$")
+# GraphQL mutations that change protection, rulesets, collaborators or the repository itself. The
+# sub-issue mutations the plugin uses (`addSubIssue`...) are not among them.
+OWNER_MUTATION = re.compile(
+    r"\b(?:(?:create|update|delete)(?:BranchProtectionRule|RepositoryRuleset)"
+    r"|(?:update|delete|archive|unarchive|transfer)Repository"
+    r"|\w*(?:add|remove|update|invite|create|delete)\w*Collaborator\w*)\b",
+    re.IGNORECASE,
+)
+
+
+def _api_endpoint(args: list[str]) -> str:
+    index = 0
+    while index < len(args):
+        word = args[index]
+        if word.startswith("-"):
+            index += 2 if word in API_OPTIONS_WITH_VALUE else 1
+            continue
+        return word
+    return ""
+
+
+def _api_method(args: list[str]) -> str:
+    for index, word in enumerate(args):
+        name, _, value = word.partition("=")
+        if name in ("-X", "--method"):
+            return (value or (args[index + 1] if index + 1 < len(args) else "")).upper()
+        if name.startswith("-X") and len(name) > 2:
+            return name[2:].lstrip("=").upper()
+    return "POST"
+
+
+def _api_gesture(args: list[str]) -> str | None:
+    """The owner gesture of a `gh api` call (the words after `api`), or None."""
+    endpoint = _api_endpoint(args).split("?", 1)[0].strip("/")
+    if endpoint.lower() == "graphql":
+        if OWNER_MUTATION.search(" ".join(args)):
+            return "gh api graphql (mutation de protection, de ruleset, de collaborateur ou du dépôt)"
+        return None
+    if _gh_api_reads(args):
+        return None
+    scope = OWNER_SCOPE.match(endpoint)
+    if scope is not None and (
+        (scope.group(1) is None and endpoint.startswith("repos/"))
+        or (scope.group(1) and OWNER_ENDPOINT.match(scope.group(1)))
+    ):
+        return f"gh api {_api_method(args)} {endpoint}"
+    return None
+
+
+# The gestures that belong to the owner of the repository, which no agent makes: a human does,
+# and the agent lists them at the end of its report. `(group, verb)` of a gh call.
+OWNER_GH_GESTURES = frozenset(
+    {("secret", "set"), ("secret", "delete"), ("secret", "remove")}
+    | {("variable", "set"), ("variable", "delete"), ("variable", "remove")}
+    | {("repo", "delete"), ("repo", "rename"), ("repo", "archive")}
+    | {("repo", "deploy-key")}
+)
+
+
+def _gh_gesture(words: list[str]) -> str | None:
+    """The owner gesture of a gh call, named as the agent typed it, or None."""
+    act = gh_act(words)
+    if act is None:
+        return None
+    group, verb, rest = act
+    if (group, verb) == ("repo", "deploy-key"):
+        action = next((word for word in rest if not word.startswith("-")), "")
+        return f"gh repo deploy-key {action}" if action in ("add", "delete") else None
+    if (group, verb) in OWNER_GH_GESTURES:
+        return f"gh {group} {verb}"
+    if (group, verb) == ("repo", "edit") and any(
+        word == "--visibility" or word.startswith("--visibility=") for word in rest
+    ):
+        return "gh repo edit --visibility"
+    return None
+
+
+# The scripts of a self-hosted runner: `config` registers or removes it, `svc` installs and starts
+# it as a service. The wrappers they are run behind, and the options of those that take a value.
+RUNNER_SCRIPT = re.compile(r"(?:^|[/\\])(config\.(?:sh|cmd)|svc\.sh)$", re.IGNORECASE)
+# shlex reads a backslash as an escape, so `.\config.cmd` and `C:\runner\config.cmd` reach the hook
+# with their separators gone: a word that starts with `.` or a drive letter still names the script.
+MANGLED_RUNNER_SCRIPT = re.compile(r"^(?:\.|[A-Za-z]:).*?(config\.(?:sh|cmd)|svc\.sh)$", re.IGNORECASE)
+SHELLS = frozenset({"bash", "sh", "zsh", "dash"})
+WRAPPERS = SHELLS | {"sudo", "cmd", "cmd.exe", "powershell", "pwsh", "powershell.exe", "pwsh.exe"}
+SUDO_OPTIONS_WITH_VALUE = frozenset({"-u", "-g", "-h", "-p", "-C", "-D", "-R", "-T", "-U"})
+
+
+def _runner_gesture(words: list[str]) -> str | None:
+    index = 0
+    while index < len(words):
+        word = words[index]
+        if word in WRAPPERS:
+            if word in SHELLS and "-c" in words[index + 1 :]:
+                position = words.index("-c", index + 1) + 1
+                if position < len(words):
+                    return _commands_gesture(words[position])
+            index += 1
+            while index < len(words) and (
+                words[index].startswith("-") or (word.startswith("cmd") and words[index] == "/c")
+            ):
+                index += 2 if word == "sudo" and words[index] in SUDO_OPTIONS_WITH_VALUE else 1
+            continue
+        match = RUNNER_SCRIPT.search(word) or MANGLED_RUNNER_SCRIPT.match(word)
+        if match is None:
+            return None
+        script = match.group(1).lower()
+        if script == "svc.sh" and words[index + 1 : index + 2] == ["status"]:
+            return None
+        return script
+    return None
+
+
+def _commands_gesture(command: str) -> str | None:
+    """The owner gesture of the first simple command of `command` that makes one."""
+    for words in segments(command):
+        if gesture := owner_gesture(words):
+            return gesture
+    return None
+
+
+def owner_gesture(words: list[str]) -> str | None:
+    """The owner gesture a simple command makes, named for the refusal, or None."""
+    call = gh_command(words)
+    if call and call[0] == "api":
+        return _api_gesture(call[1:])
+    return _gh_gesture(words) or _runner_gesture(words)
+
+
+def _owner_refusal(gesture: str) -> str:
+    return (
+        f"{gesture} : geste du propriétaire du dépôt, à lister pour l'humain en fin de compte rendu"
+    )
+
+
+def _declared_gesture(words: list[str], declared: Iterable[str]) -> str | None:
+    """The refusal of the first `owner-gesture` line whose prefix opens the command, or None.
+
+    Compared word by word, after the environment assignments and gh's global options, so that
+    `gh -R o/r label delete` matches `gh label delete`. A line without a reason still refuses,
+    and says so: it is never completed.
+    """
+    call = gh_command(words)
+    normalised = ["gh", *call] if call is not None else words
+    for value in declared:
+        parts = split_value(value, 2)
+        prefix_text = parts[0] if parts else re.sub(r"\s*\|\s*$", "", value).strip()
+        try:
+            prefix = shlex.split(prefix_text)
+        except ValueError:
+            prefix = prefix_text.split()
+        if prefix and normalised[: len(prefix)] == prefix:
+            reason = parts[1] if parts else "la ligne `owner-gesture` de ce geste est sans raison"
+            return f"{_owner_refusal(prefix_text)} : {reason}"
+    return None
+
+
 def refusal(
     command: str,
     branch: str | Callable[[str | None], str],
@@ -300,13 +504,16 @@ def refusal(
     cwd: str | None = None,
     read_text: Callable[[str], str | None] = read_text_or_none,
     description: Callable[[str | None], str] = lambda _pr: "",
+    owner_gestures: Iterable[str] = (),
 ) -> str | None:
     """Why the command is refused, or None when it may run.
 
     `branch` is the branch of a directory: a callable is asked about the directory each git
     command acts on (after `cd` and `-C`); a string is that branch wherever git runs.
     `description` is the body of a PR, by its number (None for the current branch's PR).
+    `owner_gestures` are the values of the project's `owner-gesture` key, beside the built-in list.
     """
+    declared = list(owner_gestures)
     branch_of = branch if callable(branch) else (lambda _directory: branch)
 
     def branch_where(directory: str | None) -> str:
@@ -341,6 +548,10 @@ def refusal(
                 switched = True
             if reason := _git_refusal(args, branch_where(_directory_of(args, here)), switched):
                 return reason
+        if gesture := owner_gesture(words):
+            return _owner_refusal(gesture)
+        if declared_refusal := _declared_gesture(words, declared):
+            return declared_refusal
         act = gh_act(words)
         if act is not None and act[:2] == ("pr", "merge"):
             rest = act[2]
@@ -417,10 +628,13 @@ def main() -> int:
     event = json.load(sys.stdin)
     command = str(event.get("tool_input", {}).get("command", ""))
     cwd = event.get("cwd")
-    if "git" not in command and "gh" not in command:
-        return 0
     reason = refusal(
-        command, current_branch, checks_green_via_gh(cwd), cwd, description=description_via_gh(cwd)
+        command,
+        current_branch,
+        checks_green_via_gh(cwd),
+        cwd,
+        description=description_via_gh(cwd),
+        owner_gestures=load(project_root(event)).get(OWNER_KEY, []),
     )
     if reason is None:
         return 0
