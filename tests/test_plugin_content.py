@@ -756,6 +756,14 @@ class FeatureDesignSlicing(unittest.TestCase):
         docs = (support.REPO_ROOT / "docs" / "installation.md").read_text(encoding="utf-8")
         self.assertIn("`ticket-skill`", docs)
 
+    def test_tdd_sends_refactoring_to_the_slicing_not_to_the_review(self) -> None:
+        """No F-NNNN: ticket #44, MINOR de #49 (le refactoring ne relève pas de la revue)."""
+        text = (support.PLUGIN / "skills" / "tdd" / "SKILL.md").read_text(encoding="utf-8")
+        rule = text.split("**Le refactoring est hors de la boucle.**", 1)[1].split("\n", 1)[0]
+        self.assertNotIn("relève de la revue", rule)
+        self.assertIn("prérefactoring", rule)
+        self.assertIn("feature-design", rule)
+
 
 if __name__ == "__main__":
     unittest.main()
