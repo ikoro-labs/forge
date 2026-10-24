@@ -108,6 +108,10 @@ borne la mémoire (2000 Mo) et le délai (300 s) de chaque commande, puisqu'il e
 contre un code qui ne l'attend pas : éprouvé sous Linux seulement, le côté Windows (un objet de
 tâche) n'ayant tourné que dans la CI. Il juge au grain du fichier, qu'il rejoue en entier.
 
+Le skill de découpage en tickets du projet se déclare avec `ticket-skill` : `/forge:feature-design`
+l'utilise à son étape de découpage. Sans la clé, il découpe à la main, dans l'ordre du §7 du
+design, et le dit.
+
 Une clé absente ne prend jamais de valeur par défaut : l'étape qui la lit se rend « sans objet (clé
 `<nom>` absente) », jamais `PASS`. La revue d'un projet vaut donc ce que sa configuration déclare :
 sans ses commandes de porte ni sa grille, `/forge:qc` rend des sondes « sans objet », plus faibles

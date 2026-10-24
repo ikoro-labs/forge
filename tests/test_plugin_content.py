@@ -794,5 +794,57 @@ class TddSkill(unittest.TestCase):
                 self.assertRegex(path.read_text(encoding="utf-8"), r"(?<![\w-])(/forge:)?tdd(?![\w-])")
 
 
+class FeatureDesignSlicing(unittest.TestCase):
+    """No F-NNNN: ticket #44, le découpage en tickets de `feature-design` et du gabarit de design."""
+
+    @staticmethod
+    def step() -> str:
+        text = (support.PLUGIN / "skills" / "feature-design" / "SKILL.md").read_text(encoding="utf-8")
+        return text.split("6. **Découper**", 1)[1].split("\nCommande suivante", 1)[0]
+
+    @staticmethod
+    def section7() -> str:
+        text = (support.PLUGIN / "templates" / "features" / "design.md").read_text(encoding="utf-8")
+        return text.split("## 7. Découpage en tickets", 1)[1].split("\n## 8.", 1)[0]
+
+    def test_each_ticket_fits_one_fresh_context(self) -> None:
+        """No F-NNNN: ticket #44, critère 1 (un ticket tient dans un contexte neuf de coder)."""
+        for text in (self.step(), self.section7()):
+            self.assertIn("contexte neuf", text)
+            self.assertIn("forge:coder", text)
+
+    def test_prerefactoring_comes_first_in_its_own_ticket(self) -> None:
+        """No F-NNNN: ticket #44, critère 2 (prérefactoring d'abord, dans son propre ticket)."""
+        for text in (self.step(), self.section7()):
+            self.assertIn("prérefactoring", text)
+            self.assertIn("son propre ticket", text)
+
+    def test_wide_refactoring_goes_expand_migrate_contract(self) -> None:
+        """No F-NNNN: ticket #44, critère 3 (refactoring large : expand, lots, contract, bloqués)."""
+        for text in (self.step(), self.section7()):
+            self.assertIn("refactoring large", text)
+            for word in ("expand", "par lots", "contract", "bloqué"):
+                self.assertIn(word, text)
+
+    def test_the_slicing_skill_has_a_key_and_the_example_is_gone(self) -> None:
+        """No F-NNNN: ticket #44, critère 4 (clé ticket-skill, absente = découpe à la main et le dit)."""
+        step = self.step()
+        self.assertIn("`ticket-skill`", step)
+        self.assertIn("clé `ticket-skill` absente", step)
+        self.assertNotIn("/to-tickets", step)
+        template = (support.PLUGIN / "templates" / "usine.md").read_text(encoding="utf-8")
+        self.assertIn("- `ticket-skill` :", template)
+        docs = (support.REPO_ROOT / "docs" / "installation.md").read_text(encoding="utf-8")
+        self.assertIn("`ticket-skill`", docs)
+
+    def test_tdd_sends_refactoring_to_the_slicing_not_to_the_review(self) -> None:
+        """No F-NNNN: ticket #44, MINOR de #49 (le refactoring ne relève pas de la revue)."""
+        text = (support.PLUGIN / "skills" / "tdd" / "SKILL.md").read_text(encoding="utf-8")
+        rule = text.split("**Le refactoring est hors de la boucle.**", 1)[1].split("\n", 1)[0]
+        self.assertNotIn("relève de la revue", rule)
+        self.assertIn("prérefactoring", rule)
+        self.assertIn("feature-design", rule)
+
+
 if __name__ == "__main__":
     unittest.main()

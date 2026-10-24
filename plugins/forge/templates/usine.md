@@ -77,6 +77,11 @@ rend l'étape « sans objet ».
 
 - `test-skill` : `<nom du skill de tests>`
 
+Le skill qui découpe le design en tickets, lu par `/forge:feature-design` à l'étape du découpage.
+Sans lui, le découpage se fait à la main, dans l'ordre du §7 du design, et le dit.
+
+- `ticket-skill` : `<nom du skill de découpage en tickets>`
+
 Les règles git du projet : nommage des branches, format des commits, ligne d'attribution.
 
 - `git-rules` : `<.claude/rules/git.md>`
