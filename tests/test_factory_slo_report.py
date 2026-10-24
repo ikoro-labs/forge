@@ -227,6 +227,20 @@ class Report(unittest.TestCase):
         self.assertIn("étiquette `needs-your-attention` retirée de #55", out)
         self.assertIn("tous les objectifs de service sont repassés à `tenu`", self.attention_comments()[-1])
 
+    def test_an_objective_sans_objet_does_not_remove_the_label(self) -> None:
+        """Ticket #58 : un objectif « sans objet » n'est pas `tenu` ; l'étiquette reste, sans commentaire de retrait."""
+        self.configure(THREATENED)
+        self.report("--publier")
+        self.configure(("accept-round-1 | >= 30 % | 5",))
+        _, out, _ = self.report("--publier")
+        self.assertIn(ATTENTION, self.issue.labels)
+        self.assertNotIn("retirée", out)
+        self.assertFalse([c for c in self.attention_comments() if "repassés" in c])
+        self.configure(HELD)
+        self.report("--publier")
+        self.assertNotIn(ATTENTION, self.issue.labels)
+        self.assertIn("repassés à `tenu`", self.attention_comments()[-1])
+
     def test_a_label_a_human_put_for_another_reason_is_left_alone(self) -> None:
         self.configure(HELD)
         self.issue.labels.add(ATTENTION)
