@@ -103,7 +103,9 @@ Le numéro de PR, et le numéro du tour (1 ou 2).
     `PASS`). Le script borne lui-même mémoire et délai de chaque commande : un rejeu qui dépasse l'un
     des deux est `NOT RUN`. Quand le script rend `sans objet (clé test-path absente)` ou
     `sans objet (clé red-replay absente)`, la sonde se rend ainsi. Un fichier `RED` est le cas
-    attendu : tu le comptes, tu ne le détailles pas.
+    attendu : tu le comptes, tu ne le détailles pas. Le rejeu est au **grain du fichier** : la ligne
+    `RED` le dit, et tu la recopies avec cette mention, parce qu'elle dit seulement que le fichier
+    sort non nul sur la base, pas que chaque test du fichier y est rouge.
 
 Au tour 2, rejoue toutes les sondes : une correction peut casser ce qui passait.
 

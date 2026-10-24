@@ -267,6 +267,17 @@ class BaseReplayProbe(unittest.TestCase):
         self.assertIn("chaque ligne `PASSES`", section)
         self.assertIn("verbatim", section)
 
+    def test_the_gate_and_the_judge_read_the_grain_of_the_file(self) -> None:
+        """No F-NNNN: ticket #43, décision du grain: un RED de fichier ne prouve pas que chaque test était rouge."""
+        gate = self.read("agents", "qc-gate.md")
+        section = gate[gate.index("**Rejeu des tests sur la base.**"):]
+        self.assertIn("grain du fichier", section)
+        self.assertIn("pas que chaque test", section)
+        conf = self.read("agents", "qc-conf.md")
+        section = conf[conf.index("## Lecture du rejeu sur la base"):]
+        self.assertIn("grain du fichier", section)
+        self.assertIn("ne prouve pas que chaque test ajouté du fichier était rouge", section)
+
     def test_an_impossible_replay_is_not_run_with_its_command_and_never_pass(self) -> None:
         """No F-NNNN: ticket #43, critère 1: un rejeu impossible se rend NOT RUN avec sa commande, jamais PASS."""
         gate = self.read("agents", "qc-gate.md")

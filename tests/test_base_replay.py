@@ -96,6 +96,15 @@ class RenderedWhenPassingOnTheBase(unittest.TestCase):
         self.assertNotIn("PASSES", done.stdout)
         self.assertRegex(done.stdout, r"(?m)^RED\ttests/test_new\.py\t")
 
+    def test_a_red_line_says_the_grain_of_the_file(self) -> None:
+        """No F-NNNN: ticket #43, décision du grain: un RED dit le fichier, pas que chaque test y est rouge."""
+        repo = Repo(self)
+        base = repo.commit({"code_under_test.py": CODE_V1, "tests/__init__.py": ""})
+        head = repo.commit({"code_under_test.py": CODE_V2, "tests/test_new.py": RED_ON_BASE})
+        done = repo.replay(base, head, usine())
+        self.assertRegex(done.stdout, r"(?m)^RED\ttests/test_new\.py\tcode \d+ \(grain du fichier")
+        self.assertIn("un test qui passe à côté n'est pas vu", done.stdout)
+
     def test_the_tests_come_from_the_head_and_the_code_from_the_base(self) -> None:
         """No F-NNNN: ticket #43, critère 1: la copie est celle de la base, les tests posés sont ceux de la tête."""
         repo = Repo(self)

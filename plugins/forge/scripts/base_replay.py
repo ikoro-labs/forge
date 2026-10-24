@@ -17,8 +17,10 @@ is printed, the status, the file and a detail separated by tabs:
     RED      the command fails on the base, as a test of a change should (the detail is its code)
     NOT RUN  the replay could not run (the detail is the command and why: delay, limit, install...)
 
-`PASSES` is judged at the grain of the file: the command runs on the whole file, so a file with a
-passing test beside a failing one is `RED`. A line `NONE` says no test file was added or changed.
+The grain is the file, and a `RED` line says so (`code 1 (grain du fichier : un test qui passe à
+côté n'est pas vu)`): the command runs on the whole file, so a file with a passing test beside a
+failing one is `RED`. A `RED` says only that the file, run on the base, exits non-zero; it does not
+say that each test of the file is red. A line `NONE` says no test file was added or changed.
 Exit code 0 when no file passes on the base, 1 when one does, 2 when a replay could not run or the
 call is wrong. Without the key `test-path` or `red-replay`, the step is "sans objet (clé <nom>
 absente)" and the exit code is 0.
@@ -57,6 +59,7 @@ from handoff_header import ProcessGroup, group_options  # noqa: E402
 
 PASSES, RED, NOT_RUN, NONE = "PASSES", "RED", "NOT RUN", "NONE"
 TAIL_LINES = 15
+GRAIN = "(grain du fichier : un test qui passe à côté n'est pas vu)"
 
 
 def git(*args: str, cwd: Path | None = None) -> bytes:
@@ -185,7 +188,7 @@ def replay(args: argparse.Namespace, config: dict[str, list[str]]) -> tuple[list
             elif code == 0:
                 rows.append((PASSES, path, tail))
             else:
-                rows.append((RED, path, f"code {code}"))
+                rows.append((RED, path, f"code {code} {GRAIN}"))
     finally:
         # A process still holding the folder (WinError 32) must not cost the rows of the replay.
         try:
