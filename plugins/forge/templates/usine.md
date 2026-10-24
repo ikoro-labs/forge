@@ -186,6 +186,15 @@ commande. Sans la clé, les objectifs sont « sans objet (clé `slo` absente) »
 - `slo` : `<accept-round-1 | >= 80 % | 30>`
 - `slo` : `<lead-time p90 | <= 24 h | 30>`
 
+Le ticket de suivi de l'usine du projet (un par projet), où `scripts/factory_slo.py report --publier`
+(le skill `forge:slo`) réécrit le rapport des objectifs dans un commentaire unique, retrouvé par un
+marqueur caché, et pose ou retire `needs-your-attention` selon que des objectifs sont `menacé` ou
+`épuisé`. Un numéro, avec ou sans `#`. Le script n'épingle pas le commentaire (aucune commande
+`gh` n'a été essayée pour cela) : il le garde unique et le réécrit. Sans la clé, la publication est
+« sans objet (clé `slo-issue` absente) » et aucune issue n'est devinée.
+
+- `slo-issue` : `<55>`
+
 Les noms des checks obligatoires de la branche protégée, un par ligne, comparés par
 `forge:qc-gate` aux check-runs de la PR et à la protection en place.
 

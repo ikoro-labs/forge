@@ -21,7 +21,11 @@ Publier une version :
 
 1. Changer `version` dans `plugins/forge/.claude-plugin/plugin.json`, et nulle part ailleurs
    (jamais dans `marketplace.json`).
-2. Ouvrir l'entrée correspondante en tête de `CHANGELOG.md`.
+2. Ouvrir l'entrée correspondante en tête de `CHANGELOG.md`. Si ce dépôt déclare la clé `slo`, y
+   ajouter la section « Objectifs de service » que rend
+   `uv run --no-project --quiet python plugins/forge/scripts/factory_slo.py changelog . --depuis <date de la version précédente>`
+   (voir `docs/indicateurs-de-service.md`). Le rapport est aussi réécrit dans l'issue de suivi par
+   `/forge:slo --publier`.
 3. Vérifier :
 
    ```sh
@@ -50,7 +54,7 @@ plugins/forge/                    le plugin
   .claude-plugin/icon.png         son icône, l'export de docs/logo.svg
   agents/                         coder, qc-gate, qc-conf, staff-engineer, product-owner
   skills/                         qc, feature-build, feature-*, codebase-design, domain-modeling,
-                                  improve-codebase-architecture, tdd, audit-jetons
+                                  improve-codebase-architecture, tdd, audit-jetons, slo
   hooks/                          hooks.json, les gardes, les sorties raccourcies, la passation
                                   drainée et l'avis des autres sessions du dépôt, en Python de la
                                   bibliothèque standard, sous Linux comme sous Windows
