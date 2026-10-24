@@ -50,7 +50,7 @@ plugins/forge/                    le plugin
   .claude-plugin/icon.png         son icône, l'export de docs/logo.svg
   agents/                         coder, qc-gate, qc-conf, staff-engineer, product-owner
   skills/                         qc, feature-build, feature-*, codebase-design, domain-modeling,
-                                  improve-codebase-architecture, audit-jetons
+                                  improve-codebase-architecture, tdd, audit-jetons
   hooks/                          hooks.json, les gardes, les sorties raccourcies, la passation
                                   drainée et l'avis des autres sessions du dépôt, en Python de la
                                   bibliothèque standard, sous Linux comme sous Windows

@@ -72,6 +72,9 @@ Une ligne par fichier.
 
 Le skill qui dit comment le projet écrit ses tests, lu par `forge:coder`.
 
+`forge:tdd`, livré avec le plugin, peut être la valeur ; ce n'est pas une valeur par défaut : une clé absente
+rend l'étape « sans objet ».
+
 - `test-skill` : `<nom du skill de tests>`
 
 Les règles git du projet : nommage des branches, format des commits, ligne d'attribution.

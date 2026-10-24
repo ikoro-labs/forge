@@ -660,5 +660,58 @@ class Manifests(unittest.TestCase):
         self.assertEqual(plugin.get("license"), "MIT")
 
 
+class TddSkill(unittest.TestCase):
+    """No F-NNNN: ticket #40, the `forge:tdd` skill and its references."""
+
+    SKILL = support.PLUGIN / "skills" / "tdd"
+
+    def read(self, *parts: str) -> str:
+        return self.SKILL.joinpath(*parts).read_text(encoding="utf-8")
+
+    def test_the_skill_reads_as_a_plugin_skill_with_its_references(self) -> None:
+        """No F-NNNN: ticket #40, critère « le skill se lit comme un skill du plugin »."""
+        fields = frontmatter(self.SKILL / "SKILL.md")
+        self.assertEqual(fields.get("name"), "tdd")
+        self.assertTrue(fields.get("description"))
+        self.assertEqual(set(fields) - SKILL_FIELDS, set())
+        for reference in ("tests.md", "mocking.md"):
+            with self.subTest(reference=reference):
+                self.assertTrue((self.SKILL / "references" / reference).is_file())
+                self.assertIn(f"references/{reference}", self.read("SKILL.md"))
+
+    def test_the_skill_names_the_three_anti_patterns_and_the_loop(self) -> None:
+        """No F-NNNN: ticket #40, critère « il nomme les trois anti-patterns »."""
+        text = self.read("SKILL.md").lower()
+        for term in ("couplé à l'implémentation", "tautologique", "tranches horizontales"):
+            with self.subTest(term=term):
+                self.assertIn(term, text)
+        for term in ("rouge avant vert", "forge:codebase-design", "glossary", "seam"):
+            with self.subTest(term=term):
+                self.assertIn(term, text)
+
+    def test_the_skill_states_the_mock_rule(self) -> None:
+        """No F-NNNN: ticket #40, critère « il nomme la règle des mocks »."""
+        text = self.read("references", "mocking.md").lower()
+        self.assertIn("frontières du système", text)
+        self.assertIn("jamais un collaborateur interne", text)
+        self.assertIn("injection de dépendance", text)
+        self.assertIn("frontières du système", self.read("SKILL.md").lower())
+
+    def test_the_template_offers_it_for_test_skill_without_making_it_a_default(self) -> None:
+        """No F-NNNN: ticket #40, critère « le gabarit le cite pour test-skill »."""
+        template = (support.PLUGIN / "templates" / "usine.md").read_text(encoding="utf-8")
+        block = template[template.index("Le skill qui dit comment le projet écrit ses tests") :]
+        block = block[: block.index("Les règles git")]
+        self.assertIn("forge:tdd", block)
+        self.assertIn("test-skill", block)
+        self.assertIn("sans objet", block)
+
+    def test_the_docs_and_the_readme_cite_it(self) -> None:
+        """No F-NNNN: ticket #40, critère « la page de docs et le README le citent »."""
+        for path in (support.REPO_ROOT / "README.md", support.REPO_ROOT / "docs" / "contribuer.md"):
+            with self.subTest(path=path.name):
+                self.assertRegex(path.read_text(encoding="utf-8"), r"(?<![\w-])(/forge:)?tdd(?![\w-])")
+
+
 if __name__ == "__main__":
     unittest.main()
