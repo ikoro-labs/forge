@@ -4,8 +4,10 @@ import json
 import os
 import shutil
 import subprocess
+import stat
 import sys
 import tempfile
+import time
 import unittest
 from collections.abc import Callable, Iterator
 from pathlib import Path
@@ -851,6 +853,185 @@ class OwnerGestures(unittest.TestCase):
         ):
             with self.subTest(command=command):
                 self.assertIsNone(refused(command))
+
+
+MUTATION_JSON = '{"query": "mutation { updateRepository(input: {}) { clientMutationId } }"}'
+SUB_ISSUE_JSON = '{"query": "mutation { addSubIssue(input: {}) { issue { id } } }"}'
+STDIN_SPELLINGS = (
+    "/dev/stdin",
+    "/dev/fd/0",
+    "/proc/self/fd/0",
+    "/dev/./stdin",
+    "//dev/stdin",
+    "///dev/stdin",
+    "/dev//stdin",
+    "/dev/fd/../fd/0",
+    "/dev/../dev/stdin",
+    "/proc/self/../self/fd/0",
+    "/tmp/../dev/stdin",
+    "/proc/thread-self/fd/0",
+)
+
+
+def _refuse_unsafe_open(path: object) -> None:
+    """Raise rather than open what could read without end or block: a device, /proc, a pipe.
+
+    The check is a `stat`, which never blocks, and it runs before any real open: a test written
+    against code that still opens such a path fails here, red, instead of filling the memory.
+    """
+    if isinstance(path, int):
+        raise AssertionError(f"opened the descriptor {path}")
+    text = os.fspath(path)  # type: ignore[arg-type]
+    if isinstance(text, bytes):
+        text = os.fsdecode(text)
+    for candidate in (text, os.path.realpath(text)):
+        normal = os.path.normpath(candidate).replace("\\", "/")
+        if normal.lstrip("/").startswith(("dev/", "proc/")) or normal in ("/dev", "/proc"):
+            raise AssertionError(f"opened {text} ({normal})")
+    try:
+        mode = os.stat(text).st_mode
+    except (OSError, ValueError):
+        return  # it cannot be opened either
+    if not (stat.S_ISREG(mode) or stat.S_ISDIR(mode)):
+        raise AssertionError(f"opened {text}, which is not an ordinary file")
+
+
+@contextlib.contextmanager
+def no_open_under_devices() -> Iterator[None]:
+    """Fail the test if the guard opens a device, /proc or any file that is not an ordinary one.
+
+    `pathlib` opens through `io.open`, which does not call `os.open` or `builtins.open` by name:
+    all three are patched, so that no road to a real open is left.
+    """
+    real_io_open, real_os_open = io.open, os.open
+
+    def checked_io_open(path: object, *args: object, **kwargs: object) -> object:
+        _refuse_unsafe_open(path)
+        return real_io_open(path, *args, **kwargs)  # type: ignore[arg-type]
+
+    def checked_os_open(path: object, *args: object, **kwargs: object) -> int:
+        _refuse_unsafe_open(path)
+        return real_os_open(path, *args, **kwargs)  # type: ignore[arg-type]
+
+    with (
+        mock.patch("io.open", checked_io_open),
+        mock.patch("builtins.open", checked_io_open),
+        mock.patch("os.open", checked_os_open),
+    ):
+        yield
+
+
+class StandardInputIsNeverOpened(unittest.TestCase):
+    """Un chemin qui vaut l'entrée standard n'est jamais ouvert : le garde l'a déjà lue."""
+
+    def test_every_spelling_of_the_standard_input_reads_the_heredoc(self) -> None:
+        for name in STDIN_SPELLINGS:
+            for form in (
+                f"--input {name}",
+                f"--input={name}",
+                f"-F query=@{name}",
+                f"-f query=@{name}",
+                f"--field=query=@{name}",
+            ):
+                with self.subTest(name=name, form=form), no_open_under_devices():
+                    heredoc = f"gh api graphql {form} <<'EOF'\n%s\nEOF"
+                    verdict = refused(heredoc % MUTATION_JSON) or ""
+                    self.assertIn("mutation", verdict)
+                    self.assertNotIn("par précaution", verdict)
+                    self.assertIsNone(refused(heredoc % SUB_ISSUE_JSON))
+                    self.assertIn("par précaution", refused(f"cat q | gh api graphql {form}") or "")
+
+    def test_a_relative_name_is_resolved_where_the_command_stands(self) -> None:
+        for command, cwd in (
+            ("gh api graphql --input stdin", "/dev"),
+            ("gh api graphql --input 0", "/dev/fd"),
+            ("gh api graphql --input 0", "/proc/self/fd"),
+            ("gh api graphql --input fd/0", "/proc/self"),
+            ("gh api graphql --input dev/stdin", "/"),
+            ("gh api graphql --input ../dev/stdin", "/tmp"),
+            ("cd /dev && gh api graphql --input stdin", "/work"),
+            ("cd /dev/fd && gh api graphql -F query=@0", "/work"),
+            ("cd /dev && cd . && gh api graphql --input ./stdin", "/work"),
+            ("cd /w && cd /dev && gh api graphql --input ./stdin", "/work"),
+            ("cd /proc && cd self/fd && gh api graphql --input 0", "/work"),
+        ):
+            with self.subTest(command=command, cwd=cwd), no_open_under_devices():
+                full = f"{command} <<'EOF'\n{MUTATION_JSON}\nEOF"
+                verdict = refusal(full, "feat/x", always_green, cwd) or ""
+                self.assertIn("mutation", verdict)
+                self.assertNotIn("par précaution", verdict)
+                harmless = f"{command} <<'EOF'\n{SUB_ISSUE_JSON}\nEOF"
+                self.assertIsNone(refusal(harmless, "feat/x", always_green, cwd))
+
+    @unittest.skipIf(sys.platform == "win32", "a symbolic link to /dev/stdin is a POSIX thing")
+    def test_a_link_to_the_standard_input_is_the_standard_input(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            link = Path(folder) / "in"
+            link.symlink_to("/dev/stdin")
+            with no_open_under_devices():
+                command = f"gh api graphql --input {link} <<'EOF'\n%s\nEOF"
+                self.assertIn("mutation", refused(command % MUTATION_JSON) or "")
+                self.assertIsNone(refused(command % SUB_ISSUE_JSON))
+
+    def test_a_heredoc_of_another_command_is_not_the_standard_input_of_the_call(self) -> None:
+        texts = {"/w/q.json": SUB_ISSUE_JSON, "/w/m.json": MUTATION_JSON}
+        other = "&& cat <<'EOF'\nupdateRepository\nEOF"
+        for command, expected_mutation in (
+            (f"gh api graphql --input - < q.json {other}", False),
+            (f"gh api graphql --input - < m.json {other}", True),
+            (f"gh api graphql --input - < /w/m.json {other}", True),
+            (f"gh api graphql -F query=@- < m.json {other}", True),
+        ):
+            with self.subTest(command=command):
+                verdict = refusal(command, "feat/x", always_green, "/w", read_text=files(texts))
+                if expected_mutation:
+                    self.assertIn("mutation", verdict or "")
+                    self.assertNotIn("par précaution", verdict or "")
+                else:
+                    self.assertIsNone(verdict)
+        for command in (
+            f"gh api graphql --input - {other}",
+            "gh api graphql --input - < missing.json",
+            'gh api graphql --input - <<< "$QUERY"',
+            f"echo '{SUB_ISSUE_JSON}' | gh api graphql --input - {other}",
+        ):
+            with self.subTest(command=command):
+                verdict = refusal(command, "feat/x", always_green, "/w", read_text=files(texts))
+                self.assertIn("par précaution", verdict or "")
+
+    def test_a_file_that_is_not_an_ordinary_small_file_is_not_read(self) -> None:
+        with tempfile.TemporaryDirectory() as folder, no_open_under_devices():
+            root = Path(folder)
+            big = root / "big.json"
+            big.write_text(" " * (2 * 1024 * 1024) + MUTATION_JSON, encoding="utf-8")
+            small = root / "small.json"
+            small.write_text(MUTATION_JSON, encoding="utf-8")
+            forms = {
+                "a file over the cap": (big.as_posix(), "par précaution"),
+                "a directory": (root.as_posix(), "par précaution"),
+                "an ordinary small file": (small.as_posix(), "mutation"),
+            }
+            if sys.platform != "win32":
+                forms["/dev/zero"] = ("/dev/zero", "par précaution")
+                forms["/dev/null"] = ("/dev/null", "par précaution")
+                forms["/dev/urandom"] = ("/dev/urandom", "par précaution")
+            if hasattr(os, "mkfifo"):
+                fifo = root / "pipe"
+                os.mkfifo(fifo)
+                forms["a FIFO nobody writes to"] = (fifo.as_posix(), "par précaution")
+            for name, (path, expected) in forms.items():
+                for form in (f"--input {path}", f"-F query=@{path}"):
+                    with self.subTest(case=name, form=form):
+                        started = time.monotonic()
+                        verdict = refused(f"gh api graphql {form}") or ""
+                        self.assertLess(time.monotonic() - started, 5)
+                        self.assertIn(expected, verdict)
+
+    def test_a_body_file_of_a_merge_under_a_device_path_is_not_opened(self) -> None:
+        for name in ("/dev/stdin", "/dev/./stdin", "//dev/stdin", "/dev/zero", "/proc/self/fd/0"):
+            for option in (f"--body-file {name}", f"-F {name}", f"--body-file={name}"):
+                with self.subTest(name=name, option=option), no_open_under_devices():
+                    self.assertIsNone(refused(f"gh pr merge 5 {option}", green=True))
 
 
 COLLABORATOR = "repos/o/r/collaborators/bob"

@@ -41,9 +41,12 @@ every owner gesture to the project's own hooks.
 from __future__ import annotations
 
 import json
+import os
+import posixpath
 import re
 import shlex
 import shutil
+import stat
 import subprocess
 import sys
 from collections.abc import Callable, Iterable
@@ -306,16 +309,58 @@ def _merge_message(
                 parts.append(value)
             elif value and value != "-":
                 path = _moved(here, value)
-                text = read_text(path) if path is not None and path != UNKNOWN else None
-                parts.append(text or "")
+                reads = path is not None and path != UNKNOWN and not is_standard_input_path(path, here)
+                parts.append((read_text(path) if reads else None) or "")
         index += 1
     return "\n".join(parts)
 
 
-def read_text_or_none(path: str) -> str | None:
-    """The file's text, or None when it cannot be read: gh reports a missing file itself."""
+# The most a file read for its text may weigh: a query or a message is far smaller.
+READ_CAP = 1024 * 1024
+
+
+def is_standard_input_path(path: str, here: str | None = None) -> bool:
+    """Whether `path` is under `/dev/` or `/proc/` once written out in full, so it may be the input.
+
+    The path is made absolute from `here` (or the working directory), normalised (`//`, `/./`,
+    `..`) and its symbolic links resolved. `/dev/stdin`, `/dev/fd/0`, `/proc/self/fd/0`, and any
+    other way to name the standard input are among them: the guard has read its own, and a
+    device or a `/proc` entry is not a file to read (`/dev/zero` never ends, a FIFO blocks).
+    """
+    text = path.replace("\\", "/")
+    if not text.startswith("/") and here not in (None, UNKNOWN):
+        text = posixpath.join(here.replace("\\", "/"), text)  # type: ignore[union-attr]
+    if not text.startswith("/"):
+        try:
+            text = posixpath.join(os.getcwd().replace("\\", "/"), text)
+        except OSError:
+            return True  # a directory that cannot be told: not a path to open
+    candidates = [posixpath.normpath(text)]
     try:
-        return Path(native_directory(path) or path).read_text(encoding="utf-8")
+        candidates.append(os.path.realpath(text).replace("\\", "/"))
+    except (OSError, ValueError):
+        return True
+    for candidate in candidates:
+        # POSIX keeps a leading `//` apart (`//dev/stdin`), the shell does not.
+        candidate = "/" + candidate.lstrip("/")
+        if candidate in ("/dev", "/proc") or candidate.startswith(("/dev/", "/proc/")):
+            return True
+    return False
+
+
+def read_text_or_none(path: str) -> str | None:
+    """The text of an ordinary file of at most `READ_CAP` bytes, or None.
+
+    None when it cannot be read: gh reports a missing file itself. A device, a FIFO, a directory
+    and a file over the cap are not read, and the open never waits: `stat` rules first.
+    """
+    try:
+        target = Path(native_directory(path) or path)
+        if is_standard_input_path(str(target)) or not stat.S_ISREG(target.stat().st_mode):
+            return None
+        with target.open("rb") as stream:
+            data = stream.read(READ_CAP + 1)
+        return None if len(data) > READ_CAP else data.decode("utf-8")
     except (OSError, UnicodeDecodeError, ValueError):
         return None
 
@@ -466,8 +511,6 @@ def _api_method(args: list[str]) -> str:
     return method.upper() if method is not None else "POST"
 
 
-# The standard input under another name: it is the heredoc, and the guard never opens its own.
-STDIN_PATHS = frozenset({"/dev/stdin", "/dev/fd/0", "/proc/self/fd/0"})
 GRAPHQL_MUTATION_GESTURE = (
     "gh api graphql (mutation de protection, de ruleset, de collaborateur ou du dépôt)"
 )
@@ -493,6 +536,30 @@ def _graphql_inputs(args: list[str]) -> list[tuple[str, str]]:
     return inputs
 
 
+def _standard_input_text(
+    args: list[str], here: str | None, bodies: str, read_text: Callable[[str], str | None]
+) -> str | None:
+    """What the shell feeds to the standard input of this very command, or None when unknown.
+
+    Its own redirection counts, the last one as the shell applies it: a file (`< q.json`) is read,
+    a heredoc (`<<EOF`) is the bodies of the command. A heredoc of another command, a pipe and a
+    here-string (`<<<`) are not known.
+    """
+    last = next(
+        (item for item in reversed(without_redirections(args)[1]) if item[0] in ("<", "<<", "<<-")),
+        None,
+    )
+    if last is None:
+        return None
+    operator, target = last
+    if operator == "<":
+        path = _moved(here, target)
+        if path is None or path == UNKNOWN or is_standard_input_path(path, here):
+            return None
+        return read_text(path)
+    return bodies or None
+
+
 def _graphql_gesture(
     args: list[str], here: str | None, bodies: str, read_text: Callable[[str], str | None]
 ) -> str | None:
@@ -501,7 +568,7 @@ def _graphql_gesture(
     The query is read in the arguments, in the heredocs of the command (`--input - <<EOF`, or
     `query="$(cat <<EOF ...)"`) and in the files it names. What cannot be read (a file that is not
     there, stdin from a pipe, a substitution or a variable) is refused as a precaution: a mutation
-    of the owner could hide in it, and a guard that fails closes.
+    of the owner could hide in it, and a guard that fails closed.
     """
     texts = [" ".join(args)]
     unread = ""
@@ -514,11 +581,12 @@ def _graphql_gesture(
             texts.append(bodies)  # `$(cat <<EOF ...)`: the heredoc of this command
         elif kind == "query":
             unread = unread or "la requête vient d'une substitution ou d'une variable du shell"
-        elif value == "-" or value in STDIN_PATHS:
-            if bodies:
-                texts.append(bodies)
-            else:
+        elif value == "-" or is_standard_input_path(value, here):
+            text = _standard_input_text(args, here, bodies, read_text)
+            if text is None:
                 unread = unread or "la requête vient de l'entrée standard"
+            else:
+                texts.append(text)
         else:
             path = _moved(here, value)
             text = read_text(path) if path is not None and path != UNKNOWN else None
