@@ -116,27 +116,35 @@ dit que l'humain les fait et que l'agent les liste en fin de compte rendu. La li
   environnements, le transfert, et sur le dépôt lui-même (`PATCH`, `DELETE`) ;
 - les mutations GraphQL de protection de branche, de ruleset, de collaborateur et de dépôt, mais
   pas les autres : le plugin s'en sert pour les sous-issues. La requête est lue dans les arguments,
-  dans un heredoc de la commande (`--input - <<EOF`, `/dev/stdin`, `/dev/fd/0` et `/proc/self/fd/0` valant `-`, `query="$(cat <<EOF ...)"`) et dans le fichier
-  que nomment `--input` ou `-F query=@fichier` quand il est lisible. Une forme qui vise `graphql`
-  et ne se lit pas (fichier absent, entrée standard d'un tube, substitution `$(...)` ou variable du
-  shell pour la requête) est refusée par précaution, même si ce n'était pas une mutation ;
+  dans le heredoc ou la redirection `<` de cette commande quand elle lit son entrée standard
+  (`--input -`, `-F query=@-`), dans un heredoc `query="$(cat <<EOF ...)"`, et dans le fichier que
+  nomment `--input` ou `-F query=@fichier`. Un chemin sous `/dev/` ou `/proc/` vaut `-` une fois
+  écrit en entier (`/dev/stdin`, `/dev/./stdin`, `//dev/stdin`, `/dev/fd/0`, `stdin` après
+  `cd /dev`, un lien symbolique vers l'un d'eux) : le garde ne l'ouvre jamais. Il ne lit qu'un
+  fichier ordinaire de 1 Mo au plus. Une forme qui vise `graphql` et ne se lit pas est refusée par
+  précaution, même si ce n'était pas une mutation : fichier absent, trop gros, qui n'est pas
+  ordinaire (périphérique, FIFO, dossier), entrée standard d'un tube ou d'une chaîne
+  (`<<<`), heredoc d'une autre commande, substitution `$(...)` ou variable du shell pour la
+  requête ;
 - `gh secret` et `gh variable` (`set`, `delete`), `gh repo` (`delete`, `rename`, `archive`,
   `edit --visibility`, `deploy-key add` et `delete`, les options de `gh` avant l'action étant
   retirées) ;
 - `config.sh`, `config.cmd` et `svc.sh` d'un runner, aussi derrière `sudo` (options collées
   comprises), `env`, `nohup`, `bash`, `sh` ou `cmd /c`, et dans un heredoc envoyé à un shell
   (`svc.sh status` reste une lecture). Un script de ce nom n'est celui d'un runner que dans un
-  dossier qui porte `run.sh` ou `run.cmd` et `bin/Runner.Listener`, ou appelé avec `--url`,
-  `--token`, `install`, `uninstall`, `start`, `stop` ou `remove` : un `scripts/config.sh` de projet
-  passe.
+  dossier qui porte `run.sh` ou `run.cmd` et `bin/Runner.Listener` (`bin/Runner.Listener.exe`
+  sous Windows), ou appelé avec `--url`, `--token`, `--pat`, `--unattended`, `install`,
+  `uninstall`, `start`, `stop` ou `remove` : un `scripts/config.sh` de projet passe. Toute
+  affectation `ACTIONS_RUNNER_INPUT_*` est refusée, où qu'elle soit (devant la commande, après
+  `env` ou `export`, seule, dans `bash -c` ou un heredoc), car le runner y lit son enregistrement.
 
-La lecture passe toujours : un `GET` ou `HEAD` explicite (le dernier `-X`/`--method` compte, comme pour
-gh), avec `-f`/`-F` ou non, ou l'absence de
-méthode, de champ et de `--input` (avec un champ ou `--input`, gh envoie un `POST`). Un projet
-ajoute ses gestes avec la clé `owner-gesture` de `docs/agents/usine.md`, une ligne
-`<préfixe de commande> | <raison>` chacune ; sans la clé, la liste intégrée s'applique seule. Ce
-comportement resserre celui des projets qui gardaient ces gestes dans leurs propres hooks :
-ceux-ci peuvent rester, ils tournent à côté.
+La lecture passe toujours : un `GET` ou `HEAD` explicite (le dernier `-X`/`--method` compte, comme
+pour gh, et la valeur d'une option comme `--jq` ou `-q` n'est pas une méthode), avec `-f`/`-F` ou
+non, ou l'absence de méthode, de champ et de `--input` (avec un champ ou `--input`, gh envoie un
+`POST`). Un projet ajoute ses gestes avec la clé `owner-gesture` de `docs/agents/usine.md`, une
+ligne `<préfixe de commande> | <raison>` chacune ; sans la clé, la liste intégrée s'applique
+seule. Ce comportement resserre celui des projets qui gardaient ces gestes dans leurs propres
+hooks : ceux-ci peuvent rester, ils tournent à côté.
 
 Cette garde protège d'un accident, pas d'une intention. Les formes qu'elle ne lit pas :
 
@@ -152,9 +160,13 @@ Cette garde protège d'un accident, pas d'une intention. Les formes qu'elle ne l
   changement) ;
 - le contenu d'un heredoc envoyé à autre chose qu'un shell ou qu'un `gh api graphql`.
 
-Éprouvé sous Linux seulement ; sous Windows, les chemins `C:\...` et `config.cmd` sont lus par des
-tests qui ne dépendent pas du système, mais le message d'un échec avant le garde, lui, passe par
-le shell POSIX de la commande de `hooks.json` et n'a pas été essayé sous Git Bash.
+Éprouvé sous Linux seulement. Sous Windows, les chemins `C:\...`, `config.cmd` et le dossier d'un
+runner Windows sont lus par des tests qui ne dépendent pas du système. La commande de `guard_git`
+dans `hooks.json` est écrite pour un shell POSIX (`$(...)`, `case`, `printf`) : c'est celui de
+Linux et de macOS, et ce doit être Git Bash sous Windows, ce qui n'a pas été essayé. Elle ne
+s'analyse pas sous PowerShell sans Git Bash, et ce que Claude Code y fait d'une commande qui ne
+s'analyse pas n'a pas été essayé non plus. `guard_coder` et `guard_readonly`, qui s'écrivent
+`... || exit 2`, n'ont pas ce prérequis.
 
 ## Compléter ou remplacer, sans éditer le plugin
 
