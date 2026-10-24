@@ -1,6 +1,7 @@
 import contextlib
 import io
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -239,6 +240,16 @@ class SplitTicket(unittest.TestCase):
         self.assertIn("closes #322", verdict or "")
 
 
+@contextlib.contextmanager
+def isolated_environment() -> Iterator[None]:
+    """HOME and USERPROFILE in an empty folder, and no `CLAUDE_` variable of the session running us."""
+    with tempfile.TemporaryDirectory() as home:
+        env = {name: value for name, value in os.environ.items() if not name.startswith("CLAUDE_")}
+        env.update(HOME=home, USERPROFILE=home)
+        with mock.patch.dict("os.environ", env, clear=True):
+            yield
+
+
 def guard_git_hook() -> dict[str, str]:
     hooks = json.loads((support.PLUGIN / "hooks" / "hooks.json").read_text(encoding="utf-8"))
     found = [
@@ -323,10 +334,45 @@ class FailsClosed(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertIn("refused as a precaution", stderr.getvalue())
 
+    def test_an_ordinary_command_never_makes_the_guard_fail(self) -> None:
+        # The real `main`, on commands that are none of its business: a crash would refuse them.
+        for name, command in (
+            ("empty", ""),
+            ("a heredoc without gh", "cat > notes.md <<'EOF'\nline one\nline two\nEOF"),
+            ("a heredoc never closed", "cat <<EOF\nline one"),
+            ("a heredoc to a shell", "bash <<'EOF'\necho hello\nEOF"),
+            ("an unclosed quote", 'echo "unclosed'),
+            ("an unclosed quote on gh", "gh api graphql -f query='query { viewer"),
+            ("an unclosed substitution", 'echo "$(cat <<EOF'),
+            ("a very long line", "echo " + "a" * 300_000),
+            ("a very long heredoc line", "cat <<EOF\n" + "b" * 300_000 + "\nEOF"),
+            ("a very long gh line", "gh api graphql -f query='query { " + "viewer " * 40_000 + "}'"),
+            ("only operators", "&& || ; |"),
+            ("a dangling sudo", "sudo -u"),
+            ("a dangling env", "env"),
+            ("a null byte", "ls \x00 ./config.sh"),
+            ("non-ASCII", "echo 'été ✓' && ls"),
+        ):
+            event = json.dumps({"tool_input": {"command": command}, "cwd": None})
+            stderr = io.StringIO()
+            with (
+                self.subTest(case=name),
+                isolated_environment(),
+                mock.patch("sys.stdin", io.StringIO(event)),
+                mock.patch("sys.stderr", stderr),
+            ):
+                code = guarded_main()
+                self.assertNotIn("guard_git failed", stderr.getvalue())
+                self.assertEqual(code, 0, stderr.getvalue())
+
     def test_a_refusal_of_a_rule_is_not_reworded_as_a_failure(self) -> None:
         event = json.dumps({"tool_input": {"command": "git push --force"}, "cwd": None})
         stderr = io.StringIO()
-        with mock.patch("sys.stdin", io.StringIO(event)), mock.patch("sys.stderr", stderr):
+        with (
+            isolated_environment(),
+            mock.patch("sys.stdin", io.StringIO(event)),
+            mock.patch("sys.stderr", stderr),
+        ):
             code = guarded_main()
         self.assertEqual(code, 2)
         self.assertIn("force push", stderr.getvalue())
