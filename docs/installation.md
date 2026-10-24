@@ -99,6 +99,10 @@ une ligne retirée, un nombre relevé, un rang abaissé, mesurés sur le diff pa
 `plugins/forge/scripts/never_weaken.py`), les tolérances des hooks, les commandes dont la sortie se
 raccourcit. Le gabarit, `plugins/forge/templates/usine.md`, documente chaque clé.
 
+Le skill de découpage en tickets du projet se déclare avec `ticket-skill` : `/forge:feature-design`
+l'utilise à son étape de découpage. Sans la clé, il découpe à la main, dans l'ordre du §7 du
+design, et le dit.
+
 Une clé absente ne prend jamais de valeur par défaut : l'étape qui la lit se rend « sans objet (clé
 `<nom>` absente) », jamais `PASS`. La revue d'un projet vaut donc ce que sa configuration déclare :
 sans ses commandes de porte ni sa grille, `/forge:qc` rend des sondes « sans objet », plus faibles

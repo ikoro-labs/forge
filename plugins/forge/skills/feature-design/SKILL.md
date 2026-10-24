@@ -40,4 +40,7 @@ Applique `${CLAUDE_PLUGIN_ROOT}/templates/features/protocole.md`, document `desi
      de l'ancienne), migration par lots, puis contract (retirer l'ancienne). Chaque étape est un
      ticket bloqué par la précédente.
 
+   Découpe avec le skill de la clé `ticket-skill` quand elle est déclarée. Sinon, découpe à la
+   main, dans l'ordre du §7 du design, et dis-le (« clé `ticket-skill` absente »).
+
 Commande suivante, une fois les tickets publiés : `/forge:feature-build F-NNNN`.

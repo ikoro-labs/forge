@@ -745,6 +745,17 @@ class FeatureDesignSlicing(unittest.TestCase):
             for word in ("expand", "par lots", "contract", "bloqué"):
                 self.assertIn(word, text)
 
+    def test_the_slicing_skill_has_a_key_and_the_example_is_gone(self) -> None:
+        """No F-NNNN: ticket #44, critère 4 (clé ticket-skill, absente = découpe à la main et le dit)."""
+        step = self.step()
+        self.assertIn("`ticket-skill`", step)
+        self.assertIn("clé `ticket-skill` absente", step)
+        self.assertNotIn("/to-tickets", step)
+        template = (support.PLUGIN / "templates" / "usine.md").read_text(encoding="utf-8")
+        self.assertIn("- `ticket-skill` :", template)
+        docs = (support.REPO_ROOT / "docs" / "installation.md").read_text(encoding="utf-8")
+        self.assertIn("`ticket-skill`", docs)
+
 
 if __name__ == "__main__":
     unittest.main()
