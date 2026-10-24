@@ -267,8 +267,11 @@ def guard_git_hook() -> dict[str, str]:
 class FailsClosed(unittest.TestCase):
     def test_hooks_json_turns_a_crash_of_guard_git_into_a_refusal(self) -> None:
         command = guard_git_hook()["command"]
-        self.assertIn("|| {", command)
-        self.assertTrue(command.endswith("exit 2; }"))
+        # The exit code 2 of a rule and the 2 of a script that is missing or of a usage error of
+        # uv are told apart by what the guard writes, not by the code alone.
+        self.assertIn("Blocked by the forge plugin (guard_git)", command)
+        self.assertIn("exit 2", command)
+        self.assertNotIn("|| {", command)
 
     @unittest.skipUnless(
         shutil.which("bash") and sys.platform != "win32",
@@ -285,6 +288,7 @@ class FailsClosed(unittest.TestCase):
                 return subprocess.run(  # noqa: S603 - the shell is found by shutil.which
                     [str(shutil.which("bash")), "-c", guard_git_hook()["command"]],
                     env={"PATH": folder, "CLAUDE_PLUGIN_ROOT": str(support.PLUGIN)},
+                    input="EVENT",  # never the runner's own standard input
                     capture_output=True,
                     text=True,
                     check=False,
@@ -294,6 +298,10 @@ class FailsClosed(unittest.TestCase):
         for name, script in (
             ("uv is missing", None),
             ("uv fails", "echo 'ModuleNotFoundError: usine' >&2; exit 1"),
+            ("python cannot open the script", "echo \"python: can't open file 'g.py': [Errno 2]\" >&2; exit 2"),
+            ("uv is called wrongly", "echo 'error: unexpected argument --no-project' >&2; exit 2"),
+            ("uv fails without a word", "exit 2"),
+            ("a rule is quoted by a failure", "echo 'x Blocked by the forge plugin (guard_git)' >&2; exit 2"),
         ):
             with self.subTest(case=name):
                 done = run(script)
@@ -305,8 +313,13 @@ class FailsClosed(unittest.TestCase):
         self.assertEqual(done.returncode, 2)
         self.assertIn("force push", done.stderr)
         self.assertNotIn("guard_git failed", done.stderr)
+        done = run("echo 'Blocked by the forge plugin (guard_git): a rule.' >&2; exit 2")
+        self.assertEqual(done.stderr.count("a rule"), 1)
         done = run("exit 0")
         self.assertEqual((done.returncode, done.stderr), (0, ""))
+        # The event reaches the guard: the command reads its standard input.
+        done = run("read line; echo \"$line\" >&2; exit 2")
+        self.assertIn("EVENT", done.stderr)
 
     def test_hooks_json_blocks_the_command_when_guard_git_times_out(self) -> None:
         # `|| exit 2` does not cover a timeout: the shell is killed before it can run it.
