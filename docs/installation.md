@@ -125,7 +125,9 @@ dit que l'humain les fait et que l'agent les liste en fin de compte rendu. La li
   précaution, même si ce n'était pas une mutation : fichier absent, trop gros, qui n'est pas
   ordinaire (périphérique, FIFO, dossier), entrée standard d'un tube ou d'une chaîne
   (`<<<`), heredoc d'une autre commande, substitution `$(...)` ou variable du shell pour la
-  requête ;
+  requête. Un mot fait de `<`, `>` ou `&`, ou un nombre, après une option qui prend une valeur
+  (`-t '>'`, `-q 1 > out`) peut être cette valeur ou une redirection : le garde juge les deux
+  lectures et refuse si l'une refuse (au-delà de cinq mots de ce genre, il refuse sans juger) ;
 - `gh secret` et `gh variable` (`set`, `delete`), `gh repo` (`delete`, `rename`, `archive`,
   `edit --visibility`, `deploy-key add` et `delete`, les options de `gh` avant l'action étant
   retirées) ;

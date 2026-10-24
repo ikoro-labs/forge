@@ -14,7 +14,15 @@ from pathlib import Path
 from unittest import mock
 
 import support
-from guard_git import OWNER_KEY, description_via_gh, guarded_main, main, native_directory, refusal
+from guard_git import (
+    OWNER_KEY,
+    _gh_api_reads,
+    description_via_gh,
+    guarded_main,
+    main,
+    native_directory,
+    refusal,
+)
 
 
 def never_green(_pr: str | None) -> bool:
@@ -1196,6 +1204,82 @@ class GhApiArgumentsLikeGh(unittest.TestCase):
         ):
             with self.subTest(command=command):
                 self.assertIsNone(refused(command))
+
+
+VALUE_OPTIONS = ("-t", "--template", "-q", "--jq", "-p", "--preview", "-H", "--header", "--cache", "--hostname")
+OPERATOR_WORDS = (">", "<", ">>", "&", "<&", ">&", "<<", "&&", "|", ";", "||", "(", ")")
+GRAPHQL_MUTATION = "mutation{updateRepository(input:{repositoryId:\"x\"}){clientMutationId}}"
+
+
+class AnOperatorWordMayBeTheValueOfAnOption(unittest.TestCase):
+    """#18 : `-t '>'` et `-q 1 > out` : le mot `>` ou `1` peut être la valeur d'une option ou une
+    redirection, et shlex ne le dit pas. Le garde juge les deux lectures et refuse si l'une refuse."""
+
+    def test_a_quoted_operator_is_the_value_of_the_option_and_the_endpoint_is_kept(self) -> None:
+        for option in VALUE_OPTIONS:
+            for operator in OPERATOR_WORDS:
+                command = f"gh api -X PUT {option} '{operator}' {COLLABORATOR}"
+                with self.subTest(command=command):
+                    self.assertIn(OWNER_REFUSAL, refused(command) or "")
+                attached = f"gh api -X PUT {option}={operator!r} {COLLABORATOR}"
+                with self.subTest(command=attached):
+                    self.assertIn(OWNER_REFUSAL, refused(attached) or "")
+
+    def test_a_quoted_operator_does_not_hide_graphql(self) -> None:
+        for option in VALUE_OPTIONS:
+            for operator in OPERATOR_WORDS:
+                command = f"gh api {option} '{operator}' graphql -f query='{GRAPHQL_MUTATION}'"
+                with self.subTest(command=command):
+                    self.assertIn("mutation", refused(command) or "")
+
+    def test_a_number_after_an_option_is_its_value_not_a_descriptor(self) -> None:
+        for option in VALUE_OPTIONS:
+            for command in (
+                f"gh api {option} 1 > /dev/null -X PUT {COLLABORATOR}",
+                f"gh api {option} 1 >> /dev/null -X PUT {COLLABORATOR}",
+                f"gh api {option} 2 >&1 -X PUT {COLLABORATOR}",
+                f"gh api {option} 1 < /dev/null -X PUT {COLLABORATOR}",
+            ):
+                with self.subTest(command=command):
+                    self.assertIn(OWNER_REFUSAL, refused(command) or "")
+
+    def test_a_shell_operator_in_quotes_does_not_split_the_command(self) -> None:
+        for operator in (";", "&", "|", "&&", "||", "(", ")"):
+            command = f"gh api -X PUT -H '{operator}' {COLLABORATOR}"
+            with self.subTest(operator=operator):
+                self.assertIn(OWNER_REFUSAL, refused(command) or "")
+        self.assertIn(OWNER_REFUSAL, refused(f"gh api -X PUT -H \\; {COLLABORATOR}") or "")
+
+    def test_real_redirections_are_read_as_before(self) -> None:
+        for command in (
+            f"gh api -X PUT 2>&1 {COLLABORATOR}",
+            f"gh api -X PUT {COLLABORATOR} -q .name > out.json 2>&1",
+            f"gh api -q .name -X PUT {COLLABORATOR} 2>/dev/null",
+            f"gh api graphql --input - < m.json 2>/dev/null",
+        ):
+            with self.subTest(command=command):
+                self.assertIsNotNone(
+                    refusal(command, "feat/x", always_green, "/w", read_text=files({"/w/m.json": MUTATION_JSON}))
+                )
+        for command in (
+            f"gh api {COLLABORATOR} -q .name > out.json 2>&1",
+            f"gh api -q .name {COLLABORATOR} 2>/dev/null",
+            f"gh api -H 'Accept: x' {COLLABORATOR} >> out.json",
+            f"gh api -t '{{{{.name}}}}' {COLLABORATOR} > out.json",
+            f"gh api {COLLABORATOR} --jq 1 > out.json",
+        ):
+            with self.subTest(command=command):
+                self.assertIsNone(refused(command))
+
+    def test_readonly_reads_every_reading(self) -> None:
+        self.assertFalse(_gh_api_reads(["-X", "PUT", "-t", ">", COLLABORATOR]))
+        self.assertFalse(_gh_api_reads(["-q", "1", ">", "/dev/null", "-X", "PUT", COLLABORATOR]))
+        self.assertTrue(_gh_api_reads([COLLABORATOR, ">", "out.json"]))
+        self.assertTrue(_gh_api_reads(["-q", ".name", COLLABORATOR, "2", ">&", "1"]))
+
+    def test_too_many_operator_words_are_refused_not_guessed(self) -> None:
+        command = f"gh api {COLLABORATOR}" + " > a" * 6
+        self.assertIn("trop de redirections", refused(command) or "")
 
 
 if __name__ == "__main__":

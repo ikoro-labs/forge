@@ -88,9 +88,44 @@ def without_heredoc_bodies(command: str) -> str:
     return split_heredocs(command)[0]
 
 
+# shlex hands over a quoted `'&'` and a bare `&` as the same token. The shell characters are
+# swapped for private-use ones where they are quoted or escaped, then swapped back in each word:
+# `-H '|'` is the value of an option, not a pipe.
+_SHELL_CHARACTERS = ";&|()<>"
+_MASK = str.maketrans({char: chr(0xE000 + index) for index, char in enumerate(_SHELL_CHARACTERS)})
+_UNMASK = str.maketrans({chr(0xE000 + index): char for index, char in enumerate(_SHELL_CHARACTERS)})
+
+
+def _mask_quoted(text: str) -> str:
+    """`text` with the shell characters that are quoted or escaped replaced by private-use ones."""
+    out: list[str] = []
+    quote = ""
+    index = 0
+    while index < len(text):
+        char = text[index]
+        if quote == "'":
+            quote = "" if char == "'" else quote
+            out.append(char if char == "'" else char.translate(_MASK))
+        elif char == "\\" and index + 1 < len(text):
+            index += 1
+            following = text[index]
+            masked = following.translate(_MASK)
+            if quote == '"' or masked == following:
+                out.append(char)  # shlex keeps the backslash in double quotes, and before a letter
+            out.append(masked)
+        elif quote == '"':
+            quote = "" if char == '"' else quote
+            out.append(char if char == '"' else char.translate(_MASK))
+        else:
+            quote = char if char in "'\"" else ""
+            out.append(char)
+        index += 1
+    return "".join(out)
+
+
 def _commands(command: str) -> list[list[str] | str]:
     """Simple commands as their words, with `(` and `)` kept as markers of a subshell."""
-    lexer = shlex.shlex(without_heredoc_bodies(command), posix=True, punctuation_chars=True)
+    lexer = shlex.shlex(_mask_quoted(without_heredoc_bodies(command)), posix=True, punctuation_chars=True)
     lexer.whitespace_split = True
     lexer.whitespace = " \t\r\n"
     result: list[list[str] | str] = []
@@ -103,7 +138,7 @@ def _commands(command: str) -> list[list[str] | str]:
                     result.append(token)
                 current = []
             else:
-                current.append(token)
+                current.append(token.translate(_UNMASK))
         result.append(current)
     except ValueError:
         # Unbalanced quotes: fall back to plain words rather than let the command through.
@@ -403,32 +438,60 @@ class ApiCall(NamedTuple):
     options: list[tuple[str, str]]  # `(name, value)` of each field and `--input`, as typed
 
 
-def without_redirections(words: list[str]) -> tuple[list[str], list[tuple[str, str]]]:
-    """The words without the redirections, and the redirections as `(operator, target)`.
+# More operator-like words than this in a `gh api` call and the guard refuses: each one doubles or
+# triples the readings to judge.
+MOST_OPERATOR_WORDS = 5
+Reading = tuple[list[str], list[tuple[str, str]]]
 
-    The shell removes them before gh sees its arguments: `gh api > out -X PUT x` has no `out`.
-    A bare number in front of an operator is a file descriptor (`2>/dev/null`).
+
+def _awaits_value(word: str) -> bool:
+    """Whether `word` is an option of `gh api` that takes the next word as its value."""
+    if word.startswith("--"):
+        return "=" not in word and word[2:] in API_LONG_VALUE_OPTIONS
+    if word.startswith("-") and len(word) > 1:
+        for position, letter in enumerate(word[1:], start=1):
+            if letter in API_SHORT_VALUE_OPTIONS:
+                return position == len(word) - 1
+    return False
+
+
+def api_readings(words: list[str]) -> list[Reading] | None:
+    """Every way the shell may have split `words` into arguments and redirections, or None.
+
+    shlex hands over `'>'` and `>` alike, and `1 >` as it does `1>`: a word made of `<`, `>` or
+    `&` is a redirection (which takes the next word as its target, and a bare number before it as
+    its descriptor) or the value of an option (`-t '>'`, `-q 1 > out`): that is a reading only
+    after an option that awaits a value. The words cannot tell, so a reading is made of each
+    choice, as `(arguments, [(operator, target)])`. The caller judges them all and refuses when
+    one refuses. None when there are too many to judge.
     """
-    kept: list[str] = []
-    redirections: list[tuple[str, str]] = []
-    index = 0
-    while index < len(words):
+    if sum(1 for word in words if REDIRECTION.match(word)) > MOST_OPERATOR_WORDS:
+        return None
+    readings: list[Reading] = []
+
+    def walk(index: int, kept: list[str], redirections: list[tuple[str, str]]) -> None:
+        if index >= len(words):
+            readings.append((kept, redirections))
+            return
         word = words[index]
+        if not REDIRECTION.match(word) or (kept and _awaits_value(kept[-1])):
+            walk(index + 1, [*kept, word], redirections)  # an argument, or the value of an option
         if REDIRECTION.match(word):
             target = words[index + 1] if index + 1 < len(words) else ""
-            redirections.append((word, target))
-            if kept and kept[-1].isdigit():
-                kept.pop()
-            index += 2
-            continue
-        kept.append(word)
-        index += 1
-    return kept, redirections
+            redirected = [*redirections, (word, target)]
+            walk(index + 2, kept, redirected)
+            if kept and kept[-1].isdigit():  # `2>/dev/null`: the number is the descriptor
+                walk(index + 2, kept[:-1], redirected)
+
+    walk(0, [], [])
+    return readings
 
 
-def parse_api(args: list[str]) -> ApiCall:
-    """Split the words after `api` the way gh does: the one place that knows its options."""
-    words, _ = without_redirections(args)
+def parse_api(words: list[str]) -> ApiCall:
+    """Split the arguments of `gh api` (redirections removed) the way gh does.
+
+    The one place that knows its options.
+    """
     method: str | None = None
     endpoint: str | None = None
     options: list[tuple[str, str]] = []
@@ -477,12 +540,18 @@ def parse_api(args: list[str]) -> ApiCall:
 
 
 def _gh_api_reads(args: list[str]) -> bool:
-    """A `gh api` call that is a read: an explicit GET or HEAD, or no method, field or `--input`.
+    """A `gh api` call that is a read in every reading of its words (see `api_readings`)."""
+    readings = api_readings(args)
+    return readings is not None and all(_reads(words) for words, _ in readings)
+
+
+def _reads(words: list[str]) -> bool:
+    """An explicit GET or HEAD, or no method, field or `--input`.
 
     An explicit `-X GET` keeps its fields as query parameters, so it is a read with `-f` too;
     without a method, a field or a body makes gh send a POST.
     """
-    call = parse_api(args)
+    call = parse_api(words)
     if call.method is not None:
         return call.method.upper() in ("GET", "HEAD")
     return not call.options
@@ -506,8 +575,8 @@ OWNER_MUTATION = re.compile(
 )
 
 
-def _api_method(args: list[str]) -> str:
-    method = parse_api(args).method
+def _api_method(words: list[str]) -> str:
+    method = parse_api(words).method
     return method.upper() if method is not None else "POST"
 
 
@@ -517,16 +586,17 @@ GRAPHQL_MUTATION_GESTURE = (
 _VARIABLE = re.compile(r"\$\{?\w+\}?")
 
 
-def _graphql_inputs(args: list[str]) -> list[tuple[str, str]]:
+def _graphql_inputs(words: list[str]) -> list[tuple[str, str]]:
     """What a `gh api graphql` call is fed: `(kind, value)` per `--input` and per field.
 
     The kind is `input` for `--input <value>` and `query` for a field named `query`; the value of
     any other field cannot hold the query, except `name=@file`, which reads one.
     """
     inputs: list[tuple[str, str]] = []
-    for name, value in parse_api(args).options:
+    for name, value in parse_api(words).options:
         if name == "input":
-            inputs.append(("input", value))
+            if value:  # `--input` with nothing after it: gh fails, it opens nothing
+                inputs.append(("input", value))
             continue
         key, _, content = value.partition("=")
         if content.startswith("@"):
@@ -537,7 +607,7 @@ def _graphql_inputs(args: list[str]) -> list[tuple[str, str]]:
 
 
 def _standard_input_text(
-    args: list[str], here: str | None, bodies: str, read_text: Callable[[str], str | None]
+    redirections: list[tuple[str, str]], here: str | None, bodies: str, read_text: Callable[[str], str | None]
 ) -> str | None:
     """What the shell feeds to the standard input of this very command, or None when unknown.
 
@@ -546,7 +616,7 @@ def _standard_input_text(
     here-string (`<<<`) are not known.
     """
     last = next(
-        (item for item in reversed(without_redirections(args)[1]) if item[0] in ("<", "<<", "<<-")),
+        (item for item in reversed(redirections) if item[0] in ("<", "<<", "<<-")),
         None,
     )
     if last is None:
@@ -561,7 +631,12 @@ def _standard_input_text(
 
 
 def _graphql_gesture(
-    args: list[str], here: str | None, bodies: str, read_text: Callable[[str], str | None]
+    args: list[str],
+    words: list[str],
+    redirections: list[tuple[str, str]],
+    here: str | None,
+    bodies: str,
+    read_text: Callable[[str], str | None],
 ) -> str | None:
     """The owner gesture of a `gh api graphql` call: a mutation of the owner, read wherever it is.
 
@@ -572,7 +647,7 @@ def _graphql_gesture(
     """
     texts = [" ".join(args)]
     unread = ""
-    for kind, value in _graphql_inputs(args):
+    for kind, value in _graphql_inputs(words):
         if kind == "query" and not (
             "`" in value or "$(" in value or _VARIABLE.fullmatch(value.strip())
         ):
@@ -582,7 +657,7 @@ def _graphql_gesture(
         elif kind == "query":
             unread = unread or "la requête vient d'une substitution ou d'une variable du shell"
         elif value == "-" or is_standard_input_path(value, here):
-            text = _standard_input_text(args, here, bodies, read_text)
+            text = _standard_input_text(redirections, here, bodies, read_text)
             if text is None:
                 unread = unread or "la requête vient de l'entrée standard"
             else:
@@ -607,18 +682,39 @@ def _api_gesture(
     bodies: str = "",
     read_text: Callable[[str], str | None] = read_text_or_none,
 ) -> str | None:
-    """The owner gesture of a `gh api` call (the words after `api`), or None."""
-    endpoint = parse_api(args).endpoint.split("?", 1)[0].strip("/")
+    """The owner gesture of a `gh api` call (the words after `api`), or None.
+
+    Judged in every reading of its words (see `api_readings`): the first that refuses wins.
+    """
+    readings = api_readings(args)
+    if readings is None:
+        return "gh api (trop de redirections pour être lues ; refusée par précaution)"
+    for words, redirections in readings:
+        gesture = _api_gesture_of(args, words, redirections, here, bodies, read_text)
+        if gesture is not None:
+            return gesture
+    return None
+
+
+def _api_gesture_of(
+    args: list[str],
+    words: list[str],
+    redirections: list[tuple[str, str]],
+    here: str | None,
+    bodies: str,
+    read_text: Callable[[str], str | None],
+) -> str | None:
+    endpoint = parse_api(words).endpoint.split("?", 1)[0].strip("/")
     if endpoint.lower() == "graphql":
-        return _graphql_gesture(args, here, bodies, read_text)
-    if _gh_api_reads(args):
+        return _graphql_gesture(args, words, redirections, here, bodies, read_text)
+    if _reads(words):
         return None
     scope = OWNER_SCOPE.match(endpoint)
     if scope is not None and (
         (scope.group(1) is None and endpoint.startswith("repos/"))
         or (scope.group(1) and OWNER_ENDPOINT.match(scope.group(1)))
     ):
-        return f"gh api {_api_method(args)} {endpoint}"
+        return f"gh api {_api_method(words)} {endpoint}"
     return None
 
 
