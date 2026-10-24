@@ -115,18 +115,45 @@ dit que l'humain les fait et que l'agent les liste en fin de compte rendu. La li
   secrets et variables d'Actions, ses permissions, les clés de déploiement, les webhooks, les
   environnements, le transfert, et sur le dépôt lui-même (`PATCH`, `DELETE`) ;
 - les mutations GraphQL de protection de branche, de ruleset, de collaborateur et de dépôt, mais
-  pas les autres : le plugin s'en sert pour les sous-issues ;
+  pas les autres : le plugin s'en sert pour les sous-issues. La requête est lue dans les arguments,
+  dans un heredoc de la commande (`--input - <<EOF`, `query="$(cat <<EOF ...)"`) et dans le fichier
+  que nomment `--input` ou `-F query=@fichier` quand il est lisible. Une forme qui vise `graphql`
+  et ne se lit pas (fichier absent, entrée standard d'un tube, substitution `$(...)` ou variable du
+  shell pour la requête) est refusée par précaution, même si ce n'était pas une mutation ;
 - `gh secret` et `gh variable` (`set`, `delete`), `gh repo` (`delete`, `rename`, `archive`,
-  `edit --visibility`, `deploy-key add` et `delete`) ;
-- `config.sh`, `config.cmd` et `svc.sh` d'un runner, aussi derrière `sudo`, `bash`, `sh` ou
-  `cmd /c` (`svc.sh status` reste une lecture).
+  `edit --visibility`, `deploy-key add` et `delete`, les options de `gh` avant l'action étant
+  retirées) ;
+- `config.sh`, `config.cmd` et `svc.sh` d'un runner, aussi derrière `sudo` (options collées
+  comprises), `env`, `nohup`, `bash`, `sh` ou `cmd /c`, et dans un heredoc envoyé à un shell
+  (`svc.sh status` reste une lecture). Un script de ce nom n'est celui d'un runner que dans un
+  dossier qui porte `run.sh` ou `run.cmd` et `bin/Runner.Listener`, ou appelé avec `--url`,
+  `--token`, `install`, `uninstall`, `start`, `stop` ou `remove` : un `scripts/config.sh` de projet
+  passe.
 
-La lecture passe toujours. Un projet ajoute ses gestes avec la clé `owner-gesture` de
-`docs/agents/usine.md`, une ligne `<préfixe de commande> | <raison>` chacune ; sans la clé, la liste
-intégrée s'applique seule. Ce comportement resserre celui des projets qui gardaient ces gestes dans
-leurs propres hooks : ceux-ci peuvent rester, ils tournent à côté. Cette garde protège d'un
-accident, pas d'une intention : un wrapper (`env gh`, `/usr/bin/gh`) et une mutation GraphQL lue
-dans un fichier (`--input`, `query=@fichier`) ne sont pas lus.
+La lecture passe toujours : un `GET` ou `HEAD` explicite, avec `-f`/`-F` ou non, ou l'absence de
+méthode, de champ et de `--input` (avec un champ ou `--input`, gh envoie un `POST`). Un projet
+ajoute ses gestes avec la clé `owner-gesture` de `docs/agents/usine.md`, une ligne
+`<préfixe de commande> | <raison>` chacune ; sans la clé, la liste intégrée s'applique seule. Ce
+comportement resserre celui des projets qui gardaient ces gestes dans leurs propres hooks :
+ceux-ci peuvent rester, ils tournent à côté.
+
+Cette garde protège d'un accident, pas d'une intention. Les formes qu'elle ne lit pas :
+
+- un wrapper devant `gh` (`env gh`, `command gh`, `/usr/bin/gh`), et pour les scripts de runner un
+  wrapper autre que `sudo`, `env`, `nohup`, `bash`, `sh`, `zsh`, `dash`, `cmd /c` et PowerShell
+  (`exec ./svc.sh`, `xargs`, `ssh runner ./svc.sh start`) ;
+- une mutation GraphQL hors de `gh api graphql` (`curl` vers l'API, un script), et celle d'un
+  fichier que le garde ne peut pas lire depuis la machine où il tourne ;
+- un script de runner appelé sans argument de runner depuis un dossier qui n'en porte pas les
+  fichiers, ou dont le dossier n'est pas connu du garde (`cd "$DIR"`, `cd -`) ;
+- une commande placée sur une autre ligne que la première : les sauts de ligne ne séparent pas les
+  commandes pour le garde, hors des heredocs qu'il lit (constaté, hors du périmètre de ce
+  changement) ;
+- le contenu d'un heredoc envoyé à autre chose qu'un shell ou qu'un `gh api graphql`.
+
+Éprouvé sous Linux seulement ; sous Windows, les chemins `C:\...` et `config.cmd` sont lus par des
+tests qui ne dépendent pas du système, mais le message d'un échec avant le garde, lui, passe par
+le shell POSIX de la commande de `hooks.json` et n'a pas été essayé sous Git Bash.
 
 ## Compléter ou remplacer, sans éditer le plugin
 

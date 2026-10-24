@@ -22,17 +22,20 @@ The branch that matters is the one of the directory git acts on: `cd <dir> &&` a
 <dir>` move it, so each command is judged against the branch checked out there.
 
 Also refused, to every agent, are the gestures of the owner of the repository: a write by
-`gh api` (any method but GET and HEAD) on collaborators, invitations, branch protection,
-rulesets, runners, secrets, variables, Actions permissions, keys, webhooks, environments, a
-transfer or the repository itself; the GraphQL mutations of protection, rulesets, collaborators
-and the repository (the sub-issue mutations the plugin uses are not among them); `gh secret` and
-`gh variable` `set` and `delete`; `gh repo` `delete`, `rename`, `archive`, `edit --visibility`
-and `deploy-key add` and `delete`; the runner scripts `config.sh`, `config.cmd` and `svc.sh`,
-also behind `sudo`, `bash`, `sh` and `cmd /c`. A reading is always allowed. The refusal names the
-gesture and says it is the human's, to list at the end of the report. A project adds its own with
-the `owner-gesture` key of `docs/agents/usine.md`, one `<command prefix> | <reason>` per line;
-the built-in list holds without it. This replaces the earlier choice to leave every owner gesture
-to the project's own hooks.
+`gh api` (any method but an explicit GET or HEAD) on collaborators, invitations, branch
+protection, rulesets, runners, secrets, variables, Actions permissions, keys, webhooks,
+environments, a transfer or the repository itself; the GraphQL mutations of protection, rulesets,
+collaborators and the repository (the sub-issue mutations the plugin uses are not among them),
+read in the arguments, in the heredocs of the command and in the files `--input` and `-F
+query=@file` name, a form aimed at `graphql` that cannot be read being refused as a precaution;
+`gh secret` and `gh variable` `set` and `delete`; `gh repo` `delete`, `rename`, `archive`, `edit
+--visibility` and `deploy-key add` and `delete`; the runner scripts `config.sh`, `config.cmd` and
+`svc.sh`, only in a runner's folder or with a runner's argument, also behind `sudo`, `env`,
+`nohup`, `bash`, `sh`, `cmd /c` and a heredoc fed to a shell. A reading is always allowed. The
+refusal names the gesture and says it is the human's, to list at the end of the report. A project
+adds its own with the `owner-gesture` key of `docs/agents/usine.md`, one `<command prefix> |
+<reason>` per line; the built-in list holds without it. This replaces the earlier choice to leave
+every owner gesture to the project's own hooks.
 """
 
 from __future__ import annotations
