@@ -2,7 +2,7 @@
 
 ## Skills adaptés de mattpocock/skills
 
-Trois skills du plugin adaptent des skills du dépôt
+Quatre skills du plugin adaptent des skills du dépôt
 [mattpocock/skills](https://github.com/mattpocock/skills), à la révision fixe
 **49dd158d1076134a641b33efb035946536778336**, sous la licence MIT reproduite plus bas :
 
@@ -10,9 +10,11 @@ Trois skills du plugin adaptent des skills du dépôt
   `DESIGN-IT-TWICE.md`, résumés dans le skill ;
 - `skills/domain-modeling` adapte `skills/engineering/domain-modeling` ;
 - `skills/improve-codebase-architecture` adapte `skills/engineering/improve-codebase-architecture`,
-  avec `HTML-REPORT.md`.
+  avec `HTML-REPORT.md` ;
+- `skills/tdd` adapte `skills/engineering/tdd` de la version 1.3.1 de `mattpocock-skills`, avec `tests.md` et `mocking.md`, réécrits en français
+  dans `references/` ; son texte amont n'est pas copié.
 
-Le texte amont de chacun est conservé dans son `references/upstream.md`, tel quel. Les adaptations
+Le texte amont de chacun, sauf celui de `tdd`, est conservé dans son `references/upstream.md`, tel quel. Les adaptations
 traduisent le vocabulaire en français, répartissent les contrats entre les rôles de l'usine
 (design, `forge:coder`, `forge:qc-conf`) et lisent la configuration du projet
 (`docs/agents/usine.md`). Elles ne sont ni une installation intacte des skills amont, ni une

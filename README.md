@@ -50,6 +50,7 @@ ne fusionne une PR rouge, ou ne sort de son rôle.
 | `/forge:feature-build`, `/forge:qc` | coder les tickets, relire et fusionner les PR |
 | `/forge:feature-verify`, `-close`, `-status` | la recette, la clôture, et où en est chaque feature |
 | `/forge:audit-jetons` | compter les jetons dépensés par chaque rôle |
+| `/forge:tdd` | ce qu'est un bon test, les coutures, les anti-patterns, la boucle et les mocks |
 | `/forge:codebase-design`, `/forge:domain-modeling`, `/forge:improve-codebase-architecture` | le vocabulaire de conception que partagent les rôles |
 
 <a id="ce-que-les-hooks-gardent"></a>
