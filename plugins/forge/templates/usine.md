@@ -133,6 +133,28 @@ Les commandes qui rejouent la CI en local, une par ligne.
 - `ci-replay` : `<uv run pytest>`
 - `ci-replay` : `<pnpm -r test>`
 
+Le rejeu des tests d'une PR sur sa base, par `forge:qc-gate` : les fichiers de test que la PR ajoute
+ou change sont posés dans une copie de la base, puis rejoués, et chacun doit y échouer. Un test
+rouge sur la base prouve le changement ; un qui y passe déjà est rendu à `forge:qc-conf`. Deux clés,
+toutes deux nécessaires : sans l'une, la sonde se rend « sans objet (clé `test-path` absente) » ou
+« sans objet (clé `red-replay` absente) ».
+
+`test-path` : un préfixe de chemin des fichiers de test, une ligne par préfixe.
+
+- `test-path` : `<tests/>`
+- `test-path` : `<apps/web/src/__tests__/>`
+
+`red-replay` : la commande qui lance la suite dans la copie, une seule. `{file}` y est remplacé par le
+fichier de test à rejouer (son chemin depuis la racine), `{name}` par son nom de fichier, tous deux
+protégés par des guillemets ; l'un des deux au moins est obligatoire. Un fichier est rejoué en entier,
+et il est rendu quand la commande sort à 0 sur la base. Chaque commande, celles de `install`
+comprises, tourne sous une limite de mémoire (2000 Mo) et un délai (300 s) que le script pose lui-même,
+parce qu'elle exécute du code de test contre un code qui ne l'attend pas. Ces bornes sont éprouvées sous
+Linux seulement ; sous Windows elles reposent sur un objet de tâche (job object), écrit d'après la
+documentation Win32 et jamais vu hors de la CI.
+
+- `red-replay` : `<uv run pytest {file}>`
+
 Les noms des checks obligatoires de la branche protégée, un par ligne, comparés par
 `forge:qc-gate` aux check-runs de la PR et à la protection en place.
 
