@@ -156,7 +156,8 @@ et il est rendu quand la commande sort à 0 sur la base. Chaque commande, celles
 comprises, tourne sous une limite de mémoire (2000 Mo) et un délai (300 s) que le script pose lui-même,
 parce qu'elle exécute du code de test contre un code qui ne l'attend pas. Ces bornes sont éprouvées sous
 Linux seulement ; sous Windows elles reposent sur un objet de tâche (job object), écrit d'après la
-documentation Win32 et jamais vu hors de la CI.
+documentation Win32, jamais vu hors de la CI, où sa première version a échoué (borne non tenue) ; la
+version corrigée n'est pas encore vue verte.
 
 - `red-replay` : `<uv run pytest {file}>`
 

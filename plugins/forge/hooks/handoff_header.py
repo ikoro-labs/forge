@@ -279,27 +279,71 @@ def parent_pid(pid: int) -> int | None:
         kernel32.CloseHandle(snapshot)
 
 
-def group_options() -> dict[str, object]:
+def group_options(suspended: bool = False) -> dict[str, object]:
     """`subprocess.Popen` options that make a command the leader of its own process group.
 
     Linux: a new session, so `os.killpg` reaches the command and what it started. Windows: the
-    group is a job object, see `ProcessGroup`; nothing to ask of Popen. Elsewhere: nothing.
+    group is a job object, see `ProcessGroup`; with `suspended` the command is created suspended,
+    so that nothing it starts can run before the job holds it (`ProcessGroup.start` resumes it).
+    Elsewhere: nothing.
     """
-    return {"start_new_session": True} if LINUX else {}
+    if LINUX:
+        return {"start_new_session": True}
+    if WINDOWS and suspended:
+        return {"creationflags": 0x4}  # CREATE_SUSPENDED
+    return {}
+
+
+def _limit_job(job, memory_mb: int) -> bool:
+    """Cap the memory of each process of the job and kill what is left when the job closes."""
+    import ctypes
+    from ctypes import wintypes
+
+    class Basic(ctypes.Structure):
+        _fields_ = [
+            ("PerProcessUserTimeLimit", ctypes.c_int64), ("PerJobUserTimeLimit", ctypes.c_int64),
+            ("LimitFlags", wintypes.DWORD), ("MinimumWorkingSetSize", ctypes.c_size_t),
+            ("MaximumWorkingSetSize", ctypes.c_size_t), ("ActiveProcessLimit", wintypes.DWORD),
+            ("Affinity", ctypes.c_size_t), ("PriorityClass", wintypes.DWORD), ("SchedulingClass", wintypes.DWORD),
+        ]
+
+    class Counters(ctypes.Structure):
+        _fields_ = [(name, ctypes.c_uint64) for name in (
+            "ReadOperationCount", "WriteOperationCount", "OtherOperationCount",
+            "ReadTransferCount", "WriteTransferCount", "OtherTransferCount")]
+
+    class Extended(ctypes.Structure):  # JOBOBJECT_EXTENDED_LIMIT_INFORMATION
+        _fields_ = [
+            ("BasicLimitInformation", Basic), ("IoInfo", Counters), ("ProcessMemoryLimit", ctypes.c_size_t),
+            ("JobMemoryLimit", ctypes.c_size_t), ("PeakProcessMemoryUsed", ctypes.c_size_t),
+            ("PeakJobMemoryUsed", ctypes.c_size_t),
+        ]
+
+    kernel32 = _win32()[2]
+    kernel32.SetInformationJobObject.argtypes = (wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD)
+    info = Extended()
+    # JOB_OBJECT_LIMIT_PROCESS_MEMORY | JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+    info.BasicLimitInformation.LimitFlags = 0x0100 | 0x2000
+    info.ProcessMemoryLimit = memory_mb * 1024 * 1024
+    return bool(kernel32.SetInformationJobObject(job, 9, ctypes.byref(info), ctypes.sizeof(info)))
 
 
 class ProcessGroup:
     """A started command and everything it starts, killed together.
 
     Linux: the process group `group_options` made. Windows: a job object the command is assigned
-    to right after it starts; a child it spawned in that instant escapes, a window the API leaves
-    open without a suspended start. A job nested in the job of the session needs Windows 8 or
-    later. Anything the platform refuses leaves the command alone to be killed, the prudent side.
+    to right after it starts. A child it spawned in that instant escapes, a window the API leaves
+    open unless the command was created suspended (`group_options(suspended=True)`): `start`
+    then resumes it only once the job holds it. With `memory_mb`, the job caps the memory of each
+    of its processes and kills what is left when it closes; a limit the platform refuses leaves
+    `limited` false. A job nested in the job of the session needs Windows 8 or later. Anything the
+    platform refuses leaves the command alone to be killed, the prudent side.
     """
 
-    def __init__(self, process: subprocess.Popen) -> None:
+    def __init__(self, process: subprocess.Popen, memory_mb: int | None = None, suspended: bool = False) -> None:
         self.process = process
         self.job = None
+        self.suspended = suspended and WINDOWS
         if WINDOWS:
             try:
                 _, _, kernel32 = _win32()
@@ -309,12 +353,32 @@ class ProcessGroup:
                     return bool(kernel32.AssignProcessToJobObject(job, handle))
 
                 # 0x0101: PROCESS_SET_QUOTA | PROCESS_TERMINATE, what the assignment asks for.
-                if job and _win_process(process.pid, assign, 0x0101):
+                if job and _win_process(process.pid, assign, 0x0101) and (
+                    memory_mb is None or _limit_job(job, memory_mb)
+                ):
                     self.job = job
                 elif job:
                     kernel32.CloseHandle(job)
             except (OSError, AttributeError, ValueError):
                 self.job = None
+
+    @property
+    def limited(self) -> bool:
+        """The command is in its job, with the memory limit asked for. Always true off Windows."""
+        return bool(self.job) if WINDOWS else True
+
+    def start(self) -> None:
+        """Let a command created suspended run. Windows only; a command not held by a job is killed."""
+        if not self.suspended:
+            return
+        self.suspended = False
+        if not self.job:
+            self.kill()
+            return
+        ctypes = _win32()[0]
+        ntdll = ctypes.WinDLL("ntdll")
+        ntdll.NtResumeProcess.argtypes = (ctypes.c_void_p,)
+        ntdll.NtResumeProcess(int(self.process._handle))  # type: ignore[attr-defined]  # Popen's own handle
 
     def kill(self) -> None:
         """Kill the command and its descendants, then reap the command."""
@@ -330,6 +394,7 @@ class ProcessGroup:
         self.process.wait()
 
     def close(self) -> None:
+        """Release the job; what a limited job still holds dies with it."""
         if WINDOWS and self.job:
             _win32()[2].CloseHandle(self.job)
             self.job = None

@@ -1,5 +1,6 @@
 """Ticket #43: `base_replay.py` replays the tests a PR adds on a copy of the base, where each must fail."""
 
+import io
 import os
 import shutil
 import subprocess
@@ -7,6 +8,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import support
 
@@ -120,6 +122,27 @@ class RenderedWhenPassingOnTheBase(unittest.TestCase):
         done = repo.replay(base, head, usine())
         self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
         self.assertIn("aucun fichier de test ajouté ou changé", done.stdout)
+
+
+class CleanupFailure(unittest.TestCase):
+    def test_a_folder_that_cannot_be_deleted_does_not_lose_the_rows(self) -> None:
+        """No F-NNNN: ticket #43, critère 4: un nettoyage qui échoue (WinError 32) ne perd pas les lignes du rejeu."""
+        repo = Repo(self)
+        base = repo.commit({"code_under_test.py": CODE_V1, "tests/__init__.py": ""})
+        head = repo.commit({"tests/test_new.py": PASSING})
+        (repo.root / "usine-base.md").write_text(usine(), encoding="utf-8")
+        sys.path.insert(0, str(SCRIPT.parent))
+        self.addCleanup(sys.path.remove, str(SCRIPT.parent))
+        import base_replay
+
+        previous = Path.cwd()
+        os.chdir(repo.work)
+        self.addCleanup(os.chdir, previous)
+        out = io.StringIO()
+        with mock.patch("shutil.rmtree", side_effect=OSError("still held")), mock.patch("sys.stdout", out):
+            code = base_replay.main(["--base", base, "--head", head, "--usine", str(repo.root / "usine-base.md")])
+        self.assertEqual(code, 1, out.getvalue())
+        self.assertRegex(out.getvalue(), r"(?m)^PASSES\ttests/test_new\.py\t")
 
 
 class WithoutItsKeys(unittest.TestCase):
