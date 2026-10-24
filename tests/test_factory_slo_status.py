@@ -108,6 +108,15 @@ class Lines(unittest.TestCase):
                 parse_slo([line])
             self.assertIn(line, str(caught.exception))
 
+    def test_a_ratio_target_beyond_100_percent_fails_naming_the_line(self) -> None:
+        """Revue de #79, reportée en #58 : `>= 120 %` (ou `>= 800 %` pour 80,0) n'est pas rendu `tenu` en silence."""
+        for line in ("accept-round-1 | >= 120 % | 30", "accept-round-1 | >= 800 % | 30", "escaped-defects | <= 150 % | 30"):
+            with self.assertRaises(SloError, msg=line) as caught:
+                parse_slo([line])
+            self.assertIn(line, str(caught.exception))
+            self.assertIn("100", str(caught.exception))
+        self.assertEqual(one("main-green | >= 100 % | 30").target, 100.0)
+
     def test_an_unknown_sli_fails_naming_the_line(self) -> None:
         with self.assertRaises(SloError) as caught:
             parse_slo(["bonheur | >= 80 % | 30"])
