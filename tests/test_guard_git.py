@@ -529,6 +529,60 @@ class OwnerGestures(unittest.TestCase):
                 with self.subTest(command=command):
                     self.assertIn(OWNER_REFUSAL, refused_in(command, cwd) or "")
 
+    def test_gh_global_options_before_deploy_key_do_not_hide_its_action(self) -> None:
+        for command in (
+            "gh repo deploy-key -R o/r add key.pub",
+            "gh repo deploy-key --repo=o/r delete 5",
+            "gh -R o/r repo deploy-key -R o/r add key.pub",
+        ):
+            with self.subTest(command=command):
+                self.assertIn("deploy-key", refused(command) or "")
+        for command in ("gh repo deploy-key -R o/r list", "gh repo deploy-key list"):
+            with self.subTest(command=command):
+                self.assertIsNone(refused(command))
+
+    def test_sudo_with_a_joined_option_env_and_nohup_do_not_hide_a_runner_script(self) -> None:
+        for command in (
+            "sudo -iu runner ./svc.sh install",
+            "sudo -u runner -H ./svc.sh start",
+            "sudo -urunner ./svc.sh start",
+            "env ./config.sh --token T",
+            "env -i HOME=/x ./svc.sh stop",
+            "env -u FOO ./svc.sh stop",
+            "nohup ./svc.sh start",
+            "nohup sudo ./svc.sh start",
+            "nohup env A=1 bash ./config.sh --url u",
+            "sudo env PATH=/bin ./svc.sh uninstall",
+        ):
+            with self.subTest(command=command):
+                self.assertIn(OWNER_REFUSAL, refused(command) or "")
+        for command in (
+            "sudo -iu runner ./svc.sh status",
+            "env FOO=1 ./build.sh",
+            "nohup ./run.sh",
+            "sudo -iu runner ls",
+        ):
+            with self.subTest(command=command):
+                self.assertIsNone(refused(command))
+
+    def test_a_heredoc_fed_to_a_shell_is_read_as_the_script_it_is(self) -> None:
+        for command in (
+            "bash <<'EOF'\n./config.sh --url u --token T\nEOF",
+            "sudo bash <<EOF\ncd /srv/runner && ./svc.sh install\nEOF",
+            "sh -s <<'EOF'\ngh secret set TOKEN\nEOF",
+            "bash <<'EOF' && echo done\n./svc.sh start\nEOF",
+        ):
+            with self.subTest(command=command):
+                self.assertIn(OWNER_REFUSAL, refused(command) or "")
+        for command in (
+            "bash <<'EOF'\necho hello\nEOF",
+            "cat <<'EOF'\n./config.sh --token T\nEOF",
+            "git commit -m \"$(cat <<'EOF'\nfix: gh secret set\nEOF\n)\"",
+            "bash scripts/build.sh <<'EOF'\nyes\nEOF",
+        ):
+            with self.subTest(command=command):
+                self.assertIsNone(refused(command))
+
     def test_a_gesture_the_project_declares_is_refused_with_its_reason(self) -> None:
         lines = [OWNER_KEY_VALUE, "uv run python -m scripts.release | la publication est humaine"]
         for command in (

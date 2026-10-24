@@ -59,18 +59,26 @@ OPERATORS = {";", "&&", "||", "|", "&", "(", ")"}
 BRANCH_SWITCH = ({"checkout", "-b"}, {"checkout", "-B"}, {"switch", "-c"}, {"switch", "-C"})
 
 
-def without_heredoc_bodies(command: str) -> str:
+def split_heredocs(command: str) -> tuple[str, str]:
+    """The command without its heredoc bodies, and those bodies, one after the other."""
     kept: list[str] = []
+    bodies: list[str] = []
     delimiter: str | None = None
     for line in command.splitlines():
         if delimiter is not None:
             if line.strip() == delimiter:
                 delimiter = None
+            else:
+                bodies.append(line)
             continue
         kept.append(line)
         if match := HEREDOC.search(line):
             delimiter = match.group(2)
-    return "\n".join(kept)
+    return "\n".join(kept), "\n".join(bodies)
+
+
+def without_heredoc_bodies(command: str) -> str:
+    return split_heredocs(command)[0]
 
 
 def _commands(command: str) -> list[list[str] | str]:
@@ -410,7 +418,8 @@ def _gh_gesture(words: list[str]) -> str | None:
         return None
     group, verb, rest = act
     if (group, verb) == ("repo", "deploy-key"):
-        action = next((word for word in rest if not word.startswith("-")), "")
+        index = _skip_options(rest, 0)
+        action = rest[index] if index < len(rest) else ""
         return f"gh repo deploy-key {action}" if action in ("add", "delete") else None
     if (group, verb) in OWNER_GH_GESTURES:
         return f"gh {group} {verb}"
@@ -428,8 +437,39 @@ RUNNER_SCRIPT = re.compile(r"(?:^|[/\\])(config\.(?:sh|cmd)|svc\.sh)$", re.IGNOR
 # with their separators gone: a word that starts with `.` or a drive letter still names the script.
 MANGLED_RUNNER_SCRIPT = re.compile(r"^(?:\.|[A-Za-z]:).*?(config\.(?:sh|cmd)|svc\.sh)$", re.IGNORECASE)
 SHELLS = frozenset({"bash", "sh", "zsh", "dash"})
-WRAPPERS = SHELLS | {"sudo", "cmd", "cmd.exe", "powershell", "pwsh", "powershell.exe", "pwsh.exe"}
-SUDO_OPTIONS_WITH_VALUE = frozenset({"-u", "-g", "-h", "-p", "-C", "-D", "-R", "-T", "-U"})
+WRAPPERS = SHELLS | {"sudo", "env", "nohup", "cmd", "cmd.exe", "powershell", "pwsh"} | {
+    "powershell.exe",
+    "pwsh.exe",
+}
+# The letters of sudo's short options that take a value, alone (`-u runner`), joined to other
+# letters (`-iu runner`) or followed by it (`-urunner`).
+SUDO_VALUE_LETTERS = frozenset("ughpCDRTU")
+ENV_OPTIONS_WITH_VALUE = frozenset({"-u", "-C", "-S", "--unset", "--chdir", "--split-string"})
+
+
+def _option_width(wrapper: str, option: str) -> int:
+    """How many words an option of a wrapper takes: itself, and its value when it is the next word."""
+    if wrapper == "env":
+        return 2 if option in ENV_OPTIONS_WITH_VALUE else 1
+    if wrapper == "sudo" and not option.startswith("--"):
+        for position, letter in enumerate(option[1:], start=1):
+            if letter in SUDO_VALUE_LETTERS:
+                return 2 if position == len(option) - 1 else 1
+    return 1
+
+
+def _skip_wrapper_options(wrapper: str, words: list[str], index: int) -> int:
+    while index < len(words):
+        word = words[index]
+        if wrapper == "env" and "=" in word and not word.startswith("-"):
+            index += 1  # an assignment `env` sets for the command
+        elif word.startswith("-"):
+            index += _option_width(wrapper, word)
+        elif wrapper.startswith("cmd") and word.lower() == "/c":
+            index += 1
+        else:
+            break
+    return index
 
 
 # What only a runner's script is called with, and the files that make a folder a runner's.
@@ -458,7 +498,7 @@ def _is_runner_call(word: str, arguments: list[str], here: str | None) -> bool:
     return is_runner_directory(folder)
 
 
-def _runner_gesture(words: list[str], here: str | None = None) -> str | None:
+def _runner_gesture(words: list[str], here: str | None = None, bodies: str = "") -> str | None:
     index = 0
     while index < len(words):
         word = words[index]
@@ -467,11 +507,9 @@ def _runner_gesture(words: list[str], here: str | None = None) -> str | None:
                 position = words.index("-c", index + 1) + 1
                 if position < len(words):
                     return _commands_gesture(words[position], here)
-            index += 1
-            while index < len(words) and (
-                words[index].startswith("-") or (word.startswith("cmd") and words[index] == "/c")
-            ):
-                index += 2 if word == "sudo" and words[index] in SUDO_OPTIONS_WITH_VALUE else 1
+            index = _skip_wrapper_options(word, words, index + 1)
+            if word in SHELLS and bodies and (index >= len(words) or words[index] in ("<<", "<<-")):
+                return _commands_gesture(bodies, here)  # a script read from a heredoc
             continue
         match = RUNNER_SCRIPT.search(word) or MANGLED_RUNNER_SCRIPT.match(word)
         if match is None:
@@ -491,7 +529,7 @@ def _commands_gesture(command: str, here: str | None = None) -> str | None:
     return None
 
 
-def owner_gesture(words: list[str], here: str | None = None) -> str | None:
+def owner_gesture(words: list[str], here: str | None = None, bodies: str = "") -> str | None:
     """The owner gesture a simple command makes, named for the refusal, or None.
 
     `here` is the directory the command runs in, where a runner's folder is told from a project's.
@@ -499,7 +537,7 @@ def owner_gesture(words: list[str], here: str | None = None) -> str | None:
     call = gh_command(words)
     if call and call[0] == "api":
         return _api_gesture(call[1:])
-    return _gh_gesture(words) or _runner_gesture(words, here)
+    return _gh_gesture(words) or _runner_gesture(words, here, bodies)
 
 
 def _owner_refusal(gesture: str) -> str:
@@ -547,6 +585,7 @@ def refusal(
     `owner_gestures` are the values of the project's `owner-gesture` key, beside the built-in list.
     """
     declared = list(owner_gestures)
+    bodies = split_heredocs(command)[1]
     branch_of = branch if callable(branch) else (lambda _directory: branch)
 
     def branch_where(directory: str | None) -> str:
@@ -581,7 +620,7 @@ def refusal(
                 switched = True
             if reason := _git_refusal(args, branch_where(_directory_of(args, here)), switched):
                 return reason
-        if gesture := owner_gesture(words, here):
+        if gesture := owner_gesture(words, here, bodies):
             return _owner_refusal(gesture)
         if declared_refusal := _declared_gesture(words, declared):
             return declared_refusal
