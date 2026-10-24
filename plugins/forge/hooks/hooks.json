@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run --no-project --quiet python \"${CLAUDE_PLUGIN_ROOT}/hooks/guard_git.py\" || exit 2",
+            "command": "out=$(uv run --no-project --quiet python \"${CLAUDE_PLUGIN_ROOT}/hooks/guard_git.py\" 2>&1); code=$?; [ \"$code\" -eq 0 ] && exit 0; printf '%s\n' \"$out\" >&2; case \"$out\" in \"Blocked by the forge plugin (guard_git)\"*|\"guard_git failed\"*) ;; *) echo \"guard_git failed (exit $code before the guard could rule): the command is refused as a precaution. This is not a rule of the repository; retry, and tell the human if it persists.\" >&2;; esac; exit 2",
             "onFailure": "block",
             "timeout": 60
           }
