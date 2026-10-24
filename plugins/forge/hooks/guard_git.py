@@ -695,9 +695,13 @@ def _skip_wrapper_options(wrapper: str, words: list[str], index: int) -> int:
 
 # What only a runner's script is called with, and the files that make a folder a runner's.
 RUNNER_ARGUMENTS = frozenset(
-    {"--url", "--token", "install", "uninstall", "start", "stop", "remove"}
+    {"--url", "--token", "--pat", "--unattended", "install", "uninstall", "start", "stop", "remove"}
 )
-RUNNER_MARKERS = (("run.sh", "run.cmd"), ("bin/Runner.Listener",))
+# The registration can also come from the environment: the runner reads `ACTIONS_RUNNER_INPUT_*`.
+RUNNER_INPUT_VARIABLE = re.compile(r"^ACTIONS_RUNNER_INPUT_\w+=")
+RUNNER_REGISTRATION_GESTURE = "ACTIONS_RUNNER_INPUT_* (enregistrement d'un runner par l'environnement)"
+# The unpacked runner has a launcher and its listener: `.exe` is the Windows build's.
+RUNNER_MARKERS = (("run.sh", "run.cmd"), ("bin/Runner.Listener", "bin/Runner.Listener.exe"))
 
 
 def is_runner_directory(directory: str | None) -> bool:
@@ -719,7 +723,16 @@ def _is_runner_call(word: str, arguments: list[str], here: str | None) -> bool:
     return is_runner_directory(folder)
 
 
+def runner_registration_gesture(words: list[str]) -> str | None:
+    """The refusal of a word that sets a registration variable of the runner, wherever it stands."""
+    if any(RUNNER_INPUT_VARIABLE.match(word) for word in words):
+        return RUNNER_REGISTRATION_GESTURE
+    return None
+
+
 def _runner_gesture(words: list[str], here: str | None = None, bodies: str = "") -> str | None:
+    if gesture := runner_registration_gesture(words):
+        return gesture
     index = 0
     while index < len(words):
         word = words[index]
@@ -833,6 +846,8 @@ def refusal(
                 here = saved.pop() if saved else cwd
             continue
         words = item
+        if gesture := runner_registration_gesture(words):
+            return _owner_refusal(gesture)  # before the assignments are set aside
         while words and "=" in words[0] and not words[0].startswith("-"):
             words = words[1:]
         if not words:

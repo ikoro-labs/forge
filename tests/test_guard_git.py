@@ -391,6 +391,17 @@ def runner_folder() -> Iterator[str]:
         yield Path(folder).as_posix()
 
 
+@contextlib.contextmanager
+def windows_runner_folder() -> Iterator[str]:
+    """A folder laid out like an unpacked Windows runner: `run.cmd` and `bin/Runner.Listener.exe`."""
+    with tempfile.TemporaryDirectory() as folder:
+        (Path(folder) / "bin").mkdir()
+        (Path(folder) / "bin" / "Runner.Listener.exe").write_text("", encoding="utf-8")
+        (Path(folder) / "bin" / "Runner.Listener.dll").write_text("", encoding="utf-8")
+        (Path(folder) / "run.cmd").write_text("", encoding="utf-8")
+        yield Path(folder).as_posix()
+
+
 def refused_in(command: str, cwd: str) -> str | None:
     return refusal(command, "feat/x", always_green, cwd)
 
@@ -639,6 +650,57 @@ class OwnerGestures(unittest.TestCase):
             ):
                 with self.subTest(command=command):
                     self.assertIn(OWNER_REFUSAL, refused_in(command, cwd) or "")
+
+    def test_a_script_in_a_windows_runner_folder_is_refused_without_any_argument(self) -> None:
+        with windows_runner_folder() as runner, tempfile.TemporaryDirectory() as plain:
+            for command, cwd in (
+                ("./config.cmd", runner),
+                ("cmd /c config.cmd", runner),
+                (f"{runner}/config.cmd", plain),
+                (f"cd {runner} && ./config.cmd", plain),
+                (f"cd {runner} && cd bin/.. && ./config.cmd", plain),
+            ):
+                with self.subTest(command=command):
+                    self.assertIn(OWNER_REFUSAL, refused_in(command, cwd) or "")
+            for command, cwd in (("./config.cmd", plain), (f"{plain}/config.cmd", plain)):
+                with self.subTest(command=command):
+                    self.assertIsNone(refused_in(command, cwd))
+
+    def test_a_folder_with_only_one_marker_is_not_a_runner_folder(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            (Path(folder) / "bin").mkdir()
+            (Path(folder) / "bin" / "Runner.Listener.exe").write_text("", encoding="utf-8")
+            self.assertIsNone(refused_in("./config.cmd", Path(folder).as_posix()))
+            (Path(folder) / "run.cmd").write_text("", encoding="utf-8")
+            self.assertIn(OWNER_REFUSAL, refused_in("./config.cmd", Path(folder).as_posix()) or "")
+
+    def test_a_runner_registered_by_its_environment_or_by_other_options_is_refused(self) -> None:
+        for command in (
+            "./config.sh --unattended",
+            "./config.sh --unattended --pat=P",
+            "./config.sh --pat P",
+            "scripts/config.sh --pat=P",
+            "ACTIONS_RUNNER_INPUT_URL=https://github.com/o/r ACTIONS_RUNNER_INPUT_TOKEN=T ./config.sh",
+            "ACTIONS_RUNNER_INPUT_TOKEN=T ./config.sh --unattended",
+            "env ACTIONS_RUNNER_INPUT_TOKEN=T ./config.sh",
+            "sudo env ACTIONS_RUNNER_INPUT_URL=u bash ./config.sh",
+            "export ACTIONS_RUNNER_INPUT_TOKEN=T",
+            "export ACTIONS_RUNNER_INPUT_TOKEN=T && ./config.sh",
+            "ACTIONS_RUNNER_INPUT_TOKEN=T",
+            "bash -c 'ACTIONS_RUNNER_INPUT_TOKEN=T ./config.sh'",
+            "bash <<'EOF'\nACTIONS_RUNNER_INPUT_TOKEN=T ./config.sh\nEOF",
+            "echo x; ACTIONS_RUNNER_INPUT_NAME=n ./config.sh",
+        ):
+            with self.subTest(command=command):
+                self.assertIn(OWNER_REFUSAL, refused(command) or "")
+        for command in (
+            "echo ACTIONS_RUNNER_INPUT_URL",
+            "grep -r ACTIONS_RUNNER_INPUT_ docs",
+            "./config.sh --dry-run",
+            "ACTIONS_RUNNER=1 ./build.sh",
+        ):
+            with self.subTest(command=command):
+                self.assertIsNone(refused(command))
 
     def test_gh_global_options_before_deploy_key_do_not_hide_its_action(self) -> None:
         for command in (
