@@ -313,18 +313,22 @@ API_FIELDS = frozenset({"-f", "-F", "--field", "--raw-field", "--input"})
 
 
 def _gh_api_reads(args: list[str]) -> bool:
-    """A `gh api` call that gh sends as a GET: no `-X` other than GET, no field, no `--input`."""
+    """A `gh api` call that is a read: an explicit GET or HEAD, or no method, field or `--input`.
+
+    An explicit `-X GET` keeps its fields as query parameters, so it is a read with `-f` too;
+    without a method, a field or a body makes gh send a POST.
+    """
+    sends_a_body = False
     for index, word in enumerate(args):
         name, _, value = word.partition("=")
         if name in API_FIELDS or (name.startswith("-f") or name.startswith("-F")) and len(name) > 2:
-            return False
+            sends_a_body = True
         if name in ("-X", "--method"):
             method = value or (args[index + 1] if index + 1 < len(args) else "")
-            if method.upper() not in ("GET", "HEAD"):
-                return False
-        elif name.startswith("-X") and name[2:].lstrip("=").upper() not in ("GET", "HEAD"):
-            return False
-    return True
+            return method.upper() in ("GET", "HEAD")
+        if name.startswith("-X") and len(name) > 2:
+            return name[2:].lstrip("=").upper() in ("GET", "HEAD")
+    return not sends_a_body
 
 
 # The options of `gh api` that take their value as the next word (`--flag=value` is one word).

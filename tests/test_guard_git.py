@@ -387,6 +387,28 @@ class OwnerGestures(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertIsNone(refused(command))
 
+    def test_an_explicit_get_or_head_stays_a_read_even_with_fields(self) -> None:
+        for command in (
+            "gh api -X GET repos/o/r/collaborators -f per_page=100",
+            "gh api --method GET repos/o/r/collaborators -F per_page=100",
+            "gh api --method=get repos/o/r/rulesets --raw-field includes_parents=true",
+            "gh api -XGET repos/o/r/actions/secrets -f per_page=100",
+            "gh api -X HEAD repos/o/r/keys -f per_page=1",
+        ):
+            with self.subTest(command=command):
+                self.assertIsNone(refused(command))
+
+    def test_fields_without_a_method_are_a_post_and_the_refusal_says_so(self) -> None:
+        for command in (
+            "gh api repos/o/r/collaborators -f per_page=100",
+            "gh api repos/o/r/rulesets --input r.json",
+        ):
+            with self.subTest(command=command):
+                verdict = refused(command) or ""
+                self.assertIn(OWNER_REFUSAL, verdict)
+                self.assertIn("POST", verdict)
+                self.assertNotIn("GET", verdict)
+
     def test_a_write_by_gh_api_outside_the_owner_endpoints_is_left_alone(self) -> None:
         for command in (
             "gh api -X POST repos/o/r/issues/3/comments -f body=x",
