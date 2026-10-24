@@ -1,0 +1,172 @@
+"""Replay on a copy of the base the test files a PR adds or changes: each must fail there.
+
+    python base_replay.py --base <ref> --head <ref> [--usine FILE] [--memory-mb N] [--timeout S]
+
+Run from a clone of the project. The script takes the files the PR adds or changes under a
+`test-path` prefix (`git diff <base>...<head>`), extracts the merge base of the two refs into a
+temporary folder (`git archive`: nothing is written to the repository, its configuration included),
+lays those files there as the head has them, runs each `install` command, then the `red-replay`
+command once per file, and deletes the folder.
+
+`red-replay` is a command line in which `{file}` (the test file, relative to the root of the
+repository) or `{name}` (its base name) is replaced by the file to replay, quoted. A command exiting
+with 0 means the file passes on the base: its tests prove nothing of the change. One line per file
+is printed, the status, the file and a detail separated by tabs:
+
+    PASSES   the command exits 0 on the base (the detail is the end of its output)
+    RED      the command fails on the base, as a test of a change should (the detail is its code)
+    NOT RUN  the replay could not run (the detail is the command and why: delay, limit, install...)
+
+`PASSES` is judged at the grain of the file: the command runs on the whole file, so a file with a
+passing test beside a failing one is `RED`. A line `NONE` says no test file was added or changed.
+Exit code 0 when no file passes on the base, 1 when one does, 2 when a replay could not run or the
+call is wrong. Without the key `test-path` or `red-replay`, the step is "sans objet (clé <nom>
+absente)" and the exit code is 0.
+
+The entries are read from the base (`--usine`, `git show origin/<base>:docs/agents/usine.md`), so a
+PR cannot lift the guard it is judged by. The standard library only.
+"""
+
+from __future__ import annotations
+
+import argparse
+import io
+import os
+import shlex
+import subprocess
+import sys
+import tarfile
+import tempfile
+from pathlib import Path, PurePosixPath
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "hooks"))
+
+import usine  # noqa: E402
+
+PASSES, RED, NOT_RUN, NONE = "PASSES", "RED", "NOT RUN", "NONE"
+TAIL_LINES = 15
+
+
+def git(*args: str, cwd: Path | None = None) -> bytes:
+    done = subprocess.run(["git", "-c", "core.quotePath=false", *args], cwd=cwd, capture_output=True)
+    if done.returncode != 0:
+        raise RuntimeError(f"git {' '.join(args)}: {done.stderr.decode('utf-8', 'replace').strip()}")
+    return done.stdout
+
+
+def test_files(base: str, head: str, prefixes: list[str]) -> list[str]:
+    """The files added or changed between the merge base and the head, under a test path."""
+    raw = git("diff", "--name-only", "--no-renames", "--diff-filter=AM", "-z", f"{base}...{head}")
+    paths = [item.decode("utf-8") for item in raw.split(b"\0") if item]
+    return [path for path in paths if any(path.startswith(prefix) for prefix in prefixes)]
+
+
+def extract_base(base: str, root: Path) -> None:
+    """The files of `base` into `root`: regular files and folders only, nothing outside `root`."""
+    archive = git("archive", "--format=tar", base)
+    with tarfile.open(fileobj=io.BytesIO(archive), mode="r:") as tar:
+        for member in tar.getmembers():
+            name = PurePosixPath(member.name)
+            if name.is_absolute() or ".." in name.parts or not (member.isfile() or member.isdir()):
+                continue
+            target = root.joinpath(*name.parts)
+            if member.isdir():
+                target.mkdir(parents=True, exist_ok=True)
+                continue
+            target.parent.mkdir(parents=True, exist_ok=True)
+            source = tar.extractfile(member)
+            if source is not None:
+                target.write_bytes(source.read())
+                os.chmod(target, member.mode & 0o777 or 0o644)
+
+
+def lay_head_file(head: str, path: str, root: Path) -> None:
+    target = root.joinpath(*PurePosixPath(path).parts)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(git("show", f"{head}:{path}"))
+
+
+def quote(value: str) -> str:
+    return subprocess.list2cmdline([value]) if os.name == "nt" else shlex.quote(value)
+
+
+def command_for(template: str, path: str) -> str:
+    return template.replace("{file}", quote(path)).replace("{name}", quote(PurePosixPath(path).name))
+
+
+def run(command: str, cwd: Path, timeout: int, memory_mb: int) -> tuple[int | None, str, str]:
+    """The exit code (None when the command did not run), the end of its output, and why not."""
+    with tempfile.TemporaryFile() as log:
+        try:
+            done = subprocess.run(command, shell=True, cwd=cwd, stdout=log, stderr=subprocess.STDOUT, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            return None, "", f"délai de {timeout} s dépassé"
+        log.seek(0)
+        lines = log.read().decode("utf-8", errors="replace").splitlines()
+    return done.returncode, "\\n".join(lines[-TAIL_LINES:]), ""
+
+
+def replay(args: argparse.Namespace, config: dict[str, list[str]]) -> tuple[list[tuple[str, str, str]], int]:
+    prefixes, commands = config["test-path"], config["red-replay"]
+    if len(commands) != 1 or not ("{file}" in commands[0] or "{name}" in commands[0]):
+        return [(NOT_RUN, "-", "la clé red-replay est une seule commande qui contient {file} ou {name}")], 2
+    files = test_files(args.base, args.head, prefixes)
+    if not files:
+        return [(NONE, "-", "aucun fichier de test ajouté ou changé")], 0
+    merge_base = git("merge-base", args.base, args.head).decode().strip()
+    rows: list[tuple[str, str, str]] = []
+    with tempfile.TemporaryDirectory(prefix="forge-base-") as folder:
+        root = Path(folder)
+        extract_base(merge_base, root)
+        for path in files:
+            lay_head_file(args.head, path, root)
+        for install in config.get("install", []):
+            code, tail, why = run(install, root, args.timeout, args.memory_mb)
+            if code != 0:
+                reason = why or f"code {code}, {tail}"
+                return [(NOT_RUN, path, f"{install} : {reason}") for path in files], 2
+        for path in files:
+            command = command_for(commands[0], path)
+            code, tail, why = run(command, root, args.timeout, args.memory_mb)
+            if code is None:
+                rows.append((NOT_RUN, path, f"{command} : {why}"))
+            elif code == 0:
+                rows.append((PASSES, path, tail))
+            else:
+                rows.append((RED, path, f"code {code}"))
+    statuses = {row[0] for row in rows}
+    return rows, 2 if NOT_RUN in statuses else 1 if PASSES in statuses else 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
+    parser.add_argument("--base", required=True, help="the base ref of the PR")
+    parser.add_argument("--head", required=True, help="the head ref of the PR")
+    parser.add_argument("--usine", help="the usine.md to read (default: docs/agents/usine.md)")
+    parser.add_argument("--memory-mb", type=int, default=2000, help="memory limit of each command, in MB")
+    parser.add_argument("--timeout", type=int, default=300, help="delay of each command, in seconds")
+    args = parser.parse_args(argv)
+    config_file = Path(args.usine) if args.usine else usine.project_root() / usine.CONFIG_PATH
+    try:
+        config = usine.parse(config_file.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        config = {}
+    except (OSError, UnicodeDecodeError) as error:
+        print(f"base_replay: {error}", file=sys.stderr)
+        return 2
+    for key in ("test-path", "red-replay"):
+        if not config.get(key):
+            print(f"sans objet (clé {key} absente)")
+            return 0
+    try:
+        rows, code = replay(args, config)
+    except (RuntimeError, OSError, tarfile.TarError) as error:
+        print(f"{NOT_RUN}\t-\t{error}")
+        return 2
+    for status, path, detail in rows:
+        print(f"{status}\t{path}\t{detail}")
+    return code
+
+
+if __name__ == "__main__":
+    sys.exit(main())
