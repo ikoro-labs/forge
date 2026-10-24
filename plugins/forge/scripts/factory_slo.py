@@ -2,12 +2,21 @@
 
     python factory_slo.py sli <project> --depuis DATE [--jusqua DATE] [--json] [--reference FILE]
     python factory_slo.py status <project> [--json] [--reference FILE]
+    python factory_slo.py report <project> [--json] [--reference FILE] [--publier]
+    python factory_slo.py changelog <project> --depuis DATE [--le DATE] [--reference FILE]
 
 `status` reads the `slo` key (`<sli> | <comparator> <target> | <window in days>`, one per line), computes
 each objective on its sliding window, its error budget and its state (`tenu`, `menacé`, `épuisé`),
 and writes them to `<git-common-dir>/forge/slo-status.json` with the date and the head of the base.
 A line it cannot read, or that names an unknown SLI, fails the command and writes nothing. A key
 `slo` absent is "sans objet".
+
+`report` is `status` plus the trend against the previous window of the same length, and writes
+nothing; with `--publier` it rewrites the report in one comment of the issue named by the key
+`slo-issue` (found again by a hidden marker) and sets or removes `needs-your-attention` there as
+objectives go `menacé` or `épuisé`, or all back to `tenu`. `changelog` prints the section "Objectifs
+de service" of a release entry: the state of each objective at `--le` (now by default) and the
+`escaped-defect` tickets opened since `--depuis`. A key `slo-issue` absent is "sans objet".
 
 The data come from GitHub (`gh ... --json`, run from the project folder, so `gh` finds the
 repository itself), from git, and from the logs `token_audit.py` reads. Prints a Markdown table, or
@@ -608,6 +617,152 @@ def markdown(results: list[Sli], project: Path, since: datetime, until: datetime
     return "\n".join(lines)
 
 
+def trend(current: dict, previous: dict) -> str:
+    """How the share of budget consumed moved from the previous window to this one."""
+    if current["statut"] == "sans objet":
+        return "sans objet"
+    if previous["statut"] == "sans objet":
+        return "sans point de comparaison"
+    gap = round(current["consomme"] - previous["consomme"], 4)
+    return "stable" if gap == 0 else "dégradation" if gap > 0 else "amélioration"
+
+
+def report(project: Path, now: datetime, run: Runner = run_command, ref: Path | None = None) -> dict | None:
+    """`status` with, for each objective, the same window one length earlier and the trend between them."""
+    document = status(project, now, run, ref)
+    if document is None:
+        return None
+    windows: dict[int, dict[str, Sli]] = {}
+    for days in sorted({item["fenetre_jours"] for item in document["objectifs"]}):
+        results = compute(project, now - timedelta(days=2 * days), now - timedelta(days=days), run)
+        windows[days] = {item.name: item for item in results}
+    for item in document["objectifs"]:
+        slo = parse_one(item["ligne"])
+        item["precedent"] = evaluate(slo, windows[slo.days][slo.sli])
+        item["tendance"] = trend(item, item["precedent"])
+    return document
+
+
+def label_of(item: dict) -> str:
+    return f"{item['sli']} {item['statistique']}" if item["statistique"] else item["sli"]
+
+
+def unit_of(item: dict) -> str:
+    return "" if item["unite"] == "jetons" else f" {item['unite']}"
+
+
+def objective_row(item: dict, with_trend: bool) -> str:
+    unit = unit_of(item)
+    head = f"| `{label_of(item)}` | {item['comparateur']} {number(item['cible'])}{unit} | {item['fenetre_jours']} j |"
+    if item["statut"] == "sans objet":
+        return f"{head} sans objet | {item['raison']} | sans objet |" + (" sans objet |" if with_trend else "")
+    left = f"{number(item['reste'])}{unit} sur {number(item['budget'])}{unit}"
+    row = f"{head} {number(item['valeur'])}{unit} | {left} | {item['etat']} |"
+    if not with_trend:
+        return row
+    before = item.get("precedent") or {}
+    was = f" (était {number(before['valeur'])}{unit})" if before.get("statut") == "calculé" else ""
+    return f"{row} {item['tendance']}{was} |"
+
+
+def table(document: dict, with_trend: bool) -> list[str]:
+    head = "| Objectif | Cible | Fenêtre | Valeur | Budget restant | État |" + (" Tendance |" if with_trend else "")
+    rule = "|---|---|---|---|---|---|" + ("---|" if with_trend else "")
+    return [head, rule, *(objective_row(item, with_trend) for item in document["objectifs"])]
+
+
+def report_markdown(document: dict) -> str:
+    lines = [
+        f"Objectifs de service de `{document['projet']}`, calculés le {document['calcule_le']}.",
+        "",
+        *table(document, True),
+        "",
+        "La tendance compare la part du budget consommée à celle de la fenêtre précédente, de même durée.",
+    ]
+    return "\n".join(lines)
+
+
+def changelog_section(document: dict, defects: list[dict], since: datetime, at: datetime) -> str:
+    lines = ["### Objectifs de service", "", f"État de chaque objectif au {at.date().isoformat()}.", "", *table(document, False), ""]
+    if defects:
+        lines += [f"`escaped-defect` ouverts depuis le {since.date().isoformat()} :", ""]
+        lines += [f"- #{d['number']} {d['title']} ({'fermé' if str(d.get('state')).upper() == 'CLOSED' else 'ouvert'})" for d in defects]
+    else:
+        lines.append(f"Aucun `escaped-defect` ouvert depuis le {since.date().isoformat()}.")
+    return "\n".join(lines)
+
+
+MARKER = "<!-- forge-slo-report -->"
+STATES_MARKER = re.compile(r"<!-- forge-slo-etats: (.*?) -->")
+WORSE = (MENACE, EPUISE)
+
+
+def issue_number(project: Path) -> int | None:
+    """The tracking issue of the key `slo-issue` (`55` or `#55`), None when the key is absent."""
+    values = usine.load(project).get("slo-issue")
+    if not values:
+        return None
+    text = values[0].strip().lstrip("#")
+    if not text.isdigit() or int(text) < 1:
+        raise SloError(f"`slo-issue` : `{values[0]}` : attendu un numéro de ticket (`55` ou `#55`)")
+    return int(text)
+
+
+def bad_states(document: dict) -> dict[str, str]:
+    return {item["ligne"]: item["etat"] for item in document["objectifs"] if item.get("etat") in WORSE}
+
+
+def reasons(document: dict) -> str:
+    return "\n".join(
+        f"- `{item['ligne']}` : {item['etat']}, {round(100 * item['consomme'])} % du budget consommé"
+        for item in document["objectifs"] if item.get("etat") in WORSE
+    )
+
+
+def publish(project: Path, document: dict, run: Runner = run_command) -> list[str] | None:
+    """Rewrite the report comment of the tracking issue and keep its attention label true; the actions taken.
+
+    The label is set when an objective goes `menacé` or `épuisé` (a comment gives the reason, once per
+    change of the set), and removed only when the previous report had set it and no objective is worse
+    than `tenu` any more (a comment says why). A label that no report of ours had justified is left alone.
+    """
+    ticket = issue_number(project)
+    if ticket is None:
+        return None
+
+    def gh(*args: str) -> list:
+        return parse_stream(run(["gh", *args], project))
+
+    comments = [c for c in gh("api", "--paginate", f"repos/{{owner}}/{{repo}}/issues/{ticket}/comments") if isinstance(c, dict)]
+    mine = next((c for c in comments if MARKER in str(c.get("body"))), None)
+    found = STATES_MARKER.search(str(mine.get("body"))) if mine else None
+    before: dict[str, str] = json.loads(found.group(1)) if found else {}
+    now_bad = bad_states(document)
+    states = json.dumps(now_bad, ensure_ascii=False).replace("--", "\\u002d\\u002d")
+    body = f"{MARKER}\n<!-- forge-slo-etats: {states} -->\n{report_markdown(document)}"
+    actions: list[str] = []
+    if mine:
+        gh("api", "-X", "PATCH", f"repos/{{owner}}/{{repo}}/issues/comments/{mine['id']}", "-f", f"body={body}")
+        actions.append(f"rapport réécrit dans le commentaire {mine['id']} du ticket #{ticket}")
+    else:
+        gh("api", f"repos/{{owner}}/{{repo}}/issues/{ticket}/comments", "-f", f"body={body}")
+        actions.append(f"rapport posté dans un commentaire du ticket #{ticket}")
+    info = gh("issue", "view", str(ticket), "--json", "labels")
+    posed = ATTENTION in label_names(info[0] if info else {})
+    if now_bad:
+        if not posed:
+            gh("issue", "edit", str(ticket), "--add-label", ATTENTION)
+            actions.append(f"étiquette `{ATTENTION}` posée sur #{ticket}")
+        if now_bad != before:
+            gh("issue", "comment", str(ticket), "--body", f"`{ATTENTION}` : des objectifs de service ne tiennent plus.\n\n{reasons(document)}")
+            actions.append(f"raison commentée sur #{ticket}")
+    elif posed and before:
+        gh("issue", "edit", str(ticket), "--remove-label", ATTENTION)
+        gh("issue", "comment", str(ticket), "--body", f"`{ATTENTION}` retirée : tous les objectifs de service sont repassés à `tenu`.")
+        actions.append(f"étiquette `{ATTENTION}` retirée de #{ticket}, avec sa raison")
+    return actions
+
+
 def _date(text: str) -> datetime:
     try:
         return token_audit.parse_time(text)
@@ -625,6 +780,35 @@ def run_status(args: argparse.Namespace, run: Runner, now: datetime) -> int:
     return 0
 
 
+def run_report(args: argparse.Namespace, run: Runner, now: datetime) -> int:
+    document = report(args.projet, now, run, args.reference)
+    if document is None:
+        print("Objectifs de service : sans objet (clé `slo` absente).")
+        return 0
+    print(json.dumps(document, ensure_ascii=False, indent=2) if args.json else report_markdown(document))
+    if args.publier:
+        actions = publish(args.projet, document, run)
+        if actions is None:
+            print("\nPublication : sans objet (clé `slo-issue` absente).")
+        else:
+            print("\nPublication :\n" + "\n".join(f"- {action}" for action in actions))
+    return 0
+
+
+def run_changelog(args: argparse.Namespace, run: Runner, now: datetime) -> int:
+    at = args.le or now
+    if at <= args.depuis:
+        print("`--le` doit suivre `--depuis`.", file=sys.stderr)
+        return 1
+    document = status(args.projet, at, run, args.reference)
+    if document is None:
+        print("Objectifs de service : sans objet (clé `slo` absente).")
+        return 0
+    defects = Factory(args.projet, args.depuis, at, run).defects
+    print(changelog_section(document, defects, args.depuis, at))
+    return 0
+
+
 def main(argv: list[str] | None = None, run: Runner = run_command, now: datetime | None = None) -> int:
     parser = argparse.ArgumentParser(prog="factory_slo.py", description=__doc__.splitlines()[0])
     commands = parser.add_subparsers(dest="commande", required=True)
@@ -632,6 +816,16 @@ def main(argv: list[str] | None = None, run: Runner = run_command, now: datetime
     state.add_argument("projet", type=Path, help="le dossier du projet")
     state.add_argument("--json", action="store_true", help="rend du JSON au lieu d'un tableau Markdown")
     state.add_argument("--reference", type=Path, help="le dernier résultat du jeu de référence (JSON)")
+    rapport = commands.add_parser("report", help="rend le rapport des objectifs, avec la tendance ; --publier l'écrit dans l'issue de suivi")
+    rapport.add_argument("projet", type=Path, help="le dossier du projet")
+    rapport.add_argument("--json", action="store_true", help="rend du JSON au lieu d'un tableau Markdown")
+    rapport.add_argument("--reference", type=Path, help="le dernier résultat du jeu de référence (JSON)")
+    rapport.add_argument("--publier", action="store_true", help="réécrit le rapport dans l'issue de la clé `slo-issue` et tient son étiquette")
+    notes = commands.add_parser("changelog", help="rend la section « Objectifs de service » d'une entrée du CHANGELOG")
+    notes.add_argument("projet", type=Path, help="le dossier du projet")
+    notes.add_argument("--depuis", type=_date, required=True, help="date de la version précédente, incluse")
+    notes.add_argument("--le", type=_date, help="date de la version (maintenant par défaut)")
+    notes.add_argument("--reference", type=Path, help="le dernier résultat du jeu de référence (JSON)")
     sli = commands.add_parser("sli", help="calcule les indicateurs de service")
     sli.add_argument("projet", type=Path, help="le dossier du projet")
     sli.add_argument("--depuis", type=_date, required=True, help="début de la fenêtre, inclus")
@@ -640,9 +834,10 @@ def main(argv: list[str] | None = None, run: Runner = run_command, now: datetime
     sli.add_argument("--reference", type=Path, help="le dernier résultat du jeu de référence (JSON)")
     args = parser.parse_args(argv)
 
-    if args.commande == "status":
+    if args.commande in ("status", "report", "changelog"):
         try:
-            return run_status(args, run, now or datetime.now(tz=timezone.utc))
+            handler = {"status": run_status, "report": run_report, "changelog": run_changelog}[args.commande]
+            return handler(args, run, now or datetime.now(tz=timezone.utc))
         except (RuntimeError, ValueError, KeyError, IndexError, OSError) as error:
             print(f"Calcul impossible : {error}", file=sys.stderr)
             return 1
