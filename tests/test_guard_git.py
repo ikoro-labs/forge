@@ -1,9 +1,10 @@
+import contextlib
 import io
 import json
 import sys
 import tempfile
 import unittest
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from unittest import mock
 
@@ -286,6 +287,20 @@ class FailsClosed(unittest.TestCase):
         self.assertNotIn("guard_git failed", stderr.getvalue())
 
 
+@contextlib.contextmanager
+def runner_folder() -> Iterator[str]:
+    """A folder laid out like an unpacked Actions runner: `run.sh` and `bin/Runner.Listener`."""
+    with tempfile.TemporaryDirectory() as folder:
+        (Path(folder) / "bin").mkdir()
+        (Path(folder) / "bin" / "Runner.Listener").write_text("", encoding="utf-8")
+        (Path(folder) / "run.sh").write_text("", encoding="utf-8")
+        yield Path(folder).as_posix()
+
+
+def refused_in(command: str, cwd: str) -> str | None:
+    return refusal(command, "feat/x", always_green, cwd)
+
+
 OWNER_REFUSAL = "geste du propriétaire du dépôt, à lister pour l'humain en fin de compte rendu"
 OWNER_KEY_VALUE = "gh label delete | les étiquettes sont au propriétaire"
 
@@ -473,6 +488,46 @@ class OwnerGestures(unittest.TestCase):
         ):
             with self.subTest(command=command):
                 self.assertIsNone(refused(command))
+
+    def test_a_script_with_a_runner_argument_is_refused_wherever_it_stands(self) -> None:
+        for command in (
+            "./config.sh --url https://github.com/o/r --token T",
+            "scripts/config.sh --token=T",
+            "bash scripts/config.sh --url=https://github.com/o/r",
+            "./svc.sh install",
+            "sudo ./svc.sh uninstall",
+            "./svc.sh start",
+            "./svc.sh stop",
+        ):
+            with self.subTest(command=command):
+                self.assertIn(OWNER_REFUSAL, refused(command) or "")
+
+    def test_a_config_script_of_a_project_is_not_a_runner_script(self) -> None:
+        with runner_folder() as runner, tempfile.TemporaryDirectory() as plain:
+            for command in (
+                "bash scripts/config.sh",
+                "bash scripts/config.sh --verbose",
+                "./config.sh --dry-run",
+                f"cd {plain} && ./config.sh",
+                f"{plain}/svc.sh",
+                f"{plain}/svc.sh status",
+                f"cd {runner} && ./svc.sh status",
+            ):
+                with self.subTest(command=command):
+                    self.assertIsNone(refused_in(command, plain))
+
+    def test_a_script_in_a_runner_folder_is_refused_without_any_argument(self) -> None:
+        with runner_folder() as runner, tempfile.TemporaryDirectory() as plain:
+            for command, cwd in (
+                ("./config.sh", runner),
+                ("bash ./svc.sh", runner),
+                ("./config.cmd", runner),
+                (f"{runner}/config.sh", plain),
+                (f"cd {runner} && ./config.sh", plain),
+                (f"sudo -u runner {runner}/svc.sh", plain),
+            ):
+                with self.subTest(command=command):
+                    self.assertIn(OWNER_REFUSAL, refused_in(command, cwd) or "")
 
     def test_a_gesture_the_project_declares_is_refused_with_its_reason(self) -> None:
         lines = [OWNER_KEY_VALUE, "uv run python -m scripts.release | la publication est humaine"]

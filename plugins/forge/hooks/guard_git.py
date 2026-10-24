@@ -432,7 +432,33 @@ WRAPPERS = SHELLS | {"sudo", "cmd", "cmd.exe", "powershell", "pwsh", "powershell
 SUDO_OPTIONS_WITH_VALUE = frozenset({"-u", "-g", "-h", "-p", "-C", "-D", "-R", "-T", "-U"})
 
 
-def _runner_gesture(words: list[str]) -> str | None:
+# What only a runner's script is called with, and the files that make a folder a runner's.
+RUNNER_ARGUMENTS = frozenset(
+    {"--url", "--token", "install", "uninstall", "start", "stop", "remove"}
+)
+RUNNER_MARKERS = (("run.sh", "run.cmd"), ("bin/Runner.Listener",))
+
+
+def is_runner_directory(directory: str | None) -> bool:
+    """Whether `directory` holds an unpacked runner: `run.sh` or `run.cmd`, and `bin/Runner.Listener`."""
+    if directory is None or directory == UNKNOWN:
+        return False
+    try:
+        base = Path(native_directory(directory) or directory)
+        return all(any((base / name).exists() for name in names) for names in RUNNER_MARKERS)
+    except (OSError, ValueError):
+        return False
+
+
+def _is_runner_call(word: str, arguments: list[str], here: str | None) -> bool:
+    """A `config` or `svc` script that is a runner's: its folder, or an argument only a runner takes."""
+    if any(argument.split("=", 1)[0] in RUNNER_ARGUMENTS for argument in arguments):
+        return True
+    folder = _moved(here, str(PurePosixPath(word.replace("\\", "/")).parent)) if "/" in word else here
+    return is_runner_directory(folder)
+
+
+def _runner_gesture(words: list[str], here: str | None = None) -> str | None:
     index = 0
     while index < len(words):
         word = words[index]
@@ -440,7 +466,7 @@ def _runner_gesture(words: list[str]) -> str | None:
             if word in SHELLS and "-c" in words[index + 1 :]:
                 position = words.index("-c", index + 1) + 1
                 if position < len(words):
-                    return _commands_gesture(words[position])
+                    return _commands_gesture(words[position], here)
             index += 1
             while index < len(words) and (
                 words[index].startswith("-") or (word.startswith("cmd") and words[index] == "/c")
@@ -453,24 +479,27 @@ def _runner_gesture(words: list[str]) -> str | None:
         script = match.group(1).lower()
         if script == "svc.sh" and words[index + 1 : index + 2] == ["status"]:
             return None
-        return script
+        return script if _is_runner_call(word, words[index + 1 :], here) else None
     return None
 
 
-def _commands_gesture(command: str) -> str | None:
+def _commands_gesture(command: str, here: str | None = None) -> str | None:
     """The owner gesture of the first simple command of `command` that makes one."""
     for words in segments(command):
-        if gesture := owner_gesture(words):
+        if gesture := owner_gesture(words, here=here):
             return gesture
     return None
 
 
-def owner_gesture(words: list[str]) -> str | None:
-    """The owner gesture a simple command makes, named for the refusal, or None."""
+def owner_gesture(words: list[str], here: str | None = None) -> str | None:
+    """The owner gesture a simple command makes, named for the refusal, or None.
+
+    `here` is the directory the command runs in, where a runner's folder is told from a project's.
+    """
     call = gh_command(words)
     if call and call[0] == "api":
         return _api_gesture(call[1:])
-    return _gh_gesture(words) or _runner_gesture(words)
+    return _gh_gesture(words) or _runner_gesture(words, here)
 
 
 def _owner_refusal(gesture: str) -> str:
@@ -552,7 +581,7 @@ def refusal(
                 switched = True
             if reason := _git_refusal(args, branch_where(_directory_of(args, here)), switched):
                 return reason
-        if gesture := owner_gesture(words):
+        if gesture := owner_gesture(words, here):
             return _owner_refusal(gesture)
         if declared_refusal := _declared_gesture(words, declared):
             return declared_refusal
