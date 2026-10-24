@@ -900,5 +900,16 @@ class PrShowsChangeDoorAndRadius(unittest.TestCase):
         self.assertNotIn("`BLOCKER`", section)
 
 
+    def test_qc_raises_needs_your_attention_on_a_one_way_door_without_stopping_the_merge(self) -> None:
+        """No F-NNNN: ticket #45, critère 4 (qc : alerte sans arrêt de fusion)."""
+        text = self.read("skills", "qc", "SKILL.md")
+        section = text.split("## Porte à sens unique", 1)[1].split("\n## ", 1)[0]
+        self.assertIn("`needs-your-attention`", section)
+        self.assertIn("`Attention`", section)
+        self.assertIn("one-way-door", section)
+        self.assertIn("ne bloque pas la fusion", section)
+        self.assertIn("chemins protégés", section)
+
+
 if __name__ == "__main__":
     unittest.main()
