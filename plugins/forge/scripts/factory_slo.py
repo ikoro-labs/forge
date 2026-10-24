@@ -496,6 +496,8 @@ def parse_one(line: str) -> Slo:
         raise SloError(f"`{sli}` se mesure en `{UNITS[kind]}` : la cible doit porter cette unité")
     if kind == COUNT and unit not in (None, "jetons"):
         raise SloError("`tokens-per-merge` se mesure en jetons, sans autre unité")
+    if kind == RATIO and number > 100:
+        raise SloError(f"un ratio ne dépasse pas 100 % : `{found.group(2)} %` est hors d'atteinte, sans doute une faute de frappe")
     if kind != RATIO and comparator == ">=":
         raise SloError(f"`>=` n'a pas de budget pour `{sli}` : une borne haute seule en donne un")
     if not window_part.isdigit() or int(window_part) < 1:
