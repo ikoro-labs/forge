@@ -383,13 +383,99 @@ def _api_method(args: list[str]) -> str:
     return "POST"
 
 
-def _api_gesture(args: list[str]) -> str | None:
+GRAPHQL_MUTATION_GESTURE = (
+    "gh api graphql (mutation de protection, de ruleset, de collaborateur ou du dépôt)"
+)
+_VARIABLE = re.compile(r"\$\{?\w+\}?")
+
+
+def _graphql_inputs(args: list[str]) -> list[tuple[str, str]]:
+    """What a `gh api graphql` call is fed: `(kind, value)` per `--input` and per field.
+
+    The kind is `input` for `--input <value>` and `query` for a field named `query`; the value of
+    any other field cannot hold the query, except `name=@file`, which reads one.
+    """
+    inputs: list[tuple[str, str]] = []
+    index = 0
+    while index < len(args):
+        word = args[index]
+        name, equals, value = word.partition("=")
+        field: str | None = None
+        if name == "--input":
+            if not equals:
+                index += 1
+                value = args[index] if index < len(args) else ""
+            inputs.append(("input", value))
+        elif name in ("--field", "--raw-field") or word in ("-f", "-F"):
+            if not equals or word in ("-f", "-F"):
+                index += 1
+                field = args[index] if index < len(args) else ""
+            else:
+                field = value
+        elif word.startswith(("-f", "-F")) and not word.startswith("--"):
+            field = word[2:]
+        elif word.startswith("-") and word in API_OPTIONS_WITH_VALUE:
+            index += 1
+        if field is not None:
+            key, _, content = field.partition("=")
+            if content.startswith("@"):
+                inputs.append(("file", content[1:]))
+            elif key == "query":
+                inputs.append(("query", content))
+        index += 1
+    return inputs
+
+
+def _graphql_gesture(
+    args: list[str], here: str | None, bodies: str, read_text: Callable[[str], str | None]
+) -> str | None:
+    """The owner gesture of a `gh api graphql` call: a mutation of the owner, read wherever it is.
+
+    The query is read in the arguments, in the heredocs of the command (`--input - <<EOF`, or
+    `query="$(cat <<EOF ...)"`) and in the files it names. What cannot be read (a file that is not
+    there, stdin from a pipe, a substitution or a variable) is refused as a precaution: a mutation
+    of the owner could hide in it, and a guard that fails closes.
+    """
+    texts = [" ".join(args)]
+    unread = ""
+    for kind, value in _graphql_inputs(args):
+        if kind == "query" and not (
+            "`" in value or "$(" in value or _VARIABLE.fullmatch(value.strip())
+        ):
+            continue
+        if kind == "query" and "<<" in value and bodies:
+            texts.append(bodies)  # `$(cat <<EOF ...)`: the heredoc of this command
+        elif kind == "query":
+            unread = unread or "la requête vient d'une substitution ou d'une variable du shell"
+        elif value == "-":
+            if bodies:
+                texts.append(bodies)
+            else:
+                unread = unread or "la requête vient de l'entrée standard"
+        else:
+            path = _moved(here, value)
+            text = read_text(path) if path is not None and path != UNKNOWN else None
+            if text is None:
+                unread = unread or f"le fichier `{value}` ne peut pas être lu"
+            else:
+                texts.append(text)
+    if OWNER_MUTATION.search("\n".join(texts)):
+        return GRAPHQL_MUTATION_GESTURE
+    if unread:
+        return f"gh api graphql ({unread} ; refusée par précaution, car une mutation du propriétaire pourrait s'y cacher)"
+    return None
+
+
+def _api_gesture(
+    args: list[str],
+    here: str | None = None,
+    bodies: str = "",
+    read_text: Callable[[str], str | None] = read_text_or_none,
+) -> str | None:
     """The owner gesture of a `gh api` call (the words after `api`), or None."""
     endpoint = _api_endpoint(args).split("?", 1)[0].strip("/")
     if endpoint.lower() == "graphql":
-        if OWNER_MUTATION.search(" ".join(args)):
-            return "gh api graphql (mutation de protection, de ruleset, de collaborateur ou du dépôt)"
-        return None
+        return _graphql_gesture(args, here, bodies, read_text)
     if _gh_api_reads(args):
         return None
     scope = OWNER_SCOPE.match(endpoint)
@@ -529,14 +615,19 @@ def _commands_gesture(command: str, here: str | None = None) -> str | None:
     return None
 
 
-def owner_gesture(words: list[str], here: str | None = None, bodies: str = "") -> str | None:
+def owner_gesture(
+    words: list[str],
+    here: str | None = None,
+    bodies: str = "",
+    read_text: Callable[[str], str | None] = read_text_or_none,
+) -> str | None:
     """The owner gesture a simple command makes, named for the refusal, or None.
 
     `here` is the directory the command runs in, where a runner's folder is told from a project's.
     """
     call = gh_command(words)
     if call and call[0] == "api":
-        return _api_gesture(call[1:])
+        return _api_gesture(call[1:], here, bodies, read_text)
     return _gh_gesture(words) or _runner_gesture(words, here, bodies)
 
 
@@ -620,7 +711,7 @@ def refusal(
                 switched = True
             if reason := _git_refusal(args, branch_where(_directory_of(args, here)), switched):
                 return reason
-        if gesture := owner_gesture(words, here, bodies):
+        if gesture := owner_gesture(words, here, bodies, read_text):
             return _owner_refusal(gesture)
         if declared_refusal := _declared_gesture(words, declared):
             return declared_refusal

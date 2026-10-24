@@ -637,6 +637,84 @@ class OwnerGestures(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             self.assertEqual(run(root)[0], 0)
 
+    def test_a_mutation_written_in_a_heredoc_is_read(self) -> None:
+        for body in (
+            "mutation { deleteRepository(input: {repositoryId: \"x\"}) { clientMutationId } }",
+            "mutation { updateBranchProtectionRule(input: {}) { clientMutationId } }",
+            "mutation { createRepositoryRuleset(input: {}) { clientMutationId } }",
+            "mutation { addRepositoryCollaborator(input: {}) { clientMutationId } }",
+        ):
+            for command in (
+                f"gh api graphql -f query=\"$(cat <<'EOF'\n{body}\nEOF\n)\"",
+                f"gh api graphql -f query=\"$(cat <<EOF\n{body}\nEOF\n)\" -F owner=o",
+                f"gh api graphql --input - <<'EOF'\n{json.dumps({'query': body})}\nEOF",
+                f"cd /w && gh api graphql --input - <<-'EOF'\n\t{body}\n\tEOF",
+            ):
+                with self.subTest(command=command):
+                    verdict = refused(command) or ""
+                    self.assertIn(OWNER_REFUSAL, verdict)
+                    self.assertIn("gh api graphql", verdict)
+
+    def test_a_mutation_written_in_a_readable_file_is_read(self) -> None:
+        texts = {
+            "/w/m.graphql": "mutation { deleteRepository(input: {}) { clientMutationId } }",
+            "/w/m.json": '{"query": "mutation { updateRepository(input: {}) { id } }"}',
+            "/w/q.graphql": "query { viewer { login } }",
+            "/w/sub.graphql": "mutation { addSubIssue(input: {}) { issue { id } } }",
+        }
+        for command in (
+            "gh api graphql -F query=@m.graphql",
+            "gh api graphql -f query=@m.graphql",
+            "gh api graphql --field query=@/w/m.graphql",
+            "gh api graphql --input m.json",
+            "gh api graphql --input=m.json",
+            "cd /w/sub && gh api graphql --input ../m.json",
+        ):
+            with self.subTest(command=command):
+                verdict = refusal(command, "feat/x", always_green, "/w", read_text=files(texts))
+                self.assertIn(OWNER_REFUSAL, verdict or "")
+        for command in (
+            "gh api graphql -F query=@q.graphql",
+            "gh api graphql --input q.graphql",
+            "gh api graphql -F query=@sub.graphql",
+        ):
+            with self.subTest(command=command):
+                self.assertIsNone(
+                    refusal(command, "feat/x", always_green, "/w", read_text=files(texts))
+                )
+
+    def test_a_graphql_form_that_cannot_be_read_is_refused_as_a_precaution(self) -> None:
+        for command in (
+            "gh api graphql --input missing.json",
+            "gh api graphql -F query=@missing.graphql",
+            "cat q.json | gh api graphql --input -",
+            "echo \"$QUERY\" | gh api graphql -F query=@-",
+            "gh api graphql -f query=\"$(cat q.graphql)\"",
+            "gh api graphql -f query=\"`cat q.graphql`\"",
+            "gh api graphql -f query=\"$QUERY\"",
+            "gh api graphql -f query=${QUERY}",
+            "gh api graphql --input - <<<\"$QUERY\"",
+            "cd \"$DIR\" && gh api graphql --input m.json",
+        ):
+            with self.subTest(command=command):
+                verdict = refused(command) or ""
+                self.assertIn("gh api graphql", verdict)
+                self.assertIn("par précaution", verdict)
+
+    def test_a_graphql_read_in_a_heredoc_or_with_variables_passes(self) -> None:
+        for command in (
+            "gh api graphql -f query=\"$(cat <<'EOF'\nquery { viewer { login } }\nEOF\n)\"",
+            "gh api graphql --input - <<'EOF'\n{\"query\": \"query { viewer { login } }\"}\nEOF",
+            "gh api graphql -f query=\"$(cat <<'EOF'\nmutation { addSubIssue(input: {}) { issue { id } } }\n"
+            "EOF\n)\"",
+            "gh api graphql -f query='query($o: String!) { repository(owner: $o, name: \"r\") { id } }'"
+            " -F o=x",
+            "gh api graphql -f query='query { viewer { login } }' -F cursor=\"$CURSOR\"",
+            "gh api repos/o/r/issues --jq '.[].title' <<'EOF'\nupdateRepository\nEOF",
+        ):
+            with self.subTest(command=command):
+                self.assertIsNone(refused(command))
+
     def test_the_sub_issue_mutations_the_plugin_uses_and_graphql_reads_pass(self) -> None:
         for command in (
             "gh api graphql -f query='mutation { addSubIssue(input: {issueId: \"a\", "
