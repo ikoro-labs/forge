@@ -186,6 +186,24 @@ class Sli(unittest.TestCase):
         self.assertEqual((result["mediane_h"], result["p90_h"], result["echantillons"]), (36, 48, 2))
         self.assertEqual(result["sans_evenement"], 1)
 
+    def partial_pr(self) -> None:
+        """Ajoute une PR fusionnée qui ne fait que citer les tickets 1 et 4 par `Refs`."""
+        self.world.answers["pr list"].append(
+            pr(14, "2026-10-03T00:00:00Z", state="MERGED", mergedAt="2026-10-11T00:00:00Z",
+               body="Refs #1 Refs #4"))
+
+    def test_lead_time_ignores_a_partial_pr_that_only_refs_the_ticket(self) -> None:
+        """Ticket #56, lead-time : seule la PR qui ferme le ticket compte, pas une PR `Refs`."""
+        self.partial_pr()
+        result = self.sli("lead-time")
+        self.assertEqual((result["mediane_h"], result["p90_h"], result["echantillons"]), (36, 48, 2))
+
+    def test_restore_time_ignores_a_partial_pr_that_only_refs_the_defect(self) -> None:
+        """Ticket #56, restore-time : le correctif est la PR qui ferme le défaut, pas une PR `Refs`."""
+        self.partial_pr()
+        result = self.sli("restore-time")
+        self.assertEqual(result["par_gravite"], {"haute": {"echantillons": 1, "mediane_h": 48, "p90_h": 48}})
+
     def test_release_lag_to_the_first_matching_tag(self) -> None:
         result = self.sli("release-lag")
         self.assertEqual((result["mediane_h"], result["p90_h"], result["echantillons"]), (74, 110, 2))

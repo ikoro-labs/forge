@@ -222,6 +222,11 @@ def tickets_of(item: dict) -> set[int]:
     return cited | {int(n) for n in TICKET_REF.findall(str(item.get("body") or ""))}
 
 
+def closed_tickets_of(item: dict) -> set[int]:
+    """Les tickets que la PR ferme (`Closes`), sans ceux qu'elle ne fait que citer par `Refs`."""
+    return {int(ref["number"]) for ref in item.get("closingIssuesReferences") or []}
+
+
 def rework_rate(f: Factory) -> Sli:
     entrusted: set[int] = set()
     reworked: set[int] = set()
@@ -242,7 +247,7 @@ def lead_time(f: Factory) -> Sli:
     no_event = 0
     for item in f.merged:
         merged = when(item, "mergedAt")
-        for ticket in sorted(tickets_of(item)):
+        for ticket in sorted(closed_tickets_of(item)):
             posed = sorted(
                 token_audit.parse_time(e["created_at"])
                 for e in f.events(ticket)
@@ -304,7 +309,7 @@ def restore_time(f: Factory) -> Sli:
     for item in f.prs:
         merged = when(item, "mergedAt")
         if merged:
-            for ticket in tickets_of(item):
+            for ticket in closed_tickets_of(item):
                 fixes[ticket] = min(merged, fixes.get(ticket, merged))
     groups: dict[str, list[float]] = {}
     open_ones = 0
