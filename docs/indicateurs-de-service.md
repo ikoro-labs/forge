@@ -122,13 +122,19 @@ uv run --no-project --quiet python plugins/forge/scripts/factory_slo.py report <
 - **Sans `--publier`**, `report` ne modifie rien : ni GitHub, ni le fichier d'état de `status`.
 - **Avec `--publier`**, le rapport est réécrit dans l'unique commentaire du ticket de suivi que
   désigne la clé `slo-issue` (un numéro). Le script retrouve son commentaire par un marqueur caché
-  et le réécrit, il n'en empile pas ; il ne l'épingle pas (aucune commande `gh` n'a été essayée
-  pour cela). Sans la clé, la publication est « sans objet (clé `slo-issue` absente) ».
+  et le réécrit, il n'en empile pas. Il l'épingle à sa création (mutation GraphQL `pinIssueComment` ;
+  si `gh` la refuse, par exemple faute de droit ou parce que le ticket porte déjà trois commentaires
+  épinglés, la publication le dit et continue, et l'épingle se pose à la main). Il ne le réépingle pas
+  à chaque réécriture. Cette épingle n'a été essayée que contre des faux `gh` : aucune exécution sur un vrai
+  dépôt ne la confirme. Sans la clé, la publication est « sans objet (clé `slo-issue` absente) ».
 - **L'étiquette `needs-your-attention`** est posée sur ce ticket quand un objectif est `menacé` ou
   `épuisé`, et un commentaire en donne la raison (une fois par changement de l'ensemble des objectifs
-  en cause). Elle est retirée, avec un commentaire qui dit pourquoi, quand aucun objectif n'est plus
-  `menacé` ni `épuisé` et que le rapport précédent l'avait posée : une étiquette posée pour une autre
-  raison n'est pas touchée. Un objectif « sans objet » ne la pose pas et ne la retient pas.
+  en cause). Elle est retirée, avec un commentaire qui dit pourquoi, seulement quand **chaque** objectif
+  est `tenu` et qu'un rapport précédent l'a posée (le marqueur caché `forge-slo-pose` le mémorise) :
+  une étiquette qu'un humain avait déjà posée n'est jamais retirée, même si un objectif devient `menacé`
+  ensuite. Un objectif « sans objet » n'est ni `tenu` ni épuisé : il ne pose pas l'étiquette, et il la
+  retient. Si l'usine s'arrête et qu'un objectif `menacé` devient « sans objet » faute de données,
+  l'étiquette reste jusqu'à ce que tous les objectifs soient `tenu`.
 
 ### La section du CHANGELOG
 

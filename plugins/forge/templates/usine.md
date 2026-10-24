@@ -188,9 +188,10 @@ commande. Sans la clé, les objectifs sont « sans objet (clé `slo` absente) »
 
 Le ticket de suivi de l'usine du projet (un par projet), où `scripts/factory_slo.py report --publier`
 (le skill `forge:slo`) réécrit le rapport des objectifs dans un commentaire unique, retrouvé par un
-marqueur caché, et pose ou retire `needs-your-attention` selon que des objectifs sont `menacé` ou
-`épuisé`. Un numéro, avec ou sans `#`. Le script n'épingle pas le commentaire (aucune commande
-`gh` n'a été essayée pour cela) : il le garde unique et le réécrit. Sans la clé, la publication est
+marqueur caché, et pose `needs-your-attention` quand des objectifs sont `menacé` ou `épuisé`, puis la
+retire quand chaque objectif est `tenu` (un objectif « sans objet » la retient, et une étiquette qu'un
+humain avait posée n'est pas retirée). Un numéro, avec ou sans `#`. Le script épingle le commentaire à
+sa création et le garde unique : il le réécrit. Sans la clé, la publication est
 « sans objet (clé `slo-issue` absente) » et aucune issue n'est devinée.
 
 - `slo-issue` : `<55>`

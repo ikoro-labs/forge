@@ -26,7 +26,11 @@ disable-model-invocation: true
 Sans `--publier`, le script ne modifie rien : ni GitHub, ni fichier. Avec `--publier`, il réécrit le
 rapport dans l'unique commentaire que la clé `slo-issue` désigne (retrouvé par un marqueur caché),
 pose `needs-your-attention` sur cette issue, avec la raison, quand un objectif passe à `menacé` ou
-`épuisé`, et la retire, en disant pourquoi, quand plus aucun ne l'est. Il ne retire jamais une
-étiquette qu'un de ses rapports n'a pas posée. N'ajoute `--publier` que si l'humain l'a demandé,
+`épuisé`, et la retire, en disant pourquoi, seulement quand chaque objectif est `tenu` : un objectif
+« sans objet » la retient, et n'annonce donc jamais son retrait. Il ne retire jamais une étiquette
+qu'un de ses rapports n'a pas posée (il le mémorise dans le commentaire) : une étiquette posée à la
+main reste. Il épingle le commentaire à sa création ; si `gh` refuse, il le dit dans la publication.
+Avec `--json`, la publication est écrite sur l'erreur standard et la sortie standard reste un seul
+document JSON. N'ajoute `--publier` que si l'humain l'a demandé,
 ou si la procédure de publication d'une version le prévoit. Sans la clé `slo-issue`, la publication
 est « sans objet (clé `slo-issue` absente) ».
