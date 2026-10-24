@@ -174,6 +174,18 @@ deux conventions du projet : l'étiquette `escaped-defect`, posée sur un ticket
 fusion, avec dans son corps la ligne `Échappé de #<pr>` qui nomme la PR en cause ; et, pour la gravité
 de `restore-time`, une étiquette `gravite:<classe>`. Voir `docs/indicateurs-de-service.md`.
 
+Les objectifs de service, lus par `scripts/factory_slo.py status`. Une ligne par objectif :
+`<sli> | <comparateur> <cible> | <fenêtre en jours>`. Le SLI est l'un de ceux de
+`docs/indicateurs-de-service.md` ; une durée prend `p90` ou `mediane` après son nom. Le comparateur est
+`>=` ou `<=`, la cible porte son unité (`%` pour un ratio, `h` pour une durée, un nombre nu pour
+`tokens-per-merge`). `status` calcule la valeur sur la fenêtre glissante, le budget d'erreur (l'écart que
+la cible permet) et son état : `tenu`, `menacé` (plus de 75 % du budget consommé) ou `épuisé`. Il l'écrit
+dans `<git-common-dir>/forge/slo-status.json`. Une ligne mal formée ou un SLI inconnu fait échouer la
+commande. Sans la clé, les objectifs sont « sans objet (clé `slo` absente) », sans objectif supposé.
+
+- `slo` : `<accept-round-1 | >= 80 % | 30>`
+- `slo` : `<lead-time p90 | <= 24 h | 30>`
+
 Les noms des checks obligatoires de la branche protégée, un par ligne, comparés par
 `forge:qc-gate` aux check-runs de la PR et à la protection en place.
 
