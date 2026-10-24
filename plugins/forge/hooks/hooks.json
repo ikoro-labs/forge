@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run --no-project --quiet python \"${CLAUDE_PLUGIN_ROOT}/hooks/guard_git.py\" || exit 2",
+            "command": "uv run --no-project --quiet python \"${CLAUDE_PLUGIN_ROOT}/hooks/guard_git.py\" || { code=$?; [ \"$code\" -eq 2 ] || echo \"guard_git failed (exit $code before the guard could rule): the command is refused as a precaution. This is not a rule of the repository; retry, and tell the human if it persists.\" >&2; exit 2; }",
             "onFailure": "block",
             "timeout": 60
           }

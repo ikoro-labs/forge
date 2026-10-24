@@ -1,6 +1,8 @@
 import contextlib
 import io
 import json
+import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -237,17 +239,61 @@ class SplitTicket(unittest.TestCase):
         self.assertIn("closes #322", verdict or "")
 
 
+def guard_git_hook() -> dict[str, str]:
+    hooks = json.loads((support.PLUGIN / "hooks" / "hooks.json").read_text(encoding="utf-8"))
+    found = [
+        hook
+        for group in hooks["hooks"]["PreToolUse"]
+        for hook in group["hooks"]
+        if "guard_git.py" in hook["command"]
+    ]
+    assert len(found) == 1
+    return found[0]
+
+
 class FailsClosed(unittest.TestCase):
     def test_hooks_json_turns_a_crash_of_guard_git_into_a_refusal(self) -> None:
-        hooks = json.loads((support.PLUGIN / "hooks" / "hooks.json").read_text(encoding="utf-8"))
-        found = [
-            hook
-            for group in hooks["hooks"]["PreToolUse"]
-            for hook in group["hooks"]
-            if "guard_git.py" in hook["command"]
-        ]
-        self.assertEqual(len(found), 1)
-        self.assertTrue(found[0]["command"].endswith("|| exit 2"))
+        command = guard_git_hook()["command"]
+        self.assertIn("|| {", command)
+        self.assertTrue(command.endswith("exit 2; }"))
+
+    @unittest.skipUnless(
+        shutil.which("bash") and sys.platform != "win32",
+        "the command of hooks.json is run by the POSIX shell of Linux and macOS; under Windows"
+        " Claude Code runs it in Git Bash, which this suite has not tried",
+    )
+    def test_a_failure_before_the_guard_runs_is_refused_and_says_so(self) -> None:
+        def run(uv_script: str | None) -> subprocess.CompletedProcess[str]:
+            with tempfile.TemporaryDirectory() as folder:
+                if uv_script is not None:
+                    fake = Path(folder) / "uv"
+                    fake.write_text(f"#!/bin/sh\n{uv_script}\n", encoding="utf-8")
+                    fake.chmod(0o755)
+                return subprocess.run(  # noqa: S603 - the shell is found by shutil.which
+                    [str(shutil.which("bash")), "-c", guard_git_hook()["command"]],
+                    env={"PATH": folder, "CLAUDE_PLUGIN_ROOT": str(support.PLUGIN)},
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    timeout=30,
+                )
+
+        for name, script in (
+            ("uv is missing", None),
+            ("uv fails", "echo 'ModuleNotFoundError: usine' >&2; exit 1"),
+        ):
+            with self.subTest(case=name):
+                done = run(script)
+                self.assertEqual(done.returncode, 2)
+                self.assertIn("guard_git failed", done.stderr)
+                self.assertIn("refused as a precaution", done.stderr)
+        # A refusal of a rule is already worded by the guard: not reworded as a failure.
+        done = run("echo 'Blocked by the forge plugin (guard_git): force push.' >&2; exit 2")
+        self.assertEqual(done.returncode, 2)
+        self.assertIn("force push", done.stderr)
+        self.assertNotIn("guard_git failed", done.stderr)
+        done = run("exit 0")
+        self.assertEqual((done.returncode, done.stderr), (0, ""))
 
     def test_hooks_json_blocks_the_command_when_guard_git_times_out(self) -> None:
         # `|| exit 2` does not cover a timeout: the shell is killed before it can run it.
