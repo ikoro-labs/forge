@@ -2,7 +2,8 @@
 
 Une usine qui fusionne seule doit dire si elle s'améliore. `factory_slo.py` calcule ses indicateurs
 de service (SLI) sans modèle, depuis GitHub, git et les journaux de Claude Code. Ses objectifs (SLO)
-et leur budget d'erreur viennent après (série ikoro-labs/forge#55).
+et leur budget d'erreur se déclarent dans `usine.md` et se calculent par `status` (série
+ikoro-labs/forge#55).
 
 ```sh
 uv run --no-project --quiet python plugins/forge/scripts/factory_slo.py sli <projet> --depuis 2026-10-01 [--jusqua 2026-11-01] [--json]
@@ -57,6 +58,49 @@ fusionnée en cause. `change-failure` s'appuie sur cette ligne. La gravité se l
 Le motif des tags de version du projet, `{version}` tenant pour la version (`<plugin>--v{version}`).
 Une ligne par motif. Sans la clé, `release-lag` est « sans objet (clé `release-tag` absente) » ; aucun
 motif n'est supposé. Elle est documentée dans `plugins/forge/templates/usine.md`.
+
+## Les objectifs (SLO) et leur budget d'erreur
+
+Un indicateur sans objectif ne dit pas s'il faut agir. La clé `slo` de `docs/agents/usine.md` déclare
+ce que le projet attend de son usine, une ligne par objectif :
+
+```text
+- `slo` : `accept-round-1 | >= 80 % | 30`
+- `slo` : `lead-time p90 | <= 24 h | 30`
+```
+
+`<sli> | <comparateur> <cible> | <fenêtre en jours>`. Une durée (`lead-time`, `release-lag`,
+`restore-time`) prend `p90` ou `mediane` après son nom ; les autres SLI n'en prennent pas. L'unité de la
+cible est celle du SLI : `%` pour un ratio, `h` pour une durée, un nombre nu pour `tokens-per-merge`.
+Un `>=` ne se déclare que sur un ratio : une durée ou un compte n'a pas de borne haute, donc pas de
+budget. Un SLI dont la clé de configuration manque (`release-tag`, `required-contexts`) reste « sans
+objet », et l'objectif avec lui.
+
+```sh
+uv run --no-project --quiet python plugins/forge/scripts/factory_slo.py status <projet> [--json] [--reference <fichier>]
+```
+
+Pour chaque objectif, `status` calcule la valeur sur la fenêtre glissante (les `<jours>` derniers jours,
+jusqu'à maintenant), puis le budget d'erreur :
+
+- le **budget** est l'écart que la cible permet. Pour `>= 80 %`, 20 points (de 100 % à la cible) ; pour
+  `<= 24 h`, 24 h (de zéro à la cible) ;
+- la **part consommée** est ce que la valeur en a déjà usé : à 90 % pour `>= 80 %`, 10 points sur 20, soit
+  50 % ; à 12 h pour `<= 24 h`, 50 % aussi ;
+- l'**état** : `tenu` jusqu'à 75 % consommés compris, `menacé` au-delà, `épuisé` à 100 % et plus. À
+  100 % pile la cible est juste tenue, mais il ne reste aucune marge : l'état est `épuisé`. Une cible sans
+  marge (`>= 100 %`) est `tenu` à la perfection, `épuisé` sinon.
+
+Une fenêtre sans données (aucune PR, clé absente) rend l'objectif « sans objet » avec sa raison :
+jamais `tenu`, jamais `épuisé`. C'est à celui qui lira cet état (les gardes de #59) de décider ce
+qu'il en fait.
+
+`status` écrit le résultat dans `<git-common-dir>/forge/slo-status.json`, le dossier commun à tous les
+worktrees du dépôt : la date du calcul (`calcule_le`), la branche de base et sa tête (`tete_base`), puis
+un élément par objectif (`valeur`, `budget`, `consomme`, `reste`, `etat` ou `raison`). Les gardes le lisent sans
+réseau. Une ligne de `slo` mal formée ou qui nomme un SLI inconnu fait échouer la commande (code 1) avec
+chaque ligne fautive, et n'écrit rien : jamais un objectif ignoré en silence. Sans la clé `slo`, la
+sortie est « sans objet (clé `slo` absente) », sans fichier.
 
 ## Éprouvé, et pas encore
 

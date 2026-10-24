@@ -1,6 +1,13 @@
 """Compute the service indicators (SLI) of the factory, without any model.
 
     python factory_slo.py sli <project> --depuis DATE [--jusqua DATE] [--json] [--reference FILE]
+    python factory_slo.py status <project> [--json] [--reference FILE]
+
+`status` reads the `slo` key (`<sli> | <comparator> <target> | <window in days>`, one per line), computes
+each objective on its sliding window, its error budget and its state (`tenu`, `menacé`, `épuisé`),
+and writes them to `<git-common-dir>/forge/slo-status.json` with the date and the head of the base.
+A line it cannot read, or that names an unknown SLI, fails the command and writes nothing. A key
+`slo` absent is "sans objet".
 
 The data come from GitHub (`gh ... --json`, run from the project folder, so `gh` finds the
 repository itself), from git, and from the logs `token_audit.py` reads. Prints a Markdown table, or
@@ -26,8 +33,9 @@ import subprocess
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import cast
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "hooks"))
@@ -153,7 +161,7 @@ class Factory:
     @property
     def prs(self) -> list[dict]:
         fields = "number,title,body,state,createdAt,mergedAt,closedAt,labels,mergeCommit,closingIssuesReferences,comments"
-        return self.cached("prs", lambda: self.gh("pr", "list", "--state", "all", "--limit", "1000", "--json", fields))  # type: ignore[return-value]
+        return cast("list[dict]", self.cached("prs", lambda: self.gh("pr", "list", "--state", "all", "--limit", "1000", "--json", fields)))
 
     @property
     def defects(self) -> list[dict]:
@@ -163,7 +171,7 @@ class Factory:
             "defects",
             lambda: self.gh("issue", "list", "--state", "all", "--label", ESCAPED, "--limit", "1000", "--json", fields),
         )
-        return [item for item in found if self.inside(when(item, "createdAt"))]  # type: ignore[union-attr]
+        return [item for item in cast("list[dict]", found) if self.inside(when(item, "createdAt"))]
 
     @property
     def created(self) -> list[dict]:
@@ -176,7 +184,7 @@ class Factory:
     @property
     def base(self) -> str:
         info = self.cached("repo", lambda: self.gh("repo", "view", "--json", "nameWithOwner,defaultBranchRef"))
-        return str(info[0]["defaultBranchRef"]["name"])  # type: ignore[index]
+        return str(cast("list[dict]", info)[0]["defaultBranchRef"]["name"])
 
     def git(self, *args: str) -> str | None:
         try:
@@ -190,7 +198,7 @@ class Factory:
 
     def events(self, ticket: int) -> list[dict]:
         key = f"events{ticket}"
-        return self.cached(key, lambda: self.gh("api", f"repos/{{owner}}/{{repo}}/issues/{ticket}/events", "--paginate"))  # type: ignore[return-value]
+        return cast("list[dict]", self.cached(key, lambda: self.gh("api", f"repos/{{owner}}/{{repo}}/issues/{ticket}/events", "--paginate")))
 
     def required(self, key: str) -> list[str] | None:
         return self.config.get(key) or None
@@ -253,8 +261,8 @@ def lead_time(f: Factory) -> Sli:
                 for e in f.events(ticket)
                 if e.get("event") == "labeled" and (e.get("label") or {}).get("name") == READY
             )
-            if posed and posed[0] <= merged:  # type: ignore[operator]
-                samples.append((merged - posed[0]).total_seconds())  # type: ignore[operator]
+            if posed and merged is not None and posed[0] <= merged:
+                samples.append((merged - posed[0]).total_seconds())
             else:
                 no_event += 1
     return durations("lead-time", samples, "aucun ticket fusionné avec une pose de `ready-for-agent`", sans_evenement=no_event)
@@ -279,8 +287,9 @@ def release_lag(f: Factory) -> Sli:
             name, _, date = row.partition("\t")
             if date and any(pattern.match(name) for pattern in patterns):
                 tags.append(token_audit.parse_time(date))
-        if tags:
-            samples.append((min(tags) - when(item, "mergedAt")).total_seconds())  # type: ignore[operator]
+        merged = when(item, "mergedAt")
+        if tags and merged is not None:
+            samples.append((min(tags) - merged).total_seconds())
         else:
             unpublished += 1
     if not f.merged:
@@ -318,16 +327,20 @@ def restore_time(f: Factory) -> Sli:
         if fixed is None:
             open_ones += 1
             continue
+        opened = when(defect, "createdAt")
+        if opened is None:
+            continue
         severity = next((m.group(1) for name in sorted(label_names(defect)) if (m := SEVERITY.match(name))), "sans gravité")
-        groups.setdefault(severity, []).append((fixed - when(defect, "createdAt")).total_seconds())  # type: ignore[operator]
+        groups.setdefault(severity, []).append((fixed - opened).total_seconds())
     if not groups:
         return Sli("restore-time", reason="aucun `escaped-defect` de la fenêtre n'a encore de correctif fusionné")
     by = {
         name: {"echantillons": len(vals), "mediane_h": hours(median(vals)), "p90_h": hours(percentile(vals, 90))}
         for name, vals in sorted(groups.items())
     }
+    every = [value for values in groups.values() for value in values]
     text = ", ".join(f"{name} : médiane {v['mediane_h']} h ({v['echantillons']})" for name, v in by.items())
-    return Sli("restore-time", data={"par_gravite": by, "ouverts": open_ones}, text=text + (f" ; {open_ones} sans correctif" if open_ones else ""))
+    return Sli("restore-time", data={"par_gravite": by, "ouverts": open_ones, "mediane_h": hours(median(every)), "p90_h": hours(percentile(every, 90)), "echantillons": len(every)}, text=text + (f" ; {open_ones} sans correctif" if open_ones else ""))
 
 
 def tokens_per_merge(f: Factory) -> Sli:
@@ -408,6 +421,174 @@ def compute(project: Path, since: datetime, until: datetime, run: Runner = run_c
     ]
 
 
+class SloError(ValueError):
+    """A line of the `slo` key that cannot be read, or that names an unknown SLI."""
+
+
+RATIO, DURATION, COUNT = "ratio", "durée", "compte"
+KINDS = {
+    "accept-round-1": RATIO, "rework-rate": RATIO, "escaped-defects": RATIO, "change-failure": RATIO,
+    "human-touch": RATIO, "main-green": RATIO, "judge-recall": RATIO, "false-accept": RATIO,
+    "lead-time": DURATION, "release-lag": DURATION, "restore-time": DURATION,
+    "tokens-per-merge": COUNT,
+}
+STATS = {"p90": "p90_h", "mediane": "mediane_h", "médiane": "mediane_h"}
+UNITS = {RATIO: "%", DURATION: "h", COUNT: "jetons"}
+TARGET = re.compile(r"^(>=|<=)\s*(\d+(?:[.,]\d+)?)\s*(%|h|jetons)?$")
+TENU, MENACE, EPUISE = "tenu", "menacé", "épuisé"
+THREATENED_ABOVE = 0.75
+
+
+@dataclass(frozen=True)
+class Slo:
+    """One objective: the SLI (and its statistic, for a duration), a comparator, a target, a window."""
+
+    line: str
+    sli: str
+    stat: str | None
+    comparator: str
+    target: float
+    unit: str
+    days: int
+
+    @property
+    def label(self) -> str:
+        return f"{self.sli} {self.stat}" if self.stat else self.sli
+
+
+def parse_slo(lines: list[str]) -> list[Slo]:
+    """The objectives of the `slo` key; SloError names every faulty line, none is ignored."""
+    objectives: list[Slo] = []
+    faults: list[str] = []
+    for line in lines:
+        try:
+            objectives.append(parse_one(line))
+        except SloError as error:
+            faults.append(f"`slo` : `{line}` : {error}")
+    if faults:
+        raise SloError("\n".join(faults))
+    return objectives
+
+
+def parse_one(line: str) -> Slo:
+    parts = usine.split_value(line, 3)
+    if parts is None:
+        raise SloError("attendu `<sli> | <comparateur> <cible> | <fenêtre en jours>`")
+    name_part, target_part, window_part = parts
+    words = name_part.split()
+    if len(words) > 2:
+        raise SloError("le nom est un SLI, suivi au plus de `p90` ou `mediane`")
+    sli, stat = words[0], (words[1] if len(words) == 2 else None)
+    if sli not in KINDS:
+        raise SloError(f"SLI inconnu `{sli}` (connus : {', '.join(sorted(KINDS))})")
+    kind = KINDS[sli]
+    if kind == DURATION and stat is None:
+        raise SloError(f"`{sli}` est une durée : ajouter `p90` ou `mediane` après son nom")
+    if kind != DURATION and stat is not None:
+        raise SloError(f"`{sli}` n'a pas de statistique : retirer `{stat}`")
+    if stat is not None and stat not in STATS:
+        raise SloError(f"statistique inconnue `{stat}` (`p90` ou `mediane`)")
+    found = TARGET.match(target_part)
+    if not found:
+        raise SloError("la cible est `>=` ou `<=`, un nombre et son unité")
+    comparator, number, unit = found.group(1), float(found.group(2).replace(",", ".")), found.group(3)
+    if kind != COUNT and unit != UNITS[kind]:
+        raise SloError(f"`{sli}` se mesure en `{UNITS[kind]}` : la cible doit porter cette unité")
+    if kind == COUNT and unit not in (None, "jetons"):
+        raise SloError("`tokens-per-merge` se mesure en jetons, sans autre unité")
+    if kind != RATIO and comparator == ">=":
+        raise SloError(f"`>=` n'a pas de budget pour `{sli}` : une borne haute seule en donne un")
+    if not window_part.isdigit() or int(window_part) < 1:
+        raise SloError("la fenêtre est un nombre entier de jours, au moins 1")
+    return Slo(line, sli, stat, comparator, number, UNITS[kind], int(window_part))
+
+
+def measured(slo: Slo, sli: Sli) -> float:
+    """The value the objective compares, in the unit of its target."""
+    if KINDS[slo.sli] == RATIO:
+        return round(100 * float(sli.data["valeur"]), 2)
+    if KINDS[slo.sli] == DURATION and slo.stat is not None:
+        return float(sli.data[STATS[slo.stat]])
+    return float(sli.data["valeur"])
+
+
+def evaluate(slo: Slo, sli: Sli) -> dict:
+    """Value, error budget and state of one objective over the SLI computed on its window.
+
+    The budget is the gap the target allows: from perfect (100 %) for a ratio `>=`, from zero for
+    `<=`. The share consumed is what the value has already used of it; the state is `tenu` up to
+    75 % consumed, `menacé` above, `épuisé` from 100 %.
+    """
+    base = {
+        "ligne": slo.line, "sli": slo.sli, "statistique": slo.stat, "comparateur": slo.comparator,
+        "cible": slo.target, "unite": slo.unit, "fenetre_jours": slo.days,
+    }
+    if sli.reason is not None:
+        return {**base, "statut": "sans objet", "raison": sli.reason}
+    value = measured(slo, sli)
+    allowed = 100 - slo.target if slo.comparator == ">=" else slo.target
+    used = max(0.0, 100 - value) if slo.comparator == ">=" else max(0.0, value)
+    consumed = round(used / allowed, 4) if allowed > 0 else (0.0 if used == 0 else 1.0)
+    state = EPUISE if consumed >= 1 else MENACE if consumed > THREATENED_ABOVE else TENU
+    return {
+        **base, "statut": "calculé", "valeur": value, "budget": round(allowed, 4),
+        "consomme": consumed, "reste": round(max(0.0, allowed - used), 4), "etat": state,
+    }
+
+
+def status(project: Path, now: datetime, run: Runner = run_command, ref: Path | None = None) -> dict | None:
+    """The state of every `slo` objective of the project, or None when the key is absent."""
+    lines = usine.load(project).get("slo")
+    if not lines:
+        return None
+    objectives = parse_slo(lines)
+    windows: dict[int, dict[str, Sli]] = {}
+    for days in sorted({slo.days for slo in objectives}):
+        results = compute(project, now - timedelta(days=days), now, run, ref)
+        windows[days] = {item.name: item for item in results}
+    base = Factory(project, now - timedelta(days=1), now, run)
+    base_ref = base.base_ref()
+    head = run(["git", "rev-parse", "--verify", base_ref], project).strip()
+    return {
+        "projet": str(project), "calcule_le": now.isoformat(), "base": base.base, "tete_base": head,
+        "objectifs": [evaluate(slo, windows[slo.days][slo.sli]) for slo in objectives],
+    }
+
+
+def state_path(project: Path, run: Runner = run_command) -> Path:
+    common = run(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"], project).strip()
+    return Path(common) / "forge" / "slo-status.json"
+
+
+def write_state(path: Path, document: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    scratch = path.with_name(path.name + ".tmp")
+    scratch.write_text(json.dumps(document, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    scratch.replace(path)
+
+
+def number(value: float) -> str:
+    return str(int(value)) if float(value).is_integer() else str(value)
+
+
+def status_markdown(document: dict) -> str:
+    lines = [
+        f"Objectifs de service de `{document['projet']}`, calculés le {document['calcule_le']}.",
+        "",
+        "| Objectif | Cible | Fenêtre | Valeur | Budget consommé | État |",
+        "|---|---|---|---|---|---|",
+    ]
+    for item in document["objectifs"]:
+        label = f"{item['sli']} {item['statistique']}" if item["statistique"] else item["sli"]
+        unit = f" {item['unite']}" if item["unite"] != "jetons" else ""
+        head = f"| `{label}` | {item['comparateur']} {number(item['cible'])}{unit} | {item['fenetre_jours']} j |"
+        if item["statut"] == "sans objet":
+            lines.append(f"{head} sans objet | {item['raison']} | sans objet |")
+        else:
+            lines.append(f"{head} {number(item['valeur'])}{unit} | {round(100 * item['consomme'])} % | {item['etat']} |")
+    return "\n".join(lines)
+
+
 def markdown(results: list[Sli], project: Path, since: datetime, until: datetime) -> str:
     lines = [
         f"Indicateurs de service de `{project}`, de {since.isoformat()} à {until.isoformat()}.",
@@ -432,9 +613,23 @@ def _date(text: str) -> datetime:
         raise argparse.ArgumentTypeError(f"`{text}` n'est pas une date ISO (2026-10-20, en UTC sans zone)") from None
 
 
-def main(argv: list[str] | None = None, run: Runner = run_command) -> int:
+def run_status(args: argparse.Namespace, run: Runner, now: datetime) -> int:
+    document = status(args.projet, now, run, args.reference)
+    if document is None:
+        print("Objectifs de service : sans objet (clé `slo` absente).")
+        return 0
+    write_state(state_path(args.projet, run), document)
+    print(json.dumps(document, ensure_ascii=False, indent=2) if args.json else status_markdown(document))
+    return 0
+
+
+def main(argv: list[str] | None = None, run: Runner = run_command, now: datetime | None = None) -> int:
     parser = argparse.ArgumentParser(prog="factory_slo.py", description=__doc__.splitlines()[0])
     commands = parser.add_subparsers(dest="commande", required=True)
+    state = commands.add_parser("status", help="calcule les objectifs de service et leur budget d'erreur")
+    state.add_argument("projet", type=Path, help="le dossier du projet")
+    state.add_argument("--json", action="store_true", help="rend du JSON au lieu d'un tableau Markdown")
+    state.add_argument("--reference", type=Path, help="le dernier résultat du jeu de référence (JSON)")
     sli = commands.add_parser("sli", help="calcule les indicateurs de service")
     sli.add_argument("projet", type=Path, help="le dossier du projet")
     sli.add_argument("--depuis", type=_date, required=True, help="début de la fenêtre, inclus")
@@ -443,6 +638,12 @@ def main(argv: list[str] | None = None, run: Runner = run_command) -> int:
     sli.add_argument("--reference", type=Path, help="le dernier résultat du jeu de référence (JSON)")
     args = parser.parse_args(argv)
 
+    if args.commande == "status":
+        try:
+            return run_status(args, run, now or datetime.now(tz=timezone.utc))
+        except (RuntimeError, ValueError, KeyError, IndexError, OSError) as error:
+            print(f"Calcul impossible : {error}", file=sys.stderr)
+            return 1
     until = args.jusqua or datetime.now(tz=args.depuis.tzinfo)
     if until <= args.depuis:
         print("`--jusqua` doit suivre `--depuis`.", file=sys.stderr)
