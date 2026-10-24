@@ -1,3 +1,5 @@
+import io
+import json
 import sys
 import tempfile
 import unittest
@@ -6,7 +8,7 @@ from pathlib import Path
 from unittest import mock
 
 import support  # noqa: F401
-from guard_git import description_via_gh, native_directory, refusal
+from guard_git import OWNER_KEY, description_via_gh, main, native_directory, refusal
 
 
 def never_green(_pr: str | None) -> bool:
@@ -232,6 +234,240 @@ class SplitTicket(unittest.TestCase):
                 description = description_via_gh(folder)
                 verdict = refusal("gh pr merge 506", "feat/x", always_green, description=description)
         self.assertIn("closes #322", verdict or "")
+
+
+OWNER_REFUSAL = "geste du propriétaire du dépôt, à lister pour l'humain en fin de compte rendu"
+OWNER_KEY_VALUE = "gh label delete | les étiquettes sont au propriétaire"
+
+
+def owner_refused(command: str, lines: list[str]) -> str | None:
+    return refusal(command, "feat/x", always_green, owner_gestures=lines)
+
+
+class OwnerGestures(unittest.TestCase):
+    """Les gestes du propriétaire du dépôt, refusés à tout agent."""
+
+    def test_the_gh_commands_of_the_owner_are_refused_and_named(self) -> None:
+        cases = [
+            ("gh secret set TOKEN --body x", "gh secret set"),
+            ("gh secret delete TOKEN", "gh secret delete"),
+            ("gh variable set NAME --body x", "gh variable set"),
+            ("gh variable delete NAME", "gh variable delete"),
+            ("gh repo edit --visibility public", "gh repo edit --visibility"),
+            ("gh repo edit o/r --visibility=private --accept-visibility-change-consequences",
+             "gh repo edit --visibility"),
+            ("gh repo delete o/r --yes", "gh repo delete"),
+            ("gh repo rename new-name", "gh repo rename"),
+            ("gh repo archive o/r --yes", "gh repo archive"),
+            ("gh repo deploy-key add key.pub", "gh repo deploy-key add"),
+            ("cd /work && gh secret set X", "gh secret set"),
+            ("echo ok; gh variable set X --body 1", "gh variable set"),
+        ]
+        for command, gesture in cases:
+            with self.subTest(command=command):
+                verdict = refused(command)
+                self.assertIn(gesture, verdict or "")
+                self.assertIn(OWNER_REFUSAL, verdict or "")
+
+    def test_gh_global_options_and_environment_do_not_hide_a_gesture(self) -> None:
+        for command in (
+            "gh -R o/r secret set TOKEN --body x",
+            "gh --repo=o/r secret set TOKEN",
+            "GH_TOKEN=x gh -R o/r variable delete NAME",
+            "gh secret -R o/r set TOKEN",
+        ):
+            with self.subTest(command=command):
+                self.assertIn(OWNER_REFUSAL, refused(command) or "")
+
+    def test_the_reads_of_the_same_commands_stay_allowed(self) -> None:
+        for command in (
+            "gh secret list",
+            "gh variable list",
+            "gh variable get NAME",
+            "gh repo view o/r",
+            "gh repo edit --description 'x'",
+            "gh repo list",
+        ):
+            with self.subTest(command=command):
+                self.assertIsNone(refused(command))
+
+    def test_a_write_by_gh_api_on_an_owner_endpoint_is_refused(self) -> None:
+        cases = [
+            "gh api -X PUT repos/o/r/collaborators/bob -f permission=push",
+            "gh api --method DELETE /repos/o/r/collaborators/bob",
+            "gh api -X DELETE repos/o/r/invitations/12",
+            "gh api -X PUT repos/o/r/branches/main/protection --input p.json",
+            "gh api -X PUT repos/o/r/branches/release/1.x/protection -f x=1",
+            "gh api repos/o/r/rulesets -f name=x",
+            "gh api -X PUT repos/o/r/rulesets/9 --input r.json",
+            "gh api -X POST repos/o/r/actions/runners/registration-token",
+            "gh api -X DELETE repos/o/r/actions/runners/4",
+            "gh api -X PUT repos/o/r/actions/secrets/TOKEN -f encrypted_value=x",
+            "gh api -X DELETE repos/o/r/actions/variables/NAME",
+            "gh api -X POST repos/o/r/actions/variables -f name=A -f value=1",
+            "gh api -X PATCH repos/o/r -f private=false",
+            "gh api -X DELETE repos/o/r",
+            "gh api -X POST repos/o/r/transfer -f new_owner=x",
+            "gh api -X POST repos/o/r/keys -f key=k",
+            "gh api -X POST repos/o/r/hooks --input h.json",
+            "gh api -X PUT repos/o/r/environments/prod",
+            "gh api -X PUT repos/o/r/actions/permissions -F enabled=true",
+            "gh api -X PUT orgs/o/actions/secrets/TOKEN",
+            "gh api -XDELETE repos/o/r/collaborators/bob",
+            "gh -R o/r api -X DELETE repos/{owner}/{repo}/collaborators/bob",
+            "gh api repos/o/r/collaborators/bob?permission=push -X PUT",
+            "gh api -H 'Accept: application/json' -X PUT repos/o/r/rulesets/1",
+        ]
+        for command in cases:
+            with self.subTest(command=command):
+                verdict = refused(command)
+                self.assertIn(OWNER_REFUSAL, verdict or "")
+                self.assertIn("gh api", verdict or "")
+
+    def test_a_read_by_gh_api_stays_allowed_even_on_an_owner_endpoint(self) -> None:
+        for command in (
+            "gh api repos/o/r/collaborators",
+            "gh api -X GET repos/o/r/rulesets",
+            "gh api --method HEAD repos/o/r/branches/main/protection",
+            "gh api repos/o/r/actions/secrets",
+            "gh api repos/o/r/actions/runners --jq '.runners[].name'",
+            "gh api repos/o/r",
+            "gh api repos/o/r/pulls/3 -X GET -f state=open",
+        ):
+            with self.subTest(command=command):
+                self.assertIsNone(refused(command))
+
+    def test_a_write_by_gh_api_outside_the_owner_endpoints_is_left_alone(self) -> None:
+        for command in (
+            "gh api -X POST repos/o/r/issues/3/comments -f body=x",
+            "gh api -X PUT repos/o/r/contents/plugins/forge/hooks/x.py -f message=m",
+            "gh api -X PATCH repos/o/r/issues/3 -f state=closed",
+            "gh api -X POST repos/o/r/git/refs -f ref=refs/heads/x",
+        ):
+            with self.subTest(command=command):
+                self.assertIsNone(refused(command))
+
+    def test_graphql_mutations_of_protection_ruleset_collaborator_and_repository_are_refused(
+        self,
+    ) -> None:
+        for mutation in (
+            'createBranchProtectionRule(input: {pattern: "main"})',
+            "updateBranchProtectionRule(input: {})",
+            'deleteBranchProtectionRule(input: {id: "x"})',
+            "createRepositoryRuleset(input: {})",
+            "updateRepositoryRuleset(input: {})",
+            "deleteRepositoryRuleset(input: {})",
+            'updateRepository(input: {repositoryId: "x", hasIssuesEnabled: false})',
+            'deleteRepository(input: {repositoryId: "x"})',
+            'archiveRepository(input: {repositoryId: "x"})',
+            "transferRepository(input: {})",
+            "addRepositoryCollaborator(input: {})",
+            "removeRepositoryCollaborator(input: {})",
+        ):
+            command = f"gh api graphql -f query='mutation {{ {mutation} {{ clientMutationId }} }}'"
+            with self.subTest(mutation=mutation):
+                verdict = refused(command)
+                self.assertIn(OWNER_REFUSAL, verdict or "")
+                self.assertIn("gh api graphql", verdict or "")
+
+    def test_the_runner_scripts_are_refused_behind_a_wrapper_too(self) -> None:
+        for command in (
+            "./config.sh --url https://github.com/o/r --token T",
+            "cd actions-runner && ./config.sh remove --token T",
+            ".\\config.cmd --url https://github.com/o/r --token T",
+            "config.cmd remove",
+            "sudo ./svc.sh install",
+            "sudo -u runner ./svc.sh start",
+            "sudo bash ./config.sh --token T",
+            "bash config.sh --token T",
+            "sh -x ./svc.sh uninstall",
+            "cmd /c config.cmd --token T",
+            "C:\\actions-runner\\config.cmd --token T",
+            "/home/runner/actions-runner/svc.sh stop",
+        ):
+            with self.subTest(command=command):
+                verdict = refused(command)
+                self.assertIn(OWNER_REFUSAL, verdict or "")
+                self.assertRegex(verdict or "", r"config\.(sh|cmd)|svc\.sh")
+
+    def test_a_runner_status_and_other_scripts_stay_allowed(self) -> None:
+        for command in (
+            "sudo ./svc.sh status",
+            "./run.sh",
+            "bash ./build.sh",
+            "cat config.sh",
+            "grep -n token config.cmd",
+            "sudo apt update",
+        ):
+            with self.subTest(command=command):
+                self.assertIsNone(refused(command))
+
+    def test_a_gesture_the_project_declares_is_refused_with_its_reason(self) -> None:
+        lines = [OWNER_KEY_VALUE, "uv run python -m scripts.release | la publication est humaine"]
+        for command in (
+            "gh label delete bug",
+            "gh -R o/r label delete bug",
+            "GH_TOKEN=x gh --repo=o/r label delete bug",
+            "cd /work && gh label delete bug --yes",
+            "uv run python -m scripts.release --tag v1",
+        ):
+            with self.subTest(command=command):
+                verdict = owner_refused(command, lines)
+                self.assertIn(OWNER_REFUSAL, verdict or "")
+                self.assertRegex(verdict or "", "les étiquettes sont au propriétaire|publication")
+
+    def test_a_declared_prefix_is_compared_word_by_word(self) -> None:
+        for command in ("gh label deleted bug", "gh label list", "gh issue delete 3", "ghx label delete"):
+            with self.subTest(command=command):
+                self.assertIsNone(owner_refused(command, [OWNER_KEY_VALUE]))
+
+    def test_a_declared_gesture_without_a_reason_still_refuses_and_says_so(self) -> None:
+        for value in ("gh label delete", "gh label delete | ", "gh label delete |"):
+            with self.subTest(value=value):
+                verdict = owner_refused("gh label delete bug", [value])
+                self.assertIn(OWNER_REFUSAL, verdict or "")
+                self.assertIn("sans raison", verdict or "")
+
+    def test_a_declared_gesture_with_no_command_refuses_nothing(self) -> None:
+        self.assertIsNone(owner_refused("gh label delete bug", [" | une raison", ""]))
+
+    def test_the_hook_reads_the_gestures_from_the_project_configuration(self) -> None:
+        event = json.dumps({"tool_input": {"command": "gh label delete bug"}, "cwd": "/nowhere"})
+
+        def run(project: str | None) -> tuple[int, str]:
+            env = {"CLAUDE_PROJECT_DIR": project} if project else {}
+            err = io.StringIO()
+            with (
+                mock.patch.dict("os.environ", env, clear=True),
+                mock.patch("sys.stdin", io.StringIO(event)),
+                mock.patch("sys.stderr", err),
+                mock.patch("guard_git.current_branch", lambda _cwd: "feat/x"),
+                mock.patch("guard_git.checks_green_via_gh", lambda _cwd: always_green),
+            ):
+                return main(), err.getvalue()
+
+        with tempfile.TemporaryDirectory() as root:
+            config = Path(root) / "docs" / "agents"
+            config.mkdir(parents=True)
+            (config / "usine.md").write_text(f"- `{OWNER_KEY}` : `{OWNER_KEY_VALUE}`\n", "utf-8")
+            code, message = run(root)
+            self.assertEqual(code, 2)
+            self.assertIn("les étiquettes sont au propriétaire", message)
+        with tempfile.TemporaryDirectory() as root:
+            self.assertEqual(run(root)[0], 0)
+
+    def test_the_sub_issue_mutations_the_plugin_uses_and_graphql_reads_pass(self) -> None:
+        for command in (
+            "gh api graphql -f query='mutation { addSubIssue(input: {issueId: \"a\", "
+            "subIssueId: \"b\"}) { issue { id } } }'",
+            "gh api graphql -f query='mutation { removeSubIssue(input: {}) { issue { id } } }'",
+            "gh api graphql -f query='mutation { reprioritizeSubIssue(input: {}) { id } }'",
+            "gh api graphql -f query='query { repository(owner: \"o\", name: \"r\") { id } }'",
+            "gh api graphql -f query='query { repository(owner: \"o\", name: \"r\") "
+            "{ branchProtectionRules(first: 5) { nodes { pattern } } } }'",
+        ):
+            with self.subTest(command=command):
+                self.assertIsNone(refused(command))
 
 
 if __name__ == "__main__":

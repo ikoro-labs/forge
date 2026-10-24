@@ -68,7 +68,7 @@ class Config(unittest.TestCase):
             if "templates" not in path.parts:
                 for key in CITED.findall(path.read_text(encoding="utf-8")):
                     cited.setdefault(key, str(path.relative_to(support.PLUGIN)))
-        for name in ("after_write", "guard_readonly"):
+        for name in ("after_write", "guard_git", "guard_readonly"):
             text = (support.PLUGIN / "hooks" / f"{name}.py").read_text(encoding="utf-8")
             for key in HOOK_KEY.findall(text):
                 cited.setdefault(key, f"hooks/{name}.py")
