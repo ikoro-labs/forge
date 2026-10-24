@@ -91,6 +91,19 @@ Le numéro de PR, et le numéro du tour (1 ou 2).
     (`FAIL`, jamais `PASS`). Quand la base n'a pas `docs/agents/usine.md`, ou que le script rend
     `sans objet (clé never-weaken absente)`, la sonde se rend `sans objet (clé never-weaken absente)`.
     Tu ne juges pas l'entrée : tu rends ce que le script a mesuré.
+11. **Rejeu des tests sur la base.** Le rouge d'un test n'est qu'une déclaration tant que personne ne
+    le remesure : les fichiers de test que la PR ajoute ou change sont posés, tels que la tête les a,
+    dans une copie de la **base**, puis rejoués. Avec les clés de la base, déjà écrites à la sonde 10
+    dans `usine-base.md` :
+    `uv run --no-project --quiet python "${CLAUDE_PLUGIN_ROOT}/scripts/base_replay.py" --base origin/<base> --head <tête> --usine usine-base.md`,
+    lancé depuis un clone du projet (le script crée et supprime sa propre copie, et n'écrit rien dans
+    le dépôt). Recopie chaque ligne du script, verbatim, et son code de sortie : 0 aucun fichier ne
+    passe sur la base, 1 un fichier passe (rends chaque ligne `PASSES` avec son fichier, sans la
+    juger), 2 un rejeu n'a pas pu tourner ou l'appel a échoué (`NOT RUN` avec sa commande, jamais
+    `PASS`). Le script borne lui-même mémoire et délai de chaque commande : un rejeu qui dépasse l'un
+    des deux est `NOT RUN`. Quand le script rend `sans objet (clé test-path absente)` ou
+    `sans objet (clé red-replay absente)`, la sonde se rend ainsi. Un fichier `RED` est le cas
+    attendu : tu le comptes, tu ne le détailles pas.
 
 Au tour 2, rejoue toutes les sondes : une correction peut casser ce qui passait.
 
@@ -106,5 +119,5 @@ Un tableau, rien d'autre, au plus trente lignes :
 | ... | ... | ... |
 ```
 
-Puis, sous le tableau, les éléments verbatim des sondes 2, 5, 6, 7 et 10. Une sonde que tu n'as pas
+Puis, sous le tableau, les éléments verbatim des sondes 2, 5, 6, 7, 10 et 11. Une sonde que tu n'as pas
 pu exécuter s'écrit `NOT RUN` avec la commande et sa sortie d'erreur : jamais `PASS`.

@@ -250,6 +250,87 @@ class CitedNames(unittest.TestCase):
                 self.assertTrue((support.PLUGIN / "agents" / f"{agent.removeprefix('forge:')}.md").is_file())
 
 
+class BaseReplayProbe(unittest.TestCase):
+    """Ticket #43: the gate replays the added tests on the base, where each must fail."""
+
+    @staticmethod
+    def read(*parts: str) -> str:
+        return " ".join(support.PLUGIN.joinpath(*parts).read_text(encoding="utf-8").split())
+
+    def test_the_gate_runs_the_script_with_the_keys_of_the_base(self) -> None:
+        """No F-NNNN: ticket #43, critère 1: une sonde lance le script du plugin, clés lues sur la base."""
+        gate = self.read("agents", "qc-gate.md")
+        section = gate[gate.index("**Rejeu des tests sur la base.**"):]
+        self.assertIn("${CLAUDE_PLUGIN_ROOT}/scripts/base_replay.py", section)
+        self.assertIn("--base origin/<base> --head <tête>", section)
+        self.assertIn("--usine usine-base.md", section)
+        self.assertIn("chaque ligne `PASSES`", section)
+        self.assertIn("verbatim", section)
+
+    def test_an_impossible_replay_is_not_run_with_its_command_and_never_pass(self) -> None:
+        """No F-NNNN: ticket #43, critère 1: un rejeu impossible se rend NOT RUN avec sa commande, jamais PASS."""
+        gate = self.read("agents", "qc-gate.md")
+        section = gate[gate.index("**Rejeu des tests sur la base.**"):]
+        self.assertIn("`NOT RUN` avec sa commande", section)
+        self.assertIn("jamais `PASS`", section)
+        self.assertIn("sans objet (clé test-path absente)", section)
+        self.assertIn("sans objet (clé red-replay absente)", section)
+
+    def test_the_output_hands_the_probe_lines_to_the_judge(self) -> None:
+        """No F-NNNN: ticket #43, critère 1: les lignes de la sonde figurent verbatim sous le tableau."""
+        gate = self.read("agents", "qc-gate.md")
+        self.assertIn("les éléments verbatim des sondes 2, 5, 6, 7, 10 et 11", gate)
+
+    def test_the_template_documents_the_two_keys(self) -> None:
+        """No F-NNNN: ticket #43, critère 3: test-path et red-replay sont documentées dans le gabarit."""
+        template = self.read("templates", "usine.md")
+        self.assertIn("- `test-path` : `<tests/>`", template)
+        self.assertIn("une ligne par préfixe", template)
+        self.assertIn("- `red-replay` : `<", template)
+        self.assertIn("{name}", template)
+        self.assertIn("{file}", template)
+        self.assertIn("sans objet (clé `test-path` absente)", template)
+        self.assertIn("mémoire", template)
+        self.assertIn("délai", template)
+
+    def test_the_configuration_page_names_the_keys_and_the_limits(self) -> None:
+        """No F-NNNN: ticket #43, critère 3: la page de docs qui décrit les clés cite les deux clés."""
+        page = " ".join((support.REPO_ROOT / "docs" / "installation.md").read_text(encoding="utf-8").split())
+        self.assertIn("`test-path`", page)
+        self.assertIn("`red-replay`", page)
+        self.assertIn("base_replay.py", page)
+        self.assertIn("éprouvé sous Linux seulement", page)
+
+    def test_this_repository_declares_the_two_keys(self) -> None:
+        """No F-NNNN: ticket #43, critère 4: docs/agents/usine.md déclare tests/ et la commande de la suite."""
+        from usine import load
+
+        config = load(support.REPO_ROOT)
+        self.assertEqual(config["test-path"], ["tests/"])
+        self.assertEqual(len(config["red-replay"]), 1)
+        self.assertIn("unittest discover -s tests", config["red-replay"][0])
+        self.assertIn("{name}", config["red-replay"][0])
+
+    def test_the_judge_reads_the_probe(self) -> None:
+        """No F-NNNN: ticket #43, critère 2: un test de critère qui passe sur la base sans justification est un constat."""
+        judge = self.read("agents", "qc-conf.md")
+        section = judge[judge.index("## Lecture du rejeu sur la base"):]
+        section = section[: section.index("## Forme d'un constat")]
+        self.assertIn("`PASSES`", section)
+        self.assertIn("test de caractérisation", section)
+        self.assertIn("refonte à comportement égal", section)
+        self.assertIn("`BLOCKER` quand il est la seule preuve d'un critère de comportement nouveau", section)
+        self.assertIn("`MINOR` sinon", section)
+        self.assertIn("`NOT RUN`", section)
+        self.assertIn("sans objet", section)
+
+    def test_the_judge_section_sits_apart_from_the_reading_of_the_tests(self) -> None:
+        """No F-NNNN: ticket #43, hors périmètre: la lecture de qualité des tests (#42) garde sa section."""
+        judge = self.read("agents", "qc-conf.md")
+        self.assertLess(judge.index("## Lecture des tests"), judge.index("## Lecture du rejeu sur la base"))
+        self.assertEqual(judge.count("## Lecture des tests"), 1)
+
+
 class GateProbes(unittest.TestCase):
     def test_the_gate_reads_the_protection_in_rulesets_and_in_branch_protection(self) -> None:
         # A branch that only a ruleset protects has no contexts in its branch protection: the
