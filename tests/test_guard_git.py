@@ -7,8 +7,8 @@ from collections.abc import Callable
 from pathlib import Path
 from unittest import mock
 
-import support  # noqa: F401
-from guard_git import OWNER_KEY, description_via_gh, main, native_directory, refusal
+import support
+from guard_git import OWNER_KEY, description_via_gh, guarded_main, main, native_directory, refusal
 
 
 def never_green(_pr: str | None) -> bool:
@@ -234,6 +234,56 @@ class SplitTicket(unittest.TestCase):
                 description = description_via_gh(folder)
                 verdict = refusal("gh pr merge 506", "feat/x", always_green, description=description)
         self.assertIn("closes #322", verdict or "")
+
+
+class FailsClosed(unittest.TestCase):
+    def test_hooks_json_turns_a_crash_of_guard_git_into_a_refusal(self) -> None:
+        hooks = json.loads((support.PLUGIN / "hooks" / "hooks.json").read_text(encoding="utf-8"))
+        found = [
+            hook
+            for group in hooks["hooks"]["PreToolUse"]
+            for hook in group["hooks"]
+            if "guard_git.py" in hook["command"]
+        ]
+        self.assertEqual(len(found), 1)
+        self.assertTrue(found[0]["command"].endswith("|| exit 2"))
+
+    def test_hooks_json_blocks_the_command_when_guard_git_times_out(self) -> None:
+        # `|| exit 2` does not cover a timeout: the shell is killed before it can run it.
+        hooks = json.loads((support.PLUGIN / "hooks" / "hooks.json").read_text(encoding="utf-8"))
+        found = [
+            hook
+            for group in hooks["hooks"]["PreToolUse"]
+            for hook in group["hooks"]
+            if "guard_git.py" in hook["command"]
+        ]
+        self.assertEqual(found[0].get("onFailure"), "block")
+
+    def test_a_guard_that_raises_refuses_and_says_it_failed(self) -> None:
+        stderr = io.StringIO()
+        with mock.patch("guard_git.main", side_effect=RuntimeError("boom")):
+            with mock.patch("sys.stderr", stderr):
+                code = guarded_main()
+        self.assertEqual(code, 2)
+        self.assertIn("guard_git failed", stderr.getvalue())
+        self.assertIn("refused as a precaution", stderr.getvalue())
+        self.assertIn("RuntimeError", stderr.getvalue())
+
+    def test_an_event_that_is_not_json_is_a_refusal_not_a_traceback(self) -> None:
+        stderr = io.StringIO()
+        with mock.patch("sys.stdin", io.StringIO("not json")), mock.patch("sys.stderr", stderr):
+            code = guarded_main()
+        self.assertEqual(code, 2)
+        self.assertIn("refused as a precaution", stderr.getvalue())
+
+    def test_a_refusal_of_a_rule_is_not_reworded_as_a_failure(self) -> None:
+        event = json.dumps({"tool_input": {"command": "git push --force"}, "cwd": None})
+        stderr = io.StringIO()
+        with mock.patch("sys.stdin", io.StringIO(event)), mock.patch("sys.stderr", stderr):
+            code = guarded_main()
+        self.assertEqual(code, 2)
+        self.assertIn("force push", stderr.getvalue())
+        self.assertNotIn("guard_git failed", stderr.getvalue())
 
 
 OWNER_REFUSAL = "geste du propriétaire du dépôt, à lister pour l'humain en fin de compte rendu"
