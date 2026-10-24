@@ -132,6 +132,42 @@ class CoderReportsFormatFailures(unittest.TestCase):
         self.assertIn("NOTES", text.split("format-on-write: ", 1)[1].split("\n## ", 1)[0])
 
 
+class CoderTestsAtDeclaredSeams(unittest.TestCase):
+    """Ticket #41 : le coder teste aux coutures déclarées, une tranche à la fois."""
+
+    @staticmethod
+    def section(heading: str) -> str:
+        text = (support.PLUGIN / "agents" / "coder.md").read_text(encoding="utf-8")
+        return text.split(heading, 1)[1].split("\n## ", 1)[0]
+
+    def test_tests_live_at_the_seams_the_design_declares(self) -> None:
+        """No F-NNNN: ticket #41, critère 1 (couture du §6, puis ticket, puis choix écrit)."""
+        step = self.section("## 3. Test-first")
+        self.assertIn("Coutures de test", step)
+        self.assertIn("§6", step)
+        self.assertIn("ce qu'elle attrape", step)
+        self.assertIn("ce qu'elle manque", step)
+
+    def test_one_vertical_slice_at_a_time(self) -> None:
+        """No F-NNNN: ticket #41, critère 2 (un test, son code, jamais un lot de tests)."""
+        step = self.section("## 3. Test-first")
+        self.assertIn("tranche verticale", step)
+        self.assertIn("Jamais un lot de tests", step)
+
+    def test_tests_to_avoid_and_mock_rule_stand_without_a_test_skill(self) -> None:
+        """No F-NNNN: ticket #41, critère 3 (tests à éviter, mocks aux frontières)."""
+        step = self.section("## 3. Test-first")
+        self.assertIn("tautologique", step)
+        self.assertIn("couplé à l'implémentation", step)
+        self.assertIn("frontières du système", step)
+        self.assertIn("`test-skill`", step)
+
+    def test_proofs_copy_the_red_output_with_its_reason(self) -> None:
+        """No F-NNNN: ticket #41, critère 4 (Preuves : sortie rouge et raison)."""
+        self.assertIn("raison de l'échec", self.section("## 5. Livrer"))
+        self.assertIn("raison de l'échec", self.section("## Mode correction"))
+
+
 class FeatureHeaders(unittest.TestCase):
     """Ticket 6: the feature commands write the states, approvers and catalog the project declares."""
 
@@ -250,6 +286,66 @@ class JudgeOutput(unittest.TestCase):
         self.assertEqual(parse_verdict(verdict)["SPEC"], [spec.removeprefix("SPEC: ")])
         # The role stays generic: no rules file of a given project.
         self.assertNotIn("git.md", judge)
+
+
+class JudgeReadsTests(unittest.TestCase):
+    """Ticket #42: the judge reads the tests the diff adds or changes, not only their citation."""
+
+    def judge(self) -> str:
+        return " ".join((support.PLUGIN / "agents" / "qc-conf.md").read_text(encoding="utf-8").split())
+
+    def test_the_judge_reads_every_test_the_diff_adds_or_changes(self) -> None:
+        """No F-NNNN: ticket #42, critère 1: chaque test ajouté ou changé est lu."""
+        judge = self.judge()
+        self.assertIn("## Lecture des tests", judge)
+        self.assertIn("Chaque test ajouté ou changé par le diff est lu", judge)
+        self.assertIn("un test qui cite un critère ne le prouve pas pour autant", judge)
+
+    def test_the_three_cases_are_findings(self) -> None:
+        """No F-NNNN: ticket #42, critère 2: tautologique, couplé à l'implémentation, hors couture."""
+        judge = self.judge()
+        for text in [
+            "**Tautologique**",
+            "la valeur attendue est dérivée comme dans le code",
+            "littéral connu, d'un exemple travaillé ou de la spec",
+            "**Couplé à l'implémentation**",
+            "mocke un collaborateur interne",
+            "l'ordre ou le nombre des appels",
+            "par un autre chemin que l'interface",
+            "**Hors couture**",
+            "§6 du design",
+        ]:
+            with self.subTest(text=text):
+                self.assertIn(text, judge)
+
+    def test_the_finding_names_the_rule_and_a_failure_scenario(self) -> None:
+        """No F-NNNN: ticket #42, critère 3: règle (clé test-skill, sinon ce rôle) et scénario d'échec."""
+        judge = self.judge()
+        self.assertIn("le skill de la clé `test-skill` quand elle est déclarée, sinon ce rôle", judge)
+        self.assertIn("la mauvaise implémentation que le test laisserait passer", judge)
+        self.assertIn("la refonte sans changement de comportement qui le ferait casser", judge)
+
+    def test_severity_is_blocker_when_the_test_is_the_only_proof_of_a_criterion(self) -> None:
+        """No F-NNNN: ticket #42, critère 4: BLOCKER si seule preuve (critère absent), sinon MINOR."""
+        from parse_output import parse_verdict
+
+        judge = self.judge()
+        self.assertIn("`BLOCKER` quand ce test est la seule preuve d'un critère", judge)
+        self.assertIn("ce critère compte alors pour absent dans `SPEC`", judge)
+        self.assertIn("`MINOR` sinon", judge)
+        # The output keys and severities parse_output.py reads stay as they were.
+        for key in ("VERDICT:", "ROUND:", "HEAD:", "SPEC:", "FINDINGS:", "GATES:"):
+            self.assertIn(key, judge)
+        verdict = (
+            "VERDICT: REJECT\nROUND: 1\nHEAD: 3f2a9c1\nSPEC: #42: 0 criteria covered, 0 partial, 1 missing\n"
+            "FINDINGS:\n- [BLOCKER] a.py:1 | tautologique | passe sur une mauvaise implémentation\nGATES: vertes\n"
+        )
+        self.assertEqual(parse_verdict(verdict)["VERDICT"], "REJECT")
+
+    def test_the_role_stays_generic(self) -> None:
+        """No F-NNNN: ticket #42, critère 5: aucune personne ni aucun projet cité."""
+        judge = self.judge()
+        self.assertNotIn("mattpocock", judge)
 
 
 class DomainOwner(unittest.TestCase):

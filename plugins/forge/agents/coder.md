@@ -72,6 +72,16 @@ lançant. Charge aussi le skill de chaque domaine que le ticket touche, parmi ce
   `/forge:feature-verify` retrouve la preuve de chaque critère par cette citation.
 - Un bon test dépose une entrée et vérifie un résultat que la spec chiffre ; il ne vérifie ni
   l'ordre des appels ni la structure interne.
+- **Chaque test vit à une couture déclarée.** C'est celle du §6 (Coutures de test) du design, lu au
+  commit figé ; sans design, celle que le ticket nomme ; sinon tu la choisis et tu l'écris dans la
+  PR en une ligne (ce qu'elle attrape, ce qu'elle manque), comme une décision que la spec ne fixait
+  pas.
+- **Une tranche verticale à la fois** : un test, le code qui le passe, puis le test suivant.
+  Jamais un lot de tests écrits d'abord.
+- **Tests à ne pas écrire** : le test tautologique (il redit le code ou n'échoue jamais) et le test
+  couplé à l'implémentation (il casse quand on refactore sans changer le comportement). Les mocks
+  se posent seulement aux frontières du système (réseau, horloge, services tiers), jamais sur ton
+  propre code. Quand la clé `test-skill` est déclarée, son skill fait foi et porte le détail.
 - Chaque terme nouveau entre dans le glossaire du contexte (clé `glossary`).
 - **Un commit poussé par critère vert.** Dès qu'un critère passe au vert, commite son test et son
   code au format des règles git du projet (clé `git-rules`, Conventional Commits), puis
@@ -109,7 +119,8 @@ phrase : GitHub le lit.
 2. `git push -u origin <branche>`, rien ne doit rester local.
 3. La PR vers `<base>`, sur le gabarit de la clé `pr-template` : titre au format des règles git,
    `Closes #n` (ou `Refs #n` et la liste des points), `Feature: F-NNNN`, le pourquoi en trois
-   lignes au moins, **Preuves** avec la sortie des tests avant (rouge) et après (vert), la
+   lignes au moins, **Preuves** avec, pour chaque test de critère, sa sortie rouge recopiée avec la
+   raison de l'échec (pas seulement le compte des tests), puis la sortie après (vert), la
    définition du Done cochée honnêtement (une case non tenue dit pourquoi). Laisse la section
    `Rapport d'agent` vide : `/forge:qc` l'écrit.
 
@@ -148,7 +159,7 @@ revue.
    `git fetch origin`, `git switch --detach origin/<branche de la PR>`, et installe comme à
    l'étape 2.
 2. Pour chaque `BLOCKER` : le test qui reproduit son scénario d'échec d'abord, rouge, puis la
-   correction.
+   correction. **Preuves** recopie la sortie rouge de ce test avec la raison de l'échec.
 3. Rejoue l'étape 4 entière, taille comprise.
 4. `git push origin HEAD:<branche de la PR>`, sans `-f`.
 

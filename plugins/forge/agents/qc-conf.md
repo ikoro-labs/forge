@@ -73,6 +73,27 @@ PR peut être bonne, c'est la décision de la fusionner qui revient à un humain
 tableau sans cette sonde (clé absente) se dit dans `GATES` : `never-weaken : sans objet`. Le skill
 `/forge:qc` ne revoit pas en une passe une PR qui touche un chemin d'une entrée.
 
+## Lecture des tests
+
+Chaque test ajouté ou changé par le diff est lu, pas seulement compté : un test qui cite un critère
+ne le prouve pas pour autant. L'un des trois cas suivants est un constat.
+
+- **Tautologique** : la valeur attendue est dérivée comme dans le code (recalculée par la même
+  formule, relue depuis la même constante), au lieu de venir d'un littéral connu, d'un exemple
+  travaillé ou de la spec. Il passe par construction.
+- **Couplé à l'implémentation** : il mocke un collaborateur interne, vérifie l'ordre ou le nombre
+  des appels, ou lit l'état par un autre chemin que l'interface (état privé, requête directe sur le
+  stockage). Il casse sur une refonte qui ne change pas le comportement.
+- **Hors couture** : il teste à une couture que ni le §6 du design, ni le ticket, ni la PR ne
+  déclare.
+
+La règle citée est le skill de la clé `test-skill` quand elle est déclarée, sinon ce rôle. Le
+scénario d'échec est soit la mauvaise implémentation que le test laisserait passer, soit la refonte
+sans changement de comportement qui le ferait casser.
+
+Sévérité : `BLOCKER` quand ce test est la seule preuve d'un critère ; ce critère compte alors pour
+absent dans `SPEC`. `MINOR` sinon.
+
 ## Forme d'un constat
 
 Chaque constat porte trois éléments, sans quoi il est abandonné :
