@@ -44,7 +44,11 @@ service, ni contrat d'API, ni modèle IA, ni sécurité, ni schéma non trivial.
 
 ## 7. Découpage en tickets
 
-<Tranches verticales, dans l'ordre, avec ce qui bloque quoi.>
+<Tranches verticales, dans l'ordre, avec ce qui bloque quoi. Chaque ticket tient dans un
+contexte neuf, celui d'un `forge:coder`. Un prérefactoring vient d'abord, dans son propre ticket,
+qui bloque les suivants. Un refactoring large (un changement mécanique dont le rayon couvre tout le
+code) ne se force pas en tranche verticale : un ticket expand, puis les migrations par lots, puis
+un ticket contract, chacun bloqué par le précédent.>
 
 ## 8. ADR déclenchés
 

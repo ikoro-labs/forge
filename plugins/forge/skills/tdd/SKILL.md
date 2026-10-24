@@ -42,7 +42,7 @@ Ne simuler qu'aux **frontières du système** : service externe, temps, hasard, 
 
 - **Rouge avant vert.** Écrire d'abord le test qui échoue, le lancer, et voir qu'il échoue pour la bonne raison (le comportement manque, pas une faute de frappe ni un import cassé). Puis seulement le code qui le fait passer. Ne pas anticiper les tests suivants ni ajouter de fonctionnalité spéculative.
 - **Une tranche à la fois.** Une couture, un test, une implémentation minimale par cycle.
-- **Le refactoring est hors de la boucle.** Il relève de la revue, pas du cycle rouge puis vert : le faire pendant la boucle mélange deux changements dont un seul est vérifié par le test rouge.
+- **Le refactoring est hors de la boucle.** Le faire pendant la boucle mélange deux changements dont un seul est vérifié par le test rouge. Il a sa place au découpage (`/forge:feature-design`, étape 6) : un prérefactoring dans son propre ticket, avant le changement qu'il facilite, et un refactoring large en expand, migrations par lots puis contract. La revue ne refactore pas. Un refactoring que le ticket ne porte pas se signale dans la PR, il ne se glisse pas dans la boucle.
 
 ## Par rôle
 

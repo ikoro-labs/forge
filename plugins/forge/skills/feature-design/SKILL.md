@@ -28,7 +28,19 @@ Applique `${CLAUDE_PLUGIN_ROOT}/templates/features/protocole.md`, document `desi
 6. **Découper**, une fois le design accepté (ou la spec seule en taille S) : des tickets en
    tranches verticales, sous-issues de l'issue de suivi, chacun avec ses critères `A<n>` et ses
    liens vers la spec et le design figés à un commit, étiquetés `ready-for-agent`, et leurs
-   dépendances déclarées. Avec le skill de découpage du projet s'il en a un (par exemple
-   `/to-tickets`) ; sinon, à la main, dans l'ordre du §7 du design.
+   dépendances déclarées. Trois règles :
+   - **Un contexte neuf.** Chaque ticket tient dans un seul contexte neuf, celui d'un
+     `forge:coder` : s'il n'y tient pas, coupe-le.
+   - **Le prérefactoring d'abord.** Quand le changement demandé serait difficile dans le code tel
+     qu'il est, rends-le facile d'abord (le prérefactoring), puis fais le changement facile. Le
+     prérefactoring a son propre ticket, qui bloque ceux qui en dépendent, et ne change aucun
+     comportement.
+   - **Le refactoring large ne se force pas en tranche verticale.** Un changement mécanique dont le
+     rayon couvre tout le code se fait en trois temps : expand (ajouter la nouvelle forme à côté
+     de l'ancienne), migration par lots, puis contract (retirer l'ancienne). Chaque étape est un
+     ticket bloqué par la précédente.
+
+   Découpe avec le skill de la clé `ticket-skill` quand elle est déclarée. Sinon, découpe à la
+   main, dans l'ordre du §7 du design, et dis-le (« clé `ticket-skill` absente »).
 
 Commande suivante, une fois les tickets publiés : `/forge:feature-build F-NNNN`.
