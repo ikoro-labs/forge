@@ -723,8 +723,9 @@ def publish(project: Path, document: dict, run: Runner = run_command) -> list[st
     """Rewrite the report comment of the tracking issue and keep its attention label true; the actions taken.
 
     The label is set when an objective goes `menacé` or `épuisé` (a comment gives the reason, once per
-    change of the set), and removed only when the previous report had set it and no objective is worse
-    than `tenu` any more (a comment says why). A label that no report of ours had justified is left alone.
+    change of the set), and removed only when the previous report had set it and every objective is `tenu`
+    (a comment says why). An objective "sans objet" is neither held nor spent: the label stays. A label
+    that no report of ours had justified is left alone.
     """
     ticket = issue_number(project)
     if ticket is None:
@@ -738,7 +739,9 @@ def publish(project: Path, document: dict, run: Runner = run_command) -> list[st
     found = STATES_MARKER.search(str(mine.get("body"))) if mine else None
     before: dict[str, str] = json.loads(found.group(1)) if found else {}
     now_bad = bad_states(document)
-    states = json.dumps(now_bad, ensure_ascii=False).replace("--", "\\u002d\\u002d")
+    all_held = all(item.get("etat") == TENU for item in document["objectifs"])
+    # Un objectif « sans objet » n'est ni tenu ni épuisé : l'ensemble reste ce qu'il était.
+    states = json.dumps(now_bad if now_bad or all_held else before, ensure_ascii=False).replace("--", "\\u002d\\u002d")
     body = f"{MARKER}\n<!-- forge-slo-etats: {states} -->\n{report_markdown(document)}"
     actions: list[str] = []
     if mine:
@@ -756,7 +759,7 @@ def publish(project: Path, document: dict, run: Runner = run_command) -> list[st
         if now_bad != before:
             gh("issue", "comment", str(ticket), "--body", f"`{ATTENTION}` : des objectifs de service ne tiennent plus.\n\n{reasons(document)}")
             actions.append(f"raison commentée sur #{ticket}")
-    elif posed and before:
+    elif posed and before and all_held:
         gh("issue", "edit", str(ticket), "--remove-label", ATTENTION)
         gh("issue", "comment", str(ticket), "--body", f"`{ATTENTION}` retirée : tous les objectifs de service sont repassés à `tenu`.")
         actions.append(f"étiquette `{ATTENTION}` retirée de #{ticket}, avec sa raison")
