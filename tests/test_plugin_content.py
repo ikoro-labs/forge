@@ -889,6 +889,16 @@ class PrShowsChangeDoorAndRadius(unittest.TestCase):
         self.assertIn("pas une valeur par défaut", block)
         self.assertIn("- `pr-template` : `<.github/pull_request_template.md>`", usine)
 
+    def test_the_judge_makes_an_undeclared_one_way_door_a_minor(self) -> None:
+        """No F-NNNN: ticket #45, critère 3 (qc-conf : MINOR et scénario d'échec)."""
+        text = self.read("agents", "qc-conf.md")
+        section = text.split("## Porte à sens unique", 1)[1].split("\n## ", 1)[0]
+        self.assertIn("`MINOR`", section)
+        self.assertIn("scénario d'échec", section)
+        self.assertIn("geste", section)
+        self.assertIn("one-way-door", section)
+        self.assertNotIn("`BLOCKER`", section)
+
 
 if __name__ == "__main__":
     unittest.main()
