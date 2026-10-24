@@ -132,6 +132,42 @@ class CoderReportsFormatFailures(unittest.TestCase):
         self.assertIn("NOTES", text.split("format-on-write: ", 1)[1].split("\n## ", 1)[0])
 
 
+class CoderTestsAtDeclaredSeams(unittest.TestCase):
+    """Ticket #41 : le coder teste aux coutures déclarées, une tranche à la fois."""
+
+    @staticmethod
+    def section(heading: str) -> str:
+        text = (support.PLUGIN / "agents" / "coder.md").read_text(encoding="utf-8")
+        return text.split(heading, 1)[1].split("\n## ", 1)[0]
+
+    def test_tests_live_at_the_seams_the_design_declares(self) -> None:
+        """No F-NNNN: ticket #41, critère 1 (couture du §6, puis ticket, puis choix écrit)."""
+        step = self.section("## 3. Test-first")
+        self.assertIn("Coutures de test", step)
+        self.assertIn("§6", step)
+        self.assertIn("ce qu'elle attrape", step)
+        self.assertIn("ce qu'elle manque", step)
+
+    def test_one_vertical_slice_at_a_time(self) -> None:
+        """No F-NNNN: ticket #41, critère 2 (un test, son code, jamais un lot de tests)."""
+        step = self.section("## 3. Test-first")
+        self.assertIn("tranche verticale", step)
+        self.assertIn("Jamais un lot de tests", step)
+
+    def test_tests_to_avoid_and_mock_rule_stand_without_a_test_skill(self) -> None:
+        """No F-NNNN: ticket #41, critère 3 (tests à éviter, mocks aux frontières)."""
+        step = self.section("## 3. Test-first")
+        self.assertIn("tautologique", step)
+        self.assertIn("couplé à l'implémentation", step)
+        self.assertIn("frontières du système", step)
+        self.assertIn("`test-skill`", step)
+
+    def test_proofs_copy_the_red_output_with_its_reason(self) -> None:
+        """No F-NNNN: ticket #41, critère 4 (Preuves : sortie rouge et raison)."""
+        self.assertIn("raison de l'échec", self.section("## 5. Livrer"))
+        self.assertIn("raison de l'échec", self.section("## Mode correction"))
+
+
 class FeatureHeaders(unittest.TestCase):
     """Ticket 6: the feature commands write the states, approvers and catalog the project declares."""
 
