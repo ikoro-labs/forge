@@ -29,7 +29,7 @@ le design s'il existe, sont acceptés.
    enregistrement : le fichier de la colonne `Capture` de la matrice, ou celui que la section
    **Preuves** de sa PR joint. Une capture ou un enregistrement n'est écrit « vu » que si tu l'as
    ouvert ; sinon, le critère reste prouvé par son test et la ligne dit que l'écran n'a pas été vu.
-   Les moyens d'en prendre viennent des clés `screenshot-command`, `recording-command`,
+   Les moyens d'en prendre viennent des clés `journey-replay`, `screenshot-command`, `recording-command`,
    `browser-drive` et `computer-use-host`, lues par `${CLAUDE_PLUGIN_ROOT}/scripts/preuves_ecran.py` ;
    une clé absente est « sans objet (clé `<nom>` absente) », jamais une capture supposée. Le rejeu
    d'un parcours entier et la revue de bout en bout sur captures réelles ne sont pas de cette étape.

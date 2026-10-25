@@ -149,5 +149,81 @@ class Carried(unittest.TestCase):
         self.assertNotIn("aucune matrice", out)
 
 
+def text(*parts: str) -> str:
+    return " ".join(support.PLUGIN.joinpath(*parts).read_text(encoding="utf-8").split())
+
+
+def page(name: str) -> str:
+    return " ".join((support.REPO_ROOT / name).read_text(encoding="utf-8").split())
+
+
+class Roles(unittest.TestCase):
+    def test_the_gate_probe_passes_the_files_of_the_pr_and_renders_the_journey_lines(self) -> None:
+        """No F-NNNN: ticket #99, A2: qc-gate dit si les captures du parcours sont jointes, sans les juger."""
+        gate = text("agents", "qc-gate.md")
+        probe = gate[gate.index("**Preuves d'écran.**"):]
+        self.assertIn("--files", probe)
+        self.assertIn("`PARCOURS-TOUCHE`", probe)
+        self.assertIn("`CONTEXTE-NON-REQUIS`", probe)
+        self.assertIn("`journey-replay`", probe)
+        self.assertIn("`journey-paths`", probe)
+        self.assertIn("aucune matrice fournie", probe)
+
+    def test_the_judge_makes_missing_journey_captures_a_blocker(self) -> None:
+        """No F-NNNN: ticket #99, A2: qc-conf fait un BLOCKER des captures du parcours manquantes."""
+        conf = text("agents", "qc-conf.md")
+        section = conf[conf.index("## Lecture des preuves d'écran"):conf.index("## Lecture de la matrice")]
+        self.assertIn("`PARCOURS-TOUCHE`", section)
+        self.assertIn("`journey-replay`", section)
+        self.assertIn("`CONTEXTE-NON-REQUIS`", section)
+        self.assertIn("`BLOCKER`", section[section.index("`PARCOURS-TOUCHE`"):])
+
+    def test_the_coder_replays_the_journey_and_attaches_its_captures(self) -> None:
+        """No F-NNNN: ticket #99, A2: le coder joue le parcours de la clé et joint ses captures réelles à Preuves."""
+        coder = text("agents", "coder.md")
+        self.assertIn("`journey-replay`", coder)
+        self.assertIn("`journey-paths`", coder)
+        self.assertIn("non retouchées", coder)
+
+    def test_the_recette_reads_the_journey_key(self) -> None:
+        """No F-NNNN: ticket #99, A2: feature-verify cite la clé du rejeu parmi les moyens de capture."""
+        self.assertIn("`journey-replay`", text("skills", "feature-verify", "SKILL.md"))
+
+
+class Docs(unittest.TestCase):
+    def test_the_template_documents_the_keys_and_the_retention(self) -> None:
+        """No F-NNNN: ticket #99, A1: le gabarit documente journey-replay, journey-paths et la rétention des artefacts."""
+        raw = TEMPLATE.read_text(encoding="utf-8")
+        documented = parse(raw)
+        self.assertIn("journey-replay", documented)
+        self.assertIn("journey-paths", documented)
+        flat = " ".join(raw.split())
+        self.assertIn("required-contexts", flat[flat.index("`journey-replay` :"):])
+        self.assertIn("90 jours", flat)
+        self.assertIn("pnpm --filter <app> e2e e2e/<spec>", flat)
+        self.assertNotIn("e2e -- e2e/", flat)
+
+    def test_the_installation_page_documents_real_captures_and_retention(self) -> None:
+        """No F-NNNN: ticket #99, A3: captures réelles non retouchées, loading lazy retiré, rétention en geste du propriétaire."""
+        doc = page("docs/installation.md")
+        section = doc[doc.index("`journey-replay`"):]
+        self.assertIn("non retouchées", section)
+        self.assertIn('loading="lazy"', section)
+        self.assertIn("pleine page", section)
+        self.assertIn("90 jours", section)
+        self.assertIn("retention-days", section)
+        self.assertIn("artifact-and-log-retention", section)
+        self.assertIn("geste du propriétaire", section)
+        self.assertIn("avant le premier run", section)
+        self.assertIn("Éprouvé sous Linux seulement", section)
+        self.assertNotIn("e2e -- e2e/", doc)
+
+    def test_the_readme_summarises_and_points_to_the_page(self) -> None:
+        """No F-NNNN: ticket #99, A1: le README résume le rejeu du parcours et renvoie à la page."""
+        readme = page("README.md")
+        self.assertIn("journey-replay", readme)
+        self.assertIn("docs/installation.md", readme)
+
+
 if __name__ == "__main__":
     unittest.main()

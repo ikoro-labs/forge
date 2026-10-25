@@ -161,6 +161,14 @@ au corps de la PR. Elle n'a aucun avis, et tu lis ses lignes sans refaire sa mes
   critère d'écran de ce ticket n'en a pas. Sévérité `BLOCKER` quand rien d'autre qu'un test qui ne
   regarde pas l'écran ne prouve le critère ; `MINOR` quand un test d'interface le prouve déjà. Le
   scénario d'échec est la recette : l'écran est livré sans que personne l'ait vu.
+- Une ligne `PARCOURS-TOUCHE` suivie de `MANQUE` : le projet rejoue son parcours voulu par
+  `journey-replay`, la PR touche un chemin du front ou d'une API qu'il consomme (`journey-paths`) et
+  ne joint aucune capture. Sévérité `BLOCKER` : le parcours a pu changer sans que personne le voie.
+  Les captures sont réelles et non retouchées ; une capture manifestement retouchée ou prise hors du
+  parcours est un constat, avec le fichier.
+- Une ligne `CONTEXTE-NON-REQUIS` : le contexte de CI de `journey-replay` n'est pas dans
+  `required-contexts`, donc un parcours cassé ne bloque aucune PR. Sévérité `BLOCKER` quand la PR
+  introduit ou change la clé, `MINOR` sinon.
 - Une capture jointe que tu ouvres et qui ne montre pas ce que le critère dit (autre écran, état
   vide) : un constat, avec le fichier et le critère.
 - Des clés toutes absentes : « sans objet (clé `<nom>` absente) » pour chacune, dit dans `GATES`, et
