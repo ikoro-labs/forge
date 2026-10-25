@@ -237,7 +237,7 @@ def judge(args: argparse.Namespace, verdict_text: str, matrix_text: str) -> int:
 def _apply(args: argparse.Namespace, matrix_text: str, rows: list[dict[str, str]], judged: list[dict[str, str]]) -> int:
     """Write the state, the capture and the date of each judged row into the matrix, then check the result.
 
-    Only these three columns change; the matrix is written only when `matrice.py` accepts the new text."""
+    Only these three columns change (the capture is emptied when the new verdict has none); the matrix is written only when `matrice.py` accepts the new text."""
     lines = matrix_text.split("\n")
     by_id = {e["id"]: e for e in judged}
     for row in rows:
@@ -248,8 +248,8 @@ def _apply(args: argparse.Namespace, matrix_text: str, rows: list[dict[str, str]
         cells = (_matrix_cells(lines[index]) + [""] * len(matrice.COLUMNS))[: len(matrice.COLUMNS)]
         cells[matrice.COLUMNS.index("État")] = entry["state"]
         cells[matrice.COLUMNS.index("Jugé le")] = args.date
-        if entry["capture"] not in ("", "-"):
-            cells[matrice.COLUMNS.index("Capture")] = entry["capture"]
+        # The capture of the new verdict, empty when it has none: the one of an earlier judgment would contradict the state.
+        cells[matrice.COLUMNS.index("Capture")] = "" if entry["capture"] in ("", "-") else entry["capture"]
         lines[index] = "| " + " | ".join(cells) + " |"
     new_text = "\n".join(lines)
     with tempfile.TemporaryDirectory() as folder:

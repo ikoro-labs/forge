@@ -277,6 +277,15 @@ class Outputs(unittest.TestCase):
         self.assertIn("| C01 | L2 | #7 | tests/a.py::t3 | Écran 2 | e2-sombre-mobile.png | partiel | 2026-11-02 |", after)
         self.assertIn("APPLIQUE", out)
 
+    def test_a_rejudged_row_takes_the_capture_of_its_new_verdict(self) -> None:
+        """No F-NNNN: ticket #101, la boucle rejuge : la ligne ne garde pas la capture d'un jugement d'avant."""
+        before = MATRICE.replace("| EXI-01 | L1 | #5 | tests/a.py::t1 | Écran 1 | | absent | |",
+                                 "| EXI-01 | L1 | #5 | tests/a.py::t1 | Écran 1 | e1-clair-bureau.png | tenu | 2026-10-01 |")
+        absent = element("EXI-01", "absent", "majeur", "-", "-", "l'écran n'a pas été joué")
+        code, out, after = apply(absent + LINE_EXI02 + LINE_C01, before, "--appliquer", "--date", "2026-11-02")
+        self.assertEqual(code, 0, out)
+        self.assertIn("| EXI-01 | L1 | #5 | tests/a.py::t1 | Écran 1 |  | absent | 2026-11-02 |", after)
+
     def test_a_blocked_verdict_leaves_the_matrix_untouched(self) -> None:
         """No F-NNNN: ticket #100, A5: rien ne s'écrit tant que le verdict a un constat."""
         code, out, after = apply(LINE_EXI01 + LINE_EXI02, MATRICE, "--appliquer", "--date", "2026-11-02")
