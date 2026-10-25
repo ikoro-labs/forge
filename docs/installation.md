@@ -187,6 +187,16 @@ s'analyse pas sous PowerShell sans Git Bash, et ce que Claude Code y fait d'une 
 s'analyse pas n'a pas été essayé non plus. `guard_coder` et `guard_readonly`, qui s'écrivent
 `... || exit 2`, n'ont pas ce prérequis.
 
+## Les PR qui touchent un chemin protégé
+
+`guard_git` refuse à tout agent `gh pr merge <n>` quand un fichier du diff de la PR commence par une
+ligne de la clé `protected-path` de `usine.md`. Le diff se lit par `gh pr view <n> --json files`, sous
+le délai des autres appels du garde. Le refus nomme le fichier et le préfixe, et dit que la fusion
+revient à l'humain, à lister en fin de compte rendu. La clé déclarée, une liste illisible, ou un `gh`
+qui échoue ou dépasse son délai, vaut refus. Sans la clé, le garde ne refuse rien à ce titre. La
+consigne de `forge:qc` reste (s'arrêter avant la fusion) : le garde est le filet, la consigne évite
+le refus. Essayé sur Linux seulement, par les tests ; pas encore sur un vrai poste Windows.
+
 ## Compléter ou remplacer, sans éditer le plugin
 
 - **Un complément** est un fichier du projet : ses skills de domaine, son arbitre du métier, ses

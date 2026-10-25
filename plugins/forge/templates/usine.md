@@ -274,7 +274,10 @@ La grille de revue de `forge:qc-conf`, dans son ordre : un skill ou un fichier.
 - `review-grid` : `<.claude/skills/reviewer/SKILL.md>`
 
 Les chemins qu'aucun agent ne fusionne, même sur ACCEPT : un humain le fait. Un chemin ou un préfixe
-par ligne.
+par ligne, comparé mot à mot au chemin POSIX relatif de chaque fichier du diff. `forge:qc` s'arrête
+avant la fusion ; `guard_git` refuse en plus `gh pr merge` à tout agent quand un fichier du diff
+commence par une ligne de la clé (lue par `gh pr view --json files`), et, la clé déclarée, quand la
+liste est illisible ou que `gh` échoue ou dépasse son délai. Sans la clé, il ne refuse rien à ce titre.
 
 - `protected-path` : `<docs/signatures/>`
 

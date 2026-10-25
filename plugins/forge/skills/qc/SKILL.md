@@ -126,7 +126,10 @@ que tu avais arrêtée pour ce seul objectif, en écrivant dans `Attention` ce q
 Une PR dont le diff touche un chemin de la clé `protected-path` (un registre, une chaîne de
 certification, une référence de contre-validation, un fichier de signatures...) ne se fusionne pas
 sur ACCEPT : pose `needs-your-attention`, écris le chemin touché dans `Attention`, arrête-toi. Un
-humain fusionne. Sans la clé, la règle est sans objet : dis-le dans `REX`.
+humain fusionne. Sans la clé, la règle est sans objet : dis-le dans `REX`. Cette consigne reste : le
+garde `guard_git` est le filet (il refuse `gh pr merge` à tout agent quand un fichier du diff commence
+par un de ces chemins, et la clé déclarée, quand la liste des fichiers est illisible), la consigne
+évite le refus.
 
 La clé `never-weaken` arrête la fusion de la même façon, pour un changement qui retire un droit (une
 ligne retirée, un nombre relevé, un rang abaissé). `forge:qc-gate` mesure chaque entrée sur le
