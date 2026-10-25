@@ -126,6 +126,13 @@ la spec ne passe en `ready-for-human` qu'à liste vide. Une exclusion ne vaut qu
 de l'auteur de la source que la spec cite ; sans `source-author`, aucun élément ne s'écarte. Éprouvé
 sous Linux seulement, sur des sources écrites à la main ; pas encore sur un vrai projet.
 
+`plugins/forge/scripts/parcours.py` lit le parcours voulu d'une feature (`parcours.md`, écran par
+écran) : le format, puis que chaque écran cite un identifiant d'élément de la source, vérifié contre
+les fichiers de `product-source` seulement. La spec ne sert jamais de référence de repli (un jeton
+comme `F-0000`, `A1` ou `L1` y a la forme d'un identifiant sans être un élément de la source) : sans la
+clé, la correspondance est « sans objet (clé `product-source` absente) » et rien n'est dit vérifié. Il ne lit aucune autre clé. Éprouvé
+sous Linux seulement, sur des parcours écrits à la main ; pas encore sur un vrai projet.
+
 Le skill de découpage en tickets du projet se déclare avec `ticket-skill` : `/forge:feature-design`
 l'utilise à son étape de découpage. Sans la clé, il découpe à la main, dans l'ordre du §7 du
 design, et le dit.

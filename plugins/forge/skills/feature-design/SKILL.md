@@ -22,6 +22,19 @@ Applique `${CLAUDE_PLUGIN_ROOT}/templates/features/protocole.md`, document `desi
    un changement large), frontière de confiance, les trois réponses d'observabilité avec leur point
    d'émission, les coutures de test (la plus haute qui existe), et le découpage en tranches
    verticales.
+
+   **Le parcours.** Une feature qui a des écrans écrit aussi `parcours.md` dans son dossier, depuis
+   `${CLAUDE_PLUGIN_ROOT}/templates/features/parcours.md` : chaque écran, dans l'ordre, ce que
+   l'utilisateur y voit (les mots exacts de l'écran, entre « et »), ce qu'il y fait, l'écran suivant
+   et les identifiants d'éléments de la source qu'il tient. Il se mène avec l'expert métier quand le
+   projet en a un. Lance
+   `uv run --no-project --quiet python ${CLAUDE_PLUGIN_ROOT}/scripts/parcours.py <parcours.md>` :
+   le script vérifie le format et que chaque écran cite un identifiant que la source (clé
+   `product-source`) porte ; sans cette clé, la correspondance est « sans objet » et la spec ne la
+   remplace pas ; un `INVALID`, un `UNKNOWN` ou un `BLOCKED` se
+   corrige avant la PR. Chaque libellé neuf entre dans le glossaire du contexte (clé `glossary`).
+   Sans écran, dis-le et n'écris rien. Le parcours n'a pas de statut propre : il se relit avec le
+   design, dans la même PR.
 5. **Écrire les ADR déclenchés**, au format `${CLAUDE_PLUGIN_ROOT}/templates/adr.md` (ou le gabarit
    d'ADR du projet s'il en a un), numéro suivant le plus haut de `docs/adr/`, statut proposé, et les
    lister dans `adr:` de l'en-tête. Un terme nouveau entre dans le glossaire du contexte.
