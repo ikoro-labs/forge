@@ -117,6 +117,25 @@ clé `glossary`, `UNKNOWN` pour un mot capitalisé absent du glossaire (un `MINO
 mots capitalisés est une approximation du « terme métier » : elle peut relever un mot qui n'en est pas
 un. Éprouvé sous Linux seulement, sur des diffs écrits à la main ; pas encore sur un vrai projet.
 
+Quatre clés, chacune activant une capacité de vérification du front, ouvrent les preuves d'écran :
+`screenshot-command` (une commande qui prend des captures du navigateur sans écran), `recording-command`
+(la même pour une vidéo ou un GIF d'un parcours), `browser-drive` (un navigateur piloté par un agent,
+`<outil> | <poste>`) et `computer-use-host` (le poste dédié où l'ordinateur se commande). Une commande
+déclare `{out}`, le dossier où elle écrit ses fichiers, que l'appelant choisit. Le navigateur piloté ne
+tourne que sur un poste avec une session ouverte, jamais en CI, et la commande de l'ordinateur ne vise
+jamais le poste personnel d'un membre : la clé nomme un poste dédié, et rien ne le devine. Chaque clé
+est indépendante, et une clé absente rend sa capacité « sans objet (clé `<nom>` absente) », jamais
+`PASS`. `forge:coder` prend les captures que les clés permettent et les joint à la section Preuves de sa
+PR ; `plugins/forge/scripts/preuves_ecran.py` dit, sans avis, ce que chaque clé déclare et si les
+critères d'écran de la matrice (colonne `Capture`) et le corps de la PR portent leur capture, que
+`forge:qc-gate` rend (sonde 13) ; `forge:qc-conf` fait d'une preuve manquante un constat, et
+`forge:feature-verify` relie le critère à sa capture. La commande d'exemple s'écrit
+`pnpm --filter <app> e2e e2e/<spec>`, sans `--` : avec lui, Playwright ignore le filtre et lance toute la
+suite. Cette partie est la ligne de commande seulement : le cockpit, le rejeu d'un parcours en CI avec les
+captures jointes aux PR, et la revue de bout en bout sur captures réelles viennent après et liront ces clés.
+Éprouvé sous Linux seulement, sur des fichiers écrits à la main ; aucun navigateur ni poste réel n'a
+encore servi.
+
 Deux clés, `product-source` (les sources produit, en Markdown : un PDF, un `.docx` ou une image bloque
 l'étape, qui demande un export Markdown) et `source-author` (qui peut écarter un élément d'une
 source, un rôle ou un compte GitHub), ouvrent le comptage de `forge:feature-spec` :

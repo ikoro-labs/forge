@@ -171,5 +171,20 @@ class Roles(unittest.TestCase):
         self.assertIn("sans objet (clé `<nom>` absente)", verify)
 
 
+class Docs(unittest.TestCase):
+    def test_the_installation_page_and_the_readme_describe_the_four_keys(self) -> None:
+        """No F-NNNN: ticket #54, A11: la page des clés décrit les quatre capacités, le README les résume."""
+        page = " ".join((support.REPO_ROOT / "docs" / "installation.md").read_text(encoding="utf-8").split())
+        readme = " ".join((support.REPO_ROOT / "README.md").read_text(encoding="utf-8").split())
+        for key in KEYS:
+            self.assertIn(f"`{key}`", page)
+        self.assertIn("preuves_ecran.py", page)
+        self.assertIn("jamais en CI", page)
+        self.assertIn("jamais le poste personnel d'un membre", page)
+        self.assertIn("Éprouvé sous Linux seulement", page[page.index("preuves_ecran.py"):])
+        self.assertIn("captures", readme)
+        self.assertIn("docs/installation.md", readme)
+
+
 if __name__ == "__main__":
     unittest.main()
