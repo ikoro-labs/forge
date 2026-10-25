@@ -31,10 +31,12 @@ UNKNOWN, DUPLICATE, MISSING, REFUSED (an exclusion line not accepted), BLOCKED o
 the first six is printed, 1 otherwise, 2 when a file is unreadable or the call wrong.
 
 - `--reste`: what remains to hold, per batch and per state: `RESTE`, batch, state, the identifiers; then
-  one line `COUVERTURE`, `<held>/<total>`, the percentage. A row is covered when `tenu` or `écarté`.
+  one line `COUVERTURE`, `<held>/<total>`, the percentage. A row is covered when `tenu` or `écarté`. An
+  identifier of the source with no row counts in the total and remains as `absent`, under « sans lot ».
   Exit 0 whatever the figures; the command reports, it does not judge.
-- `--sans-ticket`: the identifiers whose `Ticket` is empty and whose state is not `écarté`, one `SANS-TICKET`
-  line each, or `NONE`. Exit 1 when there is one.
+- `--sans-ticket`: the identifiers whose `Ticket` is empty and whose state is not `écarté`, and every
+  identifier of the source with no row (it has no ticket either), one `SANS-TICKET` line each, or `NONE`.
+  Exit 1 when there is one.
 - `--cloture`: `REFUSE` lines naming every row that is neither `tenu` nor `écarté`, and any finding of the
   default mode; `CLORE` and exit 0 only at 100 % and with no finding.
 
@@ -147,6 +149,19 @@ def remaining(rows: list[dict[str, str]]) -> dict[str, dict[str, list[str]]]:
     return out
 
 
+def with_missing(rows: list[dict[str, str]], findings: list[tuple[str, str, str, str]]) -> list[dict[str, str]]:
+    """The rows plus one virtual row per MISSING identifier: no batch, no ticket, state `absent`.
+
+    An identifier of the source with no row is work to do like an `absent` row; `--reste` and
+    `--sans-ticket` count it, so that an incomplete matrix does not read as complete."""
+    virtual = [
+        {"Identifiant": first, "Lot": "", "Ticket": "", "Test": "", "Écran": "", "Capture": "", "État": "absent", "Jugé le": "", "_line": ""}
+        for status, first, _second, _detail in findings
+        if status == "MISSING"
+    ]
+    return rows + virtual
+
+
 def _print(status: str, first: str = "", second: str = "", detail: str = "") -> None:
     print(f"{status}\t{first}\t{second}\t{detail}")
 
@@ -214,16 +229,17 @@ def main(argv: list[str] | None = None) -> int:
 
 def _report(args: argparse.Namespace, rows: list[dict[str, str]], findings: list[tuple[str, str, str, str]], notes: list[str]) -> int:
     if args.reste:
-        for batch, states in remaining(rows).items():
+        completed = with_missing(rows, findings)
+        for batch, states in remaining(completed).items():
             for state, ids in states.items():
                 _print("RESTE", batch, state, ", ".join(ids))
-        held, total = coverage(rows)
+        held, total = coverage(completed)
         _print("COUVERTURE", f"{held}/{total}", f"{100 * held // total if total else 0} %")
         for note in notes:
             print(note)
         return 0
     if args.sans_ticket:
-        open_ids = [r["Identifiant"] for r in rows if not r["Ticket"] and r["État"] != "écarté"]
+        open_ids = [r["Identifiant"] for r in with_missing(rows, findings) if not r["Ticket"] and r["État"] != "écarté"]
         for identifier in open_ids:
             _print("SANS-TICKET", identifier)
         if not open_ids:

@@ -175,6 +175,30 @@ class Coverage(unittest.TestCase):
         self.assertNotIn("C01", out.split("COUVERTURE")[0])
 
 
+class SourceIdentifiersWithoutRow(unittest.TestCase):
+    ONE_ROW = "| C01 | L1 | #5 | t::a | | | tenu | 2026-10-20 |\n"
+
+    def test_the_remaining_counts_an_identifier_with_no_row(self) -> None:
+        """No F-NNNN: ticket #94, A4: un identifiant de la source sans ligne compte au dénominateur et reste à tenir."""
+        code, out = run(matrix(self.ONE_ROW), "--reste")
+        self.assertEqual(code, 0, out)
+        self.assertIn("COUVERTURE\t1/3\t33 %", out)
+        self.assertIn("RESTE\tsans lot\tabsent\tEXI-01, EXI-02", out)
+
+    def test_no_ticket_lists_an_identifier_with_no_row(self) -> None:
+        """No F-NNNN: ticket #94, A6: un identifiant de la source sans ligne n'a pas de ticket et est listé."""
+        code, out = run(matrix(self.ONE_ROW), "--sans-ticket")
+        self.assertEqual(code, 1, out)
+        self.assertIn("SANS-TICKET\tEXI-01", out)
+        self.assertIn("SANS-TICKET\tEXI-02", out)
+        self.assertNotIn("NONE", out)
+
+    def test_without_the_source_key_no_row_is_added(self) -> None:
+        """No F-NNNN: ticket #94, A4: sans la clé product-source, rien n'est ajouté aux lignes de la matrice."""
+        code, out = run(matrix(self.ONE_ROW), "--reste", usine="")
+        self.assertIn("COUVERTURE\t1/1\t100 %", out)
+
+
 class Closure(unittest.TestCase):
     def test_closing_under_100_percent_is_refused(self) -> None:
         """No F-NNNN: ticket #94, A5: sous 100 %, la clôture est refusée et nomme chaque ligne qui manque."""

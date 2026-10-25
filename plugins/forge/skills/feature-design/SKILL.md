@@ -58,7 +58,8 @@ Applique `${CLAUDE_PLUGIN_ROOT}/templates/features/protocole.md`, document `desi
    feature (gabarit `${CLAUDE_PLUGIN_ROOT}/templates/features/matrice.md`), reporte-y le ticket de
    chaque identifiant, puis lance
    `uv run --no-project --quiet python ${CLAUDE_PLUGIN_ROOT}/scripts/matrice.py --sans-ticket <matrice.md>` :
-   un identifiant listé n'est couvert par aucun ticket, et le découpage le nomme, dans la PR et dans
+   un identifiant listé n'est couvert par aucun ticket (y compris un identifiant de la source qui n'a
+   pas encore de ligne dans la matrice), et le découpage le nomme, dans la PR et dans
    l'issue de suivi, à côté du ticket qui le prendra. Sans la clé `product-source`, l'étape est
    « sans objet (clé `product-source` absente) » : pas de matrice. L'écriture de la matrice initiale
    par la conception n'est pas décrite ici : elle viendra par son propre ticket, sur ce gabarit et
