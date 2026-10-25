@@ -39,6 +39,9 @@ se coupe au premier ` | ` (la dernière partie garde le reste).
 | recette | `recette.md` | les sous-issues sont fermées | `/forge:feature-verify` |
 | livraison | `README.md` (`document: livree`) | la recette est `statut: accepte` | `/forge:feature-close` |
 
+Le parcours voulu, `parcours.md` (écran par écran, avec les mots exacts de l'écran), s'écrit avec le
+design d'une feature qui a des écrans ; il n'est pas une étape de la chaîne et n'a pas de `statut`.
+
 Une séance (`/forge:feature-brainstorm`) est permise à toute étape. Chaque document, sauf l'idée,
 s'accepte par `/forge:feature-accept`, tapée par un humain.
 

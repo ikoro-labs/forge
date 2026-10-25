@@ -1100,5 +1100,48 @@ class PrShowsChangeDoorAndRadius(unittest.TestCase):
         self.assertIn("chemins protégés", section)
 
 
+class Parcours(unittest.TestCase):
+    """Ticket #97: un fichier de parcours par feature, écran par écran, avec les mots exacts de l'écran."""
+
+    @staticmethod
+    def read(*parts: str) -> str:
+        return " ".join(support.PLUGIN.joinpath(*parts).read_text(encoding="utf-8").split())
+
+    def test_the_template_has_the_fields_of_a_screen(self) -> None:
+        """No F-NNNN: ticket #97, A1: le gabarit porte l'écran, ce qu'il voit, ce qu'il fait, le suivant, la source."""
+        template = self.read("templates", "features", "parcours.md")
+        self.assertIn("document: parcours", template)
+        for field in ("## Écran 1 :", "- Voit :", "- Fait :", "- Suivant :", "- Source :"):
+            self.assertIn(field, template)
+        self.assertIn("« ", template)
+
+    def test_the_template_passes_its_own_check_once_filled(self) -> None:
+        """No F-NNNN: ticket #97, A2: les champs du gabarit sont ceux que lit parcours.py."""
+        from parcours import FIELDS, parse
+
+        screens = parse((support.PLUGIN / "templates" / "features" / "parcours.md").read_text(encoding="utf-8"))
+        self.assertTrue(screens)
+        for field in FIELDS:
+            self.assertIn(field, screens[0]["fields"])
+
+    def test_the_design_skill_writes_the_path_and_runs_the_check(self) -> None:
+        """No F-NNNN: ticket #97, A1 et A2: feature-design écrit parcours.md et lance le script."""
+        skill = self.read("skills", "feature-design", "SKILL.md")
+        self.assertIn("`parcours.md`", skill)
+        self.assertIn("${CLAUDE_PLUGIN_ROOT}/scripts/parcours.py", skill)
+        self.assertIn("mots exacts de l'écran", skill)
+        self.assertIn("glossaire", skill)
+
+    def test_the_protocol_lists_the_path_file(self) -> None:
+        """No F-NNNN: ticket #97, A1: le protocole nomme le fichier de parcours de la feature."""
+        self.assertIn("parcours.md", self.read("templates", "features", "protocole.md"))
+
+    def test_the_configuration_page_tells_it(self) -> None:
+        """No F-NNNN: ticket #97, A2: la page de configuration cite le script et son repli sur la spec."""
+        page = " ".join((support.REPO_ROOT / "docs" / "installation.md").read_text(encoding="utf-8").split())
+        self.assertIn("parcours.py", page)
+        self.assertIn("à défaut la spec", page)
+
+
 if __name__ == "__main__":
     unittest.main()
