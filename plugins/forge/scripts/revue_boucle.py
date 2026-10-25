@@ -199,13 +199,11 @@ def doublons(args: argparse.Namespace) -> int:
     return 0
 
 
-def retours(args: argparse.Namespace) -> int:
-    """The returns of each gap, and the stop when one returned MAX_RETURNS times."""
+def returns_of(lines: list[str]) -> tuple[dict[str, int], set[str]]:
+    """From the lines of a journal: how many times each identifier returned, and which ones were ever a gap."""
     seen_gap: dict[str, bool] = {}
     fixed: dict[str, bool] = {}
     count: dict[str, int] = {}
-    journal = Path(args.journal)
-    lines = journal.read_text(encoding="utf-8").splitlines() if journal.is_file() else []
     for text in lines:
         fields = text.split("\t")
         if len(fields) == 3 and fields[0] == "CORRECTION":
@@ -220,6 +218,13 @@ def retours(args: argparse.Namespace) -> int:
                     count[identifier] = count.get(identifier, 0) + 1
                 seen_gap[identifier] = True
                 fixed[identifier] = False
+    return count, set(seen_gap)
+
+
+def retours(args: argparse.Namespace) -> int:
+    """The returns of each gap, and the stop when one returned MAX_RETURNS times."""
+    journal = Path(args.journal)
+    count, _gaps = returns_of(journal.read_text(encoding="utf-8").splitlines() if journal.is_file() else [])
     stop = False
     for identifier, number in count.items():
         if number >= MAX_RETURNS:
