@@ -172,7 +172,18 @@ tient pour la version (`<plugin>--v{version}`). Une ligne par motif. Sans la cl�
 `factory_slo.py` lit aussi `required-contexts` (`main-green`) et `protected-path` (`human-touch`), et
 deux conventions du projet : l'étiquette `escaped-defect`, posée sur un ticket de défaut trouvé après la
 fusion, avec dans son corps la ligne `Échappé de #<pr>` qui nomme la PR en cause ; et, pour la gravité
-de `restore-time`, une étiquette `gravite:<classe>`. Voir `docs/indicateurs-de-service.md`.
+de `restore-time`, l'étiquette de gravité ci-dessous. Voir `docs/indicateurs-de-service.md`.
+
+Les classes de gravité d'un ticket de défaut, posées par une étiquette, une seule par ticket (voir
+`docs/gravite-et-sla.md`) :
+
+- `sev1` : un garde contourné, un chemin protégé fusionné sans humain, une perte de données ou de
+  travail, ou la branche de base rouge ;
+- `sev2` : un défaut échappé qui change un comportement (hook, porte, règle appliquée) ;
+- `sev3` : la prose, la documentation ou un confort.
+
+`forge:feature-build` prend les tickets prêts par gravité, puis par échéance, et un `sev1` passe devant
+tout ticket qui n'est pas encore confié.
 
 Les objectifs de service, lus par `scripts/factory_slo.py status`. Une ligne par objectif :
 `<sli> | <comparateur> <cible> | <fenêtre en jours>`. Le SLI est l'un de ceux de
