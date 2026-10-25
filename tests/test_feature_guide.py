@@ -44,5 +44,24 @@ class LivingDocument(unittest.TestCase):
         self.assertIn("pas avant", skill)
 
 
+class SharedSupport(unittest.TestCase):
+    def test_the_template_documents_the_key_of_the_shared_support(self) -> None:
+        """No F-NNNN: ticket #96, A3: la clé shared-doc est documentée dans le gabarit de usine.md."""
+        template = read(support.PLUGIN / "templates" / "usine.md")
+        self.assertIn("- `shared-doc` : `<", template)
+        self.assertIn("Le fichier du dépôt reste la référence", template)
+        self.assertIn("sans objet (clé `shared-doc` absente)", template)
+        self.assertIn("Forge ne câble aucun service", template)
+
+    def test_the_skill_uses_the_shared_support_only_when_the_key_names_one(self) -> None:
+        """No F-NNNN: ticket #96, A3: sans la clé, sans objet et seul le fichier sert ; avec elle, le fichier reste la référence."""
+        skill = read(SKILL)
+        self.assertIn("sans objet (clé `shared-doc` absente)", skill)
+        self.assertIn("Seul le fichier du dépôt sert", skill)
+        self.assertIn("Le fichier du dépôt reste la référence", skill)
+        self.assertIn("recopie dans le fichier", skill)
+        self.assertNotIn("valeur par défaut :", skill)
+
+
 if __name__ == "__main__":
     unittest.main()

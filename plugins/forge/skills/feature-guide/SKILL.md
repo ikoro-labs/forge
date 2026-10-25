@@ -34,3 +34,16 @@ l'humain de la clé `accepting-human` d'ajouter son fichier à la clé `product-
 `docs/agents/usine.md`, en tête (la source de l'expert prime sur ce que des agents ont écrit), et pas avant :
 tant qu'une ligne reste `proposé`, le comptage de `forge:feature-spec` prendrait une
 rédaction d'agent pour un élément de la source.
+
+### Le support partagé
+
+La clé `shared-doc` nomme, quand le projet en a un, le support partagé où l'expert relit et commente le
+document. Forge ne câble aucun service : tu ne devines pas lequel c'est, tu utilises celui que la clé
+nomme, avec les outils que la session a pour lui.
+
+- **Avec la clé** : propose à l'expert d'y publier le document, puis, à chaque question, lis ses
+  commentaires et recopie dans le fichier du dépôt ce qu'il a écrit ou corrigé sur le support. Le
+  fichier du dépôt reste la référence : en cas d'écart, il fait foi, et seul lui devient la source.
+  Si la session n'a aucun outil pour ce support, dis-le et continue avec le fichier seul.
+- **Sans la clé** : « sans objet (clé `shared-doc` absente) ». Seul le fichier du dépôt sert : l'expert
+  le lit et le commente tel quel, sans valeur par défaut ni support deviné.
