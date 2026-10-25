@@ -133,10 +133,33 @@ critères d'écran de la matrice (colonne `Capture`) et le corps de la PR porten
 `forge:qc-gate` rend (sonde 13) ; `forge:qc-conf` fait d'une preuve manquante un constat, et
 `forge:feature-verify` relie le critère à sa capture. La commande d'exemple s'écrit
 `pnpm --filter <app> e2e e2e/<spec>`, sans `--` : avec lui, Playwright ignore le filtre et lance toute la
-suite. Cette partie est la ligne de commande seulement : le cockpit, le rejeu d'un parcours en CI avec les
-captures jointes aux PR, et la revue de bout en bout sur captures réelles viennent après et liront ces clés.
+suite. Cette partie est la ligne de commande seulement : le cockpit et la revue de bout en bout sur captures réelles viennent après et liront ces clés.
 Éprouvé sous Linux seulement, sur des fichiers écrits à la main ; aucun navigateur ni poste réel n'a
 encore servi.
+
+Deux clés de plus rendent le parcours voulu obligatoire. `journey-replay` s'écrit
+`<contexte de CI> | <commande>` : la commande joue le parcours de bout en bout, depuis un dépôt propre
+jusqu'au poste de travail de l'utilisateur, écrit ses captures dans `{out}`, et le contexte, le nom du job
+de CI, se déclare aussi dans `required-contexts` pour qu'un parcours cassé bloque la PR (sinon la sonde rend
+`CONTEXTE-NON-REQUIS`, qu'elle mesure sur l'usine de la base et sur l'usine de la tête, pour qu'une PR qui introduit la clé sans requérir son contexte soit relevée alors que la base ne l'a pas encore). `journey-paths` liste les préfixes du front et des API qu'il consomme : toute PR
+qui y touche joint les captures du parcours, `forge:qc-gate` le dit par `PARCOURS-TOUCHE` et `MANQUE`
+(le script reçoit les fichiers de la PR par `--files`), et `forge:qc-conf` en fait un `BLOCKER` quand
+elles manquent. Elle s'articule avec les clés précédentes : `journey-replay` ouvre l'attente d'une capture
+comme `screenshot-command` et `recording-command`, par la même sonde 13 ; `browser-drive` et
+`computer-use-host` restent la recette sur leur poste, jamais la CI. Sans `journey-replay`, la capacité
+est « sans objet (clé `journey-replay` absente) », jamais `PASS`.
+
+Les captures du parcours sont réelles et non retouchées. Les captures pleine page de Playwright ne
+déclenchent pas `loading="lazy"` : le contenu paresseux ne se charge pas, donc pour les captures de
+contrôle il faut retirer l'attribut `loading="lazy"` de la page testée (ou le forcer à `eager`), sans
+quoi la capture montre des images absentes. Les captures s'envoient comme artefacts du job, conservés 90
+jours par défaut. Les garder plus longtemps demande de relever la rétention au niveau du dépôt
+(`actions/permissions/artifact-and-log-retention`, au plus 400 jours pour un dépôt privé) : `retention-days`
+de l'action d'envoi est borné par ce réglage, et le changer est un geste du propriétaire, à faire avant le
+premier run. Il faut aussi épingler `retention-days` sur les autres artefacts, pour qu'ils ne passent pas
+à la nouvelle durée sans qu'on l'ait voulu. La commande d'exemple s'écrit
+`pnpm --filter <app> e2e e2e/<spec>`, sans `--`. Éprouvé sous Linux seulement, sur des fichiers écrits à la
+main : aucun vrai navigateur, aucun vrai job de CI n'a rejoué un parcours avec ces clés.
 
 Deux clés, `product-source` (les sources produit, en Markdown : un PDF, un `.docx` ou une image bloque
 l'étape, qui demande un export Markdown) et `source-author` (qui peut écarter un élément d'une

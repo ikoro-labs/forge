@@ -317,7 +317,7 @@ mot du libellé mis à part) qui n'est dans aucun fichier du glossaire ; `forge:
 
 ## Preuves d'écran
 
-Quatre capacités de vérification du front, que le projet active **une par une**, chacune par sa propre
+Quatre capacités de vérification du front, puis le rejeu du parcours en CI, que le projet active **une par une**, chacune par sa propre
 clé. Une clé absente rend sa capacité « sans objet (clé `<nom>` absente) », jamais `PASS`, et aucun
 agent n'en suppose une : le projet qui n'a pas d'interface n'en déclare aucune. `scripts/preuves_ecran.py`
 les lit et dit, sans avis, ce que chacune déclare et si les captures que la matrice attend sont jointes à
@@ -352,6 +352,33 @@ poste et n'ouvre aucune attente de capture sur une PR : seules `screenshot-comma
 l'ouvrent.
 
 - `computer-use-host` : `<nom du poste dédié à la recette>`
+
+`journey-replay` : `<contexte de CI> | <commande>`, la commande qui joue le parcours voulu
+(`parcours.md` de la feature) de bout en bout, depuis un dépôt propre jusqu'au poste de travail de
+l'utilisateur, et le nom du job de CI qui la lance. Le contexte doit figurer parmi les `required-contexts` :
+un parcours cassé bloque alors la PR ; sans cela `scripts/preuves_ecran.py` rend `CONTEXTE-NON-REQUIS`, et
+sans la clé `required-contexts` la mesure est « sans objet (clé `required-contexts` absente) ». `{out}` est
+obligatoire dans la commande : le dossier où elle écrit les captures, que le job envoie comme artefact.
+Les captures sont réelles et non retouchées. Une capture pleine page de Playwright ne déclenche pas
+`loading="lazy"` : pour les captures de contrôle, la page retire l'attribut. Sans la clé, la capacité est
+« sans objet (clé `journey-replay` absente) ».
+
+- `journey-replay` : `<parcours (ubuntu-latest) | pnpm --filter <app> e2e e2e/<spec> --output {out}>`
+
+`journey-paths` : les préfixes de chemin du front et des API qu'il consomme, un par ligne. Toute PR qui
+change un fichier sous l'un d'eux joint les captures du parcours (`forge:qc-gate` rend `PARCOURS-TOUCHE`,
+`forge:qc-conf` fait de l'absence de capture un `BLOCKER`). Sans la clé, la sonde le dit
+(« sans objet (clé `journey-paths` absente) ») et ne devine aucun chemin.
+
+- `journey-paths` : `<apps/web/>`
+- `journey-paths` : `<apps/api/routes/>`
+
+Les artefacts du job envoyés par `actions/upload-artifact` se conservent 90 jours par défaut.
+Conserver les captures du parcours plus longtemps demande de relever la rétention du dépôt
+(`actions/permissions/artifact-and-log-retention`, au plus 400 jours pour un dépôt privé) : `retention-days`
+est borné par ce réglage, et le changer est un geste du propriétaire, à faire avant le premier run.
+Épingler alors `retention-days` sur les autres artefacts, pour qu'ils ne passent pas à la nouvelle durée
+sans qu'on l'ait voulu.
 
 ## Revue
 

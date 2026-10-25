@@ -122,15 +122,24 @@ Le numéro de PR, et le numéro du tour (1 ou 2).
 13. **Preuves d'écran.** Si les captures qu'un critère d'écran attend sont jointes. Avec le
     `usine-base.md` de la sonde 10, le corps de la PR (`gh pr view <n> --json body -q .body`, rangé
     dans le scratchpad sous `body.md`) et la matrice de la tête quand `matrice.md` existe dans le
-    dossier de la feature, lancée **dans la copie de la tête** :
-    `uv run --no-project --quiet python "${CLAUDE_PLUGIN_ROOT}/scripts/preuves_ecran.py" --usine "<scratchpad>/usine-base.md" --root . --matrice <matrice.md> --ticket '#<n>' "<scratchpad>/body.md"`
-    (sans `--matrice` quand la feature n'en a pas). Recopie chaque ligne du script, verbatim, et son
-    code de sortie : 0 rien ne manque, 1 une preuve attendue manque (`SANS-CAPTURE` ou `MANQUE`),
+    dossier de la feature, et la liste des fichiers de la PR (`gh pr diff <n> --name-only`, rangée sous
+    `files.txt`), lancée **dans la copie de la tête**. L'usine de la base fait foi (une PR ne lève pas
+    une règle en retirant sa clé) ; l'usine de la tête (`docs/agents/usine.md` de la copie) est passée
+    en plus par `--usine-tete`, pour qu'un `journey-replay` que la PR introduit ou change soit mesuré
+    contre le `required-contexts` de la tête : la tête n'ajoute que des lignes `CONTEXTE-NON-REQUIS`,
+    elle n'en retire jamais une que la base donne :
+    `uv run --no-project --quiet python "${CLAUDE_PLUGIN_ROOT}/scripts/preuves_ecran.py" --usine "<scratchpad>/usine-base.md" --usine-tete docs/agents/usine.md --root . --matrice <matrice.md> --files "<scratchpad>/files.txt" --ticket '#<n>' "<scratchpad>/body.md"`
+    (sans `--matrice` quand la feature n'en a pas : le script le dit alors par
+    `sans objet (aucune matrice fournie : critères d'écran non cherchés)`, que tu recopies). Recopie chaque ligne du script, verbatim, et son
+    code de sortie : 0 rien ne manque, 1 une preuve attendue manque (`SANS-CAPTURE` ou `MANQUE`) ou
+    le contexte de CI du parcours n'est pas requis (`CONTEXTE-NON-REQUIS`),
     2 une valeur de clé invalide ou un appel en échec (`FAIL`, jamais `PASS`). Une clé absente se
     rend ligne à ligne comme le script l'écrit : `sans objet (clé screenshot-command absente)`, et de
-    même pour `recording-command`, `browser-drive` et `computer-use-host`. Seules `screenshot-command` et `recording-command`
-    ouvrent l'attente d'une capture ; les deux autres clés se rendent en lignes `CAPACITE` sans rien
-    attendre de la PR. Tu ne juges pas une capture
+    même pour `recording-command`, `browser-drive`, `computer-use-host`, `journey-replay` et
+    `journey-paths`. Seules `journey-replay`, `screenshot-command` et `recording-command`
+    ouvrent l'attente d'une capture ; les autres clés se rendent en lignes `CAPACITE` sans rien
+    attendre de la PR. Avec `journey-replay` et `journey-paths`, chaque fichier de la PR sous un chemin
+    du parcours est une ligne `PARCOURS-TOUCHE`, et sans capture jointe, `MANQUE`. Tu ne juges pas une capture
     et tu ne l'ouvres pas : tu rends ce que le script a mesuré.
 
 Au tour 2, rejoue toutes les sondes : une correction peut casser ce qui passait.

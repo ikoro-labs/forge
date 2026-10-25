@@ -1,6 +1,6 @@
 """Say which screen proofs a PR is expected to carry and whether they are attached, without an opinion.
 
-    python preuves_ecran.py [--usine FILE] [--root DIR] [--matrice FILE] [--ticket '#n'] <pr-body-file | ->
+    python preuves_ecran.py [--usine FILE] [--usine-tete FILE] [--root DIR] [--matrice FILE] [--files FILE] [--ticket '#n'] <pr-body-file | ->
 
 The four capabilities a project turns on, each by its own key of `docs/agents/usine.md`, none with a
 default value:
@@ -13,10 +13,25 @@ default value:
 - `computer-use-host` : the dedicated station where the computer is driven. Never the personal station
   of a member.
 
-Only `screenshot-command` and `recording-command` open the expectation of a capture: they produce the
+Two more keys serve the journey replayed in CI:
+
+- `journey-replay` : `<CI context> | <command>`. The command plays the wanted path (`parcours.md`) from a
+  clean repository to the user's station and writes its captures in `{out}` (mandatory). The context is
+  the name of the CI job: it must be listed in `required-contexts`, else `CONTEXTE-NON-REQUIS` (a broken
+  path would block no PR); without `required-contexts` the check prints `sans objet`. `--usine` is the
+  configuration of the base, so that a PR cannot lift a rule by removing its key. With `--usine-tete`
+  (the configuration of the head) the same check also runs on the head, for the context of a
+  `journey-replay` that the PR introduces or changes: the head only adds `CONTEXTE-NON-REQUIS` lines,
+  it never removes one the base gives.
+- `journey-paths` : the path prefixes of the front and of the APIs it consumes, one per line. With
+  `--files` (the files of the PR, one per line), each changed file under a prefix is printed
+  `PARCOURS-TOUCHE` and the PR is expected to attach the captures of the path.
+
+Only `journey-replay`, `screenshot-command` and `recording-command` open the expectation of a capture: they produce the
 proof where the PR is made. The driven browser and the dedicated station serve the acceptance on their
 own station, not the PR, so declaring only them expects nothing of the PR. A key with an empty value
-names nothing and counts as absent.
+names nothing and counts as absent, without error. Without `--matrice` while a capture is expected, the
+script prints `sans objet (aucune matrice fournie : critères d'écran non cherchés)` instead of exiting 0 silently.
 
 One line per finding, fields separated by tabs. A missing key prints `sans objet (clé <nom> absente)`
 for itself and never stops the others. `CAPACITE` names a key that is declared, its value and its
@@ -45,8 +60,13 @@ from matrice import parse as parse_matrice  # noqa: E402
 COMMAND_KEYS = ("screenshot-command", "recording-command")
 DRIVE_KEY = "browser-drive"
 HOST_KEY = "computer-use-host"
-KEYS = ("screenshot-command", DRIVE_KEY, HOST_KEY, "recording-command")
+REPLAY_KEY = "journey-replay"
+CONTEXTS_KEY = "required-contexts"
+PATHS_KEY = "journey-paths"
+KEYS = ("screenshot-command", DRIVE_KEY, HOST_KEY, "recording-command", REPLAY_KEY, PATHS_KEY)
 LIMITS = {
+    REPLAY_KEY: "commande du projet, rejouée en CI",
+    PATHS_KEY: "préfixes de chemin du front et des API qu'il consomme",
     DRIVE_KEY: "poste avec session ouverte, jamais en CI",
     HOST_KEY: "poste dédié, jamais le poste personnel d'un membre",
 }
@@ -61,6 +81,7 @@ def attached(body: str) -> int:
 def invalid(config: dict[str, list[str]]) -> list[str]:
     """What is wrong in a declared value, one message each."""
     problems = []
+    config = {key: [value for value in values if value.strip()] for key, values in config.items()}
     for key in COMMAND_KEYS:
         for value in config.get(key, []):
             if "{out}" not in value:
@@ -68,6 +89,12 @@ def invalid(config: dict[str, list[str]]) -> list[str]:
     for value in config.get(DRIVE_KEY, []):
         if usine.split_value(value, 2) is None:
             problems.append(f"{DRIVE_KEY} : « {value} » s'écrit « outil | poste »")
+    for value in config.get(REPLAY_KEY, []):
+        parts = usine.split_value(value, 2)
+        if parts is None:
+            problems.append(f"{REPLAY_KEY} : « {value} » s'écrit « contexte de CI | commande »")
+        elif "{out}" not in parts[1]:
+            problems.append(f"{REPLAY_KEY} : « {value} » ne porte pas {{out}}, le dossier où écrire les captures")
     return problems
 
 
@@ -75,8 +102,10 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument("body", help="the body of the PR, or - for the standard input")
     parser.add_argument("--usine", help="the usine.md to read (default: docs/agents/usine.md)")
+    parser.add_argument("--usine-tete", help="the usine.md of the head of the PR, to check the context of a journey-replay it introduces")
     parser.add_argument("--root", help="the project copy to read (default: the project directory)")
     parser.add_argument("--matrice", help="the matrix of the feature, to find the screen criteria")
+    parser.add_argument("--files", help="the files the PR changes, one path per line, to find the journey it touches")
     parser.add_argument("--ticket", help="only the rows that cite this ticket, written #n")
     args = parser.parse_args(argv)
     if hasattr(sys.stdout, "reconfigure"):
@@ -90,12 +119,20 @@ def main(argv: list[str] | None = None) -> int:
             if args.usine:
                 raise
             config = {}
+        head_config = (
+            usine.parse(Path(args.usine_tete).read_text(encoding="utf-8")) if args.usine_tete else None
+        )
         body = sys.stdin.read() if args.body == "-" else Path(args.body).read_text(encoding="utf-8")
+        changed = (
+            [line.strip() for line in Path(args.files).read_text(encoding="utf-8").splitlines() if line.strip()]
+            if args.files
+            else None
+        )
         rows = parse_matrice(Path(args.matrice).read_text(encoding="utf-8")) if args.matrice else []
     except (OSError, UnicodeDecodeError, ValueError) as error:
         print(f"preuves_ecran: {error}", file=sys.stderr)
         return 2
-    problems = invalid(config)
+    problems = invalid(config) + (invalid(head_config) if head_config is not None else [])
     if problems:
         for problem in problems:
             print(f"preuves_ecran: {problem}", file=sys.stderr)
@@ -106,11 +143,39 @@ def main(argv: list[str] | None = None) -> int:
             print(f"sans objet (clé {key} absente)")
         for value in values[key]:
             print(f"CAPACITE\t{key}\t{value}\t{LIMITS.get(key, 'commande du projet')}")
-    if not any(values[key] for key in COMMAND_KEYS):
-        return 0
-    count = attached(body)
     missing = False
+    printed: set[str] = set()
+    for source in (config, head_config):
+        if source is None:
+            continue
+        contexts = [value for value in source.get(CONTEXTS_KEY, []) if value.strip()]
+        for value in (value for value in source.get(REPLAY_KEY, []) if value.strip()):
+            context = usine.split_value(value, 2)[0]
+            if not contexts:
+                line = f"sans objet (clé {CONTEXTS_KEY} absente)"
+            elif context not in contexts:
+                missing = True
+                line = f"CONTEXTE-NON-REQUIS\t{context}\tabsent de la clé {CONTEXTS_KEY} : un parcours cassé ne bloque aucune PR"
+            else:
+                continue
+            if line not in printed:
+                printed.add(line)
+                print(line)
+    replayed = bool(values[REPLAY_KEY])
+    if not replayed and not any(values[key] for key in COMMAND_KEYS):
+        return 1 if missing else 0
+    count = attached(body)
     carried = 0
+    if not args.matrice:
+        print("sans objet (aucune matrice fournie : critères d'écran non cherchés)")
+    if replayed:
+        if values[PATHS_KEY] and changed is None:
+            print("sans objet (liste des fichiers de la PR non fournie)")
+        elif values[PATHS_KEY]:
+            for path in changed:
+                if any(path.startswith(prefix) for prefix in values[PATHS_KEY]):
+                    carried += 1
+                    print(f"PARCOURS-TOUCHE\t{path}")
     if args.matrice:
         wanted = re.compile(rf"(?<!\w){re.escape(args.ticket)}(?!\w)") if args.ticket else None
         for row in rows:
