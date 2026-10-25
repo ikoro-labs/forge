@@ -1137,10 +1137,10 @@ class Parcours(unittest.TestCase):
         self.assertIn("parcours.md", self.read("templates", "features", "protocole.md"))
 
     def test_the_configuration_page_tells_it(self) -> None:
-        """No F-NNNN: ticket #97, A2: la page de configuration cite le script et son repli sur la spec."""
+        """No F-NNNN: ticket #97, A2: la page de configuration cite le script, et dit que la spec ne sert pas de référence de repli."""
         page = " ".join((support.REPO_ROOT / "docs" / "installation.md").read_text(encoding="utf-8").split())
         self.assertIn("parcours.py", page)
-        self.assertIn("à défaut la spec", page)
+        self.assertIn("La spec ne sert jamais de référence de repli", page)
 
 
 if __name__ == "__main__":

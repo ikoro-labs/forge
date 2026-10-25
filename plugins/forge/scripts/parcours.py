@@ -1,6 +1,6 @@
 """Check the wanted path of a feature (`parcours.md`), screen by screen.
 
-    python parcours.py [--spec FILE] [--usine FILE] [--root DIR] <parcours-file>
+    python parcours.py [--usine FILE] [--root DIR] <parcours-file>
 
 The format, which the skill `feature-design` and the template `templates/features/parcours.md` repeat:
 
@@ -13,9 +13,10 @@ The format, which the skill `feature-design` and the template `templates/feature
   of the feature does not exist yet: the path cites identifiers of the source elements, not matrix rows.
 
 The identifiers cited are checked against the source files of the key `product-source` of
-`docs/agents/usine.md` when it is declared (Markdown only; any other format is BLOCKED), otherwise
-against the spec given by `--spec`; with neither, the check prints `sans objet (clé product-source
-absente)` and never passes the identifiers as checked. The format is checked in every case.
+`docs/agents/usine.md` when it is declared (Markdown only; any other format is BLOCKED). The spec is
+never a reference: a token of the spec shaped like an identifier (`F-0000`, `A1`, `L1`, `D1`) is not an
+element of the source. Without the key, the check prints `sans objet (clé product-source absente)`, takes
+no default value and never passes the identifiers as checked. The format is checked in every case.
 
 One line per finding, fields separated by tabs: INVALID (screen, reason), UNKNOWN (screen, identifier
 absent from the reference), BLOCKED (a source that is not Markdown) or OK (nothing found). Exit code 0
@@ -103,7 +104,6 @@ def check(text: str) -> tuple[list[tuple[str, str]], dict[str, list[str]]]:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument("parcours", help="the path file of the feature")
-    parser.add_argument("--spec", help="the spec file, the reference when the key product-source is absent")
     parser.add_argument("--usine", help="the usine.md to read (default: docs/agents/usine.md)")
     parser.add_argument("--root", help="the project copy to read (default: the project directory)")
     args = parser.parse_args(argv)
@@ -129,12 +129,8 @@ def main(argv: list[str] | None = None) -> int:
                 findings.append(f"BLOCKED\t{name}\t\tsource non lisible en Markdown : demander un export Markdown à son auteur")
             if not blocked:
                 reference = [i for name in sources for i in ids_of_source((root / name).read_text(encoding="utf-8"))]
-        elif args.spec:
-            spec = Path(args.spec).read_text(encoding="utf-8")
-            reference = sorted({m for m in _ID.findall(spec)})
-            notes.append(f"clé {SOURCE_KEY} absente : identifiants vérifiés contre la spec")
         else:
-            notes.append(f"sans objet (clé {SOURCE_KEY} absente) : identifiants non vérifiés, ni source ni spec")
+            notes.append(f"sans objet (clé {SOURCE_KEY} absente) : identifiants non vérifiés")
     except (OSError, UnicodeDecodeError) as error:
         print(f"parcours: {error}", file=sys.stderr)
         return 2

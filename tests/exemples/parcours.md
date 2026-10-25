@@ -7,7 +7,7 @@ date: 2026-10-25
 # F-0000 : parcours du relevé des compteurs d'eau
 
 Exemple inventé, neutre, rempli sur le gabarit de parcours ; les tests du plugin le font passer par
-`parcours.py`, contre la spec d'exemple.
+`parcours.py`, contre la source d'exemple.
 
 ## Écran 1 : Liste des compteurs
 

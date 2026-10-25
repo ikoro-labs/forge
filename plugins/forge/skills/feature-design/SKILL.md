@@ -28,9 +28,10 @@ Applique `${CLAUDE_PLUGIN_ROOT}/templates/features/protocole.md`, document `desi
    l'utilisateur y voit (les mots exacts de l'écran, entre « et »), ce qu'il y fait, l'écran suivant
    et les identifiants d'éléments de la source qu'il tient. Il se mène avec l'expert métier quand le
    projet en a un. Lance
-   `uv run --no-project --quiet python ${CLAUDE_PLUGIN_ROOT}/scripts/parcours.py --spec <spec.md> <parcours.md>` :
+   `uv run --no-project --quiet python ${CLAUDE_PLUGIN_ROOT}/scripts/parcours.py <parcours.md>` :
    le script vérifie le format et que chaque écran cite un identifiant que la source (clé
-   `product-source`) ou, à défaut, la spec porte ; un `INVALID`, un `UNKNOWN` ou un `BLOCKED` se
+   `product-source`) porte ; sans cette clé, la correspondance est « sans objet » et la spec ne la
+   remplace pas ; un `INVALID`, un `UNKNOWN` ou un `BLOCKED` se
    corrige avant la PR. Chaque libellé neuf entre dans le glossaire du contexte (clé `glossary`).
    Sans écran, dis-le et n'écris rien. Le parcours n'a pas de statut propre : il se relit avec le
    design, dans la même PR.

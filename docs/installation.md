@@ -128,8 +128,9 @@ sous Linux seulement, sur des sources écrites à la main ; pas encore sur un vr
 
 `plugins/forge/scripts/parcours.py` lit le parcours voulu d'une feature (`parcours.md`, écran par
 écran) : le format, puis que chaque écran cite un identifiant d'élément de la source, vérifié contre
-les fichiers de `product-source` ou, à défaut la spec que l'appel désigne ; sans l'un ni l'autre, la
-correspondance est « sans objet (clé `product-source` absente) ». Il ne lit aucune autre clé. Éprouvé
+les fichiers de `product-source` seulement. La spec ne sert jamais de référence de repli (un jeton
+comme `F-0000`, `A1` ou `L1` y a la forme d'un identifiant sans être un élément de la source) : sans la
+clé, la correspondance est « sans objet (clé `product-source` absente) » et rien n'est dit vérifié. Il ne lit aucune autre clé. Éprouvé
 sous Linux seulement, sur des parcours écrits à la main ; pas encore sur un vrai projet.
 
 Le skill de découpage en tickets du projet se déclare avec `ticket-skill` : `/forge:feature-design`

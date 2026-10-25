@@ -31,7 +31,7 @@ GOOD = """# F-0000 : parcours
 """
 
 
-def run(parcours: str, usine: str = USINE, source: str = SOURCE, spec: str | None = None) -> tuple[int, str]:
+def run(parcours: str, usine: str = USINE, source: str = SOURCE) -> tuple[int, str]:
     """Run the script on a project copy, as the skills do: exit code and standard output."""
     with tempfile.TemporaryDirectory() as folder:
         root = Path(folder)
@@ -39,9 +39,6 @@ def run(parcours: str, usine: str = USINE, source: str = SOURCE, spec: str | Non
         (root / "source.md").write_text(source, encoding="utf-8")
         (root / "parcours.md").write_text(parcours, encoding="utf-8")
         argv = ["--usine", str(root / "usine.md"), "--root", str(root), str(root / "parcours.md")]
-        if spec is not None:
-            (root / "spec.md").write_text(spec, encoding="utf-8")
-            argv = ["--spec", str(root / "spec.md")] + argv
         out = io.StringIO()
         with redirect_stdout(out), redirect_stderr(io.StringIO()):
             code = main(argv)
@@ -104,20 +101,21 @@ class Identifiers(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("UNKNOWN\tÉcran 1\tEXI-99", out)
 
-    def test_without_the_source_key_the_spec_is_the_reference(self) -> None:
-        """No F-NNNN: ticket #97, A2: sans la clé, la spec donne les identifiants."""
-        spec = "EXI-01 et EXI-02 et C01\n"
-        code, out = run(GOOD, usine="", spec=spec)
-        self.assertEqual(code, 0, out)
-        code, out = run(GOOD.replace("EXI-02", "EXI-98"), usine="", spec=spec)
-        self.assertEqual(code, 1)
-        self.assertIn("UNKNOWN\tÉcran 2\tEXI-98", out)
+    def test_without_the_source_key_nothing_is_checked_against_the_spec(self) -> None:
+        """No F-NNNN: ticket #97, A2: sans la clé, la spec n'est pas une référence : ni F-0000, ni A1 ne passent pour vérifiés."""
+        for token in ("F-0000", "A1", "L1", "D1"):
+            code, out = run(GOOD.replace("EXI-02, C01", token), usine="")
+            self.assertNotIn("vérifiés contre", out, token)
+            self.assertIn("identifiants non vérifiés", out, token)
+            self.assertIn("sans objet (clé product-source absente)", out, token)
 
-    def test_without_key_nor_spec_the_check_is_not_applicable(self) -> None:
-        """No F-NNNN: ticket #97, A2: ni clé ni spec, la correspondance est « sans objet », jamais validée."""
+    def test_without_the_source_key_the_check_is_not_applicable(self) -> None:
+        """No F-NNNN: ticket #97, A2: sans la clé, la correspondance est « sans objet », jamais validée ; le format reste vérifié."""
         code, out = run(GOOD, usine="")
-        self.assertEqual(code, 0)
         self.assertIn("sans objet (clé product-source absente)", out)
+        code, out = run(GOOD.replace("- Suivant : fin\n- Source : EXI-02, C01", "- Suivant : fin\n- Source : ?"), usine="")
+        self.assertEqual(code, 1)
+        self.assertIn("INVALID", out)
 
     def test_a_hyphenless_identifier_counts(self) -> None:
         """No F-NNNN: ticket #97, A2: C01 et G0 sont des identifiants, au contrat de source_ids."""
@@ -132,11 +130,12 @@ class Vocabulary(unittest.TestCase):
 
 
 class Example(unittest.TestCase):
-    def test_the_example_passes_against_the_example_spec(self) -> None:
-        """No F-NNNN: ticket #97, A2: l'exemple de parcours cite des identifiants que la spec d'exemple tient."""
+    def test_the_example_passes_against_the_example_source(self) -> None:
+        """No F-NNNN: ticket #97, A2: l'exemple de parcours cite des identifiants que la source d'exemple tient."""
         out = io.StringIO()
-        with redirect_stdout(out), redirect_stderr(io.StringIO()):
-            code = main(["--spec", str(EXAMPLES / "spec.md"), "--root", str(EXAMPLES), str(EXAMPLES / "parcours.md")])
+        with tempfile.TemporaryDirectory() as folder, redirect_stdout(out), redirect_stderr(io.StringIO()):
+            (Path(folder) / "usine.md").write_text("- `product-source` : `source.md`\n", encoding="utf-8")
+            code = main(["--usine", str(Path(folder) / "usine.md"), "--root", str(EXAMPLES), str(EXAMPLES / "parcours.md")])
         self.assertEqual(code, 0, out.getvalue())
 
 
