@@ -131,8 +131,9 @@ Quatre clés activent, une par une, les preuves d'écran d'un projet qui a une i
 écran, navigateur piloté (jamais en CI), commande de l'ordinateur (sur un poste dédié), vidéo ou GIF
 d'un parcours. Deux clés de plus rejouent le parcours voulu en CI : `journey-replay` (le contexte de CI,
 nommé parmi les contextes requis, et la commande qui joue le parcours) et `journey-paths` (les chemins
-du front et des API qu'il consomme, dont toute PR doit joindre les captures). Le détail est dans
-[`docs/installation.md`](docs/installation.md).
+du front et des API qu'il consomme, dont toute PR doit joindre les captures). La revue en boucle pose des étiquettes `gravite:bloquant`,
+`gravite:majeur` et `gravite:mineur` sur ses tickets d'écart : elles doivent exister sur le dépôt, l'agent
+ne les crée pas. Le détail est dans [`docs/installation.md`](docs/installation.md).
 
 Pour adapter forge sans toucher au plugin, le projet ajoute ses propres skills, agents et hooks
 dans son `.claude/` : ils coexistent avec ceux de forge, dont les noms sont préfixés (`forge:`).

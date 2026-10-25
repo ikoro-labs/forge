@@ -149,6 +149,16 @@ deux fois, arrête la boucle et pose `needs-your-attention` sur l'issue de suivi
 l'humain tranche. Éprouvé sous Linux seulement, sur des fichiers écrits à la main ; aucune vraie
 application ni aucun vrai navigateur n'a servi à la boucle.
 
+Les tickets d'écart portent l'étiquette `ready-for-agent` et une étiquette de gravité, `gravite:bloquant`,
+`gravite:majeur` ou `gravite:mineur` (celle de leur lot), que les indicateurs de la revue
+(`docs/indicateurs-de-service.md`) lisent. Ces trois étiquettes doivent exister sur le dépôt ; l'agent ne
+les crée pas, c'est un geste du propriétaire du dépôt (`gh label create gravite:bloquant`, et de même pour
+les deux autres), à faire avant la première revue en boucle. La boucle les cherche avec `gh label list`
+avant de publier : si l'une manque, la boucle s'arrête sans rien publier, nomme l'étiquette absente dans
+son compte rendu et pose `needs-your-attention` sur l'issue de suivi, plutôt que de laisser `gh issue
+create` échouer ticket par ticket. Ce geste vaut pour tout projet qui fait tourner la boucle, avec ou sans
+la clé `slo`.
+
 Deux clés de plus rendent le parcours voulu obligatoire. `journey-replay` s'écrit
 `<contexte de CI> | <commande>` : la commande joue le parcours de bout en bout, depuis un dépôt propre
 jusqu'au poste de travail de l'utilisateur, écrit ses captures dans `{out}`, et le contexte, le nom du job
