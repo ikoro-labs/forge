@@ -185,6 +185,18 @@ Les classes de gravité d'un ticket de défaut, posées par une étiquette, une 
 `forge:feature-build` prend les tickets prêts par gravité, puis par échéance, et un `sev1` passe devant
 tout ticket qui n'est pas encore confié.
 
+Les engagements de délai (SLA), lus par `scripts/factory_slo.py` (`sla`, `queue`, `report`). Une ligne
+par gravité : `<gravité> | <prise en charge> | <correctif fusionné> | <correctif publié>`. Chaque délai
+est un nombre suivi de `h` ou de `j`, compté depuis l'ouverture du ticket : la prise en charge est
+atteinte quand le ticket est assigné ou reçoit `agent-claimed`, le correctif fusionné quand une PR qui
+le ferme (`Closes`) est fusionnée, le correctif publié quand son commit de fusion est dans un tag de
+la clé `release-tag`. Une gravité inconnue ou répétée, ou un délai illisible, fait échouer la commande.
+Sans la clé, les échéances sont « sans objet (clé `sla` absente) », aucune n'est devinée.
+
+- `sla` : `<sev1 | 4 h | 24 h | 3 j>`
+- `sla` : `<sev2 | 2 j | 7 j | 14 j>`
+- `sla` : `<sev3 | 7 j | 30 j | 60 j>`
+
 Les objectifs de service, lus par `scripts/factory_slo.py status`. Une ligne par objectif :
 `<sli> | <comparateur> <cible> | <fenêtre en jours>`. Le SLI est l'un de ceux de
 `docs/indicateurs-de-service.md` ; une durée prend `p90` ou `mediane` après son nom. Le comparateur est

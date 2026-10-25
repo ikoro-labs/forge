@@ -34,6 +34,14 @@ class Classes(unittest.TestCase):
         self.assertIn("un garde contourné", template)
         self.assertIn("la prose, la documentation ou un confort", template)
 
+    def test_the_template_documents_the_sla_key_without_default(self) -> None:
+        """Ticket #60, critère 2 : le gabarit documente `sla` et dit « sans objet » quand elle manque."""
+        template = read("templates", "usine.md")
+        self.assertIn("- `sla` : `<sev1 | ", template)
+        self.assertIn("<gravité> | <prise en charge> | <correctif fusionné> | <correctif publié>", template)
+        self.assertIn("sans objet (clé `sla` absente)", template)
+        self.assertIn("depuis l'ouverture du ticket", template)
+
     def test_the_readme_points_to_the_page(self) -> None:
         readme = " ".join((support.REPO_ROOT / "README.md").read_text(encoding="utf-8").split())
         self.assertIn("docs/gravite-et-sla.md", readme)
