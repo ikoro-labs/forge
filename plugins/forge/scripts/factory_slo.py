@@ -496,6 +496,8 @@ def review_gaps(f: Factory) -> Sli:
 
 def review_gap_lead_time(f: Factory) -> Sli:
     """From the opening of a gap ticket to its closing, for the tickets closed in the window."""
+    if f.review_features is None:
+        return Sli("review-gap-lead-time", reason=ABSENT_FEATURE_DIR)
     samples = [
         (t.closed - t.opened).total_seconds()
         for t in f.gap_tickets

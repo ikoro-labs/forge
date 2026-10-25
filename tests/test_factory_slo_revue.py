@@ -122,9 +122,9 @@ class Revue(unittest.TestCase):
     def test_a5_without_the_feature_dir_key_every_indicator_is_without_object(self) -> None:
         """No F-NNNN: ticket #102 A5 : sans la clé `feature-dir`, « sans objet (clé `feature-dir` absente) », jamais 0 ni 100 %."""
         self.usine(USINE)
-        for name in ("matrix-coverage", "review-regressions"):
+        for name in ("review-gaps", "review-gap-lead-time", "matrix-coverage", "review-regressions"):
             result = self.sli(name)
-            self.assertEqual(result["statut"], "sans objet")
+            self.assertEqual(result["statut"], "sans objet", name)
             self.assertIn("clé `feature-dir` absente", result["raison"])
 
     def test_a5_a_missing_journal_is_without_object_for_the_regressions_only(self) -> None:
