@@ -117,6 +117,15 @@ clé `glossary`, `UNKNOWN` pour un mot capitalisé absent du glossaire (un `MINO
 mots capitalisés est une approximation du « terme métier » : elle peut relever un mot qui n'en est pas
 un. Éprouvé sous Linux seulement, sur des diffs écrits à la main ; pas encore sur un vrai projet.
 
+Deux clés, `product-source` (les sources produit, en Markdown : un PDF, un `.docx` ou une image bloque
+l'étape, qui demande un export Markdown) et `source-author` (qui peut écarter un élément d'une
+source, un rôle ou un compte GitHub), ouvrent le comptage de `forge:feature-spec` :
+`plugins/forge/scripts/source_ids.py` relève les éléments identifiés de la source (une ligne qui
+commence par `EX-12`, `RG-3.1`...) et liste ceux que la spec ne reprend pas par leur identifiant ;
+la spec ne passe en `ready-for-human` qu'à liste vide. Une exclusion ne vaut que sur un accord écrit
+de l'auteur de la source que la spec cite ; sans `source-author`, aucun élément ne s'écarte. Éprouvé
+sous Linux seulement, sur des sources écrites à la main ; pas encore sur un vrai projet.
+
 Le skill de découpage en tickets du projet se déclare avec `ticket-skill` : `/forge:feature-design`
 l'utilise à son étape de découpage. Sans la clé, il découpe à la main, dans l'ordre du §7 du
 design, et le dit.

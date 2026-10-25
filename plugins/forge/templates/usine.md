@@ -53,6 +53,18 @@ et entretiens d'abord, avant tout ce que des agents ont écrit.
 - `product-source` : `<docs/produit/retours-terrain.md>`
 - `product-source` : `<docs/produit/parcours.md>`
 
+Une source produit se lit en **Markdown** : une source déclarée en PDF, en `.docx` ou en image rend
+l'étape de spec bloquée, avec la demande d'un export Markdown à son auteur. `forge:feature-spec` en
+reprend chaque élément identifié (`EX-12`, `RG-3.1`) par son identifiant, et le comptage
+`scripts/source_ids.py` liste ceux que la spec ne reprend pas.
+
+`source-author` : qui peut écarter un élément d'une source, un rôle ou un compte GitHub, **une ligne
+par valeur**. Une exclusion de périmètre ne vaut que si cette personne a écarté l'élément par écrit ;
+la spec cite l'accord (fichier, date, rôle). Sans la clé, aucun élément ne s'écarte, et l'étape le
+dit : « sans objet (clé `source-author` absente) ».
+
+- `source-author` : `<expert métier>`
+
 La règle qui dit si une feature entre au périmètre (`/forge:feature-frame`). Sans elle, l'entrée est
 réservée à un humain.
 

@@ -526,6 +526,50 @@ class NeverWeaken(unittest.TestCase):
         self.assertIn("`never-weaken`", readme)
 
 
+class SourceIdentifiers(unittest.TestCase):
+    """Ticket #92: the spec takes up every element of the business source by its identifier."""
+
+    @staticmethod
+    def read(*parts: str) -> str:
+        return " ".join(support.PLUGIN.joinpath(*parts).read_text(encoding="utf-8").split())
+
+    def test_the_spec_skill_states_the_contract(self) -> None:
+        """No F-NNNN: ticket #92, A2: le skill dit la forme de l'identifiant et le comptage."""
+        skill = self.read("skills", "feature-spec", "SKILL.md")
+        self.assertIn("`product-source`", skill)
+        self.assertIn("export Markdown", skill)
+        self.assertIn("${CLAUDE_PLUGIN_ROOT}/scripts/source_ids.py", skill)
+        self.assertIn("LETTRES-NOMBRE", skill)
+        self.assertIn("`ready-for-human`", skill)
+        self.assertIn("liste vide", skill)
+
+    def test_the_spec_skill_forbids_an_agent_to_set_an_element_aside(self) -> None:
+        """No F-NNNN: ticket #92, A4: seul l'auteur de la source écarte, par écrit, et la spec cite l'accord."""
+        skill = self.read("skills", "feature-spec", "SKILL.md")
+        self.assertIn("Un agent n'écarte jamais un élément", skill)
+        self.assertIn("`source-author`", skill)
+        self.assertIn("Écarté : <identifiant> | accord : <fichier> | <AAAA-MM-JJ> | <rôle>", skill)
+
+    def test_the_spec_template_has_the_section_of_the_source_elements(self) -> None:
+        """No F-NNNN: ticket #92, A2: le gabarit de spec porte les éléments de la source et leurs identifiants."""
+        template = self.read("templates", "features", "spec.md")
+        self.assertIn("Éléments de la source", template)
+        self.assertIn("Écarté : <identifiant> | accord : <fichier> | <AAAA-MM-JJ> | <rôle>", template)
+
+    def test_the_usine_template_documents_source_author(self) -> None:
+        """No F-NNNN: ticket #92, A5: la clé source-author est dans le gabarit, clé absente comprise."""
+        template = self.read("templates", "usine.md")
+        self.assertIn("- `source-author` : `<", template)
+        self.assertIn("aucun élément ne s'écarte", template)
+        self.assertIn("sans objet (clé `source-author` absente)", template)
+
+    def test_the_configuration_page_tells_it(self) -> None:
+        """No F-NNNN: ticket #92, A5: la page de configuration cite la clé et le script."""
+        page = " ".join((support.REPO_ROOT / "docs" / "installation.md").read_text(encoding="utf-8").split())
+        self.assertIn("`source-author`", page)
+        self.assertIn("source_ids.py", page)
+
+
 class UiLabels(unittest.TestCase):
     """Ticket #98: the labels a PR adds on screen are confronted with the glossary and forbidden words."""
 
