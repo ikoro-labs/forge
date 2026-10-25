@@ -14,6 +14,7 @@ le moins cher qui fait le travail, le plus fort là seulement où une erreur co�
 | `forge:coder` | `sonnet` | Le plus gros consommateur ; un modèle moyen code un ticket bien découpé. |
 | `forge:qc-conf` | `opus` | Le garde-fou de la qualité ; il lit surtout le diff, sa tâche reste courte. Un autre niveau que le coder rend moins probable qu'une même erreur échappe aux deux. |
 | `forge:staff-engineer`, `forge:product-owner` | `opus` | Appelés rarement, et leur décision engage la suite. |
+| `forge:review-judge`, `forge:review-recheck` | `opus` | Ils jugent des captures contre la source, et un `tenu` publié à tort cache un écart à la clôture ; le juge réfléchit en `high`, la seconde lecture en `medium`. |
 
 La session principale, celle qui lance les skills, n'est pas réglée par le plugin : c'est le
 modèle choisi par `/model`, souvent le plus gros poste de consommation.

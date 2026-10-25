@@ -8,7 +8,8 @@ agent through. For the coder, it refuses, with the reason on stderr and exit cod
 - `gh issue close` and `gh issue edit`: the ticket's state, labels and assignees are
   `/forge:feature-build`'s, which is how it tells its claim from a human's (`agent-claimed`);
 - the qc skill, under its plugin name `forge:qc` as under a bare `qc`, which the coder would
-  otherwise run as the last step of opening a PR;
+  otherwise run as the last step of opening a PR; and the end-to-end review skill
+  (`forge:feature-review`, bare or prefixed), which reviews a feature the coder wrote;
 - `git push` with `-u`, `--set-upstream`, `-f` or `--force` (`--force-with-lease` stays allowed),
   and `git config` in write mode: the first writes, and the last two rewrite, the configuration
   shared by every worktree of the repository;
@@ -56,6 +57,11 @@ QC_SKILLS = frozenset({"qc", "forge:qc"})
 REFUSED_SKILL = (
     "the qc skill: the coder cannot launch qc-gate and qc-conf, so it would judge and merge its"
     " own PR alone; the orchestrator runs qc"
+)
+REVIEW_SKILLS = frozenset({"feature-review", "forge:feature-review"})
+REFUSED_REVIEW = (
+    "the end-to-end review skill: the agent that coded a feature does not review it; the"
+    " orchestrator runs the review with a judge that did not write the code"
 )
 
 
@@ -205,6 +211,8 @@ def refusal(
     """
     if tool_name == "Skill":
         skill = str(tool_input.get("skill", "")).strip().lstrip("/")
+        if skill in REVIEW_SKILLS:
+            return REFUSED_REVIEW
         return REFUSED_SKILL if skill in QC_SKILLS else None
     if tool_name in WRITE_TOOLS:
         if worktree is None:

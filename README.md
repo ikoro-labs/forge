@@ -26,7 +26,9 @@ configuration, ses règles, ses skills de domaine.
    retirée, un nombre relevé, un rang abaissé) : un humain la fusionne alors. Une PR refusée
    retourne au coder pour un second tour.
 4. **On vérifie et on clôt.** `/forge:feature-verify` relie chaque critère d'acceptation au test
-   qui le prouve, `/forge:feature-close` écrit ce qui a été livré.
+   qui le prouve, `/forge:feature-review` joue le parcours sur l'application réelle et juge chaque
+   écran contre la source (un juge en lecture seule, une seconde lecture des `tenu`, la matrice mise à
+   jour, un ticket par lot d'écarts), `/forge:feature-close` écrit ce qui a été livré.
 
 Une question technique ou produit en chemin va d'abord à `forge:staff-engineer` ou à
 `forge:product-owner`, qui la tranchent selon la matrice des droits de décision du projet, ou
@@ -42,6 +44,8 @@ ne fusionne une PR rouge, ou ne sort de son rôle.
 | `forge:qc-conf` | juge une PR : ACCEPT ou REJECT |
 | `forge:staff-engineer` | tranche une question technique ou de gouvernance |
 | `forge:product-owner` | tranche une question produit |
+| `forge:review-judge` | juge l'écran réel d'une feature contre sa source, en lecture seule |
+| `forge:review-recheck` | relit chaque verdict tenu de cette revue avant publication |
 
 | Skills | Pour |
 | --- | --- |
@@ -50,6 +54,7 @@ ne fusionne une PR rouge, ou ne sort de son rôle.
 | `/forge:feature-accept` | accepter un document, geste réservé à un humain |
 | `/forge:feature-build`, `/forge:qc` | coder les tickets, relire et fusionner les PR |
 | `/forge:feature-verify`, `-close`, `-status` | la recette, la clôture, et où en est chaque feature |
+| `/forge:feature-review` | la revue de bout en bout : le parcours joué sur l'application réelle, jugé contre la source sur des captures |
 | `/forge:audit-jetons` | compter les jetons dépensés par chaque rôle |
 | `/forge:slo` | le rapport des objectifs de service : valeur, budget d'erreur restant, état, tendance |
 | `/forge:tdd` | ce qu'est un bon test, les coutures, les anti-patterns, la boucle et les mocks |
@@ -60,7 +65,7 @@ ne fusionne une PR rouge, ou ne sort de son rôle.
 | Hook | Ce qu'il garde |
 | --- | --- |
 | `guard_git` | pas de commit ni de push sur `main`, pas de `--force`, pas de fusion d'une PR dont un check n'est pas vert ou dont un fichier touche la clé `protected-path`, pas de geste du propriétaire du dépôt (runners, protection, collaborateurs, secrets, visibilité) |
-| `guard_coder` | le coder ne fusionne pas, ne relit pas, ne ferme pas de ticket, n'écrit que dans son worktree, ne pousse ni avec `-u` ni avec `-f` |
+| `guard_coder` | le coder ne fusionne pas, ne relit pas, ne lance ni `forge:qc` ni la revue de bout en bout, ne ferme pas de ticket, n'écrit que dans son worktree, ne pousse ni avec `-u` ni avec `-f` |
 | `guard_readonly` | les juges et les décideurs lisent, n'écrivent jamais |
 | `guard_pause` | tant que `.claude/PAUSED` existe, aucun agent n'est lancé |
 | `after_write` | formate chaque fichier écrit avec les formateurs que le projet déclare (clé `format-on-write`), puis refuse le tiret cadratin au-delà de ce que le projet admet |
