@@ -130,6 +130,23 @@ Une sonde `NOT RUN` ou `FAIL` se dit dans `GATES`, jamais lue comme « aucun tes
 sonde « sans objet » (clé `test-path` ou `red-replay` absente) se dit aussi dans `GATES` et ne donne
 aucun constat. En une passe, il n'y a pas de tableau : dis dans `GATES` que le rejeu n'a pas eu lieu.
 
+## Lecture des libellés de l'écran
+
+Le tableau de `forge:qc-gate` porte une sonde **Libellés de l'écran** : chaque libellé que la PR ajoute
+ou change sous les fichiers de la clé `ui-labels`, confronté aux mots de la clé `ui-forbidden-word` et
+aux fichiers de la clé `glossary`. Tu ne refais pas sa mesure, tu lis ses lignes.
+
+- Une ligne `FORBIDDEN` : le libellé affiche à l'utilisateur un mot ou un motif que le projet refuse
+  à l'écran (du vocabulaire interne, un identifiant, un renvoi). Sévérité `BLOCKER`. Le scénario
+  d'échec est l'écran lui-même : l'utilisateur lit ce mot.
+- Une ligne `UNKNOWN` : un terme du libellé manque au glossaire. Sévérité `MINOR` : la sonde lit les
+  mots capitalisés, ce qui peut relever un mot qui n'est pas un terme métier. Le constat demande soit
+  d'ajouter le terme au glossaire, soit de le corriger.
+
+Une sonde `FAIL` ou `NOT RUN` se dit dans `GATES`, jamais lue comme « aucun libellé refusé ». Une sonde
+« sans objet » (clé `ui-labels`, `ui-forbidden-word` ou `glossary` absente) se dit aussi dans `GATES` et
+ne donne aucun constat pour sa partie.
+
 ## Forme d'un constat
 
 Chaque constat porte trois éléments, sans quoi il est abandonné :

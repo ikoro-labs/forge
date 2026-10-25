@@ -106,6 +106,16 @@ Le numéro de PR, et le numéro du tour (1 ou 2).
     attendu : tu le comptes, tu ne le détailles pas. Le rejeu est au **grain du fichier** : la ligne
     `RED` le dit, et tu la recopies avec cette mention, parce qu'elle dit seulement que le fichier
     sort non nul sur la base, pas que chaque test du fichier y est rouge.
+12. **Libellés de l'écran.** Les libellés que la PR ajoute ou change, confrontés aux mots refusés et
+    au glossaire. Avec le `pr.diff` et le `usine-base.md` de la sonde 10, lancée **dans la copie de la
+    tête** (les glossaires sont lus dans la tête : une PR peut y ajouter le terme qu'elle introduit) :
+    `uv run --no-project --quiet python "${CLAUDE_PLUGIN_ROOT}/scripts/ui_labels.py" --usine usine-base.md --root . pr.diff`.
+    Recopie chaque ligne du script, verbatim, et son code de sortie : 0 rien à relever, 1 un libellé
+    contient un mot refusé (`FORBIDDEN`) ou un terme absent du glossaire (`UNKNOWN`), 2 un motif
+    invalide, un glossaire illisible ou un appel en échec (`FAIL`, jamais `PASS`). Une clé absente se
+    rend ligne à ligne comme le script l'écrit : `sans objet (clé ui-labels absente)`, ou la même
+    phrase pour `ui-forbidden-word` ou `glossary`, qui ne coupe que sa partie. Tu ne juges pas un
+    libellé : tu rends ce que le script a mesuré.
 
 Au tour 2, rejoue toutes les sondes : une correction peut casser ce qui passait.
 
@@ -121,5 +131,5 @@ Un tableau, rien d'autre, au plus trente lignes :
 | ... | ... | ... |
 ```
 
-Puis, sous le tableau, les éléments verbatim des sondes 2, 5, 6, 7, 10 et 11. Une sonde que tu n'as pas
+Puis, sous le tableau, les éléments verbatim des sondes 2, 5, 6, 7, 10, 11 et 12. Une sonde que tu n'as pas
 pu exécuter s'écrit `NOT RUN` avec la commande et sa sortie d'erreur : jamais `PASS`.

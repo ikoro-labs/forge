@@ -290,7 +290,7 @@ class BaseReplayProbe(unittest.TestCase):
     def test_the_output_hands_the_probe_lines_to_the_judge(self) -> None:
         """No F-NNNN: ticket #43, critère 1: les lignes de la sonde figurent verbatim sous le tableau."""
         gate = self.read("agents", "qc-gate.md")
-        self.assertIn("les éléments verbatim des sondes 2, 5, 6, 7, 10 et 11", gate)
+        self.assertIn("les éléments verbatim des sondes 2, 5, 6, 7, 10, 11 et 12", gate)
 
     def test_the_template_documents_the_two_keys(self) -> None:
         """No F-NNNN: ticket #43, critère 3: test-path et red-replay sont documentées dans le gabarit."""
@@ -524,6 +524,48 @@ class NeverWeaken(unittest.TestCase):
     def test_the_readme_tells_it(self) -> None:
         readme = " ".join((support.REPO_ROOT / "README.md").read_text(encoding="utf-8").split())
         self.assertIn("`never-weaken`", readme)
+
+
+class UiLabels(unittest.TestCase):
+    """Ticket #98: the labels a PR adds on screen are confronted with the glossary and forbidden words."""
+
+    @staticmethod
+    def read(*parts: str) -> str:
+        return " ".join(support.PLUGIN.joinpath(*parts).read_text(encoding="utf-8").split())
+
+    def test_the_template_documents_the_two_keys(self) -> None:
+        """No F-NNNN: ticket #98, A1: ui-labels et ui-forbidden-word sont documentées dans le gabarit."""
+        template = self.read("templates", "usine.md")
+        self.assertIn("- `ui-labels` : `<", template)
+        self.assertIn("- `ui-forbidden-word` : `<", template)
+        self.assertIn("sans objet (clé `ui-labels` absente)", template)
+        self.assertIn("sans objet (clé `ui-forbidden-word` absente)", template)
+
+    def test_the_gate_runs_the_script_on_the_diff_with_the_keys_of_the_base(self) -> None:
+        """No F-NNNN: ticket #98, A2: une sonde de qc-gate lance le script, sans avis."""
+        gate = self.read("agents", "qc-gate.md")
+        section = gate[gate.index("**Libellés de l'écran.**"):]
+        self.assertIn("${CLAUDE_PLUGIN_ROOT}/scripts/ui_labels.py", section)
+        self.assertIn("--usine usine-base.md", section)
+        self.assertIn("pr.diff", section)
+        self.assertIn("sans objet (clé ui-labels absente)", section)
+        self.assertIn("verbatim", section)
+
+    def test_the_judge_makes_a_forbidden_word_a_blocker(self) -> None:
+        """No F-NNNN: ticket #98, A3: qc-conf rend un BLOCKER pour un mot refusé."""
+        judge = self.read("agents", "qc-conf.md")
+        section = judge[judge.index("## Lecture des libellés de l'écran"):]
+        self.assertIn("`FORBIDDEN`", section)
+        self.assertIn("`BLOCKER`", section)
+        self.assertIn("`UNKNOWN`", section)
+        self.assertIn("`MINOR`", section)
+
+    def test_the_configuration_page_tells_it(self) -> None:
+        """No F-NNNN: ticket #98, A1: la page de configuration cite les deux clés et le script."""
+        page = " ".join((support.REPO_ROOT / "docs" / "installation.md").read_text(encoding="utf-8").split())
+        self.assertIn("`ui-labels`", page)
+        self.assertIn("`ui-forbidden-word`", page)
+        self.assertIn("ui_labels.py", page)
 
 
 class ArchitectureDiagram(unittest.TestCase):
