@@ -118,5 +118,112 @@ class StateRule(unittest.TestCase):
         self.assertIn("INVALID\tC01", out)
 
 
+class Identifiers(unittest.TestCase):
+    def test_an_identifier_the_source_does_not_hold_is_unknown(self) -> None:
+        """No F-NNNN: ticket #94, A3: un identifiant absent de la source est UNKNOWN."""
+        code, out = run(matrix(ROWS + "| EXI-99 | L2 | #14 | | | | absent | |\n"))
+        self.assertEqual(code, 1)
+        self.assertIn("UNKNOWN\tEXI-99", out)
+
+    def test_a_duplicate_is_refused(self) -> None:
+        """No F-NNNN: ticket #94, A3: deux lignes pour le même identifiant sont refusées."""
+        code, out = run(matrix(ROWS + "| EXI-02 | L1 | #12 | t::z | | | tenu | 2026-10-22 |\n"))
+        self.assertEqual(code, 1)
+        self.assertIn("DUPLICATE\tEXI-02", out)
+
+    def test_an_identifier_of_the_source_with_no_row_is_missing(self) -> None:
+        """No F-NNNN: ticket #94, A3: un identifiant de la source sans ligne est MISSING."""
+        code, out = run(matrix(ROWS.replace("| C01 | L2 | #13 | | | | absent | |\n", "")))
+        self.assertEqual(code, 1)
+        self.assertIn("MISSING\tC01", out)
+
+    def test_without_the_source_key_nothing_is_checked(self) -> None:
+        """No F-NNNN: ticket #94, A3: sans clé product-source, « sans objet » et jamais une valeur par défaut."""
+        code, out = run(matrix(ROWS + "| EXI-99 | L2 | #14 | | | | absent | |\n"), usine="")
+        self.assertEqual(code, 0, out)
+        self.assertIn("sans objet (clé product-source absente)", out)
+        self.assertNotIn("UNKNOWN", out)
+
+    def test_a_source_that_is_not_markdown_blocks(self) -> None:
+        """No F-NNNN: ticket #94, A3: une source qui n'est pas en Markdown bloque."""
+        code, out = run(matrix(), usine="- `product-source` : `source.pdf`\n")
+        self.assertEqual(code, 1)
+        self.assertIn("BLOCKED\tsource.pdf", out)
+
+
+class Coverage(unittest.TestCase):
+    def test_the_remaining_is_listed_per_batch_and_per_state(self) -> None:
+        """No F-NNNN: ticket #94, A4: la commande dit ce qui reste, par lot et par état, et la couverture."""
+        code, out = run(matrix(), "--reste")
+        self.assertEqual(code, 0, out)
+        self.assertIn("RESTE\tL1\tpartiel\tEXI-02", out)
+        self.assertIn("RESTE\tL2\tabsent\tC01", out)
+        self.assertNotIn("EXI-01", out)
+        self.assertIn("COUVERTURE\t1/3\t33 %", out)
+
+    def test_a_row_with_no_batch_is_listed_apart(self) -> None:
+        """No F-NNNN: ticket #94, A4: une ligne sans lot se range sous « sans lot »."""
+        code, out = run(matrix(ROWS.replace("| L2 |", "| |")), "--reste")
+        self.assertIn("RESTE\tsans lot\tabsent\tC01", out)
+
+    def test_an_excluded_row_counts_as_covered(self) -> None:
+        """No F-NNNN: ticket #94, A4: écarté, sur accord cité, compte dans la couverture."""
+        rows = ROWS.replace("| absent | |", "| écarté | 2026-10-20 |")
+        extra = "\nÉcarté : C01 | accord : accord.md | 2026-10-20 | expert-metier\n"
+        code, out = run(matrix(rows, extra), "--reste")
+        self.assertIn("COUVERTURE\t2/3\t66 %", out)
+        self.assertNotIn("C01", out.split("COUVERTURE")[0])
+
+
+class Closure(unittest.TestCase):
+    def test_closing_under_100_percent_is_refused(self) -> None:
+        """No F-NNNN: ticket #94, A5: sous 100 %, la clôture est refusée et nomme chaque ligne qui manque."""
+        code, out = run(matrix(), "--cloture")
+        self.assertEqual(code, 1)
+        self.assertIn("REFUSE\tEXI-02\tpartiel", out)
+        self.assertIn("REFUSE\tC01\tabsent", out)
+        self.assertNotIn("CLORE", out)
+
+    def test_closing_at_100_percent_is_allowed(self) -> None:
+        """No F-NNNN: ticket #94, A5: chaque ligne tenue ou écartée, sans autre constat, la clôture passe."""
+        rows = (
+            "| EXI-01 | L1 | #11 | t::a | | | tenu | 2026-10-20 |\n"
+            "| EXI-02 | L1 | #12 | t::b | | | tenu | 2026-10-20 |\n"
+            "| C01 | L2 | | | | | écarté | 2026-10-20 |\n"
+        )
+        extra = "\nÉcarté : C01 | accord : accord.md | 2026-10-20 | expert-metier\n"
+        code, out = run(matrix(rows, extra), "--cloture")
+        self.assertEqual(code, 0, out)
+        self.assertIn("CLORE\t3/3\t100 %", out)
+
+    def test_a_full_matrix_with_a_finding_does_not_close(self) -> None:
+        """No F-NNNN: ticket #94, A5: 100 % avec un tenu sans preuve ne clôt pas."""
+        rows = "| EXI-01 | L1 | #11 | | | | tenu | 2026-10-20 |\n| EXI-02 | L1 | #12 | t::b | | | tenu | 2026-10-20 |\n| C01 | L2 | #13 | t::c | | | tenu | 2026-10-20 |\n"
+        code, out = run(matrix(rows), "--cloture")
+        self.assertEqual(code, 1)
+        self.assertIn("INVALID\tEXI-01", out)
+
+    def test_an_empty_matrix_does_not_close(self) -> None:
+        """No F-NNNN: ticket #94, A5: une matrice sans ligne ne clôt rien."""
+        code, out = run(matrix(""), "--cloture", usine="")
+        self.assertEqual(code, 1)
+        self.assertIn("REFUSE", out)
+
+
+class Tickets(unittest.TestCase):
+    def test_an_identifier_no_ticket_covers_is_listed(self) -> None:
+        """No F-NNNN: ticket #94, A6: le découpage liste l'identifiant qu'aucun ticket ne couvre."""
+        code, out = run(matrix(ROWS.replace("#13", "")), "--sans-ticket")
+        self.assertEqual(code, 1)
+        self.assertIn("SANS-TICKET\tC01", out)
+        self.assertNotIn("EXI-01", out)
+
+    def test_every_identifier_covered_lists_nothing(self) -> None:
+        """No F-NNNN: ticket #94, A6: tous couverts, la commande dit NONE et sort à 0."""
+        code, out = run(matrix(), "--sans-ticket")
+        self.assertEqual(code, 0, out)
+        self.assertIn("NONE", out)
+
+
 if __name__ == "__main__":
     unittest.main()
