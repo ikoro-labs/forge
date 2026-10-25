@@ -13,9 +13,12 @@ of `docs/agents/usine.md` it reads:
   word that contains it.
 
 One line per finding is printed, `<status>`, `<path>`, `<label>` and `<detail>` separated by tabs:
-FORBIDDEN (the label holds a forbidden word, the detail) or NONE (nothing found). Exit code 0 when
-nothing is found, 1 when a label holds a forbidden word, 2 when a pattern is invalid or the call is
-wrong. The standard library only.
+FORBIDDEN (the label holds a forbidden word, the detail), UNKNOWN (a business term of the label is
+in no glossary file of the key `glossary`: a capitalised word, the first of the label apart) or NONE
+(no forbidden word found). Exit code 0 when nothing is found, 1 when a label holds a forbidden word
+or an unknown term, 2 when a pattern is invalid, a glossary file unreadable or the call wrong. A
+missing key prints `sans objet (clé <nom> absente)` for its part and never stops the other part.
+The standard library only.
 """
 
 from __future__ import annotations
@@ -32,10 +35,12 @@ import usine  # noqa: E402
 from never_weaken import parse_diff, under  # noqa: E402
 
 FORBIDDEN = "FORBIDDEN"
+UNKNOWN = "UNKNOWN"
 NONE = "NONE"
 INVALID = "INVALID"
 LABELS_KEY = "ui-labels"
 WORD_KEY = "ui-forbidden-word"
+GLOSSARY_KEY = "glossary"
 
 _KEY = re.compile(r"""^\s*(?:-\s+)?(?:"[^"]*"|'[^']*'|[\w.\-]+)\s*[:=]\s*(.*)$""")
 _OPENERS = {"|", ">", "|-", ">-", "{", "[", "|+", ">+"}
@@ -90,8 +95,69 @@ def check(paths: list[str], forbidden: list[str], diff_text: str) -> list[Findin
     return findings
 
 
+_WORD = re.compile(r"[^\W\d_]{3,}")
+
+
+def terms(label: str) -> list[str]:
+    """The business terms of a label: its capitalised words, the first word of the label apart."""
+    words = label.split()
+    found: list[str] = []
+    for index, word in enumerate(words):
+        if index == 0:
+            continue
+        found.extend(m for m in _WORD.findall(word) if m[0].isupper())
+    return found
+
+
+def unknown_terms(glossary: str, diff_text: str, paths: list[str]) -> list[Finding]:
+    """Each term of an added label that no glossary text holds, as a whole word and without case."""
+    findings: list[Finding] = []
+    for path, label in labels(paths, diff_text):
+        for term in dict.fromkeys(terms(label)):
+            if not re.search(rf"(?<!\w){re.escape(term)}(?!\w)", glossary, re.IGNORECASE):
+                findings.append(Finding(UNKNOWN, path, label, term))
+    return findings
+
+
 def _print(finding: Finding) -> None:
     print(f"{finding.status}\t{finding.path}\t{finding.label}\t{finding.detail}")
+
+
+def _forbidden_section(config: dict[str, list[str]], paths: list[str], text: str) -> tuple[int, list[Finding]]:
+    words = config.get(WORD_KEY)
+    if not words:
+        print(f"sans objet (clé {WORD_KEY} absente)")
+        return 0, []
+    invalid = []
+    for word in words:
+        try:
+            compile_word(word)
+        except re.error as error:
+            invalid.append(Finding(INVALID, "", "", f"{word} : pas une expression régulière ({error})"))
+    if invalid:
+        for finding in invalid:
+            _print(finding)
+        return 2, []
+    findings = check(paths, words, text)
+    for finding in findings or [Finding(NONE, "", "", "aucun libellé refusé")]:
+        _print(finding)
+    return (1 if findings else 0), findings
+
+
+def _glossary_section(config: dict[str, list[str]], paths: list[str], text: str, root: Path) -> int:
+    files = config.get(GLOSSARY_KEY)
+    if not files:
+        print(f"sans objet (clé {GLOSSARY_KEY} absente)")
+        return 0
+    try:
+        glossary = "\n".join((root / name).read_text(encoding="utf-8") for name in files)
+    except (OSError, UnicodeDecodeError) as error:
+        _print(Finding(INVALID, "", "", f"glossaire illisible : {error}"))
+        return 2
+    findings = unknown_terms(glossary, text, paths)
+    for finding in findings:
+        _print(finding)
+    return 1 if findings else 0
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -115,24 +181,9 @@ def main(argv: list[str] | None = None) -> int:
     if not paths:
         print(f"sans objet (clé {LABELS_KEY} absente)")
         return 0
-    words = config.get(WORD_KEY)
-    if not words:
-        print(f"sans objet (clé {WORD_KEY} absente)")
-        return 0
-    invalid = []
-    for word in words:
-        try:
-            compile_word(word)
-        except re.error as error:
-            invalid.append(Finding(INVALID, "", "", f"{word} : pas une expression régulière ({error})"))
-    if invalid:
-        for finding in invalid:
-            _print(finding)
-        return 2
-    findings = check(paths, words, text)
-    for finding in findings or [Finding(NONE, "", "", "aucun libellé refusé")]:
-        _print(finding)
-    return 1 if findings else 0
+    first, _ = _forbidden_section(config, paths, text)
+    second = _glossary_section(config, paths, text, root)
+    return 2 if 2 in (first, second) else max(first, second)
 
 
 if __name__ == "__main__":

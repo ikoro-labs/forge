@@ -69,12 +69,14 @@ class ForbiddenWords(unittest.TestCase):
         self.assertEqual(kinds(diff("app/i18n/fr.yml", "# commit", "", "// commit"), ["commit"]), [])
 
 
-def run(usine: str, text: str) -> tuple[int, str]:
+def run(usine: str, text: str, glossary: str | None = None) -> tuple[int, str]:
     """Run the script on a `usine.md` and a diff, as the gate does: the exit code and what it prints."""
     with tempfile.TemporaryDirectory() as folder:
         root = Path(folder)
         (root / "usine.md").write_text(usine, encoding="utf-8")
         (root / "pr.diff").write_text(text, encoding="utf-8")
+        if glossary is not None:
+            (root / "glossaire.md").write_text(glossary, encoding="utf-8")
         out = io.StringIO()
         with redirect_stdout(out):
             code = main(["--usine", str(root / "usine.md"), "--root", str(root), str(root / "pr.diff")])
@@ -84,17 +86,21 @@ def run(usine: str, text: str) -> tuple[int, str]:
 KEYS = "- `ui-labels` : `app/i18n/`\n- `ui-forbidden-word` : `commit`\n- `ui-forbidden-word` : `F-\\d{4}`\n"
 
 
+NO_GLOSSARY = "sans objet (clé glossary absente)"
+WITH_GLOSSARY = KEYS + "- `glossary` : `glossaire.md`\n"
+
+
 class Keys(unittest.TestCase):
     def test_a_forbidden_word_exits_one_and_prints_the_label(self) -> None:
         """No F-NNNN: ticket #98, A1: la sortie dit le fichier, le libellé et le mot, code 1."""
         code, out = run(KEYS, diff("app/i18n/fr.yml", "a: Voir F-0042"))
         self.assertEqual(code, 1)
-        self.assertEqual(out.splitlines(), ["FORBIDDEN\tapp/i18n/fr.yml\tVoir F-0042\tF-0042"])
+        self.assertEqual(out.splitlines()[0], "FORBIDDEN\tapp/i18n/fr.yml\tVoir F-0042\tF-0042")
 
     def test_a_conforming_label_exits_zero(self) -> None:
         """No F-NNNN: ticket #98, A3: un libellé conforme sort 0 et le dit."""
         code, out = run(KEYS, diff("app/i18n/fr.yml", "a: Enregistrer"))
-        self.assertEqual((code, out.splitlines()), (0, ["NONE\t\t\taucun libellé refusé"]))
+        self.assertEqual((code, out.splitlines()), (0, ["NONE\t\t\taucun libellé refusé", NO_GLOSSARY]))
 
     def test_without_ui_labels_the_step_is_without_object_and_never_pass(self) -> None:
         """No F-NNNN: ticket #98, A4: clé ui-labels absente, même avec un mot refusé déclaré."""
@@ -105,7 +111,10 @@ class Keys(unittest.TestCase):
     def test_without_forbidden_words_that_part_is_without_object(self) -> None:
         """No F-NNNN: ticket #98, A4: clé ui-forbidden-word absente, aucune valeur supposée."""
         code, out = run("- `ui-labels` : `app/i18n/`\n", diff("app/i18n/fr.yml", "a: commit"))
-        self.assertEqual((code, out.strip()), (0, "sans objet (clé ui-forbidden-word absente)"))
+        self.assertEqual(
+            (code, out.splitlines()),
+            (0, ["sans objet (clé ui-forbidden-word absente)", NO_GLOSSARY]),
+        )
 
     def test_without_the_usine_file_both_keys_are_absent(self) -> None:
         """No F-NNNN: ticket #98, A4: pas de docs/agents/usine.md, la sonde est sans objet."""
@@ -122,6 +131,52 @@ class Keys(unittest.TestCase):
         code, out = run(usine, diff("app/i18n/fr.yml", "a: Enregistrer"))
         self.assertEqual(code, 2)
         self.assertTrue(out.startswith("INVALID\t"))
+
+
+class GlossaryTerms(unittest.TestCase):
+    def test_a_business_term_absent_from_the_glossary_is_reported(self) -> None:
+        """No F-NNNN: ticket #98, A5: un terme métier du libellé qui manque au glossaire."""
+        code, out = run(
+            WITH_GLOSSARY,
+            diff("app/i18n/fr.yml", "a: Ouvrir le Dossier Client"),
+            glossary="# Glossaire\n\n**Client** : la personne qui achète.\n",
+        )
+        self.assertEqual(code, 1)
+        self.assertEqual(out.splitlines()[1:], ["UNKNOWN\tapp/i18n/fr.yml\tOuvrir le Dossier Client\tDossier"])
+
+    def test_terms_all_in_the_glossary_give_no_finding(self) -> None:
+        """No F-NNNN: ticket #98, A5: la casse et le mot entier décident, pas la sous-chaîne."""
+        code, out = run(
+            WITH_GLOSSARY,
+            diff("app/i18n/fr.yml", "a: Ouvrir le Dossier client"),
+            glossary="Dossier : le suivi.\nclient : la personne.\n",
+        )
+        self.assertEqual((code, out.splitlines()), (0, ["NONE\t\t\taucun libellé refusé"]))
+
+    def test_the_first_word_of_a_label_is_not_a_term(self) -> None:
+        """No F-NNNN: ticket #98, A5: la majuscule d'un début de phrase ne désigne pas un terme."""
+        code, out = run(WITH_GLOSSARY, diff("app/i18n/fr.yml", "a: Enregistrer"), glossary="vide\n")
+        self.assertEqual(code, 0)
+
+    def test_the_forbidden_word_is_still_checked_without_the_glossary_key(self) -> None:
+        """No F-NNNN: ticket #98, A4: la clé glossary absente ne coupe pas la sonde des mots refusés."""
+        code, out = run(KEYS, diff("app/i18n/fr.yml", "a: Un commit"))
+        self.assertEqual(code, 1)
+        self.assertEqual(out.splitlines()[1], NO_GLOSSARY)
+
+    def test_the_glossary_is_checked_without_forbidden_words(self) -> None:
+        """No F-NNNN: ticket #98, A4: la clé ui-forbidden-word absente ne coupe pas le glossaire."""
+        usine = "- `ui-labels` : `app/i18n/`\n- `glossary` : `glossaire.md`\n"
+        code, out = run(usine, diff("app/i18n/fr.yml", "a: Voir le Dossier"), glossary="rien\n")
+        self.assertEqual(code, 1)
+        self.assertEqual(out.splitlines()[0], "sans objet (clé ui-forbidden-word absente)")
+        self.assertEqual(out.splitlines()[1], "UNKNOWN\tapp/i18n/fr.yml\tVoir le Dossier\tDossier")
+
+    def test_an_unreadable_glossary_is_an_error_never_a_pass(self) -> None:
+        """No F-NNNN: ticket #98, A5: un glossaire déclaré mais absent sort 2."""
+        code, out = run(WITH_GLOSSARY, diff("app/i18n/fr.yml", "a: Voir le Dossier"))
+        self.assertEqual(code, 2)
+        self.assertIn("INVALID\t", out.splitlines()[-1])
 
 
 if __name__ == "__main__":
