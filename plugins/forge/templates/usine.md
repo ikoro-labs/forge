@@ -196,6 +196,32 @@ sa création et le garde unique : il le réécrit. Sans la clé, la publication 
 
 - `slo-issue` : `<55>`
 
+Ce que l'usine fait quand le budget d'erreur d'un objectif est épuisé. Une ligne par action :
+`<sli> | <action>`, où `<sli>` nomme un objectif de la clé `slo` (`lead-time p90`, ou `lead-time`
+seul) et où l'action est l'une de ces trois :
+
+- `human-merge` : `forge:qc` ne fusionne plus sur ACCEPT. Il pose `needs-your-attention` avec
+  l'objectif épuisé dans `Attention`, et l'humain fusionne. Le garde `guard_git` refuse en plus
+  `gh pr merge` à tout agent tant que l'action est active.
+- `feature-freeze` : `forge:feature-build` ne confie plus que les tickets `bug` et `escaped-defect` ;
+  les autres attendent, et le compte rendu du passage le dit.
+- `alert` : seulement l'étiquette sur l'issue de suivi (clé `slo-issue`, `forge:slo --publier`).
+
+L'état est celui de `slo-status.json`, que `forge:qc` et `forge:feature-build` recalculent au début de
+chaque passage par `scripts/factory_slo.py budget <projet>`. Une action devient active quand son objectif
+est `épuisé`, reste active tant qu'il est `menacé` ensuite, et cesse au calcul suivant qui le trouve
+revenu à `tenu` : le rapport dit alors « autonomie rendue », et pas avant. Le fichier d'état garde cette
+mémoire d'un calcul à l'autre. Un objectif « sans objet » qui n'a jamais été épuisé n'est pas épuisé. Quand la clé est déclarée avec
+`human-merge` et que le fichier d'état manque, est illisible ou date de plus de 24 h, `guard_git` refuse
+la fusion par précaution et donne la commande à lancer (`factory_slo.py status <projet>`). Une ligne
+mal formée, une action inconnue ou un objectif absent de la clé `slo` font échouer `budget` et refuser
+la fusion. Sans la clé, les actions sont « sans objet (clé `budget-action` absente) » : aucune action,
+aucune valeur par défaut.
+
+- `budget-action` : `<accept-round-1 | human-merge>`
+- `budget-action` : `<accept-round-1 | feature-freeze>`
+- `budget-action` : `<lead-time p90 | alert>`
+
 Les noms des checks obligatoires de la branche protégée, un par ligne, comparés par
 `forge:qc-gate` aux check-runs de la PR et à la protection en place.
 

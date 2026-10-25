@@ -105,6 +105,56 @@ sortie est « sans objet (clé `slo` absente) », sans fichier.
 Un ratio ne dépasse pas 100 % : `>= 120 %` (ou `>= 800 %`, faute de frappe pour 80,0) est une ligne
 mal formée, qui fait échouer la commande, au lieu d'un objectif hors d'atteinte rendu `tenu`.
 
+## Les actions du budget épuisé
+
+Un budget épuisé doit changer ce que l'usine fait. La clé `budget-action` de `docs/agents/usine.md`
+déclare, une ligne par action, `<sli> | <action>`, où `<sli>` nomme un objectif de la clé `slo`
+(`lead-time p90` ou `lead-time`) :
+
+```text
+- `budget-action` : `accept-round-1 | human-merge`
+- `budget-action` : `accept-round-1 | feature-freeze`
+- `budget-action` : `lead-time p90 | alert`
+```
+
+- `human-merge` : `forge:qc` ne fusionne plus sur ACCEPT. Il pose `needs-your-attention` avec
+  l'objectif épuisé dans `Attention`, et l'humain fusionne. Le garde `guard_git` refuse aussi
+  `gh pr merge` à tout agent, quel que soit son nom d'agent, tant que l'action est active.
+- `feature-freeze` : `forge:feature-build` ne confie plus que les tickets `bug` et `escaped-defect` ;
+  les autres attendent, `ready-for-agent`, et le compte rendu du passage le dit.
+- `alert` : seulement l'étiquette `needs-your-attention` de l'issue de suivi (`/forge:slo --publier`).
+
+Une action devient **active** quand son objectif est `épuisé` dans `slo-status.json`, et le reste tant
+qu'il n'est pas revenu à `tenu` : un passage à `menacé` ne la fait pas cesser (hystérésis). Un objectif
+`menacé`, `tenu` ou « sans objet » qui n'a pas été épuisé ne l'active pas. Le fichier d'état garde cette
+mémoire d'un calcul à l'autre (clé `epuises`, réécrite aussi par `status`), parce que le garde ne lit que
+lui. Une action reste donc active si l'objectif perd ses données (« sans objet ») après un épuisement. `forge:qc` et `forge:feature-build` recalculent l'état
+au début de chaque passage :
+
+```sh
+uv run --no-project --quiet python plugins/forge/scripts/factory_slo.py budget <projet> [--json] [--reference <fichier>]
+```
+
+La commande lance `status` (elle réécrit donc le fichier d'état), puis rend une ligne par action :
+`ACTIVE` ou `inactive`, avec la raison. **L'autonomie revient d'elle-même** : quand un objectif repasse à
+`tenu`, l'action cesse au calcul suivant, et la ligne ajoute « autonomie rendue » une seule fois : le
+fichier d'état précédent la portait active, et plus le nouveau. Tant que l'objectif est `menacé` après un
+épuisement, la ligne reste `ACTIVE`, avec la raison « pas encore revenu à `tenu` ».
+
+Le garde est **fermé par défaut**. Quand la clé porte une ligne `human-merge` et que le fichier d'état
+manque, est illisible (JSON invalide, date sans fuseau, objectifs absents) ou date de plus de 24 h
+(`calcule_le`), `guard_git` refuse `gh pr merge` et donne dans son message la commande à lancer
+(`factory_slo.py status <projet>`). Il refuse de même une ligne de la clé mal formée ou une action
+inconnue, et un `human-merge` sur un objectif que la clé `slo` ne déclare pas : une fusion ne passe
+jamais sur un état qu'on ne sait pas lire. Les lignes `feature-freeze` et `alert` seules ne
+refusent aucune fusion, état présent ou non. Sans la clé, tout est « sans objet (clé `budget-action`
+absente) », sans action supposée. Le garde ne vaut que pour une commande d'agent : l'humain fusionne
+depuis son terminal ou GitHub.
+
+Éprouvé dans les tests, sous Linux, sur un faux `gh` et des dépôts git jetables ; le garde n'a pas
+encore refusé une vraie fusion dans une session de Claude Code. Les valeurs et les actions de ce
+dépôt viennent dans un ticket suivant (#76).
+
 ## Le rapport des SLO
 
 Une mesure que personne ne lit ne change rien. `factory_slo.py report` rend, pour chaque objectif, sa

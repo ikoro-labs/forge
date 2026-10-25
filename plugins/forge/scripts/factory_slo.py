@@ -2,6 +2,7 @@
 
     python factory_slo.py sli <project> --depuis DATE [--jusqua DATE] [--json] [--reference FILE]
     python factory_slo.py status <project> [--json] [--reference FILE]
+    python factory_slo.py budget <project> [--json] [--reference FILE]
     python factory_slo.py report <project> [--json] [--reference FILE] [--publier]
     python factory_slo.py changelog <project> --depuis DATE [--le DATE] [--reference FILE]
 
@@ -10,6 +11,14 @@ each objective on its sliding window, its error budget and its state (`tenu`, `m
 and writes them to `<git-common-dir>/forge/slo-status.json` with the date and the head of the base.
 A line it cannot read, or that names an unknown SLI, fails the command and writes nothing. A key
 `slo` absent is "sans objet".
+
+`budget` recalculates `status`, then says which actions of the `budget-action` key are active
+(`human-merge`, `feature-freeze`, `alert`: an action is active once the objective of its SLI is
+`épuisé`, and until it is back to `tenu`), and reports an action that was active in the previous
+state file and ended. It is what
+`forge:qc` and `forge:feature-build` run at the start of a pass. A key `budget-action` absent is
+"sans objet" and computes nothing; a line it cannot read, an SLI the `slo` key does not hold, or
+actions without the `slo` key fail the command (code 1).
 
 `report` is `status` plus the trend against the previous window of the same length, and writes
 nothing; with `--publier` it rewrites the report in one comment of the issue named by the key
@@ -49,6 +58,7 @@ from typing import cast
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "hooks"))
 
+import budget  # noqa: E402  the hooks' reader of the `budget-action` key
 import token_audit  # noqa: E402  the sibling script, as base_replay.py imports `usine`
 import usine  # noqa: E402
 
@@ -572,6 +582,12 @@ def state_path(project: Path, run: Runner = run_command) -> Path:
 
 
 def write_state(path: Path, document: dict) -> None:
+    """Write the state file, keeping from the previous one which budget actions are still held."""
+    try:
+        previous = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        previous = None
+    budget.carry(previous, document)
     path.parent.mkdir(parents=True, exist_ok=True)
     scratch = path.with_name(path.name + ".tmp")
     scratch.write_text(json.dumps(document, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
@@ -800,6 +816,47 @@ def run_status(args: argparse.Namespace, run: Runner, now: datetime) -> int:
     return 0
 
 
+def run_budget(args: argparse.Namespace, run: Runner, now: datetime) -> int:
+    values = usine.load(args.projet).get(budget.KEY)
+    if not values:
+        print(f"Budget d'erreur : sans objet (clé `{budget.KEY}` absente), aucune action.")
+        return 0
+    lines, errors = budget.parse_actions(values)
+    if errors:
+        print(f"Clé `{budget.KEY}` mal formée :\n" + "\n".join(f"- {error}" for error in errors), file=sys.stderr)
+        return 1
+    path = state_path(args.projet, run)
+    try:
+        before = json.loads(path.read_text(encoding="utf-8"))
+        was = {(v.sli, v.action) for v in budget.evaluate(lines, before) if v.active}
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        was = set()
+    document = status(args.projet, now, run, args.reference)
+    if document is None:
+        print(f"La clé `{budget.KEY}` est déclarée mais la clé `slo` est absente : aucun état à lire.", file=sys.stderr)
+        return 1
+    write_state(path, document)
+    verdicts = budget.evaluate(lines, document)
+    missing = [v for v in verdicts if v.unknown]
+    if missing:
+        print("\n".join(f"- {v.sli} | {v.action} : {v.reason}" for v in missing), file=sys.stderr)
+        return 1
+    if args.json:
+        actions = [
+            {"sli": v.sli, "action": v.action, "active": v.active, "raison": v.reason,
+             "rendue": (v.sli, v.action) in was and not v.active}
+            for v in verdicts
+        ]
+        print(json.dumps({"calcule_le": document["calcule_le"], "actions": actions}, ensure_ascii=False, indent=2))
+        return 0
+    print(f"Budget d'erreur, état calculé le {document['calcule_le']} :")
+    for v in verdicts:
+        state = "ACTIVE" if v.active else "inactive"
+        returned = " ; autonomie rendue : l'objectif est revenu à `tenu`" if (v.sli, v.action) in was and not v.active else ""
+        print(f"- {state} : `{v.action}` sur `{v.sli}` ({v.reason}){returned}")
+    return 0
+
+
 def run_report(args: argparse.Namespace, run: Runner, now: datetime) -> int:
     document = report(args.projet, now, run, args.reference)
     if document is None:
@@ -838,6 +895,10 @@ def main(argv: list[str] | None = None, run: Runner = run_command, now: datetime
     state.add_argument("projet", type=Path, help="le dossier du projet")
     state.add_argument("--json", action="store_true", help="rend du JSON au lieu d'un tableau Markdown")
     state.add_argument("--reference", type=Path, help="le dernier résultat du jeu de référence (JSON)")
+    allowance = commands.add_parser("budget", help="recalcule l'état puis dit quelles actions de la clé `budget-action` sont actives")
+    allowance.add_argument("projet", type=Path, help="le dossier du projet")
+    allowance.add_argument("--json", action="store_true", help="rend du JSON au lieu de lignes")
+    allowance.add_argument("--reference", type=Path, help="le dernier résultat du jeu de référence (JSON)")
     rapport = commands.add_parser("report", help="rend le rapport des objectifs, avec la tendance ; --publier l'écrit dans l'issue de suivi")
     rapport.add_argument("projet", type=Path, help="le dossier du projet")
     rapport.add_argument("--json", action="store_true", help="rend du JSON au lieu d'un tableau Markdown")
@@ -856,9 +917,9 @@ def main(argv: list[str] | None = None, run: Runner = run_command, now: datetime
     sli.add_argument("--reference", type=Path, help="le dernier résultat du jeu de référence (JSON)")
     args = parser.parse_args(argv)
 
-    if args.commande in ("status", "report", "changelog"):
+    if args.commande in ("status", "budget", "report", "changelog"):
         try:
-            handler = {"status": run_status, "report": run_report, "changelog": run_changelog}[args.commande]
+            handler = {"status": run_status, "budget": run_budget, "report": run_report, "changelog": run_changelog}[args.commande]
             return handler(args, run, now or datetime.now(tz=timezone.utc))
         except (RuntimeError, ValueError, KeyError, IndexError, OSError) as error:
             print(f"Calcul impossible : {error}", file=sys.stderr)
