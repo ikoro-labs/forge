@@ -551,8 +551,13 @@ def compute(project: Path, since: datetime, until: datetime, run: Runner = run_c
         accept_round_1(f), rework_rate(f), escaped_defects(f), lead_time(f), release_lag(f),
         change_failure(f), restore_time(f), tokens_per_merge(f), human_touch(f), main_green(f),
         reference("judge-recall", ref), reference("false-accept", ref),
-        review_gaps(f), review_gap_lead_time(f), matrix_coverage(f), review_regressions(f),
+        *review_slis(f),
     ]
+
+
+def review_slis(f: Factory) -> list[Sli]:
+    """The four indicators of the end-to-end review: they need the tickets and the files, nothing else."""
+    return [review_gaps(f), review_gap_lead_time(f), matrix_coverage(f), review_regressions(f)]
 
 
 class SloError(ValueError):
@@ -783,7 +788,7 @@ REVIEW_SLIS = ("review-gaps", "review-gap-lead-time", "matrix-coverage", "review
 
 def review_check(project: Path, now: datetime, run: Runner = run_command) -> dict:
     """The indicators of the end-to-end review over the last `REVIEW_DAYS` days, each one or "sans objet" and why."""
-    results = {item.name: item for item in compute(project, now - timedelta(days=REVIEW_DAYS), now, run)}
+    results = {item.name: item for item in review_slis(Factory(project, now - timedelta(days=REVIEW_DAYS), now, run))}
     return {"fenetre_jours": REVIEW_DAYS, "indicateurs": [results[name].to_dict() for name in REVIEW_SLIS]}
 
 

@@ -15,7 +15,7 @@ from pathlib import Path
 import support
 from test_factory_slo import SINCE, UNTIL, USINE, build, isolate
 
-from factory_slo import compute, main, parse_slo
+from factory_slo import compute, main, parse_slo, review_check
 
 HEADER = "| Identifiant | Lot | Ticket | Test | Écran | Capture | État | Jugé le |\n|---|---|---|---|---|---|---|---|\n"
 MATRICE = HEADER + (
@@ -152,6 +152,18 @@ class Revue(unittest.TestCase):
         """No F-NNNN: ticket #102 A7 : sans `feature-dir`, la section du rapport dit la clé absente."""
         self.usine(USINE + f"- `slo` : `{SLO}`\n")
         self.assertIn("sans objet (clé `feature-dir` absente)", self.report())
+
+    def test_a7_the_review_section_asks_for_the_issues_only(self) -> None:
+        """No F-NNNN: ticket #102 A7 : la section de la revue ne calcule que ses quatre SLI, un seul `gh issue list`, ni PR ni événements."""
+        calls: list[list[str]] = []
+
+        def recording(cmd: list[str], cwd: Path) -> str:
+            calls.append(cmd)
+            return self.runner(cmd, cwd)
+
+        document = review_check(self.world.root, NOW, recording)
+        self.assertEqual(document["indicateurs"][0]["nom"], "review-gaps")
+        self.assertEqual([cmd[:3] for cmd in calls], [["gh", "issue", "list"]])
 
 
 if __name__ == "__main__":
