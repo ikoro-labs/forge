@@ -7,7 +7,7 @@ Refused, with the reason on stderr and exit code 2 so Claude Code blocks the cal
 - `git branch -D`, `git reset --hard`, `git clean -f`, and `--no-verify`, which skips the hooks;
 - `gh pr merge` while any check of the PR is not green;
 - `gh pr merge`, for every agent whatever its name, while a `human-merge` line of the project's
-  `budget-action` key is active (its SLO is exhausted in `slo-status.json`), and, closed by
+  `budget-action` key is active (its SLO was exhausted in `slo-status.json` and is not back to `tenu`), and, closed by
   default, when that key is declared but the state file is absent, unreadable or over 24 h old
   (the refusal gives the command that recalculates it); see `budget.py`;
 - `gh pr merge` whose message or PR description closes a ticket it cites with `Refs`: the first

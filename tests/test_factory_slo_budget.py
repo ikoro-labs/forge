@@ -79,6 +79,30 @@ class Budget(unittest.TestCase):
         self.assertIn("autonomie rendue", out)
         self.assertNotIn("autonomie rendue", self.budget()[1])
 
+    def test_the_action_is_held_while_the_objective_is_menace_and_the_autonomy_returns_at_tenu(self) -> None:
+        """Ticket #59 : `épuisé`, puis `menacé` (80 % consommés), puis `tenu` : « autonomie rendue » seulement au dernier."""
+        actions = ["main-green | human-merge"]
+        # main-green vaut 66,67 % : la cible 90 % l'épuise, 60 % le laisse menacé (83 %), 50 % le tient (67 %).
+        for target, active, returned in ((90, True, False), (60, True, False), (60, True, False), (50, False, True), (50, False, False)):
+            with self.subTest(target=target, active=active, returned=returned):
+                self.configure([f"main-green | >= {target} % | 31"], actions)
+                code, out, _ = self.budget()
+                self.assertEqual(code, 0)
+                self.assertEqual("ACTIVE : `human-merge`" in out, active)
+                self.assertEqual("autonomie rendue" in out, returned)
+        self.configure(["main-green | >= 60 % | 31"], actions)
+        self.assertIn("inactive", self.budget()[1])
+
+    def test_status_keeps_the_memory_of_the_action_in_the_state_file(self) -> None:
+        """La commande que donne le message du garde réécrit le fichier : elle garde ce qu'il retient."""
+        self.configure(["main-green | >= 90 % | 31"], ["main-green | human-merge"])
+        self.budget()
+        self.configure(["main-green | >= 60 % | 31"], ["main-green | human-merge"])
+        out, err = io.StringIO(), io.StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
+            main(["status", str(self.world.root)], run=self.world.runner, now=NOW)
+        self.assertEqual(json.loads(self.state_file().read_text(encoding="utf-8"))["epuises"], ["main-green / 31 j"])
+
     def test_a_malformed_line_or_an_unknown_objective_fails(self) -> None:
         self.configure(["main-green | >= 90 % | 31"], ["main-green | geler"])
         code, _, err = self.budget()

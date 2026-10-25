@@ -124,8 +124,11 @@ déclare, une ligne par action, `<sli> | <action>`, où `<sli>` nomme un objecti
   les autres attendent, `ready-for-agent`, et le compte rendu du passage le dit.
 - `alert` : seulement l'étiquette `needs-your-attention` de l'issue de suivi (`/forge:slo --publier`).
 
-Une action est **active** tant que son objectif est `épuisé` dans `slo-status.json`. Un objectif
-`menacé`, `tenu` ou « sans objet » ne l'active pas. `forge:qc` et `forge:feature-build` recalculent l'état
+Une action devient **active** quand son objectif est `épuisé` dans `slo-status.json`, et le reste tant
+qu'il n'est pas revenu à `tenu` : un passage à `menacé` ne la fait pas cesser (hystérésis). Un objectif
+`menacé`, `tenu` ou « sans objet » qui n'a pas été épuisé ne l'active pas. Le fichier d'état garde cette
+mémoire d'un calcul à l'autre (clé `epuises`, réécrite aussi par `status`), parce que le garde ne lit que
+lui. Une action reste donc active si l'objectif perd ses données (« sans objet ») après un épuisement. `forge:qc` et `forge:feature-build` recalculent l'état
 au début de chaque passage :
 
 ```sh
@@ -134,8 +137,9 @@ uv run --no-project --quiet python plugins/forge/scripts/factory_slo.py budget <
 
 La commande lance `status` (elle réécrit donc le fichier d'état), puis rend une ligne par action :
 `ACTIVE` ou `inactive`, avec la raison. **L'autonomie revient d'elle-même** : quand un objectif repasse à
-`tenu`, l'action cesse au calcul suivant, et la ligne ajoute « autonomie rendue » une fois, le temps que
-le fichier d'état précédent la portait active.
+`tenu`, l'action cesse au calcul suivant, et la ligne ajoute « autonomie rendue » une seule fois : le
+fichier d'état précédent la portait active, et plus le nouveau. Tant que l'objectif est `menacé` après un
+épuisement, la ligne reste `ACTIVE`, avec la raison « pas encore revenu à `tenu` ».
 
 Le garde est **fermé par défaut**. Quand la clé porte une ligne `human-merge` et que le fichier d'état
 manque, est illisible (JSON invalide, date sans fuseau, objectifs absents) ou date de plus de 24 h

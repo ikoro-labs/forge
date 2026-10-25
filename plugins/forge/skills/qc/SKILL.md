@@ -116,8 +116,9 @@ protégé, même sur ACCEPT : le verdict reste celui de la revue, mais pose `nee
 L'humain fusionne. Les actions `feature-freeze` (celle de `forge:feature-build`) et `alert` (l'étiquette
 de l'issue de suivi, posée par `forge:slo --publier`) ne changent rien ici.
 
-L'autonomie revient d'elle-même : quand la commande dit « autonomie rendue » (l'objectif est revenu à
-`tenu`), fusionne comme d'habitude et écris-le dans `REX`. Retire alors `needs-your-attention` d'une PR
+Une action reste active tant que l'objectif n'est pas revenu à `tenu`, même s'il n'est plus que
+`menacé` : la ligne reste `ACTIVE`. L'autonomie revient d'elle-même : quand la commande dit
+« autonomie rendue » (l'objectif est revenu à `tenu`), fusionne comme d'habitude et écris-le dans `REX`. Retire alors `needs-your-attention` d'une PR
 que tu avais arrêtée pour ce seul objectif, en écrivant dans `Attention` ce que tu retires et pourquoi.
 
 ## Chemins protégés

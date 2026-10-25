@@ -208,9 +208,10 @@ seul) et où l'action est l'une de ces trois :
 - `alert` : seulement l'étiquette sur l'issue de suivi (clé `slo-issue`, `forge:slo --publier`).
 
 L'état est celui de `slo-status.json`, que `forge:qc` et `forge:feature-build` recalculent au début de
-chaque passage par `scripts/factory_slo.py budget <projet>`. Une action est active tant que son objectif
-est `épuisé`, et cesse au calcul suivant qui le trouve revenu à `tenu` : le rapport dit alors
-« autonomie rendue ». Un objectif « sans objet » n'est pas épuisé. Quand la clé est déclarée avec
+chaque passage par `scripts/factory_slo.py budget <projet>`. Une action devient active quand son objectif
+est `épuisé`, reste active tant qu'il est `menacé` ensuite, et cesse au calcul suivant qui le trouve
+revenu à `tenu` : le rapport dit alors « autonomie rendue », et pas avant. Le fichier d'état garde cette
+mémoire d'un calcul à l'autre. Un objectif « sans objet » qui n'a jamais été épuisé n'est pas épuisé. Quand la clé est déclarée avec
 `human-merge` et que le fichier d'état manque, est illisible ou date de plus de 24 h, `guard_git` refuse
 la fusion par précaution et donne la commande à lancer (`factory_slo.py status <projet>`). Une ligne
 mal formée, une action inconnue ou un objectif absent de la clé `slo` font échouer `budget` et refuser

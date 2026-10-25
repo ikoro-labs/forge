@@ -14,11 +14,13 @@ import support  # noqa: F401  met le plugin sur le chemin d'import
 
 from budget import (
     MAX_AGE,
+    carry,
     evaluate,
     load_state,
     merge_refusal,
     parse_actions,
 )
+from factory_slo import Sli, evaluate as objective_state, parse_slo
 from guard_git import guarded_main
 
 NOW = datetime(2026, 11, 1, 12, 0, tzinfo=timezone.utc)
@@ -30,8 +32,8 @@ def objective(sli: str, etat: str | None, statistique: str | None = None) -> dic
     return {"sli": sli, "statistique": statistique, "statut": "calculé", "etat": etat}
 
 
-def document(*objectives: dict, at: datetime = NOW) -> dict:
-    return {"calcule_le": at.isoformat(), "objectifs": list(objectives)}
+def document(*objectives: dict, at: datetime = NOW, **extra: list[str]) -> dict:
+    return {"calcule_le": at.isoformat(), "objectifs": list(objectives), **extra}
 
 
 class Parsing(unittest.TestCase):
@@ -51,7 +53,7 @@ class Parsing(unittest.TestCase):
 
 
 class Actions(unittest.TestCase):
-    """Chaque action, active quand son SLO est épuisé, inactive sinon."""
+    """Chaque action, active quand son SLO est épuisé, inactive sinon (sauf l'hystérésis, plus bas)."""
 
     def test_each_action_is_active_on_an_exhausted_objective_and_inactive_otherwise(self) -> None:
         for action in ("human-merge", "feature-freeze", "alert"):
@@ -76,6 +78,28 @@ class Actions(unittest.TestCase):
         self.assertTrue(before[0].active)
         self.assertFalse(after[0].active)
         self.assertIn("tenu", after[0].reason)
+
+    def test_an_exhausted_action_is_held_while_the_objective_is_menace_and_ends_at_tenu(self) -> None:
+        """Ticket #59 : « jusqu'à ce qu'il se reconstitue » : l'action ne cesse qu'au retour à `tenu`."""
+        lines, _ = parse_actions(["accept-round-1 | human-merge"])
+        state: dict | None = None
+        steps = (("épuisé", True), ("menacé", True), ("menacé", True), ("tenu", False), ("menacé", False))
+        for etat, active in steps:
+            with self.subTest(etat=etat):
+                current = document(objective("accept-round-1", etat))
+                carry(state, current)
+                verdict = evaluate(lines, current)[0]
+                self.assertEqual(verdict.active, active)
+                state = current
+        self.assertIn("tenu", evaluate(lines, document(objective("accept-round-1", "menacé"), epuises=["accept-round-1"]))[0].reason)
+
+    def test_an_objective_without_data_keeps_the_action_it_held(self) -> None:
+        lines, _ = parse_actions(["accept-round-1 | human-merge"])
+        before = document(objective("accept-round-1", "épuisé"))
+        carry(None, before)
+        silent = document(objective("accept-round-1", None))
+        carry(before, silent)
+        self.assertTrue(evaluate(lines, silent)[0].active)
 
     def test_an_objective_absent_from_the_state_is_a_problem_not_a_pass(self) -> None:
         lines, _ = parse_actions(["accept-round-1 | human-merge"])
@@ -148,7 +172,7 @@ class MergeRefusal(unittest.TestCase):
         self.assertIn("accept-round-1", verdict)
         self.assertIn("human-merge", verdict)
 
-    def test_a_human_merge_that_is_not_exhausted_lets_the_merge_through(self) -> None:
+    def test_a_human_merge_that_was_never_exhausted_lets_the_merge_through(self) -> None:
         for etat in ("tenu", "menacé", None):
             with self.subTest(etat=etat):
                 self.put(objective("accept-round-1", etat))
@@ -193,6 +217,27 @@ class MergeRefusal(unittest.TestCase):
         self.assertIsNotNone(self.refusal("accept-round-1 | human-merge"))
         self.put(objective("accept-round-1", "tenu"))
         self.assertIsNone(self.refusal("accept-round-1 | human-merge"))
+
+
+class Hysteresis(unittest.TestCase):
+    """89 % puis 92 % sur `main-green | >= 90 % | 31` avec `human-merge`."""
+
+    def test_the_merge_stays_refused_at_92_percent_after_89_and_returns_at_tenu(self) -> None:
+        """Ticket #59 : au calcul N, 89 % est `épuisé` ; au calcul N+1, 92 % est `menacé` et la fusion reste refusée."""
+        slo = parse_slo(["main-green | >= 90 % | 31"])[0]
+        config = {"budget-action": ["main-green | human-merge"]}
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "slo-status.json"
+            previous = None
+            for percent, etat, refused in ((89, "épuisé", True), (92, "menacé", True), (95, "tenu", False)):
+                with self.subTest(percent=percent):
+                    item = objective_state(slo, Sli("main-green", data={"valeur": percent / 100}))
+                    self.assertEqual(item["etat"], etat)
+                    current = document(item)
+                    carry(previous, current)
+                    path.write_text(json.dumps(current), encoding="utf-8")
+                    self.assertEqual(merge_refusal(config, path, NOW) is not None, refused)
+                    previous = current
 
 
 class TheHook(unittest.TestCase):

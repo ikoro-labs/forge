@@ -13,8 +13,9 @@ A line it cannot read, or that names an unknown SLI, fails the command and write
 `slo` absent is "sans objet".
 
 `budget` recalculates `status`, then says which actions of the `budget-action` key are active
-(`human-merge`, `feature-freeze`, `alert`: an action is active while the objective of its SLI is
-`épuisé`), and reports an action that was active in the previous state file and ended. It is what
+(`human-merge`, `feature-freeze`, `alert`: an action is active once the objective of its SLI is
+`épuisé`, and until it is back to `tenu`), and reports an action that was active in the previous
+state file and ended. It is what
 `forge:qc` and `forge:feature-build` run at the start of a pass. A key `budget-action` absent is
 "sans objet" and computes nothing; a line it cannot read, an SLI the `slo` key does not hold, or
 actions without the `slo` key fail the command (code 1).
@@ -581,6 +582,12 @@ def state_path(project: Path, run: Runner = run_command) -> Path:
 
 
 def write_state(path: Path, document: dict) -> None:
+    """Write the state file, keeping from the previous one which budget actions are still held."""
+    try:
+        previous = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        previous = None
+    budget.carry(previous, document)
     path.parent.mkdir(parents=True, exist_ok=True)
     scratch = path.with_name(path.name + ".tmp")
     scratch.write_text(json.dumps(document, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
