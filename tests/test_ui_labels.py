@@ -1,13 +1,18 @@
 """Ticket #98: the labels a PR adds on screen, checked against forbidden words by `ui_labels.py`."""
 
 import io
+import os
+import subprocess
+import sys
 import tempfile
 import unittest
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
 import support  # noqa: F401
 from ui_labels import FORBIDDEN, check, main
+
+SCRIPT = Path(support.PLUGIN) / "scripts" / "ui_labels.py"
 
 LABELS = ["app/i18n/"]
 
@@ -116,14 +121,42 @@ class Keys(unittest.TestCase):
             (0, ["sans objet (clé ui-forbidden-word absente)", NO_GLOSSARY]),
         )
 
-    def test_without_the_usine_file_both_keys_are_absent(self) -> None:
-        """No F-NNNN: ticket #98, A4: pas de docs/agents/usine.md, la sonde est sans objet."""
+    def test_a_missing_usine_file_exits_two_and_is_never_without_object(self) -> None:
+        """No F-NNNN: ticket #106, A1: un --usine introuvable sort 2, il n'est pas une configuration vide."""
+        with tempfile.TemporaryDirectory() as folder:
+            (Path(folder) / "pr.diff").write_text(diff("app/i18n/fr.yml", "a: commit"), encoding="utf-8")
+            out = io.StringIO()
+            err = io.StringIO()
+            with redirect_stdout(out), redirect_stderr(err):
+                code = main(["--usine", str(Path(folder) / "none.md"), str(Path(folder) / "pr.diff")])
+        self.assertEqual(code, 2)
+        self.assertNotIn("sans objet", out.getvalue())
+        self.assertIn("none.md", err.getvalue())
+
+    def test_the_default_usine_file_missing_is_still_without_object(self) -> None:
+        """No F-NNNN: ticket #98, A4: sans --usine, un projet sans docs/agents/usine.md reste sans objet."""
         with tempfile.TemporaryDirectory() as folder:
             (Path(folder) / "pr.diff").write_text(diff("app/i18n/fr.yml", "a: commit"), encoding="utf-8")
             out = io.StringIO()
             with redirect_stdout(out):
-                code = main(["--usine", str(Path(folder) / "none.md"), str(Path(folder) / "pr.diff")])
+                code = main(["--root", folder, str(Path(folder) / "pr.diff")])
         self.assertEqual((code, out.getvalue().strip()), (0, "sans objet (clé ui-labels absente)"))
+
+    def test_a_label_outside_cp1252_is_written_on_a_cp1252_stream(self) -> None:
+        """No F-NNNN: ticket #106, A2: la sortie est en UTF-8, un flux cp1252 ne la fait pas échouer."""
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / "usine.md").write_text(KEYS, encoding="utf-8")
+            (root / "pr.diff").write_text(diff("app/i18n/fr.yml", "a: Étape 1 → 2 commit"), encoding="utf-8")
+            env = {k: v for k, v in os.environ.items() if not k.startswith("CLAUDE_")}
+            env["PYTHONIOENCODING"] = "cp1252"
+            env.pop("PYTHONUTF8", None)
+            done = subprocess.run(
+                [sys.executable, str(SCRIPT), "--usine", str(root / "usine.md"), "--root", folder, str(root / "pr.diff")],
+                capture_output=True, env=env, check=False,
+            )
+        self.assertEqual(done.returncode, 1, done.stderr.decode("utf-8", "replace"))
+        self.assertIn("Étape 1 → 2 commit", done.stdout.decode("utf-8"))
 
     def test_an_invalid_pattern_exits_two_and_is_never_pass(self) -> None:
         """No F-NNNN: ticket #98, A2: un motif qui n'est pas une expression régulière sort 2."""

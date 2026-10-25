@@ -546,10 +546,29 @@ class UiLabels(unittest.TestCase):
         gate = self.read("agents", "qc-gate.md")
         section = gate[gate.index("**Libellés de l'écran.**"):]
         self.assertIn("${CLAUDE_PLUGIN_ROOT}/scripts/ui_labels.py", section)
-        self.assertIn("--usine usine-base.md", section)
+        self.assertIn("usine-base.md", section)
         self.assertIn("pr.diff", section)
         self.assertIn("sans objet (clé ui-labels absente)", section)
         self.assertIn("verbatim", section)
+
+    def test_the_gate_probe_points_at_the_scratchpad_where_the_files_are_kept(self) -> None:
+        """No F-NNNN: ticket #106, A3: la commande de la sonde 12 vise le diff et usine-base.md du scratchpad."""
+        gate = self.read("agents", "qc-gate.md")
+        section = gate[gate.index("**Libellés de l'écran.**"):]
+        command = section[section.index("ui_labels.py"):]
+        command = command[:command.index("`")]
+        self.assertIn('--usine "<scratchpad>/usine-base.md"', command)
+        self.assertIn('"<scratchpad>/pr.diff"', command)
+        self.assertIn("--root .", command)
+        self.assertNotIn("--usine usine-base.md", command)
+
+    def test_the_judge_looks_for_the_line_of_a_forbidden_label_in_the_diff(self) -> None:
+        """No F-NNNN: ticket #106, A4: une ligne FORBIDDEN ne porte pas de numéro, qc-conf le cherche dans le diff."""
+        judge = self.read("agents", "qc-conf.md")
+        section = judge[judge.index("## Lecture des libellés de l'écran"):judge.index("## Forme d'un constat")]
+        self.assertIn("ne porte pas de numéro de ligne", section)
+        self.assertIn("cherche", section)
+        self.assertIn("dans le diff", section)
 
     def test_the_judge_makes_a_forbidden_word_a_blocker(self) -> None:
         """No F-NNNN: ticket #98, A3: qc-conf rend un BLOCKER pour un mot refusé."""

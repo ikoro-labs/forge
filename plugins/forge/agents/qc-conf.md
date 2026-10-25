@@ -138,7 +138,9 @@ aux fichiers de la clé `glossary`. Tu ne refais pas sa mesure, tu lis ses ligne
 
 - Une ligne `FORBIDDEN` : le libellé affiche à l'utilisateur un mot ou un motif que le projet refuse
   à l'écran (du vocabulaire interne, un identifiant, un renvoi). Sévérité `BLOCKER`. Le scénario
-  d'échec est l'écran lui-même : l'utilisateur lit ce mot.
+  d'échec est l'écran lui-même : l'utilisateur lit ce mot. La ligne du script ne porte pas de numéro
+  de ligne, seulement le fichier et le libellé : tu cherches le libellé dans le diff de la PR pour
+  y lire la ligne du fichier, et tu n'abandonnes pas le constat faute de numéro.
 - Une ligne `UNKNOWN` : un terme du libellé manque au glossaire. Sévérité `MINOR` : la sonde lit les
   mots capitalisés, ce qui peut relever un mot qui n'est pas un terme métier. Le constat demande soit
   d'ajouter le terme au glossaire, soit de le corriger.
