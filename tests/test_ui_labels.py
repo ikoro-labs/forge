@@ -1,9 +1,13 @@
 """Ticket #98: the labels a PR adds on screen, checked against forbidden words by `ui_labels.py`."""
 
+import io
+import tempfile
 import unittest
+from contextlib import redirect_stdout
+from pathlib import Path
 
 import support  # noqa: F401
-from ui_labels import FORBIDDEN, check
+from ui_labels import FORBIDDEN, check, main
 
 LABELS = ["app/i18n/"]
 
@@ -63,6 +67,61 @@ class ForbiddenWords(unittest.TestCase):
     def test_a_comment_or_a_blank_line_is_not_a_label(self) -> None:
         """No F-NNNN: ticket #98, A1: commentaires et lignes vides ne sont pas des libellés."""
         self.assertEqual(kinds(diff("app/i18n/fr.yml", "# commit", "", "// commit"), ["commit"]), [])
+
+
+def run(usine: str, text: str) -> tuple[int, str]:
+    """Run the script on a `usine.md` and a diff, as the gate does: the exit code and what it prints."""
+    with tempfile.TemporaryDirectory() as folder:
+        root = Path(folder)
+        (root / "usine.md").write_text(usine, encoding="utf-8")
+        (root / "pr.diff").write_text(text, encoding="utf-8")
+        out = io.StringIO()
+        with redirect_stdout(out):
+            code = main(["--usine", str(root / "usine.md"), "--root", str(root), str(root / "pr.diff")])
+        return code, out.getvalue()
+
+
+KEYS = "- `ui-labels` : `app/i18n/`\n- `ui-forbidden-word` : `commit`\n- `ui-forbidden-word` : `F-\\d{4}`\n"
+
+
+class Keys(unittest.TestCase):
+    def test_a_forbidden_word_exits_one_and_prints_the_label(self) -> None:
+        """No F-NNNN: ticket #98, A1: la sortie dit le fichier, le libellé et le mot, code 1."""
+        code, out = run(KEYS, diff("app/i18n/fr.yml", "a: Voir F-0042"))
+        self.assertEqual(code, 1)
+        self.assertEqual(out.splitlines(), ["FORBIDDEN\tapp/i18n/fr.yml\tVoir F-0042\tF-0042"])
+
+    def test_a_conforming_label_exits_zero(self) -> None:
+        """No F-NNNN: ticket #98, A3: un libellé conforme sort 0 et le dit."""
+        code, out = run(KEYS, diff("app/i18n/fr.yml", "a: Enregistrer"))
+        self.assertEqual((code, out.splitlines()), (0, ["NONE\t\t\taucun libellé refusé"]))
+
+    def test_without_ui_labels_the_step_is_without_object_and_never_pass(self) -> None:
+        """No F-NNNN: ticket #98, A4: clé ui-labels absente, même avec un mot refusé déclaré."""
+        code, out = run("- `ui-forbidden-word` : `commit`\n", diff("app/i18n/fr.yml", "a: commit"))
+        self.assertEqual((code, out.strip()), (0, "sans objet (clé ui-labels absente)"))
+        self.assertNotIn("PASS", out)
+
+    def test_without_forbidden_words_that_part_is_without_object(self) -> None:
+        """No F-NNNN: ticket #98, A4: clé ui-forbidden-word absente, aucune valeur supposée."""
+        code, out = run("- `ui-labels` : `app/i18n/`\n", diff("app/i18n/fr.yml", "a: commit"))
+        self.assertEqual((code, out.strip()), (0, "sans objet (clé ui-forbidden-word absente)"))
+
+    def test_without_the_usine_file_both_keys_are_absent(self) -> None:
+        """No F-NNNN: ticket #98, A4: pas de docs/agents/usine.md, la sonde est sans objet."""
+        with tempfile.TemporaryDirectory() as folder:
+            (Path(folder) / "pr.diff").write_text(diff("app/i18n/fr.yml", "a: commit"), encoding="utf-8")
+            out = io.StringIO()
+            with redirect_stdout(out):
+                code = main(["--usine", str(Path(folder) / "none.md"), str(Path(folder) / "pr.diff")])
+        self.assertEqual((code, out.getvalue().strip()), (0, "sans objet (clé ui-labels absente)"))
+
+    def test_an_invalid_pattern_exits_two_and_is_never_pass(self) -> None:
+        """No F-NNNN: ticket #98, A2: un motif qui n'est pas une expression régulière sort 2."""
+        usine = "- `ui-labels` : `app/i18n/`\n- `ui-forbidden-word` : `(ouvert`\n"
+        code, out = run(usine, diff("app/i18n/fr.yml", "a: Enregistrer"))
+        self.assertEqual(code, 2)
+        self.assertTrue(out.startswith("INVALID\t"))
 
 
 if __name__ == "__main__":

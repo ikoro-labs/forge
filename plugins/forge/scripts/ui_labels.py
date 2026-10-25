@@ -20,13 +20,22 @@ wrong. The standard library only.
 
 from __future__ import annotations
 
+import argparse
 import re
+import sys
 from dataclasses import dataclass
+from pathlib import Path
 
-from never_weaken import parse_diff, under
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "hooks"))
+
+import usine  # noqa: E402
+from never_weaken import parse_diff, under  # noqa: E402
 
 FORBIDDEN = "FORBIDDEN"
 NONE = "NONE"
+INVALID = "INVALID"
+LABELS_KEY = "ui-labels"
+WORD_KEY = "ui-forbidden-word"
 
 _KEY = re.compile(r"""^\s*(?:-\s+)?(?:"[^"]*"|'[^']*'|[\w.\-]+)\s*[:=]\s*(.*)$""")
 _OPENERS = {"|", ">", "|-", ">-", "{", "[", "|+", ">+"}
@@ -79,3 +88,52 @@ def check(paths: list[str], forbidden: list[str], diff_text: str) -> list[Findin
             if hit := pattern.search(label):
                 findings.append(Finding(FORBIDDEN, path, label, hit.group()))
     return findings
+
+
+def _print(finding: Finding) -> None:
+    print(f"{finding.status}\t{finding.path}\t{finding.label}\t{finding.detail}")
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
+    parser.add_argument("diff", help="the unified diff of the PR, or - for the standard input")
+    parser.add_argument("--usine", help="the usine.md to read (default: docs/agents/usine.md)")
+    parser.add_argument("--root", help="the project copy to read (default: the project directory)")
+    args = parser.parse_args(argv)
+    root = Path(args.root) if args.root else usine.project_root()
+    config_file = Path(args.usine) if args.usine else root / usine.CONFIG_PATH
+    try:
+        try:
+            config = usine.parse(config_file.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            config = {}
+        text = sys.stdin.read() if args.diff == "-" else Path(args.diff).read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as error:
+        print(f"ui_labels: {error}", file=sys.stderr)
+        return 2
+    paths = config.get(LABELS_KEY)
+    if not paths:
+        print(f"sans objet (clé {LABELS_KEY} absente)")
+        return 0
+    words = config.get(WORD_KEY)
+    if not words:
+        print(f"sans objet (clé {WORD_KEY} absente)")
+        return 0
+    invalid = []
+    for word in words:
+        try:
+            compile_word(word)
+        except re.error as error:
+            invalid.append(Finding(INVALID, "", "", f"{word} : pas une expression régulière ({error})"))
+    if invalid:
+        for finding in invalid:
+            _print(finding)
+        return 2
+    findings = check(paths, words, text)
+    for finding in findings or [Finding(NONE, "", "", "aucun libellé refusé")]:
+        _print(finding)
+    return 1 if findings else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
