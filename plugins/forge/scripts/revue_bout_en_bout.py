@@ -33,8 +33,11 @@ take), SUSPECT (a `tenu` whose finding describes a lack; informative), A-RELIRE 
 reading yet), NON-RELU and CONTESTE (the second reading, `LECTURE <id> <confirmé|contesté> <raison>`, did
 not confirm it), then OK. Exit 0 only when nothing blocks.
 
-With `--ecrans`, only the rows of the listed screens must be judged (a review on the touched screens run
-after a merge); the other rows keep their state, and NON-JUGE is not raised for them.
+With `--ecrans`, only the rows of the listed screens (the `Écran` column of the matrix) are judged (a
+review on the touched screens run after a merge). A verdict line for any other row is printed
+HORS-PORTEE (informative) and dropped: it is not checked, not written by `--appliquer`, not turned into a
+ticket by `--tickets`, and `revue_boucle.py tour` leaves it out of the journal. Those rows keep their
+state and their capture, and NON-JUGE is not raised for them.
 
 With a clean verdict, `--appliquer` writes the state, the capture and the date of each judged row into the
 matrix (`--date` is required; the new text must pass `matrice.py` or nothing is written, NON-APPLIQUE) and
@@ -182,6 +185,25 @@ def _matrix_cells(line: str) -> list[str]:
     return matrice._cells(line)
 
 
+def scope_of(ecrans: str | None) -> set[str] | None:
+    """The screens of a review on the touched screens (`--ecrans "Écran 2, Écran 3"`), None for the whole path."""
+    return {screen.strip() for screen in ecrans.split(",")} if ecrans else None
+
+
+def drop_out_of_scope(entries: list[dict[str, str]], by_id: dict[str, dict[str, str]], scope: set[str] | None) -> list[dict[str, str]]:
+    """The verdict lines of the rows in scope; each other line is printed HORS-PORTEE and dropped."""
+    if scope is None:
+        return entries
+    kept = []
+    for entry in entries:
+        row = by_id.get(entry["id"])
+        if row is not None and row["Écran"] not in scope:
+            _print("HORS-PORTEE", entry["id"], f"{row['Écran']} : hors de la revue sur écrans touchés, la ligne garde son état")
+        else:
+            kept.append(entry)
+    return kept
+
+
 def judge(args: argparse.Namespace, verdict_text: str, matrix_text: str) -> int:
     """Check a verdict against the matrix, the captures and the second reading; apply it when asked."""
     try:
@@ -210,7 +232,8 @@ def judge(args: argparse.Namespace, verdict_text: str, matrix_text: str) -> int:
             judged.append(group[0])
     invalid_ids = {subject for subject, _ in invalid}
     # A review on the touched screens judges the rows of those screens only; the others keep their state.
-    scope = {screen.strip() for screen in args.ecrans.split(",")} if args.ecrans else None
+    scope = scope_of(args.ecrans)
+    judged = drop_out_of_scope(judged, by_id, scope)
     for row in rows:
         identifier = row["Identifiant"]
         if scope is not None and row["Écran"] not in scope:

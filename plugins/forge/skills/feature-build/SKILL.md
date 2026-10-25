@@ -297,7 +297,7 @@ Ni minuterie, ni geste humain : la fusion déclenche, ou rien ne se lance.
    feature (`revue/boucle.tsv`, dans le dossier de la feature, livré avec la matrice) :
 
    ```
-   uv run --no-project --quiet python "${CLAUDE_PLUGIN_ROOT}/scripts/revue_boucle.py" tour <journal> verdict.tsv
+   uv run --no-project --quiet python "${CLAUDE_PLUGIN_ROOT}/scripts/revue_boucle.py" tour <journal> verdict.tsv --matrice <matrice.md> --ecrans "<écrans touchés>"
    uv run --no-project --quiet python "${CLAUDE_PLUGIN_ROOT}/scripts/revue_boucle.py" retours <journal>
    ```
 

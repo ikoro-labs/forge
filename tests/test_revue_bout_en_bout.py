@@ -316,6 +316,18 @@ class Outputs(unittest.TestCase):
         self.assertIn("REFUSED\tEXI-02", out)
         self.assertEqual(after, written)
 
+    def test_a_line_outside_the_touched_screens_is_neither_written_nor_ticketed(self) -> None:
+        """No F-NNNN: ticket #101, une revue sur écrans touchés ne change ni ne publie rien hors de ces écrans."""
+        before = MATRICE.replace("| EXI-01 | L1 | #5 | tests/a.py::t1 | Écran 1 | | absent | |",
+                                 "| EXI-01 | L1 | #5 | tests/a.py::t1 | Écran 1 | e1-clair-bureau.png | tenu | 2026-10-01 |")
+        absent = element("EXI-01", "absent", "majeur", "Écran 1", "-", "écran non joué")
+        code, out, after = apply(absent + LINE_EXI02 + LINE_C01, before, "--ecrans", "Écran 2", "--appliquer", "--date", "2026-11-02", "--tickets")
+        self.assertEqual(code, 0, out)
+        self.assertIn("| EXI-01 | L1 | #5 | tests/a.py::t1 | Écran 1 | e1-clair-bureau.png | tenu | 2026-10-01 |", after)
+        self.assertIn("| EXI-02 | L1 | #6 | tests/a.py::t2 | Écran 2 | e2-clair-bureau.png | contraire | 2026-11-02 |", after)
+        self.assertNotIn("EXI-01", " ".join(line for line in out.splitlines() if line.startswith("TICKET")))
+        self.assertIn("HORS-PORTEE\tEXI-01", out)
+
     def test_the_gaps_become_one_ticket_per_batch_and_severity_worst_first(self) -> None:
         """No F-NNNN: ticket #100, A5: un ticket par lot cohérent d'écarts, avec gravité, capture et identifiants cités."""
         extra = element("EXI-01", "partiel", "mineur", "Écran 1", "e1-clair-bureau.png", "la date s'affiche en anglais")

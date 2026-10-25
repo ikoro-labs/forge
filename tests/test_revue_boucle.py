@@ -169,6 +169,20 @@ class Loop(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertNotIn("ARRET", out)
 
+    def test_a_line_outside_the_touched_screens_never_enters_the_journal(self) -> None:
+        """No F-NNNN: ticket #101, une revue sur écrans touchés n'inscrit au journal que les éléments de ces écrans."""
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / "matrice.md").write_text(MATRICE, encoding="utf-8")
+            (root / "verdict.tsv").write_text(line("EXI-01", "absent") + line("EXI-02", "absent"), encoding="utf-8")
+            out = io.StringIO()
+            with redirect_stdout(out), redirect_stderr(io.StringIO()):
+                code = main(["tour", str(root / "journal.tsv"), str(root / "verdict.tsv"), "--matrice", str(root / "matrice.md"), "--ecrans", "Écran 2"])
+            self.assertEqual(code, 0, out.getvalue())
+            journal = (root / "journal.tsv").read_text(encoding="utf-8")
+            self.assertIn("TOUR\t1\tEXI-02\tabsent", journal)
+            self.assertNotIn("EXI-01", journal)
+
     def test_an_unreadable_verdict_never_enters_the_journal(self) -> None:
         """No F-NNNN: ticket #101, un verdict illisible n'entre pas au journal : le compte des retours reste fiable."""
         with tempfile.TemporaryDirectory() as folder:

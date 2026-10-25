@@ -19,7 +19,7 @@ The gate of the acceptance test (`forge:feature-verify`): the report `RESULT: RE
 of the whole path (`PORTEE: entière`) holds zero `bloquant` and zero `majeur`. `OUVERTE` (exit 0) or
 `FERMEE` and the reason (exit 1). A `mineur` stays in the report and does not close the gate.
 
-    python revue_boucle.py tour <journal> <verdict>
+    python revue_boucle.py tour <journal> <verdict> [--matrice FILE --ecrans "Écran n, Écran m"]
     python revue_boucle.py retours <journal>
 
 The journal keeps, for each round of the loop, the state of every element the judge has judged
@@ -122,6 +122,14 @@ def _rounds(journal: Path) -> dict[int, dict[str, str]]:
 def tour(args: argparse.Namespace) -> int:
     """Append the judged elements of a verdict to the journal as the next round."""
     entries, invalid = revue_bout_en_bout._verdict_entries(Path(args.verdict).read_text(encoding="utf-8"))
+    scope = revue_bout_en_bout.scope_of(args.ecrans)
+    if scope is not None:
+        # A review on the touched screens: the rows of the other screens were not judged, they enter no round.
+        if not args.matrice:
+            print("revue_boucle: --ecrans demande --matrice, pour savoir l'écran de chaque identifiant", file=sys.stderr)
+            return 2
+        by_id = {row["Identifiant"]: row for row in matrice.parse(Path(args.matrice).read_text(encoding="utf-8"))}
+        entries = [e for e in entries if e["id"] not in by_id or by_id[e["id"]]["Écran"] in scope]
     if invalid or not entries:
         for subject, reason in invalid:
             _print("INVALID", subject, reason)
@@ -168,6 +176,8 @@ def main(argv: list[str] | None = None) -> int:
     record = commands.add_parser("tour", help="add the verdict of a review to the journal as the next round")
     record.add_argument("journal", help="the journal file of the loop")
     record.add_argument("verdict", help="the verdict of the judge")
+    record.add_argument("--matrice", help="the matrix of the feature, with --ecrans")
+    record.add_argument("--ecrans", help="a review on the touched screens: only their elements enter the round")
     back = commands.add_parser("retours", help="the gaps that returned, and the stop")
     back.add_argument("journal", help="the journal file of the loop")
     args = parser.parse_args(argv)

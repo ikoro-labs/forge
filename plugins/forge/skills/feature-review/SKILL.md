@@ -129,8 +129,10 @@ La boucle (déclencher la revue à la fusion, porte de recette, arrêt sur un é
 - **Sur écrans touchés** (`--ecrans "Écran 2, Écran 3"`, donnés par la ligne `ECRAN` de
   `revue_boucle.py declencher`) : les écrans hors de la liste sont écrits `NON-JOUE` au manifeste
   (« hors de la revue sur écrans touchés »), et la commande de l'étape 4 reçoit
-  `--ecrans "Écran 2, Écran 3"` : seuls les éléments de ces écrans sont jugés, les autres lignes de la
-  matrice gardent leur état. Une revue sur écrans touchés n'ouvre jamais la recette.
+  `--ecrans "Écran 2, Écran 3"` : seuls les éléments de ces écrans sont jugés. Une ligne du verdict pour un
+  élément d'un autre écran (le juge dit `absent` un écran non joué) est écartée, ligne `HORS-PORTEE` :
+  `--appliquer` ne l'écrit pas, `--tickets` n'en fait pas un ticket, et la ligne de la matrice garde
+  son état et sa capture. Une revue sur écrans touchés n'ouvre jamais la recette.
 
 Ce skill se termine par un compte rendu que ces étapes lisent :
 
