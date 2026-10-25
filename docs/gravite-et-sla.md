@@ -46,8 +46,8 @@ répétée fait échouer la commande. Sans la clé `release-tag`, l'étape « co
 sans classe), et à gravité égale par échéance de prise en charge (la plus proche d'abord). Sans la clé
 `sla`, la gravité trie encore (elle vient de l'étiquette) et l'échéance est « sans objet » : l'ordre
 des sous-issues départage. Un ticket `sev1` passe devant tout ticket qui n'est pas encore confié ; il
-ne passe ni devant un coder déjà en vol, ni devant un bloqueur ouvert, ni devant un gel de feature
-(les `sev1` sont des défauts : les tickets `bug` et `escaped-defect` passent le gel).
+ne passe ni devant un coder déjà en vol, ni devant un bloqueur ouvert, et il reste soumis à un gel de
+feature (clé `budget-action`) s'il ne porte ni `bug` ni `escaped-defect`.
 
 ```sh
 uv run --no-project --quiet python plugins/forge/scripts/factory_slo.py queue <projet> <ticket> [<ticket> ...]
@@ -59,12 +59,20 @@ uv run --no-project --quiet python plugins/forge/scripts/factory_slo.py queue <p
 uv run --no-project --quiet python plugins/forge/scripts/factory_slo.py sla <projet> [--json]
 ```
 
-`sla` relit chaque ticket étiqueté `sev1`, `sev2` ou `sev3` (ouverts, ou fermés dans les derniers
-jours de la plus longue échéance), et dit pour chaque étape son échéance, la date où elle a été
-atteinte, et son état : `tenue`, `dépassée` (atteinte trop tard, ou échéance passée sans qu'elle soit
-atteinte) ou `en cours`. `restore-time` (voir `docs/indicateurs-de-service.md`) se ventile par ces
-classes. `factory_slo.py report` ajoute au rapport la section « Engagements de délai » et y liste chaque
-dépassement.
+`sla` relit chaque ticket étiqueté `sev1`, `sev2` ou `sev3` qui est ouvert, ou qui a été ouvert depuis
+`--depuis` (30 jours avant maintenant par défaut), et dit pour chaque étape son échéance, la date où
+elle a été atteinte, et son état :
+
+- `tenue` : atteinte à l'échéance ou avant ;
+- `dépassée` : atteinte après l'échéance, ou échéance passée sans qu'elle soit atteinte ;
+- `en cours` : pas atteinte, échéance devant nous ;
+- `sans objet`, avec sa raison : la gravité n'a pas de ligne dans la clé `sla`, la clé `release-tag` est
+  absente (étape « correctif publié »), ou le ticket est fermé sans que l'étape ait été atteinte.
+
+`restore-time` (voir `docs/indicateurs-de-service.md`) se ventile par ces classes, avec les étiquettes
+`sev1`, `sev2` et `sev3` ; l'ancienne étiquette `gravite:<classe>` reste lue quand un ticket n'a pas de
+classe. `factory_slo.py report` ajoute au rapport la section « Engagements de délai » et y liste chaque
+dépassement ; sans la clé `sla`, la section dit « sans objet (clé `sla` absente) ».
 
 ## Éprouvé, et pas encore
 

@@ -51,7 +51,8 @@ Un défaut trouvé après la fusion d'une PR devient un ticket portant l'étique
 Le juge qui reporte un `MINOR` devenu ticket de défaut, ou l'orchestrateur qui trouve le défaut,
 pose l'étiquette et écrit dans le corps du ticket une ligne `Échappé de #<pr>` qui nomme la PR
 fusionnée en cause. `change-failure` s'appuie sur cette ligne. La gravité se lit sur une étiquette
-`gravite:<classe>` (ou `severity:<classe>`), pour `restore-time` ; sans elle, « sans gravité ».
+`sev1`, `sev2` ou `sev3` (voir `docs/gravite-et-sla.md`), pour `restore-time` ; à défaut sur
+`gravite:<classe>` (ou `severity:<classe>`), et sans aucune, « sans gravité ».
 
 ## Clé `release-tag`
 

@@ -199,6 +199,21 @@ class Factory:
         return [item for item in cast("list[dict]", found) if self.inside(when(item, "createdAt"))]
 
     @property
+    def severe(self) -> list[dict]:
+        """The tickets of a severity class that are open, or were opened in the window."""
+        fields = "number,title,body,state,createdAt,closedAt,labels"
+        found: dict[int, dict] = {}
+        for name in sla.CLASSES:
+            items = self.cached(
+                f"severe-{name}",
+                lambda name=name: self.gh("issue", "list", "--state", "all", "--label", name, "--limit", "1000", "--json", fields),
+            )
+            for item in cast("list[dict]", items):
+                if str(item.get("state")).upper() != "CLOSED" or self.inside(when(item, "createdAt")):
+                    found[int(item["number"])] = item
+        return [found[number] for number in sorted(found)]
+
+    @property
     def created(self) -> list[dict]:
         return [item for item in self.prs if self.inside(when(item, "createdAt"))]
 
@@ -297,6 +312,17 @@ def tag_pattern(template: str) -> re.Pattern[str]:
     return re.compile("^" + re.escape(template).replace(re.escape("{version}"), r"[0-9][^\s]*") + "$")
 
 
+def first_tag_date(f: Factory, patterns: list[re.Pattern[str]], oid: str | None) -> datetime | None:
+    """The date of the first version tag that holds the commit, None when it is in none."""
+    out = f.git("tag", "--contains", oid, "--format=%(refname:short)\t%(creatordate:iso-strict)") if oid else None
+    tags = []
+    for row in (out or "").splitlines():
+        name, _, date = row.partition("\t")
+        if date and any(pattern.match(name) for pattern in patterns):
+            tags.append(token_audit.parse_time(date))
+    return min(tags) if tags else None
+
+
 def release_lag(f: Factory) -> Sli:
     templates = f.required("release-tag")
     if not templates:
@@ -305,16 +331,10 @@ def release_lag(f: Factory) -> Sli:
     samples: list[float] = []
     unpublished = 0
     for item in f.merged:
-        oid = (item.get("mergeCommit") or {}).get("oid")
-        out = f.git("tag", "--contains", oid, "--format=%(refname:short)\t%(creatordate:iso-strict)") if oid else None
-        tags = []
-        for row in (out or "").splitlines():
-            name, _, date = row.partition("\t")
-            if date and any(pattern.match(name) for pattern in patterns):
-                tags.append(token_audit.parse_time(date))
+        published = first_tag_date(f, patterns, (item.get("mergeCommit") or {}).get("oid"))
         merged = when(item, "mergedAt")
-        if tags and merged is not None:
-            samples.append((min(tags) - merged).total_seconds())
+        if published is not None and merged is not None:
+            samples.append((published - merged).total_seconds())
         else:
             unpublished += 1
     if not f.merged:
@@ -355,7 +375,10 @@ def restore_time(f: Factory) -> Sli:
         opened = when(defect, "createdAt")
         if opened is None:
             continue
-        severity = next((m.group(1) for name in sorted(label_names(defect)) if (m := SEVERITY.match(name))), "sans gravité")
+        names = label_names(defect)
+        severity = sla.severity_of(names) or next(
+            (m.group(1) for name in sorted(names) if (m := SEVERITY.match(name))), "sans gravité"
+        )
         groups.setdefault(severity, []).append((fixed - opened).total_seconds())
     if not groups:
         return Sli("restore-time", reason="aucun `escaped-defect` de la fenêtre n'a encore de correctif fusionné")
@@ -662,6 +685,7 @@ def report(project: Path, now: datetime, run: Runner = run_command, ref: Path | 
         slo = parse_one(item["ligne"])
         item["precedent"] = evaluate(slo, windows[slo.days][slo.sli])
         item["tendance"] = trend(item, item["precedent"])
+    document["sla"] = sla_check(project, now, run)
     return document
 
 
@@ -701,6 +725,8 @@ def report_markdown(document: dict) -> str:
         "",
         "La tendance compare la part du budget consommée à celle de la fenêtre précédente, de même durée.",
     ]
+    if "sla" in document:
+        lines += ["", sla_markdown(document["sla"], False)]
     return "\n".join(lines)
 
 
@@ -908,6 +934,107 @@ def load_sla(project: Path) -> dict[str, sla.Rule] | None:
 ABSENT_SLA = f"sans objet (clé `{sla.KEY}` absente)"
 
 
+SLA_DAYS = 30
+UNRATED = "sans objet"
+
+
+def sla_check(project: Path, now: datetime, run: Runner = run_command, since: datetime | None = None) -> dict | None:
+    """Every severity ticket against its deadlines, or None when the `sla` key is absent."""
+    rules = load_sla(project)
+    if rules is None:
+        return None
+    since = since or now - timedelta(days=SLA_DAYS)
+    f = Factory(project, since, now, run)
+    patterns = [tag_pattern(template) for template in f.required("release-tag") or []]
+    fixes: dict[int, dict] = {}
+    for item in f.prs:
+        merged = when(item, "mergedAt")
+        if merged:
+            for number in closed_tickets_of(item):
+                if number not in fixes or merged < fixes[number]["merged"]:
+                    fixes[number] = {"merged": merged, "oid": (item.get("mergeCommit") or {}).get("oid")}
+    unavailable = {} if patterns else {sla.STAGES[2]: "clé `release-tag` absente"}
+    tickets, breached = [], []
+    for item in f.severe:
+        number = int(item["number"])
+        severity = sla.severity_of(label_names(item))
+        opened = when(item, "createdAt")
+        if severity is None or opened is None:
+            continue
+        closed = str(item.get("state")).upper() == "CLOSED"
+        row: dict = {"ticket": number, "titre": item.get("title"), "gravite": severity, "ouvert_le": opened.isoformat(), "ferme": closed}
+        if severity not in rules:
+            reason = f"gravité `{severity}` absente de la clé `{sla.KEY}`"
+            row["etapes"] = [{"etape": name, "echeance": None, "atteinte": None, "etat": UNRATED, "raison": reason} for name in sla.STAGES]
+            tickets.append(row)
+            continue
+        taken = sorted(
+            token_audit.parse_time(e["created_at"]) for e in f.events(number)
+            if e.get("event") == "assigned" or (e.get("event") == "labeled" and (e.get("label") or {}).get("name") == "agent-claimed")
+        )
+        fix = fixes.get(number)
+        reached = {
+            sla.STAGES[0]: taken[0] if taken else None,
+            sla.STAGES[1]: fix["merged"] if fix else None,
+            sla.STAGES[2]: first_tag_date(f, patterns, fix["oid"]) if fix and patterns else None,
+        }
+        stages = sla.assess(rules[severity], opened, reached, now, closed, unavailable)
+        row["etapes"] = [
+            {
+                "etape": s.stage, "echeance": s.deadline.isoformat(), "atteinte": s.reached.isoformat() if s.reached else None,
+                "etat": s.state, **({"raison": s.reason} if s.reason else {}),
+            }
+            for s in stages
+        ]
+        breached += [
+            {"ticket": number, "gravite": severity, "etape": s.stage, "echeance": s.deadline.isoformat(),
+             "atteinte": s.reached.isoformat() if s.reached else None}
+            for s in sla.breaches(stages)
+        ]
+        tickets.append(row)
+    return {
+        "projet": str(project), "calcule_le": now.isoformat(), "depuis": since.isoformat(),
+        "tickets": tickets, "depassements": breached,
+    }
+
+
+def sla_markdown(document: dict | None, with_table: bool) -> str:
+    if document is None:
+        return f"Engagements de délai : {ABSENT_SLA}."
+    lines = [
+        f"Engagements de délai, au {document['calcule_le']} : {len(document['tickets'])} tickets de gravité "
+        f"(ouverts, ou ouverts depuis le {document['depuis']}), {len(document['depassements'])} dépassements.",
+        "",
+    ]
+    if with_table:
+        lines += ["| Ticket | Gravité | " + " | ".join(sla.STAGES) + " |", "|---|---|---|---|---|"]
+        for row in document["tickets"]:
+            cells = " | ".join(
+                stage["etat"] if stage["etat"] != UNRATED else f"sans objet ({stage['raison']})" for stage in row["etapes"]
+            )
+            lines.append(f"| #{row['ticket']} | {row['gravite']} | {cells} |")
+        lines.append("")
+    if document["depassements"]:
+        lines.append("Dépassements :")
+        lines += [
+            f"- #{b['ticket']} ({b['gravite']}) : {b['etape']}, échéance {b['echeance']}, "
+            + (f"atteinte {b['atteinte']}" if b["atteinte"] else "pas encore atteinte")
+            for b in document["depassements"]
+        ]
+    else:
+        lines.append("Dépassements : aucun.")
+    return "\n".join(lines)
+
+
+def run_sla(args: argparse.Namespace, run: Runner, now: datetime) -> int:
+    document = sla_check(args.projet, now, run, args.depuis)
+    if args.json:
+        print(json.dumps(document if document is not None else {"sla": ABSENT_SLA}, ensure_ascii=False, indent=2))
+    else:
+        print(sla_markdown(document, True))
+    return 0
+
+
 def run_queue(args: argparse.Namespace, run: Runner, now: datetime) -> int:
     rules = load_sla(args.projet)
     tickets = []
@@ -954,6 +1081,10 @@ def main(argv: list[str] | None = None, run: Runner = run_command, now: datetime
     notes.add_argument("--depuis", type=_date, required=True, help="date de la version précédente, incluse")
     notes.add_argument("--le", type=_date, help="date de la version (maintenant par défaut)")
     notes.add_argument("--reference", type=Path, help="le dernier résultat du jeu de référence (JSON)")
+    delays = commands.add_parser("sla", help="mesure les tickets de gravité contre les échéances de la clé `sla`")
+    delays.add_argument("projet", type=Path, help="le dossier du projet")
+    delays.add_argument("--depuis", type=_date, help=f"ouverture des tickets fermés à garder ({SLA_DAYS} jours avant maintenant par défaut)")
+    delays.add_argument("--json", action="store_true", help="rend du JSON au lieu d'un tableau Markdown")
     file = commands.add_parser("queue", help="ordonne des tickets par gravité puis par échéance de prise en charge")
     file.add_argument("projet", type=Path, help="le dossier du projet")
     file.add_argument("tickets", type=int, nargs="+", help="les numéros de ticket, dans l'ordre des sous-issues")
@@ -966,11 +1097,11 @@ def main(argv: list[str] | None = None, run: Runner = run_command, now: datetime
     sli.add_argument("--reference", type=Path, help="le dernier résultat du jeu de référence (JSON)")
     args = parser.parse_args(argv)
 
-    if args.commande in ("status", "budget", "report", "changelog", "queue"):
+    if args.commande in ("status", "budget", "report", "changelog", "queue", "sla"):
         try:
             handler = {
                 "status": run_status, "budget": run_budget, "report": run_report, "changelog": run_changelog,
-                "queue": run_queue,
+                "queue": run_queue, "sla": run_sla,
             }[args.commande]
             return handler(args, run, now or datetime.now(tz=timezone.utc))
         except (RuntimeError, ValueError, KeyError, IndexError, OSError) as error:

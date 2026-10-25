@@ -103,3 +103,47 @@ def order(tickets: list[Ticket], rules: dict[str, Rule]) -> list[Ticket]:
         return rank, deadline is None, deadline or datetime.max.replace(tzinfo=ticket.opened.tzinfo)
 
     return sorted(tickets, key=key)
+
+
+MET = "tenue"
+LATE = "dépassée"
+RUNNING = "en cours"
+NOT_APPLICABLE = "sans objet"
+
+
+@dataclass(frozen=True)
+class Stage:
+    stage: str
+    deadline: datetime
+    reached: datetime | None
+    state: str
+    reason: str | None = None
+
+
+def assess(
+    rule: Rule, opened: datetime, reached: dict[str, datetime | None], now: datetime,
+    closed: bool = False, unavailable: dict[str, str] | None = None,
+) -> list[Stage]:
+    """Each stage of a ticket against its deadline.
+
+    `tenue`: reached on or before the deadline. `dépassée`: reached after it, or not reached and `now`
+    is past it. `en cours`: not reached, deadline ahead. `sans objet`, with its reason: the data cannot
+    say (`unavailable`), or the ticket is closed without the stage ever reached.
+    """
+    unavailable = unavailable or {}
+    results = []
+    for stage, deadline in deadlines(rule, opened).items():
+        at = reached.get(stage)
+        if stage in unavailable:
+            results.append(Stage(stage, deadline, None, NOT_APPLICABLE, unavailable[stage]))
+        elif at is not None:
+            results.append(Stage(stage, deadline, at, MET if at <= deadline else LATE))
+        elif closed:
+            results.append(Stage(stage, deadline, None, NOT_APPLICABLE, "ticket fermé sans cette étape"))
+        else:
+            results.append(Stage(stage, deadline, None, LATE if now > deadline else RUNNING))
+    return results
+
+
+def breaches(stages: list[Stage]) -> list[Stage]:
+    return [stage for stage in stages if stage.state == LATE]

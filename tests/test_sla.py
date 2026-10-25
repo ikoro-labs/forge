@@ -87,5 +87,37 @@ class Queue(unittest.TestCase):
         self.assertEqual(self.numbers(tickets, ["sev1 | 2 j | 7 j | 14 j"]), [13, 12])
 
 
+class Assess(unittest.TestCase):
+    rule = sla.parse(LINES)[0]["sev1"]
+
+    def states(self, reached: dict, now: datetime, closed: bool = False) -> list[str]:
+        return [stage.state for stage in sla.assess(self.rule, OPENED, reached, now, closed)]
+
+    def test_a_stage_reached_before_its_deadline_is_tenue_and_after_it_depassee(self) -> None:
+        """Ticket #60, critère 4 : un dépassement est une étape atteinte après son échéance."""
+        reached = {
+            "prise en charge": OPENED + timedelta(hours=3),
+            "correctif fusionné": OPENED + timedelta(hours=25),
+            "correctif publié": OPENED + timedelta(days=3),
+        }
+        self.assertEqual(self.states(reached, OPENED + timedelta(days=9)), ["tenue", "dépassée", "tenue"])
+
+    def test_a_stage_not_reached_is_depassee_once_its_deadline_has_passed(self) -> None:
+        """Ticket #60, critère 4 : une échéance passée sans que l'étape soit atteinte est un dépassement."""
+        self.assertEqual(self.states({}, OPENED + timedelta(hours=5)), ["dépassée", "en cours", "en cours"])
+        self.assertEqual(self.states({}, OPENED + timedelta(days=4)), ["dépassée", "dépassée", "dépassée"])
+
+    def test_the_deadline_itself_is_still_held(self) -> None:
+        reached = {"prise en charge": OPENED + timedelta(hours=4)}
+        self.assertEqual(self.states(reached, OPENED + timedelta(hours=4))[0], "tenue")
+
+    def test_a_closed_ticket_without_a_stage_is_sans_objet_for_it(self) -> None:
+        self.assertEqual(self.states({"prise en charge": OPENED}, OPENED + timedelta(days=9), closed=True), ["tenue", "sans objet", "sans objet"])
+
+    def test_breaches_keep_only_the_late_stages(self) -> None:
+        results = sla.assess(self.rule, OPENED, {}, OPENED + timedelta(hours=30))
+        self.assertEqual([stage.stage for stage in sla.breaches(results)], ["prise en charge", "correctif fusionné"])
+
+
 if __name__ == "__main__":
     unittest.main()
