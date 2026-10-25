@@ -107,9 +107,12 @@ Le numéro de PR, et le numéro du tour (1 ou 2).
     `RED` le dit, et tu la recopies avec cette mention, parce qu'elle dit seulement que le fichier
     sort non nul sur la base, pas que chaque test du fichier y est rouge.
 12. **Libellés de l'écran.** Les libellés que la PR ajoute ou change, confrontés aux mots refusés et
-    au glossaire. Avec le `pr.diff` et le `usine-base.md` de la sonde 10, lancée **dans la copie de la
-    tête** (les glossaires sont lus dans la tête : une PR peut y ajouter le terme qu'elle introduit) :
-    `uv run --no-project --quiet python "${CLAUDE_PLUGIN_ROOT}/scripts/ui_labels.py" --usine usine-base.md --root . pr.diff`.
+    au glossaire. Avec le `pr.diff` et le `usine-base.md` de la sonde 10, que tu as rangés dans le
+    scratchpad **à côté** de la copie de la tête et non dedans, lancée **dans la copie de la tête**
+    (les glossaires sont lus dans la tête : une PR peut y ajouter le terme qu'elle introduit), avec le
+    chemin absolu du scratchpad à la place de `<scratchpad>` :
+    `uv run --no-project --quiet python "${CLAUDE_PLUGIN_ROOT}/scripts/ui_labels.py" --usine "<scratchpad>/usine-base.md" --root . "<scratchpad>/pr.diff"`.
+    Un fichier `--usine` ou un diff introuvable sort en 2 : c'est un `FAIL`, jamais un « sans objet ».
     Recopie chaque ligne du script, verbatim, et son code de sortie : 0 rien à relever, 1 un libellé
     contient un mot refusé (`FORBIDDEN`) ou un terme absent du glossaire (`UNKNOWN`), 2 un motif
     invalide, un glossaire illisible ou un appel en échec (`FAIL`, jamais `PASS`). Une clé absente se
