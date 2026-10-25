@@ -51,6 +51,9 @@ citeront.
      `Écarté : <identifiant> | accord : <fichier> | <AAAA-MM-JJ> | <rôle>`, le fichier citant
      l'identifiant. Sans accord, l'élément reste dans la liste. Clé `source-author` absente : aucun
      élément ne s'écarte, et l'étape le dit.
+   - **Les Non-goals n'écartent rien.** Un identifiant de la source cité dans la section Non-goals
+     sans ligne `Écarté :` acceptée ressort `REFUSED` au comptage, et cette citation ne vaut jamais
+     reprise.
 5. **Ne pas découper en tickets ici** : cela vient après l'acceptation, avec le design.
 
 Commande suivante, une fois la spec acceptée : `/forge:feature-design F-NNNN`, ou directement le

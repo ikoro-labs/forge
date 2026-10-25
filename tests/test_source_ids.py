@@ -157,6 +157,36 @@ class Exclusions(unittest.TestCase):
         self.assertIn("sans objet (clé source-author absente)", out)
 
 
+NON_GOALS = "## 3. Non-goals\n\n- Hors périmètre : CT-10\n\n## 4. Exigences\n\nSans objet.\n"
+
+
+class NonGoals(unittest.TestCase):
+    def test_an_identifier_cited_in_the_non_goals_without_agreement_is_refused(self) -> None:
+        """No F-NNNN: ticket #93, A5: Hors périmètre : CT-10 sans ligne Écarté ni accord n'est pas une reprise."""
+        code, out = run({"source.md": SOURCE, "spec.md": "Reprend EX-1, EX-2 et RG-3.1.\n\n" + NON_GOALS})
+        lines = out.splitlines()
+        self.assertEqual(code, 1)
+        self.assertTrue(any(line.startswith("REFUSED\tCT-10\t") and "Non-goals" in line for line in lines))
+
+    def test_an_element_taken_up_elsewhere_and_cited_in_the_non_goals_is_still_refused(self) -> None:
+        """No F-NNNN: ticket #93, A5: l'élément repris puis déclaré hors périmètre est une contradiction, refusée."""
+        code, out = run({"source.md": SOURCE, "spec.md": "Reprend EX-1, EX-2, CT-10, RG-3.1.\n\n" + NON_GOALS})
+        self.assertEqual(code, 1)
+        self.assertIn("REFUSED\tCT-10\t", out)
+
+    def test_an_accepted_exclusion_may_be_cited_in_the_non_goals(self) -> None:
+        """No F-NNNN: ticket #93, A5: avec une ligne Écarté et son accord, la mention dans les Non-goals est permise."""
+        code, out = run({"source.md": SOURCE, "spec.md": SPEC_EXCLUDING + "\n" + NON_GOALS, "accord.md": "CT-10 écarté.\n"})
+        self.assertEqual(code, 0)
+        self.assertEqual(out.splitlines()[0], "EXCLUDED\tCT-10\taccord.md\t2026-10-20 expert métier")
+
+    def test_a_non_goals_section_without_source_identifier_changes_nothing(self) -> None:
+        """No F-NNNN: ticket #93, A5: des Non-goals qui ne citent aucun identifiant de la source laissent le code à 0."""
+        spec = SPEC_FULL + "\n## 3. Non-goals\n\n- Le paiement des factures.\n"
+        code, out = run({"source.md": SOURCE, "spec.md": spec})
+        self.assertEqual((code, out.splitlines()[0].split("\t")[0]), (0, "NONE"))
+
+
 class Usage(unittest.TestCase):
     def test_a_missing_source_file_exits_two(self) -> None:
         """No F-NNNN: ticket #92, A1: une source déclarée et introuvable sort 2, elle n'est pas vide."""

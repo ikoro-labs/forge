@@ -552,6 +552,12 @@ class SourceIdentifiers(unittest.TestCase):
         self.assertIn("`source-author`", skill)
         self.assertIn("Écarté : <identifiant> | accord : <fichier> | <AAAA-MM-JJ> | <rôle>", skill)
 
+    def test_the_spec_skill_says_the_non_goals_set_nothing_aside(self) -> None:
+        """No F-NNNN: ticket #93, A5: le skill dit qu'un identifiant cité dans les Non-goals sans accord est refusé."""
+        skill = self.read("skills", "feature-spec", "SKILL.md")
+        self.assertIn("Les Non-goals n'écartent rien", skill)
+        self.assertIn("`REFUSED`", skill)
+
     def test_the_spec_template_has_the_section_of_the_source_elements(self) -> None:
         """No F-NNNN: ticket #92, A2: le gabarit de spec porte les éléments de la source et leurs identifiants."""
         template = self.read("templates", "features", "spec.md")
