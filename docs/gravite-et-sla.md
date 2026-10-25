@@ -67,7 +67,9 @@ elle a été atteinte, et son état :
 - `dépassée` : atteinte après l'échéance, ou échéance passée sans qu'elle soit atteinte ;
 - `en cours` : pas atteinte, échéance devant nous ;
 - `sans objet`, avec sa raison : la gravité n'a pas de ligne dans la clé `sla`, la clé `release-tag` est
-  absente (étape « correctif publié »), ou le ticket est fermé sans que l'étape ait été atteinte.
+  absente (étape « correctif publié »), ou le ticket a été fermé avant l'échéance d'une étape qu'il n'a pas
+  atteinte (elle n'était pas encore due). Un ticket fermé par son correctif reste mesuré sur la publication,
+  puisque la fusion le ferme avant la version, et sur les échéances déjà passées à sa fermeture.
 
 `restore-time` (voir `docs/indicateurs-de-service.md`) se ventile par ces classes, avec les étiquettes
 `sev1`, `sev2` et `sev3` ; l'ancienne étiquette `gravite:<classe>` reste lue quand un ticket n'a pas de

@@ -962,6 +962,7 @@ def sla_check(project: Path, now: datetime, run: Runner = run_command, since: da
         if severity is None or opened is None:
             continue
         closed = str(item.get("state")).upper() == "CLOSED"
+        closed_at = (when(item, "closedAt") or now) if closed else None
         row: dict = {"ticket": number, "titre": item.get("title"), "gravite": severity, "ouvert_le": opened.isoformat(), "ferme": closed}
         if severity not in rules:
             reason = f"gravité `{severity}` absente de la clé `{sla.KEY}`"
@@ -978,7 +979,7 @@ def sla_check(project: Path, now: datetime, run: Runner = run_command, since: da
             sla.STAGES[1]: fix["merged"] if fix else None,
             sla.STAGES[2]: first_tag_date(f, patterns, fix["oid"]) if fix and patterns else None,
         }
-        stages = sla.assess(rules[severity], opened, reached, now, closed, unavailable)
+        stages = sla.assess(rules[severity], opened, reached, now, closed_at, unavailable)
         row["etapes"] = [
             {
                 "etape": s.stage, "echeance": s.deadline.isoformat(), "atteinte": s.reached.isoformat() if s.reached else None,

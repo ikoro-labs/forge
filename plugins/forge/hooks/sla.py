@@ -122,13 +122,15 @@ class Stage:
 
 def assess(
     rule: Rule, opened: datetime, reached: dict[str, datetime | None], now: datetime,
-    closed: bool = False, unavailable: dict[str, str] | None = None,
+    closed_at: datetime | None = None, unavailable: dict[str, str] | None = None,
 ) -> list[Stage]:
     """Each stage of a ticket against its deadline.
 
     `tenue`: reached on or before the deadline. `dépassée`: reached after it, or not reached and `now`
     is past it. `en cours`: not reached, deadline ahead. `sans objet`, with its reason: the data cannot
-    say (`unavailable`), or the ticket is closed without the stage ever reached.
+    say (`unavailable`), or the ticket was closed (`closed_at`) before the deadline of a stage it never
+    reached, so the stage was never due. A stage still due at closing is measured like an open ticket's,
+    and so is the publication of a ticket closed by its fix, since the fix closes it before the release.
     """
     unavailable = unavailable or {}
     results = []
@@ -138,8 +140,10 @@ def assess(
             results.append(Stage(stage, deadline, None, NOT_APPLICABLE, unavailable[stage]))
         elif at is not None:
             results.append(Stage(stage, deadline, at, MET if at <= deadline else LATE))
-        elif closed:
-            results.append(Stage(stage, deadline, None, NOT_APPLICABLE, "ticket fermé sans cette étape"))
+        elif closed_at is not None and closed_at <= deadline and not (
+            stage == STAGES[2] and reached.get(STAGES[1]) is not None
+        ):
+            results.append(Stage(stage, deadline, None, NOT_APPLICABLE, "ticket fermé avant l'échéance de cette étape"))
         else:
             results.append(Stage(stage, deadline, None, LATE if now > deadline else RUNNING))
     return results

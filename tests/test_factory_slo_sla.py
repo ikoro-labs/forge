@@ -147,6 +147,18 @@ class Measure(Base):
         self.assertEqual({stage["etat"] for stage in stages}, {"sans objet"})
         self.assertIn("`sev3`", stages[0]["raison"])
 
+    def test_a_ticket_closed_by_its_fix_is_still_measured_on_the_stages_not_reached(self) -> None:
+        """Ticket #60, critère 4 : le ticket #10 se ferme à la fusion de la PR 100 (`Closes #10`), sans prise en charge ni tag ;
+        ses échéances passées restent des dépassements, listés."""
+        closed = self.world.answers["issue list --state all --label sev1"][0]
+        closed["state"], closed["closedAt"] = "CLOSED", "2026-10-02T06:00:00Z"
+        self.world.answers["api repos/{owner}/{repo}/issues/10/events"] = []
+        self.world.git("tag", "-d", "forge--v1.0.0")
+        self.assertEqual(self.states(10), ["dépassée", "dépassée", "dépassée"])
+        _, out, _ = self.run_main("sla")
+        self.assertIn("#10 (sev1) : prise en charge", out)
+        self.assertIn("#10 (sev1) : correctif publié", out)
+
     def test_the_markdown_lists_every_breach(self) -> None:
         _, out, _ = self.run_main("sla")
         self.assertIn("Dépassements", out)

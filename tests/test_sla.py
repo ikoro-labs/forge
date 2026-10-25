@@ -90,8 +90,8 @@ class Queue(unittest.TestCase):
 class Assess(unittest.TestCase):
     rule = sla.parse(LINES)[0]["sev1"]
 
-    def states(self, reached: dict, now: datetime, closed: bool = False) -> list[str]:
-        return [stage.state for stage in sla.assess(self.rule, OPENED, reached, now, closed)]
+    def states(self, reached: dict, now: datetime, closed_at: datetime | None = None) -> list[str]:
+        return [stage.state for stage in sla.assess(self.rule, OPENED, reached, now, closed_at)]
 
     def test_a_stage_reached_before_its_deadline_is_tenue_and_after_it_depassee(self) -> None:
         """Ticket #60, critère 4 : un dépassement est une étape atteinte après son échéance."""
@@ -111,8 +111,22 @@ class Assess(unittest.TestCase):
         reached = {"prise en charge": OPENED + timedelta(hours=4)}
         self.assertEqual(self.states(reached, OPENED + timedelta(hours=4))[0], "tenue")
 
-    def test_a_closed_ticket_without_a_stage_is_sans_objet_for_it(self) -> None:
-        self.assertEqual(self.states({"prise en charge": OPENED}, OPENED + timedelta(days=9), closed=True), ["tenue", "sans objet", "sans objet"])
+    def test_a_ticket_closed_before_a_deadline_is_sans_objet_for_that_stage(self) -> None:
+        """Ticket #60, critère 4 : fermé à 2 h, sans prise en charge, l'échéance de 4 h n'était pas passée."""
+        states = self.states({}, OPENED + timedelta(days=9), closed_at=OPENED + timedelta(hours=2))
+        self.assertEqual(states, ["sans objet", "sans objet", "sans objet"])
+
+    def test_a_ticket_closed_after_a_deadline_without_the_stage_is_depassee(self) -> None:
+        """Ticket #60, critère 4 : fermé à 10 h, la prise en charge due à 4 h reste un dépassement."""
+        states = self.states({}, OPENED + timedelta(days=9), closed_at=OPENED + timedelta(hours=10))
+        self.assertEqual(states, ["dépassée", "sans objet", "sans objet"])
+
+    def test_a_ticket_closed_by_its_fix_still_owes_the_publication(self) -> None:
+        """Ticket #60, critère 4 : fermé par son correctif à 20 h, non publié au jour 9, l'étape publiée est dépassée."""
+        reached = {"correctif fusionné": OPENED + timedelta(hours=20)}
+        closed_at = OPENED + timedelta(hours=20)
+        self.assertEqual(self.states(reached, OPENED + timedelta(days=9), closed_at), ["dépassée", "tenue", "dépassée"])
+        self.assertEqual(self.states(reached, OPENED + timedelta(days=2), closed_at), ["dépassée", "tenue", "en cours"])
 
     def test_breaches_keep_only_the_late_stages(self) -> None:
         results = sla.assess(self.rule, OPENED, {}, OPENED + timedelta(hours=30))
