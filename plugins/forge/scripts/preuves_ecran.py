@@ -45,8 +45,11 @@ from matrice import parse as parse_matrice  # noqa: E402
 COMMAND_KEYS = ("screenshot-command", "recording-command")
 DRIVE_KEY = "browser-drive"
 HOST_KEY = "computer-use-host"
-KEYS = ("screenshot-command", DRIVE_KEY, HOST_KEY, "recording-command")
+REPLAY_KEY = "journey-replay"
+CONTEXTS_KEY = "required-contexts"
+KEYS = ("screenshot-command", DRIVE_KEY, HOST_KEY, "recording-command", REPLAY_KEY)
 LIMITS = {
+    REPLAY_KEY: "commande du projet, rejouée en CI",
     DRIVE_KEY: "poste avec session ouverte, jamais en CI",
     HOST_KEY: "poste dédié, jamais le poste personnel d'un membre",
 }
@@ -68,6 +71,12 @@ def invalid(config: dict[str, list[str]]) -> list[str]:
     for value in config.get(DRIVE_KEY, []):
         if usine.split_value(value, 2) is None:
             problems.append(f"{DRIVE_KEY} : « {value} » s'écrit « outil | poste »")
+    for value in config.get(REPLAY_KEY, []):
+        parts = usine.split_value(value, 2)
+        if parts is None:
+            problems.append(f"{REPLAY_KEY} : « {value} » s'écrit « contexte de CI | commande »")
+        elif "{out}" not in parts[1]:
+            problems.append(f"{REPLAY_KEY} : « {value} » ne porte pas {{out}}, le dossier où écrire les captures")
     return problems
 
 
@@ -106,10 +115,18 @@ def main(argv: list[str] | None = None) -> int:
             print(f"sans objet (clé {key} absente)")
         for value in values[key]:
             print(f"CAPACITE\t{key}\t{value}\t{LIMITS.get(key, 'commande du projet')}")
-    if not any(values[key] for key in COMMAND_KEYS):
-        return 0
-    count = attached(body)
     missing = False
+    contexts = [value for value in config.get(CONTEXTS_KEY, []) if value.strip()]
+    for value in values[REPLAY_KEY]:
+        context = usine.split_value(value, 2)[0]
+        if not contexts:
+            print(f"sans objet (clé {CONTEXTS_KEY} absente)")
+        elif context not in contexts:
+            missing = True
+            print(f"CONTEXTE-NON-REQUIS\t{context}\tabsent de la clé {CONTEXTS_KEY} : un parcours cassé ne bloque aucune PR")
+    if not any(values[key] for key in COMMAND_KEYS):
+        return 1 if missing else 0
+    count = attached(body)
     carried = 0
     if args.matrice:
         wanted = re.compile(rf"(?<!\w){re.escape(args.ticket)}(?!\w)") if args.ticket else None
