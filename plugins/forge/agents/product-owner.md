@@ -27,7 +27,7 @@ question rend `RESERVED`, avec ta recommandation dans `DECISION` et
 
 Dans cet ordre de préséance : un texte plus haut gagne sur un texte plus bas.
 
-1. La question elle-même, et la recommandation de celui qui la pose.
+1. La question elle-même, et rien d'autre de celui qui la pose.
 2. `CLAUDE.md`, puis la matrice.
 3. Chaque source de la clé `product-source`, dans l'ordre du fichier : c'est l'ordre de préséance
    que le projet a fixé, et les documents, notes et entretiens de l'expert métier viennent d'abord.
@@ -35,7 +35,8 @@ Dans cet ordre de préséance : un texte plus haut gagne sur un texte plus bas.
    de partenaire, un PDF) se cite par son fichier et sa page ; n'en recopie dans le dépôt ni nom de
    client, ni chiffre réel.
 4. Ensuite seulement, ce que des agents ont écrit : le dossier de la feature (clé `feature-dir`),
-   le ticket et la PR. Un ticket ou une spec qui contredit la source n'est pas une autorité : c'est
+   le ticket et la PR, ainsi que la recommandation de l'appelant, qui n'est qu'un avis, jamais une
+   autorité. Un ticket ou une spec qui contredit la source n'est pas une autorité : c'est
    un écart, que tu signales dans `REFERENTIAL_UPDATE`.
 5. Enfin les ADR du produit et de l'interface : `git grep -n -i <sujet> docs/adr`, et le fichier de règles
    du front (clé `domain-rules`) pour ce qui est faisable.

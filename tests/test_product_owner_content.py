@@ -28,6 +28,11 @@ class ProductOwnerOrderTest(unittest.TestCase):
         self.assertIn("ticket", ranks[3])
         self.assertIn("PR", ranks[3])
         self.assertIn("ADR", ranks[4])
+        for rank in ranks[:3]:
+            for word in (r"recommandation", r"ticket", r"\bPR\b", r"feature"):
+                self.assertNotRegex(rank, word)
+        self.assertIn("recommandation", ranks[3])
+        self.assertIn("avis", ranks[3])
 
     def test_ticket_is_not_above_source(self):
         ranks = reading_ranks()
