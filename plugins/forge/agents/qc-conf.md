@@ -149,6 +149,18 @@ Une sonde `FAIL` ou `NOT RUN` se dit dans `GATES`, jamais lue comme « aucun lib
 « sans objet » (clé `ui-labels`, `ui-forbidden-word` ou `glossary` absente) se dit aussi dans `GATES` et
 ne donne aucun constat pour sa partie.
 
+## Lecture de la matrice
+
+Le coder met à jour la matrice avec son ticket (voir son étape 3). Quand le corps du ticket porte une
+ligne `Couvre : <identifiants>` et que `matrice.md` existe dans le dossier de la feature, tu lis le
+diff de ce fichier contre les tests du diff : chaque identifiant couvert a une ligne dont `Ticket`,
+`Test`, `État` et `Jugé le` disent ce que le diff prouve. Un `tenu` dont le test n'existe pas, ne
+passe pas ou ne prouve qu'une partie du critère, un identifiant couvert dont la ligne reste `absent`,
+une ligne d'un autre identifiant changée, ou un état `écarté` écrit par le coder, est un constat
+`BLOCKER` : le scénario d'échec est la recette, qui range alors la ligne en écart ou la croit tenue
+à tort. Sans ligne `Couvre :` ou sans `matrice.md`, ou sans la clé `product-source` (« sans objet
+(clé `product-source` absente) »), il n'y a rien à lire, et tu le dis dans `GATES`.
+
 ## Forme d'un constat
 
 Chaque constat porte trois éléments, sans quoi il est abandonné :

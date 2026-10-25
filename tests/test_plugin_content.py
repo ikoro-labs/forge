@@ -1161,13 +1161,31 @@ class Matrice(unittest.TestCase):
             self.assertIn(f"`{state}`", text)
 
     def test_the_design_skill_writes_the_matrix_and_lists_uncovered_ids(self) -> None:
-        """No F-NNNN: ticket #94, A6: feature-design écrit la matrice, chaque ticket cite ses identifiants, le découpage liste le reste."""
+        """No F-NNNN: ticket #94, A6: feature-design branche la matrice (l'écriture initiale revient à un autre ticket), chaque ticket cite ses identifiants, le découpage liste le reste."""
         skill = self.read("skills", "feature-design", "SKILL.md")
         self.assertIn("`matrice.md`", skill)
         self.assertIn("${CLAUDE_PLUGIN_ROOT}/scripts/matrice.py", skill)
         self.assertIn("--sans-ticket", skill)
         self.assertIn("identifiants", skill)
         self.assertIn("clé `product-source` absente", skill)
+
+    def test_the_coder_updates_the_matrix_rows_of_its_ticket(self) -> None:
+        """No F-NNNN: ticket #94, A7: le coder met à jour les lignes des identifiants de son ticket, avec preuve et date, et lance le script."""
+        coder = self.read("agents", "coder.md")
+        self.assertIn("`Couvre :", coder)
+        self.assertIn("`matrice.md`", coder)
+        self.assertIn("${CLAUDE_PLUGIN_ROOT}/scripts/matrice.py", coder)
+        for column in ("`Ticket`", "`Test`", "`État`", "`Jugé le`"):
+            self.assertIn(column, coder)
+        self.assertIn("clé `product-source` absente", coder)
+
+    def test_the_judge_checks_the_matrix_update(self) -> None:
+        """No F-NNNN: ticket #94, A7: qc-conf refuse une PR dont les lignes de la matrice ne disent pas ce que le diff prouve."""
+        judge = self.read("agents", "qc-conf.md")
+        self.assertIn("`matrice.md`", judge)
+        self.assertIn("`Couvre :", judge)
+        self.assertIn("BLOCKER", judge[judge.index("`matrice.md`"):])
+        self.assertIn("clé `product-source` absente", judge)
 
     def test_verify_judges_against_the_matrix(self) -> None:
         """No F-NNNN: ticket #94, A7: feature-verify se juge contre la matrice, pas contre la liste des PR fusionnées."""
