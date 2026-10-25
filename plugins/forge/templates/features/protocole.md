@@ -41,6 +41,8 @@ se coupe au premier ` | ` (la dernière partie garde le reste).
 
 Le parcours voulu, `parcours.md` (écran par écran, avec les mots exacts de l'écran), s'écrit avec le
 design d'une feature qui a des écrans ; il n'est pas une étape de la chaîne et n'a pas de `statut`.
+La matrice de traçabilité, `matrice.md` (une ligne par identifiant de la source, un état unique), se
+juge par `scripts/matrice.py` : elle non plus n'est pas une étape de la chaîne et n'a pas de `statut`.
 
 Une séance (`/forge:feature-brainstorm`) est permise à toute étape. Chaque document, sauf l'idée,
 s'accepte par `/forge:feature-accept`, tapée par un humain.

@@ -1143,5 +1143,55 @@ class Parcours(unittest.TestCase):
         self.assertIn("La spec ne sert jamais de référence de repli", page)
 
 
+class Matrice(unittest.TestCase):
+    """Ticket #94: la matrice de traçabilité d'une feature, jugée par une règle d'état unique."""
+
+    @staticmethod
+    def read(*parts: str) -> str:
+        return " ".join(support.PLUGIN.joinpath(*parts).read_text(encoding="utf-8").split())
+
+    def test_the_template_has_the_columns_the_script_reads(self) -> None:
+        """No F-NNNN: ticket #94, A1: le gabarit porte les colonnes de matrice.py et les cinq états."""
+        from matrice import COLUMNS, STATES, parse
+
+        text = (support.PLUGIN / "templates" / "features" / "matrice.md").read_text(encoding="utf-8")
+        self.assertIn("document: matrice", text)
+        self.assertTrue(parse(text))
+        for state in STATES:
+            self.assertIn(f"`{state}`", text)
+
+    def test_the_design_skill_writes_the_matrix_and_lists_uncovered_ids(self) -> None:
+        """No F-NNNN: ticket #94, A6: feature-design écrit la matrice, chaque ticket cite ses identifiants, le découpage liste le reste."""
+        skill = self.read("skills", "feature-design", "SKILL.md")
+        self.assertIn("`matrice.md`", skill)
+        self.assertIn("${CLAUDE_PLUGIN_ROOT}/scripts/matrice.py", skill)
+        self.assertIn("--sans-ticket", skill)
+        self.assertIn("identifiants", skill)
+        self.assertIn("clé `product-source` absente", skill)
+
+    def test_verify_judges_against_the_matrix(self) -> None:
+        """No F-NNNN: ticket #94, A7: feature-verify se juge contre la matrice, pas contre la liste des PR fusionnées."""
+        skill = self.read("skills", "feature-verify", "SKILL.md")
+        self.assertIn("${CLAUDE_PLUGIN_ROOT}/scripts/matrice.py", skill)
+        self.assertIn("--reste", skill)
+        self.assertIn("pas contre la liste des PR fusionnées", skill)
+        self.assertIn("clé `product-source` absente", skill)
+
+    def test_close_refuses_under_100_percent(self) -> None:
+        """No F-NNNN: ticket #94, A5: feature-close lance --cloture et refuse de clore sous 100 %."""
+        skill = self.read("skills", "feature-close", "SKILL.md")
+        self.assertIn("--cloture", skill)
+        self.assertIn("100 %", skill)
+        self.assertIn("refuse", skill)
+        self.assertIn("clé `product-source` absente", skill)
+
+    def test_the_protocol_and_the_page_tell_it(self) -> None:
+        """No F-NNNN: ticket #94, A1: le protocole nomme matrice.md ; la page de configuration cite le script et les entrées laissées à #96 et #100."""
+        self.assertIn("matrice.md", self.read("templates", "features", "protocole.md"))
+        page = " ".join((support.REPO_ROOT / "docs" / "installation.md").read_text(encoding="utf-8").split())
+        self.assertIn("matrice.py", page)
+        self.assertIn("--reste", page)
+
+
 if __name__ == "__main__":
     unittest.main()

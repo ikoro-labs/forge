@@ -53,6 +53,17 @@ Applique `${CLAUDE_PLUGIN_ROOT}/templates/features/protocole.md`, document `desi
      de l'ancienne), migration par lots, puis contract (retirer l'ancienne). Chaque étape est un
      ticket bloqué par la précédente.
 
+   **La matrice.** Chaque ticket cite les identifiants de la source qu'il couvre (une ligne
+   `Couvre : <identifiants>` dans son corps). Quand `matrice.md` existe dans le dossier de la
+   feature (gabarit `${CLAUDE_PLUGIN_ROOT}/templates/features/matrice.md`), reporte-y le ticket de
+   chaque identifiant, puis lance
+   `uv run --no-project --quiet python ${CLAUDE_PLUGIN_ROOT}/scripts/matrice.py --sans-ticket <matrice.md>` :
+   un identifiant listé n'est couvert par aucun ticket, et le découpage le nomme, dans la PR et dans
+   l'issue de suivi, à côté du ticket qui le prendra. Sans la clé `product-source`, l'étape est
+   « sans objet (clé `product-source` absente) » : pas de matrice. L'écriture de la matrice initiale
+   par la conception n'est pas décrite ici : elle viendra par son propre ticket, sur ce gabarit et
+   ce script.
+
    Découpe avec le skill de la clé `ticket-skill` quand elle est déclarée. Sinon, découpe à la
    main, dans l'ordre du §7 du design, et dis-le (« clé `ticket-skill` absente »).
 
