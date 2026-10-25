@@ -74,3 +74,32 @@ def severity_of(labels: set[str]) -> str | None:
 def deadlines(rule: Rule, opened: datetime) -> dict[str, datetime]:
     """The deadline of each stage: the opening of the ticket plus its delay."""
     return {STAGES[0]: opened + rule.take, STAGES[1]: opened + rule.merge, STAGES[2]: opened + rule.publish}
+
+
+@dataclass(frozen=True)
+class Ticket:
+    number: int
+    labels: set[str]
+    opened: datetime
+
+
+def take_deadline(ticket: Ticket, rules: dict[str, Rule]) -> datetime | None:
+    """When the ticket must be taken in charge; None without a severity or without a line for it."""
+    severity = severity_of(ticket.labels)
+    rule = rules.get(severity) if severity else None
+    return ticket.opened + rule.take if rule else None
+
+
+def order(tickets: list[Ticket], rules: dict[str, Rule]) -> list[Ticket]:
+    """The tickets by severity, then by nearest deadline to take in charge, then in the order given.
+
+    A ticket without a severity comes after `sev3`, one without a deadline after those that have one
+    of the same class. The sort is stable: the order given (the sub-issues') settles the rest.
+    """
+    def key(ticket: Ticket) -> tuple[int, bool, datetime]:
+        severity = severity_of(ticket.labels)
+        rank = CLASSES.index(severity) if severity else len(CLASSES)
+        deadline = take_deadline(ticket, rules)
+        return rank, deadline is None, deadline or datetime.max.replace(tzinfo=ticket.opened.tzinfo)
+
+    return sorted(tickets, key=key)

@@ -5,6 +5,7 @@
     python factory_slo.py budget <project> [--json] [--reference FILE]
     python factory_slo.py report <project> [--json] [--reference FILE] [--publier]
     python factory_slo.py changelog <project> --depuis DATE [--le DATE] [--reference FILE]
+    python factory_slo.py queue <project> <ticket> [<ticket> ...] [--json]
 
 `status` reads the `slo` key (`<sli> | <comparator> <target> | <window in days>`, one per line), computes
 each objective on its sliding window, its error budget and its state (`tenu`, `menacé`, `épuisé`),
@@ -26,6 +27,10 @@ nothing; with `--publier` it rewrites the report in one comment of the issue nam
 objectives go `menacé` or `épuisé`, or all back to `tenu`. `changelog` prints the section "Objectifs
 de service" of a release entry: the state of each objective at `--le` (now by default) and the
 `escaped-defect` tickets opened since `--depuis`. A key `slo-issue` absent is "sans objet".
+
+`queue` orders tickets (given in the order of the sub-issues) by severity class (`sev1`, `sev2`, `sev3`,
+then none), then by the nearest deadline to take them in charge according to the `sla` key, then in
+the order given. A key `sla` absent is "sans objet": the severity still sorts, no deadline is guessed.
 
 The data come from GitHub (`gh ... --json`, run from the project folder, so `gh` finds the
 repository itself), from git, and from the logs `token_audit.py` reads. Prints a Markdown table, or
@@ -59,6 +64,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "hooks"))
 
 import budget  # noqa: E402  the hooks' reader of the `budget-action` key
+import sla  # noqa: E402  the hooks' reader of the `sla` key and the severity classes
 import token_audit  # noqa: E402  the sibling script, as base_replay.py imports `usine`
 import usine  # noqa: E402
 
@@ -888,6 +894,45 @@ def run_changelog(args: argparse.Namespace, run: Runner, now: datetime) -> int:
     return 0
 
 
+def load_sla(project: Path) -> dict[str, sla.Rule] | None:
+    """The rules of the `sla` key, None when the key is absent; SloError when a line cannot be read."""
+    values = usine.load(project).get(sla.KEY)
+    if not values:
+        return None
+    rules, errors = sla.parse(values)
+    if errors:
+        raise SloError(f"clé `{sla.KEY}` mal formée :\n" + "\n".join(f"- {error}" for error in errors))
+    return rules
+
+
+ABSENT_SLA = f"sans objet (clé `{sla.KEY}` absente)"
+
+
+def run_queue(args: argparse.Namespace, run: Runner, now: datetime) -> int:
+    rules = load_sla(args.projet)
+    tickets = []
+    for number in args.tickets:
+        info = parse_stream(run(["gh", "issue", "view", str(number), "--json", "number,labels,createdAt"], args.projet))[0]
+        tickets.append(sla.Ticket(int(info["number"]), label_names(info), token_audit.parse_time(info["createdAt"])))
+    rows = []
+    for item in sla.order(tickets, rules or {}):
+        deadline = sla.take_deadline(item, rules or {})
+        rows.append({
+            "ticket": item.number, "gravite": sla.severity_of(item.labels),
+            "echeance": deadline.isoformat() if deadline else None,
+        })
+    note = ABSENT_SLA if rules is None else None
+    if args.json:
+        print(json.dumps({"file": rows, "echeances": note}, ensure_ascii=False, indent=2))
+        return 0
+    print("File des tickets, par gravité puis par échéance de prise en charge :")
+    for row in rows:
+        print(f"- #{row['ticket']} : {row['gravite'] or 'sans gravité'}, échéance {row['echeance'] or 'sans objet'}")
+    if note:
+        print(f"Échéances : {note}.")
+    return 0
+
+
 def main(argv: list[str] | None = None, run: Runner = run_command, now: datetime | None = None) -> int:
     parser = argparse.ArgumentParser(prog="factory_slo.py", description=__doc__.splitlines()[0])
     commands = parser.add_subparsers(dest="commande", required=True)
@@ -909,6 +954,10 @@ def main(argv: list[str] | None = None, run: Runner = run_command, now: datetime
     notes.add_argument("--depuis", type=_date, required=True, help="date de la version précédente, incluse")
     notes.add_argument("--le", type=_date, help="date de la version (maintenant par défaut)")
     notes.add_argument("--reference", type=Path, help="le dernier résultat du jeu de référence (JSON)")
+    file = commands.add_parser("queue", help="ordonne des tickets par gravité puis par échéance de prise en charge")
+    file.add_argument("projet", type=Path, help="le dossier du projet")
+    file.add_argument("tickets", type=int, nargs="+", help="les numéros de ticket, dans l'ordre des sous-issues")
+    file.add_argument("--json", action="store_true", help="rend du JSON au lieu de lignes")
     sli = commands.add_parser("sli", help="calcule les indicateurs de service")
     sli.add_argument("projet", type=Path, help="le dossier du projet")
     sli.add_argument("--depuis", type=_date, required=True, help="début de la fenêtre, inclus")
@@ -917,9 +966,12 @@ def main(argv: list[str] | None = None, run: Runner = run_command, now: datetime
     sli.add_argument("--reference", type=Path, help="le dernier résultat du jeu de référence (JSON)")
     args = parser.parse_args(argv)
 
-    if args.commande in ("status", "budget", "report", "changelog"):
+    if args.commande in ("status", "budget", "report", "changelog", "queue"):
         try:
-            handler = {"status": run_status, "budget": run_budget, "report": run_report, "changelog": run_changelog}[args.commande]
+            handler = {
+                "status": run_status, "budget": run_budget, "report": run_report, "changelog": run_changelog,
+                "queue": run_queue,
+            }[args.commande]
             return handler(args, run, now or datetime.now(tz=timezone.utc))
         except (RuntimeError, ValueError, KeyError, IndexError, OSError) as error:
             print(f"Calcul impossible : {error}", file=sys.stderr)

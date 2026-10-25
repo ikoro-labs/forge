@@ -47,5 +47,18 @@ class Classes(unittest.TestCase):
         self.assertIn("docs/gravite-et-sla.md", readme)
 
 
+class Skills(unittest.TestCase):
+    def test_feature_build_orders_the_frontier_by_severity_then_deadline(self) -> None:
+        """Ticket #60, critère 3 : `forge:feature-build` prend les tickets par gravité, puis par échéance, sev1 devant."""
+        skill = read("skills", "feature-build", "SKILL.md")
+        self.assertIn('factory_slo.py" queue', skill)
+        section = skill[skill.index("**La frontière**"):]
+        section = section[:section.index("Tu tiens trois listes")]
+        self.assertIn("Par gravité, puis par échéance", section)
+        self.assertIn("`sev1`", section)
+        self.assertIn("devant", section)
+        self.assertIn("clé `sla` absente", section)
+
+
 if __name__ == "__main__":
     unittest.main()

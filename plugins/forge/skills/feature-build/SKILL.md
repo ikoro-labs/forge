@@ -109,7 +109,15 @@ Dans cet ordre de priorité :
    agent-claimed`), commente la branche orpheline si elle existe sur `origin`, et traite-le comme
    prêt. Un ticket assigné sans `agent-claimed` est pris par un humain : tu n'y touches pas.
 3. **La frontière** : ouvert, `ready-for-agent`, aucun bloqueur ouvert, personne d'assigné, aucun
-   coder en vol. Dans l'ordre des sous-issues. Sous un `feature-freeze` actif (étape 0, point 8),
+   coder en vol. **Par gravité, puis par échéance**, puis dans l'ordre des sous-issues : lance
+   `uv run --no-project --quiet python "${CLAUDE_PLUGIN_ROOT}/scripts/factory_slo.py" queue <projet> <tickets de la frontière, dans l'ordre des sous-issues>`
+   et prends-les dans l'ordre qu'il rend (classes `sev1`, `sev2`, `sev3`, puis sans classe, et à
+   classe égale l'échéance de prise en charge la plus proche, d'après la clé `sla`). Un `sev1` passe
+   devant tout ticket qui n'est pas encore confié ; il ne passe ni devant un coder en vol, ni devant
+   un bloqueur ouvert (il n'est pas dans la frontière), et le compte rendu le dit. Sans la clé `sla`,
+   la commande répond « sans objet (clé `sla` absente) » pour les échéances : la gravité trie quand
+   même, l'ordre des sous-issues départage, et tu le dis dans le compte rendu. Une sortie non nulle
+   (clé `sla` mal formée) : arrête-toi et rends son message. Sous un `feature-freeze` actif (étape 0, point 8),
    seuls les tickets portant l'étiquette `bug` ou `escaped-defect` entrent dans la frontière : les
    autres attendent, restent `ready-for-agent`, non assignés, et le compte rendu du passage les
    nomme avec l'objectif épuisé. Le gel ne touche ni les PR ouvertes (priorité 1) ni les reprises.
