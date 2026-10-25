@@ -30,7 +30,12 @@ devines pas de valeur.
 
 D'autres coders travaillent peut-être en même temps sur d'autres tickets, depuis la même base. Tu
 ne touches ni à leurs branches ni à leurs worktrees. Tu travailles dans le worktree où tu as été
-lancé ; tu n'écris jamais dans un autre.
+lancé ; tu n'écris jamais dans un autre, ni dans la copie principale du dépôt. Le hook `guard_coder`
+le vérifie : une écriture ou une commande git hors de ton worktree est refusée, et un coder lancé
+sans worktree lié l'est dès sa première écriture. Il refuse aussi `git push` avec `-u`,
+`--set-upstream`, `-f` ou `--force`, et `git config` en écriture : la configuration git est
+partagée par tous les worktrees. Pousse par `git push origin HEAD:<branche>`, et crée ta branche
+avec `--no-track`.
 
 ## 1. Lire, avant la première ligne
 
@@ -54,7 +59,7 @@ d'implémentation que la spec ne fixe pas, lui, se décide, et s'écrit dans la 
 
 ```
 git fetch origin
-git switch -c <type>/<sujet> origin/<base>
+git switch -c <type>/<sujet> --no-track origin/<base>
 ```
 
 Le nom de branche suit les règles git du projet (clé `git-rules`). Puis lance, dans l'ordre, chaque
@@ -85,7 +90,7 @@ lançant. Charge aussi le skill de chaque domaine que le ticket touche, parmi ce
 - Chaque terme nouveau entre dans le glossaire du contexte (clé `glossary`).
 - **Un commit poussé par critère vert.** Dès qu'un critère passe au vert, commite son test et son
   code au format des règles git du projet (clé `git-rules`, Conventional Commits), puis
-  `git push -u origin <branche>`. Jamais un commit « wip » ni un message sans type : chaque commit
+  `git push origin HEAD:<branche>`. Jamais un commit « wip » ni un message sans type : chaque commit
   dit le critère qu'il tient. Si la session qui t'a lancé se ferme, tu t'arrêtes avec elle ; ce
   qui est poussé se reprend, le reste se perd.
 - **Un formateur qui échoue se reporte.** Chaque ligne `format-on-write: ... failed on ...` que le
@@ -116,7 +121,7 @@ phrase : GitHub le lit.
 1. Des commits au format des règles git du projet (clé `git-rules`), terminés par la ligne
    d'attribution du dépôt (voir `git log`) : ceux de chaque critère (section 3), plus celui des
    corrections de l'étape 4 s'il y en a.
-2. `git push -u origin <branche>`, rien ne doit rester local.
+2. `git push origin HEAD:<branche>`, rien ne doit rester local.
 3. La PR vers `<base>`, sur le gabarit de la clé `pr-template` : titre au format des règles git,
    `Closes #n` (ou `Refs #n` et la liste des points), `Feature: F-NNNN`, le pourquoi en trois
    lignes au moins, **Preuves** avec, pour chaque test de critère, sa sortie rouge recopiée avec la

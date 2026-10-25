@@ -120,6 +120,13 @@ Alors :
 Puis passe à l'étape 3 si la file de revue n'est pas vide ; sinon attends la notification d'un
 coder. N'invente jamais la sortie d'un coder qui n'a pas rendu.
 
+Note la tête de la copie principale (`git rev-parse HEAD`, lancé dans le dépôt où tu travailles)
+avant le premier lancement du passage. À la sortie de chaque coder, avant de lire sa sortie, vérifie
+que la copie principale n'a pas bougé : `git status --porcelain` vide et même tête. Sinon le coder a
+écrit hors de son worktree : pose `needs-your-attention` sur le ticket, dis ce qui a bougé dans un
+commentaire, **sans lancer de revue** de sa PR, et ne touche pas à la copie principale. Si tu as
+toi-même avancé la tête dans le passage (une remise à jour de la base), note la nouvelle.
+
 À la sortie d'un coder, écris-la dans un fichier, puis :
 
 ```
