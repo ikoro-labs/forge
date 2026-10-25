@@ -539,7 +539,9 @@ class SourceIdentifiers(unittest.TestCase):
         self.assertIn("`product-source`", skill)
         self.assertIn("export Markdown", skill)
         self.assertIn("${CLAUDE_PLUGIN_ROOT}/scripts/source_ids.py", skill)
-        self.assertIn("LETTRES-NOMBRE", skill)
+        self.assertIn("avec ou sans tiret", skill)
+        self.assertIn("`C01`, `G0`", skill)
+        self.assertIn("ne remplace jamais un identifiant d'origine", skill)
         self.assertIn("`ready-for-human`", skill)
         self.assertIn("liste vide", skill)
 

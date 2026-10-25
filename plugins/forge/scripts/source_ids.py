@@ -4,8 +4,11 @@
 
 The contract, which the skill `feature-spec` repeats:
 
-- An **identifier** is `LETTERS-NUMBER`, capitals and digits, then digits joined by dots: `EX-12`,
-  `CT-3`, `RG-3.1`. An **identified element** of the source is a line of the Markdown source that
+- An **identifier** is the origin identifier of the source, with or without a hyphen: either capitals
+  and digits, a hyphen, then a number (`EXI-01`, `RG-3.1`), or one to five capitals glued to a number
+  (`C01`, `G0`); the number may take sub-numbers joined by dots. An ordinary word is no identifier
+  (`Note`, `Phase 2`, `TVA 20` hold no capitals glued to digits), but a capital and a digit at the line
+  start (`Q3 : bilan`, `A4`) is one: the count then lists it, loudly, and the author sets it right. An **identified element** of the source is a line of the Markdown source that
   begins with an identifier, after at most a list marker, heading marks, a table bar, bold marks or
   a bracket. An identifier cited in the middle of a sentence is not an element. Lines inside a
   fenced code block are ignored.
@@ -16,8 +19,9 @@ The contract, which the skill `feature-spec` repeats:
   (a list marker may precede it). It is accepted when the file exists and names the identifier,
   the date is ISO, and the role (or GitHub account, with or without `@`) is a value of the key
   `source-author`.
-- An element with no identifier in the source is given one by the spec, in the same form, with the
-  source line it stands for; the script cannot see those and does not count them.
+- An element with no identifier at all in the source is given one by the spec, with the source line it
+  stands for; it never replaces an origin identifier, and the script cannot see those and does not
+  count them.
 
 The keys of `docs/agents/usine.md` it reads: `product-source` (the source files, Markdown only: any
 other format is BLOCKED, and nothing converts it) and `source-author`.
@@ -44,7 +48,7 @@ import usine  # noqa: E402
 
 SOURCE_KEY = "product-source"
 AUTHOR_KEY = "source-author"
-IDENTIFIER = r"[A-Z][A-Z0-9]*-\d+(?:\.\d+)*"
+IDENTIFIER = r"(?:[A-Z][A-Z0-9]*-|[A-Z]{1,5})\d+(?:\.\d+)*"
 MARKDOWN = (".md", ".markdown")
 
 _ELEMENT = re.compile(

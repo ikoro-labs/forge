@@ -61,6 +61,19 @@ class Counting(unittest.TestCase):
         code, out = run({"source.md": "- EX-1 : a\n", "spec.md": "EX-12, EX-1.2 et AEX-1\n"})
         self.assertEqual((code, out.split("\t")[:2]), (1, ["MISSING", "EX-1"]))
 
+    def test_identifiers_without_a_hyphen_are_elements_too(self) -> None:
+        """No F-NNNN: ticket #92, A2 et A3: C01 et G0 en tête de ligne sont des éléments, listés absents, code 1."""
+        source = "- EXI-01 : a\n- C01 : calcul\n| G0 | gabarit |\n"
+        self.assertEqual(ids_of_source(source), ["EXI-01", "C01", "G0"])
+        code, out = run({"source.md": source, "spec.md": "Reprend EXI-01.\n"})
+        self.assertEqual(code, 1)
+        self.assertEqual(out.splitlines()[:2], ["MISSING\tC01\tsource.md\t", "MISSING\tG0\tsource.md\t"])
+
+    def test_an_ordinary_word_at_the_line_start_is_not_an_identifier(self) -> None:
+        """No F-NNNN: ticket #92, A2: un mot, un nombre ou une phrase en tête de ligne n'est pas un identifiant."""
+        source = "Note 3 : à lire\n- Phase 2 : essai\nTVA 20 % due\n- Contrôle C01x\n1. Étape\nCe C01 est cité en passant.\n"
+        self.assertEqual(ids_of_source(source), [])
+
 
 class Format(unittest.TestCase):
     def test_a_pdf_source_blocks_and_asks_for_a_markdown_export(self) -> None:
