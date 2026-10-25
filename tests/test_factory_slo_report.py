@@ -15,6 +15,7 @@ from test_factory_slo import USINE, build, isolate
 from factory_slo import main
 
 NOW = datetime(2026, 11, 1, tzinfo=timezone.utc)
+URL = "https://github.com/ikoro-labs/forge"
 COMMENTS = "repos/{owner}/{repo}/issues/55/comments"
 ATTENTION = "needs-your-attention"
 LATER = datetime(2027, 1, 1, tzinfo=timezone.utc)
@@ -46,7 +47,7 @@ class Issue:
             if self.pin_fails:
                 raise RuntimeError("`gh api graphql` a échoué : Resource not accessible")
             self.pinned.append(args[-1].removeprefix("id="))
-            return "{}"
+            return json.dumps({"data": {"pinIssueComment": {"clientMutationId": None}}})  # corps GraphQL de la réponse
         if args[0] == "api" and args[1] == COMMENTS:
             self.writes.append(args)
             ident = 700 + len(self.comments)
@@ -55,16 +56,18 @@ class Issue:
         if args[:3] == ["api", "-X", "PATCH"]:
             self.writes.append(args)
             ident = int(args[3].rsplit("/", 1)[1])
-            next(c for c in self.comments if c["id"] == ident)["body"] = args[5].removeprefix("body=")
-            return "{}"
+            comment = next(c for c in self.comments if c["id"] == ident)
+            comment["body"] = args[5].removeprefix("body=")
+            return json.dumps({**comment, "node_id": f"IC_{ident}"})  # le PATCH rend le commentaire, en JSON
         if args[:2] == ["issue", "edit"]:
             self.writes.append(args)
             (self.labels.add if args[3] == "--add-label" else self.labels.discard)(args[4])
-            return ""
+            return f"{URL}/issues/55\n"  # le vrai `gh issue edit` imprime l'URL du ticket, pas du JSON
         if args[:2] == ["issue", "comment"]:
             self.writes.append(args)
-            self.comments.append({"id": 700 + len(self.comments), "body": args[4]})
-            return ""
+            ident = 700 + len(self.comments)
+            self.comments.append({"id": ident, "body": args[4]})
+            return f"{URL}/issues/55#issuecomment-{ident}\n"  # le vrai `gh issue comment` imprime l'URL du commentaire
         return self.world.runner(cmd, cwd)
 
 
@@ -214,6 +217,43 @@ class Report(unittest.TestCase):
         self.report("--publier")
         self.assertIn(ATTENTION, self.issue.labels)
         self.assertIn("épuisé", self.attention_comments()[0])
+
+    def test_a_first_publication_that_sets_the_label_comments_the_reason_and_exits_0(self) -> None:
+        """Ticket #84 : `gh issue edit` et `gh issue comment` impriment une URL, que la publication ne décode pas."""
+        for slo in (THREATENED, EXHAUSTED):
+            with self.subTest(slo=slo):
+                self.setUp()
+                self.configure(slo)
+                code, out, err = self.report("--publier")
+                self.assertEqual((code, err), (0, ""))
+                self.assertIn(ATTENTION, self.issue.labels)
+                self.assertIn("raison commentée sur #55", out)
+                self.assertEqual(len(self.attention_comments()), 1)
+
+    def test_removing_the_label_with_its_reason_exits_0(self) -> None:
+        """Ticket #84 : le retrait de l'étiquette et son commentaire, dont `gh` rend des URL, sortent en 0."""
+        self.configure(THREATENED)
+        self.report("--publier")
+        self.configure(HELD)
+        code, out, err = self.report("--publier")
+        self.assertEqual((code, err), (0, ""))
+        self.assertIn("étiquette `needs-your-attention` retirée de #55", out)
+        self.assertEqual(len(self.attention_comments()), 2)
+
+    def test_a_failing_label_command_stays_an_error(self) -> None:
+        """Ticket #84 : ne plus décoder la sortie ne cache pas l'échec de la commande."""
+        self.configure(THREATENED)
+        real = self.issue
+
+        def failing(cmd: list[str], cwd: Path) -> str:
+            if cmd[:3] == ["gh", "issue", "edit"]:
+                raise RuntimeError("`gh issue edit` a échoué : forbidden")
+            return real(cmd, cwd)
+
+        self.issue = failing
+        code, _, err = self.report("--publier")
+        self.assertNotEqual(code, 0)
+        self.assertIn("forbidden", err)
 
     def test_a_held_slo_does_not_set_the_label(self) -> None:
         self.configure(HELD)

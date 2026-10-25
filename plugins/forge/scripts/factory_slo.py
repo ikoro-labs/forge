@@ -736,6 +736,10 @@ def publish(project: Path, document: dict, run: Runner = run_command) -> list[st
     def gh(*args: str) -> list:
         return parse_stream(run(["gh", *args], project))
 
+    def gh_text(*args: str) -> None:
+        # `gh issue edit` et `gh issue comment` impriment une URL, pas du JSON : seul leur échec compte.
+        run(["gh", *args], project)
+
     comments = [c for c in gh("api", "--paginate", f"repos/{{owner}}/{{repo}}/issues/{ticket}/comments") if isinstance(c, dict)]
     mine = next((c for c in comments if MARKER in str(c.get("body"))), None)
     found = STATES_MARKER.search(str(mine.get("body"))) if mine else None
@@ -767,14 +771,14 @@ def publish(project: Path, document: dict, run: Runner = run_command) -> list[st
             actions.append(f"commentaire non épinglé : {error}")
     if now_bad:
         if not posed:
-            gh("issue", "edit", str(ticket), "--add-label", ATTENTION)
+            gh_text("issue", "edit", str(ticket), "--add-label", ATTENTION)
             actions.append(f"étiquette `{ATTENTION}` posée sur #{ticket}")
         if now_bad != before:
-            gh("issue", "comment", str(ticket), "--body", f"`{ATTENTION}` : des objectifs de service ne tiennent plus.\n\n{reasons(document)}")
+            gh_text("issue", "comment", str(ticket), "--body", f"`{ATTENTION}` : des objectifs de service ne tiennent plus.\n\n{reasons(document)}")
             actions.append(f"raison commentée sur #{ticket}")
     elif posed and was_set and all_held:
-        gh("issue", "edit", str(ticket), "--remove-label", ATTENTION)
-        gh("issue", "comment", str(ticket), "--body", f"`{ATTENTION}` retirée : tous les objectifs de service sont repassés à `tenu`.")
+        gh_text("issue", "edit", str(ticket), "--remove-label", ATTENTION)
+        gh_text("issue", "comment", str(ticket), "--body", f"`{ATTENTION}` retirée : tous les objectifs de service sont repassés à `tenu`.")
         actions.append(f"étiquette `{ATTENTION}` retirée de #{ticket}, avec sa raison")
     return actions
 
