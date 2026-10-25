@@ -119,6 +119,17 @@ class Events(unittest.TestCase):
                 for agent in ("forge:qc-conf", "forge:qc-gate", "forge:staff-engineer", "pricing-arbiter"):
                     with self.subTest(agent=agent):
                         self.assertIn("never writes", refusal(self.event(agent, "Write", write)) or "")
+                # Ticket #100: the judge and the second reader of the end-to-end review, on their prefixed names.
+                for agent in ("forge:review-judge", "forge:review-recheck"):
+                    with self.subTest(agent=agent):
+                        self.assertIn("never writes", refusal(self.event(agent, "Write", write)) or "")
+                        self.assertIsNotNone(refusal(self.event(agent, "Bash", {"command": "git commit -m x"})))
+                        self.assertIsNotNone(refusal(self.event(agent, "Bash", {"command": "cat a > b"})))
+                        self.assertIsNone(refusal(self.event(agent, "Bash", {"command": "git show HEAD:docs/x.md"})))
+                        self.assertIsNone(refusal(self.event(agent, "Read", {"file_path": "x"})))
+                for agent in ("review-judge", "review-recheck", "forge:review-run"):
+                    with self.subTest(unprefixed=agent):
+                        self.assertIsNone(refusal(self.event(agent, "Write", write)))
                 self.assertIsNone(refusal(self.event("forge:coder", "Write", write)))
                 self.assertIsNone(refusal(self.event("forge:coder", "Bash", {"command": "rm -rf x"})))
                 self.assertIsNone(refusal(self.event("forge:qc-conf", "Read", {"file_path": "x"})))

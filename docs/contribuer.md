@@ -52,7 +52,8 @@ Les noms de forge sont préfixés : `/forge:qc` pour un skill, `forge:coder` pou
 plugins/forge/                    le plugin
   .claude-plugin/plugin.json      son manifeste, seul endroit qui porte sa version
   .claude-plugin/icon.png         son icône, l'export de docs/logo.svg
-  agents/                         coder, qc-gate, qc-conf, staff-engineer, product-owner
+  agents/                         coder, qc-gate, qc-conf, staff-engineer, product-owner,
+                                  review-judge, review-recheck
   skills/                         qc, feature-build, feature-*, codebase-design, domain-modeling,
                                   improve-codebase-architecture, tdd, audit-jetons, slo
   hooks/                          hooks.json, les gardes, les sorties raccourcies, la passation

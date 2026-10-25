@@ -322,7 +322,7 @@ clé. Une clé absente rend sa capacité « sans objet (clé `<nom>` absente) »
 agent n'en suppose une : le projet qui n'a pas d'interface n'en déclare aucune. `scripts/preuves_ecran.py`
 les lit et dit, sans avis, ce que chacune déclare et si les captures que la matrice attend sont jointes à
 la PR. `forge:coder` s'en sert pour la section **Preuves**, `forge:qc-gate` mesure, `forge:qc-conf` juge
-et `forge:feature-verify` relie le critère à sa capture. Éprouvé sous Linux seulement, sur des
+et `forge:feature-verify` relie le critère à sa capture ; `forge:feature-review` s'en sert pour jouer le parcours sur l'application réelle. Éprouvé sous Linux seulement, sur des
 fichiers écrits à la main, et sur aucun vrai poste.
 
 `screenshot-command` : la commande qui prend des captures du navigateur sans écran (en CI comme en

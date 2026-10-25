@@ -17,7 +17,28 @@ COUVERT (screen, theme, size, file), NON-JOUE (screen, reason), MANQUE (screen, 
 no reason), INVALID (the line, the reason: a screen the path does not hold, an unknown theme or size, an
 empty reason, a capture file that does not exist under `--captures`), ENVIRONNEMENT (passed through) and
 SANS-ENVIRONNEMENT. Exit 0 when none of MANQUE, INVALID or SANS-ENVIRONNEMENT is printed, 1 otherwise,
-2 when a file is unreadable or the call wrong. The output is UTF-8. The standard library only.
+2 when a file is unreadable or the call wrong.
+
+    python revue_bout_en_bout.py verdict <verdict.tsv> --matrice <matrice.md> [--usine FILE] [--root DIR]
+        [--manifeste F] [--captures DIR] [--relecture F] [--appliquer --date AAAA-MM-JJ] [--tickets]
+
+The judge (`forge:review-judge`) writes one line per identifier of the matrix that is not `écarté`:
+`ELEMENT <id> <état> <gravité> <Écran n|-> <capture|-> <constat>`. The state is `tenu`, `partiel`, `absent`
+or `contraire` (the single rule of `matrice.md`; `écarté` belongs to the author of the source), the severity
+`bloquant`, `majeur` or `mineur` for a gap and `-` for a `tenu`, which needs a capture. Lines starting
+with `#` are prose for the report. One line per finding: INVALID, UNKNOWN (not in the matrix), REFUSED (an
+`écarté` row), DUPLICATE or CONTRADICTION (one identifier, several lines), NON-JUGE (a row nobody judged),
+SANS-FICHIER (a capture that is no file under `--captures`), HORS-MANIFESTE (a capture the run did not
+take), SUSPECT (a `tenu` whose finding describes a lack; informative), A-RELIRE (a `tenu` with no second
+reading yet), NON-RELU and CONTESTE (the second reading, `LECTURE <id> <confirmé|contesté> <raison>`, did
+not confirm it), then OK. Exit 0 only when nothing blocks.
+
+With a clean verdict, `--appliquer` writes the state, the capture and the date of each judged row into the
+matrix (`--date` is required; the new text must pass `matrice.py` or nothing is written, NON-APPLIQUE) and
+prints APPLIQUE; `--tickets` prints one TICKET line per severity and batch of the spec, worst first:
+severity, batch, identifiers, captures, findings.
+
+The output is UTF-8. The standard library only.
 """
 
 from __future__ import annotations

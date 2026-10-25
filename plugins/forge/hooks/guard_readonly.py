@@ -2,7 +2,8 @@
 
 Plugin hooks run for every agent, so this one first reads `agent_type`. Two lists apply:
 
-- `forge:qc-conf`, `forge:staff-engineer`, `forge:product-owner`, and every agent the project
+- `forge:qc-conf`, `forge:staff-engineer`, `forge:product-owner`, the judge and the second reader
+  of the end-to-end review (`forge:review-judge`, `forge:review-recheck`), and every agent the project
   names with the `readonly-agent` key of `docs/agents/usine.md` (its domain arbiter, say), run
   on an allow list: a shell command passes only when each of its simple commands is a read
   (`git show`, `gh pr view`, `grep`, a GET by `gh api`...) or starts with a command the project
@@ -36,7 +37,10 @@ from guard_git import (
 from usine import load, project_root
 
 GATE = "forge:qc-gate"
-READERS = frozenset({"forge:qc-conf", "forge:staff-engineer", "forge:product-owner"})
+READERS = frozenset(
+    {"forge:qc-conf", "forge:staff-engineer", "forge:product-owner"}
+    | {"forge:review-judge", "forge:review-recheck"}
+)
 WRITE_TOOLS = frozenset({"Edit", "Write", "MultiEdit", "NotebookEdit"})
 
 READ_COMMANDS = frozenset(

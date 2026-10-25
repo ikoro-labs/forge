@@ -30,6 +30,8 @@ AGENT_LEVELS = {
     "qc-conf": "opus",
     "staff-engineer": "opus",
     "product-owner": "opus",
+    "review-judge": "opus",
+    "review-recheck": "opus",
 }
 # Thinking is billed as output: each agent thinks as long as its task needs, no longer.
 AGENT_EFFORTS = {
@@ -38,6 +40,8 @@ AGENT_EFFORTS = {
     "qc-conf": "medium",
     "staff-engineer": "high",
     "product-owner": "medium",
+    "review-judge": "high",
+    "review-recheck": "medium",
 }
 # Only an agent that takes everything from its prompt and from `docs/agents/usine.md` starts
 # without the project's CLAUDE.md files.
@@ -70,7 +74,7 @@ class Frontmatter(unittest.TestCase):
     def test_the_plugin_has_its_agents_and_skills(self) -> None:
         self.assertEqual(
             {path.stem for path in AGENTS},
-            {"coder", "qc-gate", "qc-conf", "staff-engineer", "product-owner"},
+            {"coder", "qc-gate", "qc-conf", "staff-engineer", "product-owner", "review-judge", "review-recheck"},
         )
         self.assertIn("qc", names())
         self.assertIn("feature-build", names())
@@ -93,7 +97,7 @@ class Frontmatter(unittest.TestCase):
                 self.assertEqual(set(fields) - SKILL_FIELDS, set())
 
     def test_the_judges_have_no_write_tool(self) -> None:
-        for agent in ("qc-gate", "qc-conf", "staff-engineer", "product-owner"):
+        for agent in ("qc-gate", "qc-conf", "staff-engineer", "product-owner", "review-judge", "review-recheck"):
             with self.subTest(agent=agent):
                 tools = {tool.strip() for tool in frontmatter(support.PLUGIN / "agents" / f"{agent}.md")["tools"].split(",")}
                 self.assertEqual(tools & {"Edit", "Write", "MultiEdit", "NotebookEdit", "Agent"}, set())

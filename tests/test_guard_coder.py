@@ -54,6 +54,12 @@ class CoderActs(unittest.TestCase):
         self.assertIsNone(refusal("Skill", {"skill": "tdd"}))
         self.assertIsNone(refusal("Skill", {"skill": "forge:feature-status"}))
 
+    def test_the_end_to_end_review_is_refused_under_both_names(self) -> None:
+        """Ticket #100: the judge of the review is not the agent that coded."""
+        for skill in ("feature-review", "/feature-review", "forge:feature-review", "/forge:feature-review"):
+            with self.subTest(skill=skill):
+                self.assertIn("review", refusal("Skill", {"skill": skill}) or "")
+
 
 class SharedConfiguration(unittest.TestCase):
     """#65: the coder never writes the configuration shared by every worktree."""

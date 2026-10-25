@@ -323,5 +323,90 @@ class Outputs(unittest.TestCase):
         self.assertNotIn("EXI-01", "".join(line for line in out.splitlines() if line.startswith("TICKET")))
 
 
+def read(*parts: str) -> str:
+    return " ".join(support.PLUGIN.joinpath(*parts).read_text(encoding="utf-8").split())
+
+
+class Contents(unittest.TestCase):
+    """The skill and the two agents say what the ticket asks, and the guards name them."""
+
+    def test_the_judge_and_the_second_reader_cannot_write_and_are_guarded(self) -> None:
+        """No F-NNNN: ticket #100, A1: un juge distinct de celui qui a codé, en lecture seule."""
+        import guard_coder
+        import guard_readonly
+
+        for agent in ("review-judge", "review-recheck"):
+            with self.subTest(agent=agent):
+                tools = read("agents", f"{agent}.md").split("tools:", 1)[1].split("model:", 1)[0]
+                for forbidden in ("Edit", "Write", "MultiEdit", "NotebookEdit", "Agent"):
+                    self.assertNotIn(forbidden, tools)
+                self.assertIn(f"forge:{agent}", guard_readonly.READERS)
+        self.assertIn("forge:feature-review", guard_coder.REVIEW_SKILLS)
+
+    def test_the_judge_and_the_second_reader_are_two_agents_and_the_execution_stays_with_the_skill(self) -> None:
+        """No F-NNNN: ticket #100, A1: l'exécution est séparée du jugement, comme qc-gate l'est de qc-conf."""
+        skill = read("skills", "feature-review", "SKILL.md")
+        self.assertIn("forge:review-judge", skill)
+        self.assertIn("forge:review-recheck", skill)
+        self.assertIn("distinct du juge", skill)
+        self.assertIn("L'exécution reste dans ta session", skill)
+
+    def test_the_run_uses_the_keys_of_the_factory_and_never_judges_without_a_capture(self) -> None:
+        """No F-NNNN: ticket #100, A2: les clés de capture, « sans objet » quand elles manquent, jamais de jugement sans capture."""
+        skill = read("skills", "feature-review", "SKILL.md")
+        for key in ("journey-replay", "screenshot-command", "recording-command", "browser-drive", "computer-use-host"):
+            self.assertIn(f"`{key}`", skill)
+        self.assertIn("sans objet (clé `<nom>` absente)", skill)
+        self.assertIn("jamais** un écran d'après le code", skill)
+        self.assertIn("en clair et en sombre, sur bureau et sur mobile", skill)
+        self.assertIn("jamais en CI", skill)
+
+    def test_the_judge_judges_against_the_source_never_the_diff(self) -> None:
+        """No F-NNNN: ticket #100, A3: chaque écran est confronté à la source (exigence, parcours, glossaire)."""
+        judge = read("agents", "review-judge.md")
+        self.assertIn("contre la source, jamais contre le diff ni contre le ticket", judge)
+        for key in ("`product-source`", "`parcours.md`", "`glossary`"):
+            self.assertIn(key, judge)
+        self.assertIn("règle d'état", judge)
+
+    def test_the_three_severities_have_their_fixed_definitions(self) -> None:
+        """No F-NNNN: ticket #100, A4: bloquant, majeur, mineur, aux définitions du ticket, au juge comme au skill."""
+        for text in (read("agents", "review-judge.md"), read("skills", "feature-review", "SKILL.md")):
+            self.assertIn("`bloquant` : l'expert le voit en quelques minutes, et cela contredit sa demande ou rend l'écran incompréhensible", text)
+            self.assertIn("`majeur` : cela gêne le travail ou la confiance", text)
+            self.assertIn("`mineur` : le reste", text)
+
+    def test_the_skill_says_who_publishes_the_tickets_and_under_which_label(self) -> None:
+        """No F-NNNN: ticket #100, A5: qui publie les tickets et sous quelle étiquette ; le rapport enrichit la page de la feature."""
+        skill = read("skills", "feature-review", "SKILL.md")
+        self.assertIn("C'est la session qui lance ce skill qui les publie", skill)
+        self.assertIn("`ready-for-agent`", skill)
+        self.assertIn("critère de sortie", skill)
+        self.assertIn("sans en créer une nouvelle", skill)
+        self.assertIn("`recette.md`", skill)
+
+    def test_the_second_reading_is_not_the_judge(self) -> None:
+        """No F-NNNN: ticket #100, A6: la seconde lecture des tenu est un agent distinct, avant publication."""
+        recheck = read("agents", "review-recheck.md")
+        self.assertIn("Tu n'es ni le juge", recheck)
+        self.assertIn("décrit un manque", recheck)
+        self.assertIn("se contredit-il d'une section à l'autre", recheck)
+        self.assertNotEqual(read("agents", "review-recheck.md"), read("agents", "review-judge.md"))
+
+    def test_what_ran_on_one_system_only_is_said(self) -> None:
+        """No F-NNNN: ticket #100, A7: le skill dit ce qui n'a tourné que sous Linux, sans vrai navigateur."""
+        skill = read("skills", "feature-review", "SKILL.md")
+        self.assertIn("sous Linux", skill)
+        self.assertIn("Aucun vrai navigateur ni aucune application réelle", skill)
+        self.assertIn("SYSTEME", skill)
+
+    def test_the_prose_has_no_em_dash_and_names_no_project(self) -> None:
+        """No F-NNNN: ticket #100: la prose du plugin est sans tiret cadratin et générique."""
+        for parts in (("agents", "review-judge.md"), ("agents", "review-recheck.md"), ("skills", "feature-review", "SKILL.md"),
+                      ("scripts", "revue_bout_en_bout.py")):
+            with self.subTest(file="/".join(parts)):
+                self.assertNotIn(chr(0x2014), read(*parts))
+
+
 if __name__ == "__main__":
     unittest.main()
