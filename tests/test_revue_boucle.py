@@ -112,3 +112,69 @@ class Gate(unittest.TestCase):
         code, out = porte("RESULT: PR\nPR: #3\n")
         self.assertEqual(code, 1)
         self.assertIn("FERMEE", out)
+
+
+def journal_run(*verdicts: str) -> tuple[int, str]:
+    """Record each verdict as a round of the journal, then read the returns: the last call's code and output."""
+    with tempfile.TemporaryDirectory() as folder:
+        root = Path(folder)
+        for text in verdicts:
+            (root / "verdict.tsv").write_text(text, encoding="utf-8")
+            with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                main(["tour", str(root / "journal.tsv"), str(root / "verdict.tsv")])
+        out = io.StringIO()
+        with redirect_stdout(out), redirect_stderr(io.StringIO()):
+            code = main(["retours", str(root / "journal.tsv")])
+        return code, out.getvalue()
+
+
+def line(identifier: str, state: str) -> str:
+    severity = "-" if state == "tenu" else "majeur"
+    return f"ELEMENT\t{identifier}\t{state}\t{severity}\tÉcran 1\te1.png\tconstat\n"
+
+
+class Loop(unittest.TestCase):
+    def test_a_gap_seen_again_after_its_fix_is_a_return(self) -> None:
+        """No F-NNNN: ticket #101, un écart encore non tenu au tour suivant revient une fois, la boucle continue."""
+        code, out = journal_run(line("EXI-01", "absent"), line("EXI-01", "partiel"))
+        self.assertEqual(code, 0)
+        self.assertIn("RETOUR\tEXI-01\t1", out)
+        self.assertNotIn("ARRET", out)
+
+    def test_a_gap_that_returns_twice_stops_the_loop_and_goes_back_to_the_human(self) -> None:
+        """No F-NNNN: ticket #101, l'arrêt sur un écart revenu deux fois, nommé par son identifiant de la source."""
+        code, out = journal_run(line("EXI-01", "absent"), line("EXI-01", "partiel"), line("EXI-01", "absent"))
+        self.assertEqual(code, 1)
+        self.assertIn("ARRET\tEXI-01\t2", out)
+
+    def test_a_fixed_gap_returns_nothing(self) -> None:
+        """No F-NNNN: ticket #101, un écart repassé tenu ne revient pas et n'arrête rien."""
+        code, out = journal_run(line("EXI-01", "absent"), line("EXI-01", "tenu"))
+        self.assertEqual(code, 0)
+        self.assertNotIn("RETOUR", out)
+
+    def test_a_regression_counts_as_a_return(self) -> None:
+        """No F-NNNN: ticket #101, un écart corrigé puis rouvert compte : l'identifiant, non le ticket, fait foi."""
+        code, out = journal_run(line("EXI-01", "absent"), line("EXI-01", "tenu"), line("EXI-01", "contraire"), line("EXI-01", "tenu"))
+        self.assertEqual(code, 0)
+        self.assertIn("RETOUR\tEXI-01\t1", out)
+        code, out = journal_run(line("EXI-01", "absent"), line("EXI-01", "tenu"), line("EXI-01", "contraire"),
+                                line("EXI-01", "tenu"), line("EXI-01", "partiel"))
+        self.assertEqual(code, 1)
+        self.assertIn("ARRET\tEXI-01\t2", out)
+
+    def test_another_element_is_counted_apart(self) -> None:
+        """No F-NNNN: ticket #101, deux éléments différents ne s'additionnent pas."""
+        code, out = journal_run(line("EXI-01", "absent") + line("C01", "tenu"), line("EXI-01", "tenu") + line("C01", "absent"))
+        self.assertEqual(code, 0)
+        self.assertNotIn("ARRET", out)
+
+    def test_an_unreadable_verdict_never_enters_the_journal(self) -> None:
+        """No F-NNNN: ticket #101, un verdict illisible n'entre pas au journal : le compte des retours reste fiable."""
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / "verdict.tsv").write_text("n'importe quoi\n", encoding="utf-8")
+            with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                code = main(["tour", str(root / "journal.tsv"), str(root / "verdict.tsv")])
+            self.assertEqual(code, 1)
+            self.assertFalse((root / "journal.tsv").exists())

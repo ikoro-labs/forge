@@ -41,10 +41,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "hooks"))
 
 import matrice  # noqa: E402
 import preuves_ecran  # noqa: E402
+import revue_bout_en_bout  # noqa: E402
 import usine  # noqa: E402
 
+# "Un écart qui revient deux fois" (the ticket of the loop): the number of returns that sends it back to the human.
 MAX_RETURNS = 2
-STATES = ("tenu", "partiel", "absent", "contraire")
 
 
 def _print(*fields: str) -> None:
@@ -107,6 +108,52 @@ def porte(args: argparse.Namespace) -> int:
     return 0
 
 
+def _rounds(journal: Path) -> dict[int, dict[str, str]]:
+    """The journal as {round: {identifier: state}}; no file, no round."""
+    rounds: dict[int, dict[str, str]] = {}
+    if journal.is_file():
+        for line in journal.read_text(encoding="utf-8").splitlines():
+            fields = line.split("\t")
+            if len(fields) == 4 and fields[0] == "TOUR" and fields[1].isdigit():
+                rounds.setdefault(int(fields[1]), {})[fields[2]] = fields[3]
+    return rounds
+
+
+def tour(args: argparse.Namespace) -> int:
+    """Append the judged elements of a verdict to the journal as the next round."""
+    entries, invalid = revue_bout_en_bout._verdict_entries(Path(args.verdict).read_text(encoding="utf-8"))
+    if invalid or not entries:
+        for subject, reason in invalid:
+            _print("INVALID", subject, reason)
+        if not entries and not invalid:
+            _print("INVALID", "verdict", "aucune ligne ELEMENT : rien à inscrire au journal")
+        return 1
+    journal = Path(args.journal)
+    number = max(_rounds(journal), default=0) + 1
+    with journal.open("a", encoding="utf-8", newline="\n") as handle:
+        for entry in entries:
+            handle.write(f"TOUR\t{number}\t{entry['id']}\t{entry['state']}\n")
+    _print("TOUR", str(number), f"{len(entries)} éléments inscrits")
+    return 0
+
+
+def retours(args: argparse.Namespace) -> int:
+    """The returns of each gap, and the stop when one returned MAX_RETURNS times."""
+    history: dict[str, list[bool]] = {}
+    for _, states in sorted(_rounds(Path(args.journal)).items()):
+        for identifier, state in states.items():
+            history.setdefault(identifier, []).append(state != "tenu")
+    stop = False
+    for identifier, gaps in history.items():
+        count = sum(gaps[gaps.index(True) + 1:]) if True in gaps else 0
+        if count >= MAX_RETURNS:
+            _print("ARRET", identifier, str(count), f"revenu {count} fois : la boucle s'arrête, l'humain reprend la main")
+            stop = True
+        elif count:
+            _print("RETOUR", identifier, str(count))
+    return 1 if stop else 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
     commands = parser.add_subparsers(dest="command", required=True)
@@ -118,11 +165,16 @@ def main(argv: list[str] | None = None) -> int:
     trigger.add_argument("--ticket", help="the merged ticket, written #n")
     gate = commands.add_parser("porte", help="may the acceptance test start, from the report of the review")
     gate.add_argument("compte_rendu", help="the file holding the `RESULT: REVUE` report")
+    record = commands.add_parser("tour", help="add the verdict of a review to the journal as the next round")
+    record.add_argument("journal", help="the journal file of the loop")
+    record.add_argument("verdict", help="the verdict of the judge")
+    back = commands.add_parser("retours", help="the gaps that returned, and the stop")
+    back.add_argument("journal", help="the journal file of the loop")
     args = parser.parse_args(argv)
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     try:
-        return porte(args) if args.command == "porte" else declencher(args)
+        return {"porte": porte, "tour": tour, "retours": retours}.get(args.command, declencher)(args)
     except (OSError, UnicodeDecodeError, ValueError) as error:
         print(f"revue_boucle: {error}", file=sys.stderr)
         return 2
