@@ -1,8 +1,14 @@
 """Ticket #96: a design led by guided questions with a business expert who is not a developer."""
 
+import io
+import tempfile
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
+from pathlib import Path
 
 import support
+from matrice import main as matrice_main
+from source_ids import ids_of_source
 
 SKILL = support.PLUGIN / "skills" / "feature-guide" / "SKILL.md"
 
@@ -81,6 +87,59 @@ class Validation(unittest.TestCase):
         self.assertIn("Un silence n'est pas un accord", skill)
         self.assertIn("ni l'humain de la clé `accepting-human` ni un agent ne le remplacent", skill)
         self.assertIn("sans objet (clé `source-author` absente)", skill)
+
+
+VALIDATED = """# Conception avec l'expert (F-0000)
+
+| Identifiant | Proposition | État | Validé par | Le |
+|---|---|---|---|---|
+| EXI-01 | La date de relevé est obligatoire | validé | expert-metier | 2026-10-20 |
+| EXI-02 | L'index ne décroît jamais | validé | expert-metier | 2026-10-20 |
+
+| Identifiant | Proposition | État | Validé par | Le |
+|---|---|---|---|---|
+| C01 | Avertir si l'écart dépasse 5 % | validé | expert-metier | 2026-10-21 |
+"""
+
+
+class Outputs(unittest.TestCase):
+    def test_the_skill_names_the_three_outputs_and_their_scripts(self) -> None:
+        """No F-NNNN: ticket #96, A5: le document au grain de #93, le parcours voulu (#97) et la matrice initiale (#94)."""
+        skill = read(SKILL)
+        self.assertIn("section « Éléments de la source »", skill)
+        self.assertIn("${CLAUDE_PLUGIN_ROOT}/templates/features/spec.md", skill)
+        self.assertIn("${CLAUDE_PLUGIN_ROOT}/templates/features/parcours.md", skill)
+        self.assertIn("${CLAUDE_PLUGIN_ROOT}/scripts/parcours.py", skill)
+        self.assertIn("${CLAUDE_PLUGIN_ROOT}/templates/features/matrice.md", skill)
+        self.assertIn("${CLAUDE_PLUGIN_ROOT}/scripts/matrice.py", skill)
+        self.assertIn("${CLAUDE_PLUGIN_ROOT}/scripts/source_ids.py", skill)
+        self.assertIn("une ligne `absent` par identifiant", skill)
+        self.assertIn("sans ticket, sans date", skill)
+
+    def test_the_identifiers_of_the_validated_document_are_those_of_the_source(self) -> None:
+        """No F-NNNN: ticket #96, A5: les lignes du document validé sont des éléments identifiés pour le comptage."""
+        self.assertEqual(ids_of_source(VALIDATED), ["EXI-01", "EXI-02", "C01"])
+
+    def test_the_template_title_is_not_counted_as_an_element_of_the_source(self) -> None:
+        """No F-NNNN: ticket #96, A5: le titre du gabarit, numéroté, ne devient pas un identifiant de la source."""
+        template = (support.PLUGIN / "templates" / "features" / "conception.md").read_text(encoding="utf-8")
+        self.assertEqual(ids_of_source(template.replace("F-NNNN", "F-0042")), [])
+
+    def test_the_initial_matrix_the_skill_describes_passes_the_script(self) -> None:
+        """No F-NNNN: ticket #96, A5: une ligne `absent` par identifiant, sans ticket ni date, passe matrice.py."""
+        header = "| Identifiant | Lot | Ticket | Test | Écran | Capture | État | Jugé le |\n|---|---|---|---|---|---|---|---|\n"
+        rows = "".join(f"| {i} | | | | | | absent | |\n" for i in ids_of_source(VALIDATED))
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / "usine.md").write_text("- `product-source` : `conception.md`\n", encoding="utf-8")
+            (root / "conception.md").write_text(VALIDATED, encoding="utf-8")
+            (root / "matrice.md").write_text("# F-0000 : matrice\n\n" + header + rows, encoding="utf-8")
+            out = io.StringIO()
+            argv = ["--usine", str(root / "usine.md"), "--root", str(root), str(root / "matrice.md")]
+            with redirect_stdout(out), redirect_stderr(io.StringIO()):
+                code = matrice_main(argv)
+            self.assertEqual(code, 0, out.getvalue())
+            self.assertTrue(out.getvalue().startswith("OK\t"), out.getvalue())
 
 
 if __name__ == "__main__":

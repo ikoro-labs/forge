@@ -63,3 +63,28 @@ la première.
   pour valider, donc aucune ligne ne passe à `validé` et le document ne devient pas une source.
 - Le document n'est validé en entier que quand il ne reste aucune ligne `proposé` ni question
   ouverte.
+
+## Les trois sorties
+
+Une fois le document validé en entier et déclaré dans la clé `product-source`, tu en tires trois
+documents dans le dossier de la feature. Chacun s'écrit en `en-revue` ou sans statut : seul
+`/forge:feature-accept`, tapée par un humain, accepte (protocole, étape 6).
+
+1. **La spec, au grain de la procédure cible.** Depuis `${CLAUDE_PLUGIN_ROOT}/templates/features/spec.md`
+   et en suivant `/forge:feature-spec` : la section « Éléments de la source » reprend chaque
+   identifiant du document validé, un par un. Lance
+   `uv run --no-project --quiet python ${CLAUDE_PLUGIN_ROOT}/scripts/source_ids.py <spec.md>` : à
+   liste `MISSING` vide seulement, elle peut être relue.
+2. **Le parcours voulu.** Les écrans du document, depuis
+   `${CLAUDE_PLUGIN_ROOT}/templates/features/parcours.md`, avec les mots exacts de l'expert, puis
+   `uv run --no-project --quiet python ${CLAUDE_PLUGIN_ROOT}/scripts/parcours.py <parcours.md>`.
+   Sans écran, dis-le et n'écris rien.
+3. **La matrice initiale.** Depuis `${CLAUDE_PLUGIN_ROOT}/templates/features/matrice.md` : une ligne
+   `absent` par identifiant du document, sans ticket, sans date, avec le lot de la spec et l'écran du
+   parcours qui le montre. Elle ne juge rien. Lance
+   `uv run --no-project --quiet python ${CLAUDE_PLUGIN_ROOT}/scripts/matrice.py <matrice.md>` : un
+   `INVALID`, un `UNKNOWN`, un `DUPLICATE` ou un `MISSING` se corrige avant la PR. Le découpage en
+   tickets reporte ensuite les tickets (`/forge:feature-design`, étape 6), puis chaque coder tient les
+   lignes de son ticket.
+
+Chaque libellé neuf entre dans le glossaire du contexte (clé `glossary`).

@@ -5,7 +5,10 @@ date: AAAA-MM-JJ
 expert: <rôle ou compte de l'expert métier, celui de la clé `source-author`>
 ---
 
-# F-NNNN : conception avec l'expert
+# Conception avec l'expert (F-NNNN)
+
+<!-- Le titre ne commence pas par l'identifiant de la feature : une ligne qui commence par un
+identifiant est un élément de la source pour le comptage. -->
 
 Le document vivant d'une conception guidée (`/forge:feature-guide`). Il se remplit question par
 question, dans les mots de l'expert, et il se relit et se commente pendant qu'il se remplit. Une fois
