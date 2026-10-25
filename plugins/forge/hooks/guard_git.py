@@ -6,6 +6,10 @@ Refused, with the reason on stderr and exit code 2 so Claude Code blocks the cal
   branch stays allowed: restacking a PR after its base merged needs it);
 - `git branch -D`, `git reset --hard`, `git clean -f`, and `--no-verify`, which skips the hooks;
 - `gh pr merge` while any check of the PR is not green;
+- `gh pr merge`, for every agent whatever its name, while a `human-merge` line of the project's
+  `budget-action` key is active (its SLO is exhausted in `slo-status.json`), and, closed by
+  default, when that key is declared but the state file is absent, unreadable or over 24 h old
+  (the refusal gives the command that recalculates it); see `budget.py`;
 - `gh pr merge` whose message or PR description closes a ticket it cites with `Refs`: the first
   PR of a split ticket must leave it open, and GitHub reads a closing keyword anywhere, prose
   included, in the squash message as in the description. The message is read from `--subject`,
@@ -50,9 +54,11 @@ import stat
 import subprocess
 import sys
 from collections.abc import Callable, Iterable
+from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import NamedTuple
 
+from budget import merge_refusal, state_path
 from usine import load, project_root, split_value
 
 # The project's own owner gestures, one per line: `<command prefix> | <reason>`.
@@ -949,6 +955,7 @@ def refusal(
     read_text: Callable[[str], str | None] = read_text_or_none,
     description: Callable[[str | None], str] = lambda _pr: "",
     owner_gestures: Iterable[str] = (),
+    budget: Callable[[], str | None] = lambda: None,
 ) -> str | None:
     """Why the command is refused, or None when it may run.
 
@@ -956,6 +963,7 @@ def refusal(
     command acts on (after `cd` and `-C`); a string is that branch wherever git runs.
     `description` is the body of a PR, by its number (None for the current branch's PR).
     `owner_gestures` are the values of the project's `owner-gesture` key, beside the built-in list.
+    `budget` says why the error budget forbids a merge (key `budget-action`), or None.
     """
     declared = list(owner_gestures)
     bodies = split_heredocs(command)[1]
@@ -1010,6 +1018,8 @@ def refusal(
                     f"the merge message or PR description cites #{ticket} with Refs and closes it"
                     f" (`{phrase}`): the first PR of a split ticket must leave it open"
                 )
+            if exhausted := budget():
+                return exhausted
             if not checks_green(number):
                 return "merge with checks not green: wait for every check, `gh pr checks`"
     return None
@@ -1075,13 +1085,16 @@ def main() -> int:
     event = json.load(sys.stdin)
     command = str(event.get("tool_input", {}).get("command", ""))
     cwd = event.get("cwd")
+    root = project_root(event)
+    config = load(root)
     reason = refusal(
         command,
         current_branch,
         checks_green_via_gh(cwd),
         cwd,
         description=description_via_gh(cwd),
-        owner_gestures=load(project_root(event)).get(OWNER_KEY, []),
+        owner_gestures=config.get(OWNER_KEY, []),
+        budget=lambda: merge_refusal(config, state_path(root), datetime.now(tz=timezone.utc)),
     )
     if reason is None:
         return 0
