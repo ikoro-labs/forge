@@ -63,5 +63,25 @@ class SharedSupport(unittest.TestCase):
         self.assertNotIn("valeur par défaut :", skill)
 
 
+class Validation(unittest.TestCase):
+    def test_an_agent_proposal_stays_marked_until_the_expert_validates_it(self) -> None:
+        """No F-NNNN: ticket #96, A4: chaque proposition de l'agent reste marquée `proposé` tant que l'expert ne l'a pas validée."""
+        skill = read(SKILL)
+        template = read(support.PLUGIN / "templates" / "features" / "conception.md")
+        self.assertIn("Chaque rédaction que tu écris porte l'état `proposé`", skill)
+        self.assertIn("jusqu'au « oui » de l'expert", skill)
+        self.assertIn("Une correction de l'expert réécrit la ligne", skill)
+        self.assertIn("Seul le « oui » de l'expert le pose", template)
+
+    def test_a_requirement_never_enters_validated_without_the_expert(self) -> None:
+        """No F-NNNN: ticket #96, A4: une exigence n'entre jamais `validé` sans l'expert : son nom et la date."""
+        skill = read(SKILL)
+        self.assertIn("Une exigence n'entre jamais `validé` sans l'expert", skill)
+        self.assertIn("son nom (clé `source-author`) et la date", skill)
+        self.assertIn("Un silence n'est pas un accord", skill)
+        self.assertIn("ni l'humain de la clé `accepting-human` ni un agent ne le remplacent", skill)
+        self.assertIn("sans objet (clé `source-author` absente)", skill)
+
+
 if __name__ == "__main__":
     unittest.main()

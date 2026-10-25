@@ -15,8 +15,8 @@ Deux états, et seulement deux :
 
 - `proposé` : une rédaction de l'agent, que l'expert n'a pas encore validée. Une correction de
   l'expert réécrit la ligne, qui reste `proposé` jusqu'à son « oui » sur la rédaction corrigée.
-- `validé` : l'expert l'a validée, avec son nom et la date. Seul l'expert écrit cet état ; un agent ne
-  le pose jamais.
+- `validé` : l'expert l'a validée, avec son nom et la date. Seul le « oui » de l'expert le pose :
+  l'agent n'écrit `validé` qu'en recopiant ce « oui », jamais de son chef.
 
 Chaque identifiant suit le format du comptage (`EXI-01`, `C01`, `G0`) : il est stable, et il reste
 celui de la spec, du parcours et de la matrice.

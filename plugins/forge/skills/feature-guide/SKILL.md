@@ -47,3 +47,19 @@ nomme, avec les outils que la session a pour lui.
   Si la session n'a aucun outil pour ce support, dis-le et continue avec le fichier seul.
 - **Sans la clé** : « sans objet (clé `shared-doc` absente) ». Seul le fichier du dépôt sert : l'expert
   le lit et le commente tel quel, sans valeur par défaut ni support deviné.
+
+## La validation
+
+Chaque rédaction que tu écris porte l'état `proposé`, et le garde jusqu'au « oui » de l'expert. Une
+correction de l'expert réécrit la ligne, qui reste `proposé` : il valide la rédaction corrigée, pas
+la première.
+
+- **Une exigence n'entre jamais `validé` sans l'expert.** Sa ligne ne passe à `validé` qu'avec son
+  nom (clé `source-author`) et la date de son accord, que tu recopies de sa réponse dans les colonnes
+  « Validé par » et « Le ». Un silence n'est pas un accord, une réponse à une autre question non plus : ni l'humain de
+  la clé `accepting-human` ni un agent ne le remplacent. Un refus s'efface de la table et s'écrit à
+  l'historique.
+- Clé `source-author` absente : « sans objet (clé `source-author` absente) ». Personne n'est désigné
+  pour valider, donc aucune ligne ne passe à `validé` et le document ne devient pas une source.
+- Le document n'est validé en entier que quand il ne reste aucune ligne `proposé` ni question
+  ouverte.
