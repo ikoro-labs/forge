@@ -78,5 +78,59 @@ class Key(unittest.TestCase):
         self.assertNotIn("PASS", out)
 
 
+class Touched(unittest.TestCase):
+    ON = REPLAY + CONTEXT + PATHS
+
+    def test_a_pr_touching_the_front_without_captures_is_missing(self) -> None:
+        """No F-NNNN: ticket #99, A2: une PR qui touche le front sans capture jointe est MANQUE, sans avis."""
+        code, out, _ = run(self.ON, BODY_WITHOUT, files="README.md\napps/web/src/page.tsx\n")
+        self.assertEqual(code, 1)
+        self.assertIn("PARCOURS-TOUCHE\tapps/web/src/page.tsx", out)
+        self.assertNotIn("README.md", out)
+        self.assertIn("MANQUE\tcorps de PR", out)
+
+    def test_a_pr_touching_an_api_the_front_consumes_is_missing_too(self) -> None:
+        """No F-NNNN: ticket #99, A2: une API que consomme le front, déclarée par journey-paths, ouvre la même attente."""
+        code, out, _ = run(self.ON, BODY_WITHOUT, files="apps/api/routes/users.ts\n")
+        self.assertEqual(code, 1)
+        self.assertIn("PARCOURS-TOUCHE\tapps/api/routes/users.ts", out)
+
+    def test_captures_attached_satisfy_the_expectation(self) -> None:
+        """No F-NNNN: ticket #99, A2: la PR qui touche le parcours et joint ses captures ne manque de rien."""
+        code, out, _ = run(self.ON, BODY_WITH, files="apps/web/src/page.tsx\n")
+        self.assertEqual(code, 0)
+        self.assertIn("JOINTE\tcorps de PR\t1", out)
+        self.assertNotIn("MANQUE", out)
+
+    def test_a_pr_elsewhere_expects_no_capture(self) -> None:
+        """No F-NNNN: ticket #99, A2: une PR qui ne touche pas le parcours n'attend aucune capture."""
+        code, out, _ = run(self.ON, BODY_WITHOUT, files="docs/a.md\nscripts/b.py\n")
+        self.assertEqual(code, 0)
+        self.assertNotIn("PARCOURS-TOUCHE", out)
+        self.assertNotIn("MANQUE", out)
+
+    def test_without_paths_or_files_the_probe_says_it_could_not_look(self) -> None:
+        """No F-NNNN: ticket #99, A2: sans journey-paths ou sans liste de fichiers, la sonde le dit au lieu de rendre 0 en silence."""
+        _code, out, _ = run(REPLAY + CONTEXT, BODY_WITHOUT, files="apps/web/a.ts\n")
+        self.assertIn("sans objet (clé journey-paths absente)", out)
+        _code, out, _ = run(self.ON, BODY_WITHOUT)
+        self.assertIn("sans objet (liste des fichiers de la PR non fournie)", out)
+
+    def test_the_replay_expects_the_matrix_screen_criteria_of_the_ticket(self) -> None:
+        """No F-NNNN: ticket #99, A2: journey-replay ouvre aussi l'attente des critères d'écran de la matrice."""
+        code, out, _ = run(self.ON, BODY_WITHOUT, MATRIX, files="docs/a.md\n", ticket="#99")
+        self.assertEqual(code, 1)
+        self.assertIn("SANS-CAPTURE\tEXI-01", out)
+        self.assertIn("MANQUE\tcorps de PR", out)
+
+    def test_an_absent_key_is_sans_objet_and_expects_nothing(self) -> None:
+        """No F-NNNN: ticket #99, A4: sans journey-replay, sans objet, aucune attente de capture."""
+        code, out, _ = run("# Usine\n" + PATHS, BODY_WITHOUT, files="apps/web/src/a.ts\n")
+        self.assertEqual(code, 0)
+        self.assertIn("sans objet (clé journey-replay absente)", out)
+        self.assertNotIn("MANQUE", out)
+        self.assertNotIn("PARCOURS-TOUCHE", out)
+
+
 if __name__ == "__main__":
     unittest.main()

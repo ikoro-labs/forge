@@ -1,6 +1,6 @@
 """Say which screen proofs a PR is expected to carry and whether they are attached, without an opinion.
 
-    python preuves_ecran.py [--usine FILE] [--root DIR] [--matrice FILE] [--ticket '#n'] <pr-body-file | ->
+    python preuves_ecran.py [--usine FILE] [--root DIR] [--matrice FILE] [--files FILE] [--ticket '#n'] <pr-body-file | ->
 
 The four capabilities a project turns on, each by its own key of `docs/agents/usine.md`, none with a
 default value:
@@ -13,7 +13,17 @@ default value:
 - `computer-use-host` : the dedicated station where the computer is driven. Never the personal station
   of a member.
 
-Only `screenshot-command` and `recording-command` open the expectation of a capture: they produce the
+Two more keys serve the journey replayed in CI:
+
+- `journey-replay` : `<CI context> | <command>`. The command plays the wanted path (`parcours.md`) from a
+  clean repository to the user's station and writes its captures in `{out}` (mandatory). The context is
+  the name of the CI job: it must be listed in `required-contexts`, else `CONTEXTE-NON-REQUIS` (a broken
+  path would block no PR); without `required-contexts` the check prints `sans objet`.
+- `journey-paths` : the path prefixes of the front and of the APIs it consumes, one per line. With
+  `--files` (the files of the PR, one per line), each changed file under a prefix is printed
+  `PARCOURS-TOUCHE` and the PR is expected to attach the captures of the path.
+
+Only `journey-replay`, `screenshot-command` and `recording-command` open the expectation of a capture: they produce the
 proof where the PR is made. The driven browser and the dedicated station serve the acceptance on their
 own station, not the PR, so declaring only them expects nothing of the PR. A key with an empty value
 names nothing and counts as absent.
@@ -47,9 +57,11 @@ DRIVE_KEY = "browser-drive"
 HOST_KEY = "computer-use-host"
 REPLAY_KEY = "journey-replay"
 CONTEXTS_KEY = "required-contexts"
-KEYS = ("screenshot-command", DRIVE_KEY, HOST_KEY, "recording-command", REPLAY_KEY)
+PATHS_KEY = "journey-paths"
+KEYS = ("screenshot-command", DRIVE_KEY, HOST_KEY, "recording-command", REPLAY_KEY, PATHS_KEY)
 LIMITS = {
     REPLAY_KEY: "commande du projet, rejouée en CI",
+    PATHS_KEY: "préfixes de chemin du front et des API qu'il consomme",
     DRIVE_KEY: "poste avec session ouverte, jamais en CI",
     HOST_KEY: "poste dédié, jamais le poste personnel d'un membre",
 }
@@ -86,6 +98,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--usine", help="the usine.md to read (default: docs/agents/usine.md)")
     parser.add_argument("--root", help="the project copy to read (default: the project directory)")
     parser.add_argument("--matrice", help="the matrix of the feature, to find the screen criteria")
+    parser.add_argument("--files", help="the files the PR changes, one path per line, to find the journey it touches")
     parser.add_argument("--ticket", help="only the rows that cite this ticket, written #n")
     args = parser.parse_args(argv)
     if hasattr(sys.stdout, "reconfigure"):
@@ -100,6 +113,11 @@ def main(argv: list[str] | None = None) -> int:
                 raise
             config = {}
         body = sys.stdin.read() if args.body == "-" else Path(args.body).read_text(encoding="utf-8")
+        changed = (
+            [line.strip() for line in Path(args.files).read_text(encoding="utf-8").splitlines() if line.strip()]
+            if args.files
+            else None
+        )
         rows = parse_matrice(Path(args.matrice).read_text(encoding="utf-8")) if args.matrice else []
     except (OSError, UnicodeDecodeError, ValueError) as error:
         print(f"preuves_ecran: {error}", file=sys.stderr)
@@ -124,10 +142,19 @@ def main(argv: list[str] | None = None) -> int:
         elif context not in contexts:
             missing = True
             print(f"CONTEXTE-NON-REQUIS\t{context}\tabsent de la clé {CONTEXTS_KEY} : un parcours cassé ne bloque aucune PR")
-    if not any(values[key] for key in COMMAND_KEYS):
-        return 1 if missing else 0
+    replayed = bool(values[REPLAY_KEY])
+    if not replayed and not any(values[key] for key in COMMAND_KEYS):
+        return 0
     count = attached(body)
     carried = 0
+    if replayed:
+        if values[PATHS_KEY] and changed is None:
+            print("sans objet (liste des fichiers de la PR non fournie)")
+        elif values[PATHS_KEY]:
+            for path in changed:
+                if any(path.startswith(prefix) for prefix in values[PATHS_KEY]):
+                    carried += 1
+                    print(f"PARCOURS-TOUCHE\t{path}")
     if args.matrice:
         wanted = re.compile(rf"(?<!\w){re.escape(args.ticket)}(?!\w)") if args.ticket else None
         for row in rows:
