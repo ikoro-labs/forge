@@ -109,6 +109,31 @@ class Probe(unittest.TestCase):
         self.assertNotIn("MANQUE", out)
         self.assertNotIn("SANS-CAPTURE", out)
 
+    def test_a_station_key_alone_opens_no_expectation_for_a_pr_elsewhere(self) -> None:
+        """No F-NNNN: ticket #54, A5: le navigateur piloté et le poste dédié ne servent pas là où tourne la PR."""
+        for line in (
+            "- `browser-drive` : `claude-in-chrome | poste-recette`\n",
+            "- `computer-use-host` : `poste-dedie-recette`\n",
+        ):
+            code, out, _ = run(line, "## Preuves\n\nrien\n", self.MATRIX, ticket="#54")
+            self.assertEqual(code, 0, line)
+            self.assertIn("CAPACITE\t" + line.split("`")[1], out)
+            self.assertNotIn("SANS-CAPTURE", out)
+            self.assertNotIn("MANQUE", out)
+
+    def test_an_empty_host_value_is_not_a_declared_capability(self) -> None:
+        """No F-NNNN: ticket #54, A4: une valeur vide ne nomme aucun poste, la capacité reste sans objet."""
+        code, out, _ = run("- `computer-use-host` : ``\n", "", self.MATRIX, ticket="#54")
+        self.assertEqual(code, 0)
+        self.assertIn("sans objet (clé computer-use-host absente)", out)
+        self.assertNotIn("CAPACITE\tcomputer-use-host", out)
+
+    def test_a_command_key_next_to_a_station_key_still_expects_the_proof(self) -> None:
+        """No F-NNNN: ticket #54, A5: screenshot-command garde l'attente même avec un poste déclaré."""
+        code, out, _ = run(self.ONE + "- `browser-drive` : `claude-in-chrome | poste-recette`\n", "", self.MATRIX, ticket="#54")
+        self.assertEqual(code, 1)
+        self.assertIn("MANQUE\tcorps de PR", out)
+
     def test_a_video_or_a_gif_counts_as_attached(self) -> None:
         """No F-NNNN: ticket #54, A5: une vidéo ou un GIF joint compte comme une capture."""
         _code, out, _ = run(self.ONE, "[parcours](preuves/parcours.mp4)\n![g](preuves/p.gif)\n", self.MATRIX, ticket="#55")

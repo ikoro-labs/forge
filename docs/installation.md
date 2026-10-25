@@ -123,7 +123,9 @@ Quatre clés, chacune activant une capacité de vérification du front, ouvrent 
 `<outil> | <poste>`) et `computer-use-host` (le poste dédié où l'ordinateur se commande). Une commande
 déclare `{out}`, le dossier où elle écrit ses fichiers, que l'appelant choisit. Le navigateur piloté ne
 tourne que sur un poste avec une session ouverte, jamais en CI, et la commande de l'ordinateur ne vise
-jamais le poste personnel d'un membre : la clé nomme un poste dédié, et rien ne le devine. Chaque clé
+jamais le poste personnel d'un membre : la clé nomme un poste dédié, et rien ne le devine. Seules `screenshot-command` et
+`recording-command` ouvrent l'attente d'une capture sur une PR, car elles prennent la preuve là où la PR
+est faite ; le navigateur piloté et le poste dédié servent la recette sur leur poste. Chaque clé
 est indépendante, et une clé absente rend sa capacité « sans objet (clé `<nom>` absente) », jamais
 `PASS`. `forge:coder` prend les captures que les clés permettent et les joint à la section Preuves de sa
 PR ; `plugins/forge/scripts/preuves_ecran.py` dit, sans avis, ce que chaque clé déclare et si les

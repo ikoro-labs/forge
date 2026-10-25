@@ -13,9 +13,14 @@ default value:
 - `computer-use-host` : the dedicated station where the computer is driven. Never the personal station
   of a member.
 
+Only `screenshot-command` and `recording-command` open the expectation of a capture: they produce the
+proof where the PR is made. The driven browser and the dedicated station serve the acceptance on their
+own station, not the PR, so declaring only them expects nothing of the PR. A key with an empty value
+names nothing and counts as absent.
+
 One line per finding, fields separated by tabs. A missing key prints `sans objet (clé <nom> absente)`
 for itself and never stops the others. `CAPACITE` names a key that is declared, its value and its
-limit. When at least one key is declared and `--matrice` is given, the rows of the matrix that name a
+limit. When `screenshot-command` or `recording-command` is declared and `--matrice` is given, the rows of the matrix that name a
 screen (`Écran` not empty) and, with `--ticket`, a `Ticket` cell citing that ticket are the screen
 criteria the PR carries: `LIEE` (the row has a `Capture`) or `SANS-CAPTURE`. The PR body is searched
 for attached images and videos (`![..](..)`, or a link to a `.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`,
@@ -95,13 +100,13 @@ def main(argv: list[str] | None = None) -> int:
         for problem in problems:
             print(f"preuves_ecran: {problem}", file=sys.stderr)
         return 2
-    declared = [key for key in KEYS if config.get(key)]
+    values = {key: [value for value in config.get(key, []) if value.strip()] for key in KEYS}
     for key in KEYS:
-        if key not in declared:
+        if not values[key]:
             print(f"sans objet (clé {key} absente)")
-        for value in config.get(key, []):
+        for value in values[key]:
             print(f"CAPACITE\t{key}\t{value}\t{LIMITS.get(key, 'commande du projet')}")
-    if not declared:
+    if not any(values[key] for key in COMMAND_KEYS):
         return 0
     count = attached(body)
     missing = False

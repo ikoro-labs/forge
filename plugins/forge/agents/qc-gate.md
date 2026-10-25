@@ -128,7 +128,9 @@ Le numéro de PR, et le numéro du tour (1 ou 2).
     code de sortie : 0 rien ne manque, 1 une preuve attendue manque (`SANS-CAPTURE` ou `MANQUE`),
     2 une valeur de clé invalide ou un appel en échec (`FAIL`, jamais `PASS`). Une clé absente se
     rend ligne à ligne comme le script l'écrit : `sans objet (clé screenshot-command absente)`, et de
-    même pour `recording-command`, `browser-drive` et `computer-use-host`. Tu ne juges pas une capture
+    même pour `recording-command`, `browser-drive` et `computer-use-host`. Seules `screenshot-command` et `recording-command`
+    ouvrent l'attente d'une capture ; les deux autres clés se rendent en lignes `CAPACITE` sans rien
+    attendre de la PR. Tu ne juges pas une capture
     et tu ne l'ouvres pas : tu rends ce que le script a mesuré.
 
 Au tour 2, rejoue toutes les sondes : une correction peut casser ce qui passait.

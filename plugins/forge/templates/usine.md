@@ -339,14 +339,17 @@ quel et Playwright ignore le filtre : toute la suite se lance).
 
 `browser-drive` : un navigateur piloté par un agent, `<outil> | <poste>`. Il ne tourne que sur un poste
 avec une session ouverte, **jamais en CI** : la clé nomme le poste où le faire, et un agent ne le lance
-pas ailleurs. Sans la clé, aucun navigateur n'est piloté.
+pas ailleurs. Sans la clé, aucun navigateur n'est piloté. Elle sert la recette sur ce poste : une PR faite ailleurs
+n'en attend aucune capture.
 
 - `browser-drive` : `<nom de l'outil de pilotage | nom du poste de recette>`
 
 `computer-use-host` : le poste **dédié** où l'ordinateur se commande (clics, saisie, captures de
 l'écran entier), par son nom, jamais le poste personnel d'un membre : la clé ne se remplit pas par
 défaut avec le poste de celui qui lance la session, et sans elle la commande de l'ordinateur est
-« sans objet (clé `computer-use-host` absente) ».
+« sans objet (clé `computer-use-host` absente) ». Comme `browser-drive`, elle sert la recette sur son
+poste et n'ouvre aucune attente de capture sur une PR : seules `screenshot-command` et `recording-command`
+l'ouvrent.
 
 - `computer-use-host` : `<nom du poste dédié à la recette>`
 

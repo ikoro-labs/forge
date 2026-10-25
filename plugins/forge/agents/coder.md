@@ -117,8 +117,10 @@ lançant. Charge aussi le skill de chaque domaine que le ticket touche, parmi ce
   **Preuves** de la PR, avec le critère `A<n>` qu'il montre.
   `uv run --no-project --quiet python ${CLAUDE_PLUGIN_ROOT}/scripts/preuves_ecran.py --matrice <matrice.md> --ticket '#<n>' <corps de PR>`
   dit, sans avis, ce qui manque encore : une sortie en `SANS-CAPTURE` ou `MANQUE` se corrige avant de
-  pousser. Quand aucune clé ne permet la capture, le critère reste prouvé par son test, et la PR dit
-  que l'écran n'a pas été vu.
+  pousser. Elle ne s'ouvre que si `screenshot-command` ou `recording-command` est déclarée, les seules
+  clés qui prennent la preuve là où tourne ta PR ; `browser-drive` et `computer-use-host` servent la
+  recette sur leur poste, pas la PR, et ne te font rien attendre. Quand aucune de ces deux commandes
+  n'est déclarée, le critère reste prouvé par son test, et la PR dit que l'écran n'a pas été vu.
 - **Un formateur qui échoue se reporte.** Chaque ligne `format-on-write: ... failed on ...` que le
   hook te montre après une écriture, tu la recopies dans les `NOTES` de ta sortie (sur la ligne
   `NOTES:`, séparées par ` ; `, pour que `parse_output.py` la lise). Le fichier reste écrit : la

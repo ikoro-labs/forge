@@ -156,7 +156,8 @@ couvre, avec ou sans capture dans la colonne `Capture` de la matrice, et les ima
 au corps de la PR. Elle n'a aucun avis, et tu lis ses lignes sans refaire sa mesure.
 
 - Une ligne `SANS-CAPTURE` ou `MANQUE` : le projet a déclaré un moyen de prendre la preuve d'écran
-  (une des clés `screenshot-command`, `recording-command`, `browser-drive`, `computer-use-host`) et un
+  là où tourne la PR (`screenshot-command` ou `recording-command` ; `browser-drive` et
+  `computer-use-host` servent la recette sur leur poste et n'ouvrent aucune attente) et un
   critère d'écran de ce ticket n'en a pas. Sévérité `BLOCKER` quand rien d'autre qu'un test qui ne
   regarde pas l'écran ne prouve le critère ; `MINOR` quand un test d'interface le prouve déjà. Le
   scénario d'échec est la recette : l'écran est livré sans que personne l'ait vu.
