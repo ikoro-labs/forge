@@ -46,6 +46,7 @@ ne fusionne une PR rouge, ou ne sort de son rôle.
 | Skills | Pour |
 | --- | --- |
 | `/forge:feature-new`, `-brainstorm`, `-frame`, `-spec`, `-design` | écrire une feature, de l'idée aux tickets |
+| `/forge:feature-guide` | conduire la conception avec un expert métier, question par question |
 | `/forge:feature-accept` | accepter un document, geste réservé à un humain |
 | `/forge:feature-build`, `/forge:qc` | coder les tickets, relire et fusionner les PR |
 | `/forge:feature-verify`, `-close`, `-status` | la recette, la clôture, et où en est chaque feature |

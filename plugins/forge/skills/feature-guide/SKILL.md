@@ -9,7 +9,10 @@ disable-model-invocation: true
 
 Applique `${CLAUDE_PLUGIN_ROOT}/templates/features/protocole.md`. Ce skill est pour l'expert qui sait
 ce que le produit doit faire et n'écrit pas de Markdown technique : c'est toi qui tiens la plume, lui
-qui tranche. Il se tape en ligne de commande ; le cockpit n'en fait pas encore une interface.
+qui tranche. Il se tape d'abord en ligne de commande ; le cockpit
+suivra. Aucun expert métier réel n'a encore mené une conception avec ce skill : ses questions, son
+rythme et la forme du document n'ont été éprouvés que sur des textes écrits à la main. Dis-le à
+l'expert en ouvrant la séance, et corrige le skill de ce qu'il en dit.
 
 ## Les questions
 

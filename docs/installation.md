@@ -145,6 +145,17 @@ matrice initiale (à la conception) et la relisent de bout en bout (à la revue 
 ce script et ce gabarit ; ils ne sont pas livrés avec lui. Éprouvé sous Linux seulement, sur des matrices écrites à la
 main ; pas encore sur un vrai projet.
 
+`/forge:feature-guide` mène une conception avec un expert métier qui n'est pas développeur : une question à
+la fois, dans ses mots, chacune avec une rédaction à valider ou corriger. Le document vivant est par
+défaut un fichier Markdown du dossier de la feature (clé `feature-dir`, `conception.md`), dont chaque
+rédaction reste `proposé` tant que l'expert ne l'a pas validée (son nom, clé `source-author`, et la
+date) ; validé en entier, il devient la source (clé `product-source`), et le skill en tire la spec, le
+parcours voulu et la matrice initiale, chacun passé par son script. La clé `shared-doc` nomme en plus un
+support partagé où l'expert relit et commente, quand le projet en a un ; le fichier du dépôt reste la
+référence, et forge ne câble aucun service. Sans elle, « sans objet (clé `shared-doc` absente) » et seul
+le fichier sert. Éprouvé sur des textes écrits à la main seulement : aucun expert réel ne l'a encore
+essayé, et son usage en ligne de commande précède le cockpit.
+
 Le skill de découpage en tickets du projet se déclare avec `ticket-skill` : `/forge:feature-design`
 l'utilise à son étape de découpage. Sans la clé, il découpe à la main, dans l'ordre du §7 du
 design, et le dit.

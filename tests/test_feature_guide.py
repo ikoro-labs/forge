@@ -142,5 +142,26 @@ class Outputs(unittest.TestCase):
             self.assertTrue(out.getvalue().startswith("OK\t"), out.getvalue())
 
 
+class Reach(unittest.TestCase):
+    def test_the_skill_runs_on_the_command_line_and_says_it_was_tried_with_no_expert(self) -> None:
+        """No F-NNNN: ticket #96, A6: ligne de commande d'abord, cockpit (#33) ensuite ; aucun expert réel ne l'a essayé."""
+        skill = read(SKILL)
+        self.assertIn("ligne de commande", skill)
+        self.assertIn("cockpit", skill)
+        self.assertIn("Aucun expert métier réel n'a encore mené une conception avec ce skill", skill)
+
+    def test_the_consumer_pages_describe_the_skill_and_the_key(self) -> None:
+        """No F-NNNN: ticket #96, A6: la page du projet consommateur, le README et le protocole en parlent."""
+        install = read(support.REPO_ROOT / "docs" / "installation.md")
+        self.assertIn("`/forge:feature-guide`", install)
+        self.assertIn("`shared-doc`", install)
+        self.assertIn("aucun expert réel", install)
+        readme = read(support.REPO_ROOT / "README.md")
+        self.assertIn("-guide", readme)
+        protocol = read(support.PLUGIN / "templates" / "features" / "protocole.md")
+        self.assertIn("`conception.md`", protocol)
+        self.assertIn("n'est pas une étape de la chaîne", protocol)
+
+
 if __name__ == "__main__":
     unittest.main()
