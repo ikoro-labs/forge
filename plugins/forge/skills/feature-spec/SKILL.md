@@ -1,6 +1,6 @@
 ---
 name: feature-spec
-description: "Écrire la spec d'une feature dont le cadrage est accepté : huit stories INVEST au plus, critères « Étant donné, quand, alors », non-goals, exigences non fonctionnelles, contrats en prose, impact sur les règles du métier."
+description: "Écrire la spec d'une feature dont le cadrage est accepté : stories INVEST en nombre nécessaire à la source entière, critères « Étant donné, quand, alors », non-goals, exigences non fonctionnelles, contrats en prose, impact sur les règles du métier."
 argument-hint: F-NNNN
 disable-model-invocation: true
 ---
@@ -20,7 +20,8 @@ citeront.
 2. **Tours de questions** : le rôle et le bénéfice de chaque story, les cas limites, les chiffres
    attendus des critères, ce qui est explicitement hors du but.
 3. **Écrire `spec.md`** depuis le gabarit :
-   - **huit stories au plus**, chacune INVEST ; au-delà, propose de couper la feature ;
+   - **autant de stories qu'il en faut pour reprendre la source entière**, chacune INVEST : le nombre
+     ne plafonne pas la spec, c'est la source qui le fixe ;
    - chaque critère au format **Étant donné, quand, alors**, avec un résultat observable et chiffré
      quand c'est possible : il deviendra un test qui cite `F-NNNN A<n>`, relié dans la recette ;
    - les non-goals, les exigences non fonctionnelles chiffrées, les contrats décrits en prose ;

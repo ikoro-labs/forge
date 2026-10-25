@@ -13,8 +13,8 @@ Le pourquoi est dans le cadrage. Ici : **ce qui se construit**, et comment on sa
 
 ## 1. Stories
 
-Huit au plus, chacune INVEST (indépendante, négociable, utile, estimable, petite, testable). Au-delà,
-la feature est trop grosse : on la découpe en deux features.
+Autant de stories qu'il en faut pour reprendre la source entière, chacune INVEST (indépendante,
+négociable, utile, estimable, petite, testable).
 
 1. En tant que <rôle>, je veux <capacité>, pour <bénéfice>.
 

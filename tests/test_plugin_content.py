@@ -578,6 +578,24 @@ class SourceIdentifiers(unittest.TestCase):
         self.assertIn("source_ids.py", page)
 
 
+class SpecGrain(unittest.TestCase):
+    """Ticket #93: a spec reaches the grain of a target procedure."""
+
+    @staticmethod
+    def read(*parts: str) -> str:
+        return " ".join(support.PLUGIN.joinpath(*parts).read_text(encoding="utf-8").split())
+
+    def test_the_limit_of_eight_stories_is_lifted(self) -> None:
+        """No F-NNNN: ticket #93, A4: ni la description, ni l'étape, ni le gabarit ne plafonnent les stories."""
+        skill = self.read("skills", "feature-spec", "SKILL.md")
+        template = self.read("templates", "features", "spec.md")
+        for text in (skill, template):
+            self.assertNotRegex(text.lower(), r"\bhuit\b")
+            self.assertNotIn("au-delà, propose de couper", text.lower())
+        self.assertIn("autant de stories qu'il en faut pour reprendre la source entière", skill)
+        self.assertIn("autant de stories qu'il en faut", template.lower())
+
+
 class UiLabels(unittest.TestCase):
     """Ticket #98: the labels a PR adds on screen are confronted with the glossary and forbidden words."""
 
