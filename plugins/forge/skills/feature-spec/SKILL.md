@@ -28,7 +28,19 @@ citeront.
    - **l'impact sur les règles du métier**, obligatoire dès qu'un chiffre engagé ou une obligation
      réglementaire est en jeu : invoque alors le skill du domaine (clé `domain-skill`) et reporte
      ses conclusions ;
-   - les décisions prises par défaut, et une section « Questions ouvertes » vide si possible.
+   - les décisions prises par défaut, et une section « Points ouverts » vide si possible ;
+   - **le grain d'une procédure cible** : remplis chaque section du gabarit ou écris « sans objet »
+     avec la raison, jamais un silence. Les **exigences atomiques** (`EXI-nn`) ont chacune un critère
+     mesurable, chiffré dès que possible, jamais seulement « doit gérer X », avec leur classement,
+     leur niveau de preuve (T texte réglementaire, P principe du projet, O piège observé, M parité
+     marché, S souhait d'une source unique) et leur lot. Les **contrôles codés** (`Cnn`) disent le
+     calcul exact, la tolérance par défaut et l'effet, dans l'unité du métier. Les **gabarits et
+     conventions** (`Gn`) disent leur structure et leurs règles. Viennent ensuite le **déroulé pas à
+     pas** de chaque parcours, les rôles, les décisions prises et leur date, les critères transverses,
+     les lots et leur gel, **comment elle peut échouer** (risque, mécanisme, parade), les **pièges et
+     parades observés**, la **confiance chiffrée** par partie (modèle, périmètre, priorités), les
+     questions pour les entretiens et le **glossaire**, qui alimente la clé `glossary` : un terme
+     nouveau y entre. La façon de recueillir ce contenu auprès de l'expert n'est pas de cette étape.
 4. **Reprendre chaque élément de la source, par son identifiant.** Un **identifiant** est celui
    d'origine de la source, avec ou sans tiret : capitales et chiffres, un tiret, un nombre (`EXI-01`,
    `RG-3.1`), ou une à cinq capitales collées à un nombre (`C01`, `G0`), le nombre pouvant porter des

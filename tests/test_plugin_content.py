@@ -595,6 +595,56 @@ class SpecGrain(unittest.TestCase):
         self.assertIn("autant de stories qu'il en faut pour reprendre la source entière", skill)
         self.assertIn("autant de stories qu'il en faut", template.lower())
 
+    SECTIONS = (
+        "Exigences atomiques",
+        "Contrôles codés",
+        "Gabarits et conventions",
+        "Déroulé pas à pas",
+        "Rôles",
+        "Décisions prises et leur date",
+        "Critères transverses",
+        "Lots et leur gel",
+        "Comment elle peut échouer",
+        "Pièges et parades observés",
+        "Confiance chiffrée",
+        "Points ouverts",
+        "Questions pour les entretiens",
+        "Glossaire",
+    )
+
+    def test_the_template_carries_each_section(self) -> None:
+        """No F-NNNN: ticket #93, A1: le gabarit de spec porte chaque section demandée, en titre."""
+        template = support.PLUGIN.joinpath("templates", "features", "spec.md").read_text(encoding="utf-8")
+        headings = [line for line in template.splitlines() if line.startswith("## ")]
+        for name in self.SECTIONS:
+            self.assertTrue(any(name in heading for heading in headings), name)
+
+    def test_the_template_gives_the_format_of_the_coded_sections(self) -> None:
+        """No F-NNNN: ticket #93, A1: EXI-nn, Cnn et Gn ont leur format : colonnes, niveaux de preuve, effet."""
+        template = self.read("templates", "features", "spec.md")
+        self.assertIn("| Identifiant | Exigence | Critère mesurable | Classement | Niveau de preuve | Lot |", template)
+        for level in ("T texte réglementaire", "P principe du projet", "O piège observé", "M parité marché", "S souhait d'une source unique"):
+            self.assertIn(level, template)
+        self.assertIn("| Identifiant | Calcul exact | Tolérance par défaut | Effet |", template)
+        self.assertIn("quarantaine, avertissement, condition de signature", template)
+        self.assertIn("| Identifiant | Structure | Règles |", template)
+        self.assertIn("`EXI-nn`", template)
+        self.assertIn("`Cnn`", template)
+        self.assertIn("`Gn`", template)
+
+    def test_the_glossary_section_feeds_the_glossary_key(self) -> None:
+        """No F-NNNN: ticket #93, A1: le glossaire de la spec alimente la clé glossary."""
+        template = self.read("templates", "features", "spec.md")
+        self.assertIn("clé `glossary`", template[template.index("Glossaire"):])
+
+    def test_the_skill_fills_each_section_or_says_why_it_is_without_object(self) -> None:
+        """No F-NNNN: ticket #93, A2: le skill remplit chaque section ou dit pourquoi elle est sans objet."""
+        skill = self.read("skills", "feature-spec", "SKILL.md")
+        self.assertIn("remplis chaque section du gabarit ou écris « sans objet » avec la raison", skill)
+        for name in ("exigences atomiques", "contrôles codés", "gabarits et conventions", "déroulé pas à pas", "pièges et parades observés", "confiance chiffrée", "glossaire"):
+            self.assertIn(name, skill.lower())
+        self.assertIn("jamais seulement « doit gérer X »", skill)
+
 
 class UiLabels(unittest.TestCase):
     """Ticket #98: the labels a PR adds on screen are confronted with the glossary and forbidden words."""
