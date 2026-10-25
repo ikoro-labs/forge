@@ -23,8 +23,11 @@ SANS-ENVIRONNEMENT. Exit 0 when none of MANQUE, INVALID or SANS-ENVIRONNEMENT is
 from __future__ import annotations
 
 import argparse
+import contextlib
+import io
 import re
 import sys
+import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "hooks"))
@@ -201,7 +204,60 @@ def judge(args: argparse.Namespace, verdict_text: str, matrix_text: str) -> int:
     if findings:
         return 1
     _print("OK", "", "chaque élément est jugé, sur des captures prises, et chaque tenu relu")
+    if args.appliquer:
+        status = _apply(args, matrix_text, rows, judged)
+        if status:
+            return status
+    if args.tickets:
+        _tickets(rows, judged)
     return 0
+
+
+def _apply(args: argparse.Namespace, matrix_text: str, rows: list[dict[str, str]], judged: list[dict[str, str]]) -> int:
+    """Write the state, the capture and the date of each judged row into the matrix, then check the result.
+
+    Only these three columns change; the matrix is written only when `matrice.py` accepts the new text."""
+    lines = matrix_text.split("\n")
+    by_id = {e["id"]: e for e in judged}
+    for row in rows:
+        entry = by_id.get(row["Identifiant"])
+        if entry is None:
+            continue
+        index = int(row["_line"]) - 1
+        cells = (_matrix_cells(lines[index]) + [""] * len(matrice.COLUMNS))[: len(matrice.COLUMNS)]
+        cells[matrice.COLUMNS.index("État")] = entry["state"]
+        cells[matrice.COLUMNS.index("Jugé le")] = args.date
+        if entry["capture"] not in ("", "-"):
+            cells[matrice.COLUMNS.index("Capture")] = entry["capture"]
+        lines[index] = "| " + " | ".join(cells) + " |"
+    new_text = "\n".join(lines)
+    with tempfile.TemporaryDirectory() as folder:
+        candidate = Path(folder) / "matrice.md"
+        candidate.write_text(new_text, encoding="utf-8")
+        argv = [str(candidate)] + (["--usine", args.usine] if args.usine else []) + (["--root", args.root] if args.root else [])
+        report = io.StringIO()
+        with contextlib.redirect_stdout(report):
+            code = matrice.main(argv)
+    if code:
+        _print("NON-APPLIQUE", "matrice", "la matrice mise à jour serait refusée par matrice.py")
+        print(report.getvalue(), end="")
+        return 1
+    Path(args.matrice).write_text(new_text, encoding="utf-8")
+    _print("APPLIQUE", args.matrice, f"{len(by_id)} lignes jugées le {args.date}")
+    return 0
+
+
+def _tickets(rows: list[dict[str, str]], judged: list[dict[str, str]]) -> None:
+    """One line per coherent batch of gaps: the severity, the batch of the spec, the identifiers, the captures."""
+    batch_of = {row["Identifiant"]: row["Lot"] or matrice.NO_BATCH for row in rows}
+    groups: dict[tuple[str, str], list[dict[str, str]]] = {}
+    for entry in judged:
+        if entry["state"] != "tenu":
+            groups.setdefault((entry["severity"], batch_of[entry["id"]]), []).append(entry)
+    for (severity, batch), entries in sorted(groups.items(), key=lambda item: SEVERITIES.index(item[0][0])):
+        captures = sorted({e["capture"] for e in entries if e["capture"] not in ("", "-")})
+        _print("TICKET", severity, batch, ", ".join(e["id"] for e in entries), ", ".join(captures),
+               " ; ".join(f"{e['id']} : {e['finding']}" for e in entries))
 
 
 def _second_reading(args: argparse.Namespace, judged: list[dict[str, str]]) -> list[tuple[str, str, str]]:
@@ -246,7 +302,12 @@ def main(argv: list[str] | None = None) -> int:
     verdict.add_argument("--manifeste", help="the manifest of the run: a capture cited must be in it")
     verdict.add_argument("--captures", help="the folder of the capture files, checked when given")
     verdict.add_argument("--relecture", help="the second reading of the `tenu` verdicts")
+    verdict.add_argument("--appliquer", action="store_true", help="write the verdict into the matrix when it has no finding")
+    verdict.add_argument("--date", help="the ISO date of the judgment, required with --appliquer")
+    verdict.add_argument("--tickets", action="store_true", help="list the gaps as one ticket per batch and severity")
     args = parser.parse_args(argv)
+    if args.command == "verdict" and args.appliquer and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", args.date or ""):
+        parser.error("--appliquer demande --date AAAA-MM-JJ, la date du jugement")
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     try:

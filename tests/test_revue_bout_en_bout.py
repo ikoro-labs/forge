@@ -249,5 +249,79 @@ class SecondReading(unittest.TestCase):
         self.assertIn("INVALID", out)
 
 
+def apply(text: str, matrice: str = MATRICE, *extra: str) -> tuple[int, str, str]:
+    """Run `verdict --appliquer` and give the exit code, the output and the matrix file afterwards."""
+    with tempfile.TemporaryDirectory() as folder:
+        root = Path(folder)
+        files = {"verdict.tsv": text, "matrice.md": matrice, "usine.md": USINE, "source.md": SOURCE, "relecture.tsv": READING}
+        for name, content in files.items():
+            (root / name).write_text(content, encoding="utf-8")
+        (root / "captures").mkdir()
+        for name in CAPTURES:
+            (root / "captures" / name).write_bytes(b"png")
+        argv = ["verdict", str(root / "verdict.tsv"), "--matrice", str(root / "matrice.md"), "--usine", str(root / "usine.md")]
+        argv += ["--root", str(root), "--captures", str(root / "captures"), "--relecture", str(root / "relecture.tsv"), *extra]
+        out = io.StringIO()
+        with redirect_stdout(out), redirect_stderr(io.StringIO()):
+            code = main(argv)
+        return code, out.getvalue(), (root / "matrice.md").read_text(encoding="utf-8")
+
+
+class Outputs(unittest.TestCase):
+    def test_the_matrix_takes_the_verdict_and_stays_valid(self) -> None:
+        """No F-NNNN: ticket #100, A5: la matrice est mise à jour, état, capture et date du jugement, par la règle unique."""
+        code, out, after = apply(GOOD_VERDICT, MATRICE, "--appliquer", "--date", "2026-11-02")
+        self.assertEqual(code, 0, out)
+        self.assertIn("| EXI-01 | L1 | #5 | tests/a.py::t1 | Écran 1 | e1-clair-bureau.png | tenu | 2026-11-02 |", after)
+        self.assertIn("| EXI-02 | L1 | #6 | tests/a.py::t2 | Écran 2 | e2-clair-bureau.png | contraire | 2026-11-02 |", after)
+        self.assertIn("| C01 | L2 | #7 | tests/a.py::t3 | Écran 2 | e2-sombre-mobile.png | partiel | 2026-11-02 |", after)
+        self.assertIn("APPLIQUE", out)
+
+    def test_a_blocked_verdict_leaves_the_matrix_untouched(self) -> None:
+        """No F-NNNN: ticket #100, A5: rien ne s'écrit tant que le verdict a un constat."""
+        code, out, after = apply(LINE_EXI01 + LINE_EXI02, MATRICE, "--appliquer", "--date", "2026-11-02")
+        self.assertEqual(code, 1)
+        self.assertEqual(after, MATRICE)
+        self.assertNotIn("APPLIQUE", out)
+
+    def test_applying_asks_for_the_date_of_the_judgment(self) -> None:
+        """No F-NNNN: ticket #100, A5: la date du jugement est donnée, jamais devinée."""
+        with self.assertRaises(SystemExit) as raised:
+            apply(GOOD_VERDICT, MATRICE, "--appliquer")
+        self.assertEqual(raised.exception.code, 2)
+
+    def test_an_element_set_aside_by_the_author_is_not_judged_nor_changed(self) -> None:
+        """No F-NNNN: ticket #100, A5: la revue ne touche pas une ligne écartée par l'auteur de la source."""
+        written = MATRICE.replace("| EXI-02 | L1 | #6 | tests/a.py::t2 | Écran 2 | | absent | |", "| EXI-02 | L1 | #6 | tests/a.py::t2 | Écran 2 | | écarté | 2026-10-01 |")
+        code, out, after = apply(LINE_EXI01 + LINE_EXI02 + LINE_C01, written, "--appliquer", "--date", "2026-11-02")
+        self.assertEqual(code, 1)
+        self.assertIn("REFUSED\tEXI-02", out)
+        self.assertEqual(after, written)
+
+    def test_the_gaps_become_one_ticket_per_batch_and_severity_worst_first(self) -> None:
+        """No F-NNNN: ticket #100, A5: un ticket par lot cohérent d'écarts, avec gravité, capture et identifiants cités."""
+        extra = element("EXI-01", "partiel", "mineur", "Écran 1", "e1-clair-bureau.png", "la date s'affiche en anglais")
+        code, out, _ = apply(extra + LINE_EXI02 + LINE_C01, MATRICE, "--tickets")
+        self.assertEqual(code, 0, out)
+        tickets = [line.split("\t") for line in out.splitlines() if line.startswith("TICKET")]
+        self.assertEqual(
+            [(t[1], t[2], t[3]) for t in tickets],
+            [("bloquant", "L1", "EXI-02"), ("majeur", "L2", "C01"), ("mineur", "L1", "EXI-01")],
+        )
+        self.assertIn("e2-clair-bureau.png", tickets[0][4])
+        self.assertIn("un index inférieur est accepté", tickets[0][5])
+
+    def test_a_batch_with_two_severities_keeps_each_apart(self) -> None:
+        """No F-NNNN: ticket #100, A5: la gravité d'un lot ne s'écrase pas sur celle d'un autre écart du même lot."""
+        extra = element("EXI-01", "partiel", "mineur", "Écran 1", "e1-clair-bureau.png", "la date s'affiche en anglais")
+        _, out, _ = apply(extra + LINE_EXI02 + LINE_C01, MATRICE, "--tickets")
+        self.assertEqual(sum(1 for line in out.splitlines() if line.startswith("TICKET\t") and "\tL1\t" in line), 2)
+
+    def test_a_tenu_makes_no_ticket(self) -> None:
+        """No F-NNNN: ticket #100, A5: un élément tenu n'ouvre aucun ticket."""
+        _, out, _ = apply(GOOD_VERDICT, MATRICE, "--tickets")
+        self.assertNotIn("EXI-01", "".join(line for line in out.splitlines() if line.startswith("TICKET")))
+
+
 if __name__ == "__main__":
     unittest.main()
