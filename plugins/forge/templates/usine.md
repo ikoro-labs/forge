@@ -47,7 +47,8 @@ humain par `ready-for-human`.
 - `domain-owner` : `<login GitHub du référent, sans @>`
 
 Les sources produit que lit `forge:product-owner`, une par ligne, **dans l'ordre de préséance** :
-la plus haute gagne sur les suivantes.
+la plus haute gagne sur les suivantes. L'ordre met l'expert métier en tête : ses documents, notes
+et entretiens d'abord, avant tout ce que des agents ont écrit.
 
 - `product-source` : `<docs/produit/retours-terrain.md>`
 - `product-source` : `<docs/produit/parcours.md>`
