@@ -132,5 +132,44 @@ class Template(unittest.TestCase):
         self.assertIn("pnpm --filter <app> e2e e2e/<spec>", flat)
 
 
+def text(*parts: str) -> str:
+    return " ".join(support.PLUGIN.joinpath(*parts).read_text(encoding="utf-8").split())
+
+
+class Roles(unittest.TestCase):
+    def test_the_coder_attaches_the_proof_the_keys_allow_in_its_preuves(self) -> None:
+        """No F-NNNN: ticket #54, A7: le coder prend les captures par les clés déclarées et les joint à Preuves."""
+        coder = text("agents", "coder.md")
+        for key in KEYS:
+            self.assertIn(f"`{key}`", coder)
+        self.assertIn("scripts/preuves_ecran.py", coder)
+        self.assertIn("sans objet (clé `<nom>` absente)", coder)
+        self.assertIn("jamais en CI", coder)
+        self.assertIn("poste personnel", coder)
+
+    def test_the_gate_probe_says_whether_the_expected_proof_is_attached_without_opinion(self) -> None:
+        """No F-NNNN: ticket #54, A8: qc-gate lance la sonde et rend ses lignes verbatim, sans les juger."""
+        gate = text("agents", "qc-gate.md")
+        self.assertIn("scripts/preuves_ecran.py", gate)
+        self.assertIn("**Preuves d'écran.**", gate)
+        self.assertIn("sans objet (clé screenshot-command absente)", gate)
+        self.assertIn("Tu ne juges pas une capture", gate)
+
+    def test_the_judge_makes_a_missing_screen_proof_a_blocker(self) -> None:
+        """No F-NNNN: ticket #54, A9: une preuve d'écran manquante pour un critère d'écran est un constat de qc-conf."""
+        conf = text("agents", "qc-conf.md")
+        self.assertIn("## Lecture des preuves d'écran", conf)
+        self.assertIn("`SANS-CAPTURE`", conf)
+        self.assertIn("`MANQUE`", conf)
+        self.assertIn("`BLOCKER`", conf[conf.index("## Lecture des preuves d'écran"):])
+
+    def test_the_recette_links_each_screen_criterion_to_its_capture_or_recording(self) -> None:
+        """No F-NNNN: ticket #54, A10: feature-verify relie le critère à sa capture ou à son enregistrement."""
+        verify = text("skills", "feature-verify", "SKILL.md")
+        self.assertIn("sa capture ou son enregistrement", verify)
+        self.assertIn("colonne `Capture`", verify)
+        self.assertIn("sans objet (clé `<nom>` absente)", verify)
+
+
 if __name__ == "__main__":
     unittest.main()
