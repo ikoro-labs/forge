@@ -80,6 +80,18 @@ passage (étape 4). Par défaut : 5 tickets, 3 coders, 6 heures et 3 000 000 jet
    cette session : arrête-toi et dis-le. Pas de repli sur un agent générique, qui n'aurait ni le
    rôle ni le hook `guard_coder`.
 7. **L'heure de départ** : `date -u +%s`, que tu gardes pour le plafond de durée (étape 4).
+8. **Le budget d'erreur** : recalcule l'état des objectifs de service,
+
+   ```
+   uv run --no-project --quiet python "${CLAUDE_PLUGIN_ROOT}/scripts/factory_slo.py" budget <projet>
+   ```
+
+   Sans la clé `budget-action`, la commande répond « sans objet (clé `budget-action` absente) » :
+   aucune action, et tu le dis dans le compte rendu. Un code de sortie non nul : arrête-toi et rends
+   son message, sans lancer de coder. Une ligne `ACTIVE : feature-freeze` gèle la feature (étape 1,
+   frontière). `human-merge` ne te concerne pas : `/forge:qc` s'y plie et `guard_git` refuse la
+   fusion ; les PR attendent alors l'humain, et tu le rapportes. `alert` n'ajoute que l'étiquette de
+   l'issue de suivi. Une ligne « autonomie rendue » se rapporte aussi.
 
 ## 1. L'état des tickets
 
@@ -97,7 +109,10 @@ Dans cet ordre de priorité :
    agent-claimed`), commente la branche orpheline si elle existe sur `origin`, et traite-le comme
    prêt. Un ticket assigné sans `agent-claimed` est pris par un humain : tu n'y touches pas.
 3. **La frontière** : ouvert, `ready-for-agent`, aucun bloqueur ouvert, personne d'assigné, aucun
-   coder en vol. Dans l'ordre des sous-issues.
+   coder en vol. Dans l'ordre des sous-issues. Sous un `feature-freeze` actif (étape 0, point 8),
+   seuls les tickets portant l'étiquette `bug` ou `escaped-defect` entrent dans la frontière : les
+   autres attendent, restent `ready-for-agent`, non assignés, et le compte rendu du passage les
+   nomme avec l'objectif épuisé. Le gel ne touche ni les PR ouvertes (priorité 1) ni les reprises.
 
 Tu tiens trois listes, que tu réécris dans ta réponse à chaque changement : **en vol** (ticket,
 coder), **file de revue** (PR, ticket, dans l'ordre d'arrivée), **fait** (ticket, PR, verdict).
@@ -287,7 +302,8 @@ Puis la durée du passage et ses jetons d'agents, qui calibrent les plafonds ; l
 l'arrêt**, en une ligne (plafond atteint et lequel, pause, reprise épuisée, remise à jour
 impossible, acceptation attendue, tickets humains restants) ; les questions passées à l'arbitre de
 domaine et les tickets `ready-for-human` ou `needs-info` ; chaque clé de `docs/agents/usine.md`
-trouvée absente ; et **ce que le décideur doit faire**, jamais répondre à une question : faire un
+trouvée absente ; les actions actives du budget d'erreur et les tickets qui attendent sous un gel ;
+et **ce que le décideur doit faire**, jamais répondre à une question : faire un
 geste qu'aucun agent ne peut faire sur un ticket `ready-for-human` en le nommant, taper
 `/forge:feature-accept`, ou relancer `/forge:feature-build F-NNNN` pour la suite. Une moyenne de
 plus d'une remise à jour par PR dit que le parallélisme coûte plus qu'il ne rapporte : signale-le.

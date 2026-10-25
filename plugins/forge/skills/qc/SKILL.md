@@ -17,8 +17,8 @@ rien, pose `needs-your-attention` avec l'écart, arrête-toi.
 Toi, tu orchestres, tu postes et tu fusionnes. Personne ne relit après toi : l'humain n'est
 qu'alerté.
 
-Le projet décrit son usine dans `docs/agents/usine.md` ; ce skill en lit les clés `protected-path`
-et `never-weaken`.
+Le projet décrit son usine dans `docs/agents/usine.md` ; ce skill en lit les clés `protected-path`,
+`never-weaken` et `budget-action`.
 
 ## Une passe ou deux
 
@@ -58,7 +58,8 @@ verdict, le rapport et la suite sont les mêmes. Tout le reste passe par les deu
    dans sa description (`gh pr edit <n> --body-file`) ; sur une autre, Dependabot compris, en
    commentaire. Elle est réécrite à chaque tour, jamais laissée périmée.
 7. **Suite.**
-   - ACCEPT : fusionne (étape 8), sauf ce que la règle **Chemins protégés** plus bas arrête.
+   - ACCEPT : fusionne (étape 8), sauf ce que les règles **Budget d'erreur** et **Chemins
+     protégés** plus bas arrêtent.
    - REJECT au tour 1 : corrige chaque `BLOCKER`, et seulement eux, pousse, puis reprends à
      l'étape 1. Les `MINOR` et `NOTE` restent dans le verdict. Depuis `/forge:feature-build`, la
      correction passe par `forge:coder` en mode correction, pas par toi.
@@ -94,6 +95,30 @@ verdict, le rapport et la suite sont les mêmes. Tout le reste passe par les deu
 
    Si la protection de la base refuse parce que la branche est en retard, `gh pr update-branch <n>`,
    attends les checks, et fusionne. Checks rouges : ce n'est pas un ACCEPT, reprends à l'étape 1.
+
+## Budget d'erreur
+
+Le projet peut rendre les fusions à l'humain quand un objectif de service est épuisé (clé
+`budget-action`). Au début de chaque passage, avant l'étape 1, recalcule l'état :
+
+```
+uv run --no-project --quiet python "${CLAUDE_PLUGIN_ROOT}/scripts/factory_slo.py" budget <projet>
+```
+
+Sans la clé, la commande répond « sans objet (clé `budget-action` absente) » : dis-le dans `REX`,
+aucune action. Un code de sortie non nul (ligne mal formée, objectif inconnu, calcul impossible) :
+ne fusionne pas, pose `needs-your-attention` avec le message, arrête-toi ; le garde `guard_git`
+refuserait la fusion de toute façon.
+
+Une ligne `ACTIVE : human-merge sur <objectif>` arrête la fusion de la même façon qu'un chemin
+protégé, même sur ACCEPT : le verdict reste celui de la revue, mais pose `needs-your-attention`,
+écris l'objectif épuisé dans `Attention`, `fusionnée par l'agent : non` dans `Verdict`, arrête-toi.
+L'humain fusionne. Les actions `feature-freeze` (celle de `forge:feature-build`) et `alert` (l'étiquette
+de l'issue de suivi, posée par `forge:slo --publier`) ne changent rien ici.
+
+L'autonomie revient d'elle-même : quand la commande dit « autonomie rendue » (l'objectif est revenu à
+`tenu`), fusionne comme d'habitude et écris-le dans `REX`. Retire alors `needs-your-attention` d'une PR
+que tu avais arrêtée pour ce seul objectif, en écrivant dans `Attention` ce que tu retires et pourquoi.
 
 ## Chemins protégés
 
