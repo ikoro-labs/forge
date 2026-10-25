@@ -20,7 +20,7 @@ SANS-ENVIRONNEMENT. Exit 0 when none of MANQUE, INVALID or SANS-ENVIRONNEMENT is
 2 when a file is unreadable or the call wrong.
 
     python revue_bout_en_bout.py verdict <verdict.tsv> --matrice <matrice.md> [--usine FILE] [--root DIR]
-        [--manifeste F] [--captures DIR] [--relecture F] [--appliquer --date AAAA-MM-JJ] [--tickets]
+        [--manifeste F] [--captures DIR] [--relecture F] [--ecrans "Écran n, Écran m"] [--appliquer --date AAAA-MM-JJ] [--tickets]
 
 The judge (`forge:review-judge`) writes one line per identifier of the matrix that is not `écarté`:
 `ELEMENT <id> <état> <gravité> <Écran n|-> <capture|-> <constat>`. The state is `tenu`, `partiel`, `absent`
@@ -32,6 +32,9 @@ SANS-FICHIER (a capture that is no file under `--captures`), HORS-MANIFESTE (a c
 take), SUSPECT (a `tenu` whose finding describes a lack; informative), A-RELIRE (a `tenu` with no second
 reading yet), NON-RELU and CONTESTE (the second reading, `LECTURE <id> <confirmé|contesté> <raison>`, did
 not confirm it), then OK. Exit 0 only when nothing blocks.
+
+With `--ecrans`, only the rows of the listed screens must be judged (a review on the touched screens run
+after a merge); the other rows keep their state, and NON-JUGE is not raised for them.
 
 With a clean verdict, `--appliquer` writes the state, the capture and the date of each judged row into the
 matrix (`--date` is required; the new text must pass `matrice.py` or nothing is written, NON-APPLIQUE) and
@@ -206,8 +209,12 @@ def judge(args: argparse.Namespace, verdict_text: str, matrix_text: str) -> int:
         else:
             judged.append(group[0])
     invalid_ids = {subject for subject, _ in invalid}
+    # A review on the touched screens judges the rows of those screens only; the others keep their state.
+    scope = {screen.strip() for screen in args.ecrans.split(",")} if args.ecrans else None
     for row in rows:
         identifier = row["Identifiant"]
+        if scope is not None and row["Écran"] not in scope:
+            continue
         if row["État"] != "écarté" and identifier not in grouped and identifier not in invalid_ids:
             findings.append(("NON-JUGE", identifier, "aucune ligne du verdict : la revue juge chaque élément de la source"))
     taken = _manifest_captures(Path(args.manifeste).read_text(encoding="utf-8")) if args.manifeste else None
@@ -322,6 +329,7 @@ def main(argv: list[str] | None = None) -> int:
     verdict.add_argument("--root", help="the project copy to read (default: the project directory)")
     verdict.add_argument("--manifeste", help="the manifest of the run: a capture cited must be in it")
     verdict.add_argument("--captures", help="the folder of the capture files, checked when given")
+    verdict.add_argument("--ecrans", help="a review on the touched screens: the screens judged, separated by commas")
     verdict.add_argument("--relecture", help="the second reading of the `tenu` verdicts")
     verdict.add_argument("--appliquer", action="store_true", help="write the verdict into the matrix when it has no finding")
     verdict.add_argument("--date", help="the ISO date of the judgment, required with --appliquer")
