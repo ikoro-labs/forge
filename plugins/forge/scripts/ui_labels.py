@@ -16,9 +16,10 @@ One line per finding is printed, `<status>`, `<path>`, `<label>` and `<detail>` 
 FORBIDDEN (the label holds a forbidden word, the detail), UNKNOWN (a business term of the label is
 in no glossary file of the key `glossary`: a capitalised word, the first of the label apart) or NONE
 (no forbidden word found). Exit code 0 when nothing is found, 1 when a label holds a forbidden word
-or an unknown term, 2 when a pattern is invalid, a glossary file unreadable or the call wrong. A
-missing key prints `sans objet (clé <nom> absente)` for its part and never stops the other part.
-The standard library only.
+or an unknown term, 2 when a pattern is invalid, a glossary file unreadable, a file given to `--usine` missing or
+unreadable, or the call wrong. A missing key prints `sans objet (clé <nom> absente)` for its part
+and never stops the other part. Without `--usine`, a project with no `docs/agents/usine.md` has no
+key at all. The output is UTF-8. The standard library only.
 """
 
 from __future__ import annotations
@@ -166,12 +167,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--usine", help="the usine.md to read (default: docs/agents/usine.md)")
     parser.add_argument("--root", help="the project copy to read (default: the project directory)")
     args = parser.parse_args(argv)
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     root = Path(args.root) if args.root else usine.project_root()
     config_file = Path(args.usine) if args.usine else root / usine.CONFIG_PATH
     try:
         try:
             config = usine.parse(config_file.read_text(encoding="utf-8"))
         except FileNotFoundError:
+            if args.usine:
+                raise
             config = {}
         text = sys.stdin.read() if args.diff == "-" else Path(args.diff).read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as error:
