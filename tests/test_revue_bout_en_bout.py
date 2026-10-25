@@ -210,5 +210,44 @@ class Judgment(unittest.TestCase):
         self.assertIn("CONTRADICTION\tEXI-01", out)
 
 
+class SecondReading(unittest.TestCase):
+    def test_no_publication_before_the_tenu_verdicts_are_reread(self) -> None:
+        """No F-NNNN: ticket #100, A6: sans seconde lecture, chaque tenu reste à relire et rien ne se publie."""
+        code, out = verdict(GOOD_VERDICT)
+        self.assertEqual(code, 1)
+        self.assertIn("A-RELIRE\tEXI-01", out)
+
+    def test_a_contested_tenu_blocks(self) -> None:
+        """No F-NNNN: ticket #100, A6: un tenu que la seconde lecture conteste n'est pas publié."""
+        reading = "LECTURE\tEXI-01\tcontesté\tla capture ne montre pas le numéro du compteur\n"
+        code, out = verdict(GOOD_VERDICT, "--relecture", "{root}/relecture.tsv", files={"relecture.tsv": reading})
+        self.assertEqual(code, 1)
+        self.assertIn("CONTESTE\tEXI-01\tla capture ne montre pas le numéro", out)
+
+    def test_a_tenu_the_second_reader_skipped_blocks(self) -> None:
+        """No F-NNNN: ticket #100, A6: chaque tenu est relu, pas un échantillon."""
+        code, out = verdict(GOOD_VERDICT, "--relecture", "{root}/relecture.tsv", files={"relecture.tsv": "LECTURE\tC01\tconfirmé\tx\n"})
+        self.assertEqual(code, 1)
+        self.assertIn("NON-RELU\tEXI-01", out)
+
+    def test_a_tenu_that_describes_a_lack_is_flagged_for_the_reader(self) -> None:
+        """No F-NNNN: ticket #100, A6: un tenu dont le constat décrit un manque est signalé au relecteur."""
+        text = element("EXI-01", "tenu", "-", "Écran 1", "e1-clair-bureau.png", "le numéro du compteur manque") + LINE_EXI02 + LINE_C01
+        code, out = verdict(text)
+        self.assertIn("SUSPECT\tEXI-01", out)
+        self.assertEqual(code, 1)
+
+    def test_a_clean_tenu_is_not_flagged(self) -> None:
+        """No F-NNNN: ticket #100, A6: le signalement ne vise que les constats qui décrivent un manque."""
+        code, out = verdict(GOOD_VERDICT, "--relecture", "{root}/relecture.tsv")
+        self.assertNotIn("SUSPECT", out)
+
+    def test_a_malformed_reading_is_invalid(self) -> None:
+        """No F-NNNN: ticket #100, A6: une lecture sans raison ne confirme rien."""
+        code, out = verdict(GOOD_VERDICT, "--relecture", "{root}/relecture.tsv", files={"relecture.tsv": "LECTURE\tEXI-01\tconfirmé\t\n"})
+        self.assertEqual(code, 1)
+        self.assertIn("INVALID", out)
+
+
 if __name__ == "__main__":
     unittest.main()
