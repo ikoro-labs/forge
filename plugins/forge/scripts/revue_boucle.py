@@ -85,6 +85,28 @@ def declencher(args: argparse.Namespace) -> int:
     return 0
 
 
+def porte(args: argparse.Namespace) -> int:
+    """The gate of the acceptance test: open only on a review of the whole path with no `bloquant` and no `majeur`."""
+    text = Path(args.compte_rendu).read_text(encoding="utf-8")
+    fields = {key: value.strip() for key, value in re.findall(r"^([A-Z]+):[ \t]*(.*)$", text, re.MULTILINE)}
+    if fields.get("RESULT") != "REVUE":
+        _print("FERMEE", "pas de compte rendu de revue", "attendu RESULT: REVUE, celui de forge:feature-review")
+        return 1
+    counts = {name: re.search(rf"\b{name}\s+(\d+)", fields.get("ECARTS", "")) for name in ("bloquant", "majeur", "mineur")}
+    if not all(counts.values()):
+        _print("FERMEE", "ECARTS illisible", "attendu : bloquant <n>, majeur <n>, mineur <n>")
+        return 1
+    number = {name: int(match.group(1)) for name, match in counts.items() if match}
+    if not re.fullmatch(r"entière|entiere", fields.get("PORTEE", "")):
+        _print("FERMEE", "revue partielle", f"PORTEE « {fields.get('PORTEE', '')} » : la recette suit une revue du parcours en entier")
+        return 1
+    if number["bloquant"] or number["majeur"]:
+        _print("FERMEE", f"bloquant {number['bloquant']}, majeur {number['majeur']}", "la recette attend zéro bloquant et zéro majeur")
+        return 1
+    _print("OUVERTE", "zéro bloquant, zéro majeur", f"mineur {number['mineur']} : au rapport, sans fermer la porte")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
     commands = parser.add_subparsers(dest="command", required=True)
@@ -94,11 +116,13 @@ def main(argv: list[str] | None = None) -> int:
     trigger.add_argument("--root", help="the project copy to read (default: the project directory)")
     trigger.add_argument("--matrice", help="the matrix of the feature, to find the screens of the ticket")
     trigger.add_argument("--ticket", help="the merged ticket, written #n")
+    gate = commands.add_parser("porte", help="may the acceptance test start, from the report of the review")
+    gate.add_argument("compte_rendu", help="the file holding the `RESULT: REVUE` report")
     args = parser.parse_args(argv)
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     try:
-        return declencher(args)
+        return porte(args) if args.command == "porte" else declencher(args)
     except (OSError, UnicodeDecodeError, ValueError) as error:
         print(f"revue_boucle: {error}", file=sys.stderr)
         return 2

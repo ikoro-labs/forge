@@ -73,3 +73,42 @@ class Trigger(unittest.TestCase):
         code, out = declencher("apps/web/a.tsx\n", USINE, "--matrice", "{root}/matrice.md", "--ticket", "#7")
         self.assertEqual(code, 0)
         self.assertIn("ECRAN\ttous\t", out)
+
+
+def compte_rendu(ecarts: str = "bloquant 0, majeur 0, mineur 2", portee: str = "entière") -> str:
+    return (
+        "RESULT: REVUE\nFEATURE: F-0001\nCOUVERTURE: 8/10, 80 %\n"
+        f"ECARTS: {ecarts}\nTICKETS: publiés (#12)\nPORTEE: {portee}\nRAPPORT: recette.md\nSYSTEME: Linux\n"
+    )
+
+
+def porte(text: str) -> tuple[int, str]:
+    return run(["porte", "{root}/revue.txt"], {"revue.txt": text})
+
+
+class Gate(unittest.TestCase):
+    def test_the_recette_opens_at_zero_blocking_and_zero_major(self) -> None:
+        """No F-NNNN: ticket #101, la porte de recette : zéro bloquant et zéro majeur, les mineurs restent au rapport."""
+        code, out = porte(compte_rendu())
+        self.assertEqual(code, 0)
+        self.assertIn("OUVERTE", out)
+        self.assertIn("mineur 2", out)
+
+    def test_a_blocking_or_a_major_gap_keeps_the_recette_closed(self) -> None:
+        """No F-NNNN: ticket #101, un bloquant ou un majeur ferme la porte de recette."""
+        for ecarts in ("bloquant 1, majeur 0, mineur 0", "bloquant 0, majeur 3, mineur 0"):
+            code, out = porte(compte_rendu(ecarts))
+            self.assertEqual(code, 1, ecarts)
+            self.assertIn("FERMEE", out)
+
+    def test_a_partial_review_never_opens_the_recette(self) -> None:
+        """No F-NNNN: ticket #101, la revue en entier précède la recette : une revue sur écrans touchés ne l'ouvre pas."""
+        code, out = porte(compte_rendu(portee="écrans touchés"))
+        self.assertEqual(code, 1)
+        self.assertIn("FERMEE", out)
+
+    def test_a_report_that_is_not_a_review_opens_nothing(self) -> None:
+        """No F-NNNN: ticket #101, sans compte rendu de revue lisible, la porte reste fermée."""
+        code, out = porte("RESULT: PR\nPR: #3\n")
+        self.assertEqual(code, 1)
+        self.assertIn("FERMEE", out)
