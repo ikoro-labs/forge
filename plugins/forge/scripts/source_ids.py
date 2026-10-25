@@ -19,6 +19,9 @@ The contract, which the skill `feature-spec` repeats:
   (a list marker may precede it). It is accepted when the file exists and names the identifier,
   the date is ISO, and the role (or GitHub account, with or without `@`) is a value of the key
   `source-author`.
+- An identifier of the source cited in the Non-goals section of the spec (a heading holding `Non-goals`,
+  up to the next heading of the same level or above) without an accepted exclusion line is REFUSED, and
+  that citation never counts as taking the element up.
 - An element with no identifier at all in the source is given one by the spec, with the source line it
   stands for; it never replaces an origin identifier, and the script cannot see those and does not
   count them.
@@ -59,6 +62,7 @@ _EXCLUSION = re.compile(
 )
 _EXCLUSION_START = re.compile(r"^\s*(?:[-*+]\s+)?Écarté\s*:")
 _DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_HEADING = re.compile(r"^(#{1,6})\s+(.*)$")
 
 
 def ids_of_source(text: str) -> list[str]:
@@ -79,6 +83,22 @@ def ids_of_source(text: str) -> list[str]:
 def mentions(text: str, identifier: str) -> bool:
     """Whether the text holds the identifier as a whole token."""
     return re.search(rf"(?<![\w-]){re.escape(identifier)}(?![\w-]|\.\d)", text) is not None
+
+
+def split_non_goals(spec: str) -> tuple[str, str]:
+    """The spec without its Non-goals section, and that section: a heading with `Non-goals` in it, up to the
+    next heading of the same level or above."""
+    kept: list[str] = []
+    goals: list[str] = []
+    level = 0
+    for line in spec.splitlines():
+        heading = _HEADING.match(line)
+        if heading and level and len(heading.group(1)) <= level:
+            level = 0
+        if heading and not level and "non-goals" in heading.group(2).lower():
+            level = len(heading.group(1))
+        (goals if level else kept).append(line)
+    return "\n".join(kept), "\n".join(goals)
 
 
 def _print(status: str, first: str = "", second: str = "", detail: str = "") -> None:
@@ -156,7 +176,11 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     authors = config.get(AUTHOR_KEY, [])
     taken, accepted, refused = _exclusions(spec, authors, root)
+    taken, non_goals = split_non_goals(taken)
     excluded = {identifier for identifier, *_ in accepted}
+    for identifier in elements:
+        if identifier not in excluded and mentions(non_goals, identifier):
+            refused.append((identifier, "", "cité dans les Non-goals sans ligne Écarté ni accord : un agent n'écarte jamais un élément"))
     missing = [i for i in elements if i not in excluded and not mentions(taken, i)]
     for identifier, agreement, detail in accepted:
         _print("EXCLUDED", identifier, agreement, detail)

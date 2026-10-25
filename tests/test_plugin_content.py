@@ -552,6 +552,12 @@ class SourceIdentifiers(unittest.TestCase):
         self.assertIn("`source-author`", skill)
         self.assertIn("Écarté : <identifiant> | accord : <fichier> | <AAAA-MM-JJ> | <rôle>", skill)
 
+    def test_the_spec_skill_says_the_non_goals_set_nothing_aside(self) -> None:
+        """No F-NNNN: ticket #93, A5: le skill dit qu'un identifiant cité dans les Non-goals sans accord est refusé."""
+        skill = self.read("skills", "feature-spec", "SKILL.md")
+        self.assertIn("Les Non-goals n'écartent rien", skill)
+        self.assertIn("`REFUSED`", skill)
+
     def test_the_spec_template_has_the_section_of_the_source_elements(self) -> None:
         """No F-NNNN: ticket #92, A2: le gabarit de spec porte les éléments de la source et leurs identifiants."""
         template = self.read("templates", "features", "spec.md")
@@ -570,6 +576,82 @@ class SourceIdentifiers(unittest.TestCase):
         page = " ".join((support.REPO_ROOT / "docs" / "installation.md").read_text(encoding="utf-8").split())
         self.assertIn("`source-author`", page)
         self.assertIn("source_ids.py", page)
+
+
+class SpecGrain(unittest.TestCase):
+    """Ticket #93: a spec reaches the grain of a target procedure."""
+
+    @staticmethod
+    def read(*parts: str) -> str:
+        return " ".join(support.PLUGIN.joinpath(*parts).read_text(encoding="utf-8").split())
+
+    def test_the_limit_of_eight_stories_is_lifted(self) -> None:
+        """No F-NNNN: ticket #93, A4: ni la description, ni l'étape, ni le gabarit ne plafonnent les stories."""
+        skill = self.read("skills", "feature-spec", "SKILL.md")
+        template = self.read("templates", "features", "spec.md")
+        for text in (skill, template):
+            self.assertNotRegex(text.lower(), r"\bhuit\b")
+            self.assertNotIn("au-delà, propose de couper", text.lower())
+        self.assertIn("autant de stories qu'il en faut pour reprendre la source entière", skill)
+        self.assertIn("autant de stories qu'il en faut", template.lower())
+
+    SECTIONS = (
+        "Exigences atomiques",
+        "Contrôles codés",
+        "Gabarits et conventions",
+        "Déroulé pas à pas",
+        "Rôles",
+        "Décisions prises et leur date",
+        "Critères transverses",
+        "Lots et leur gel",
+        "Comment elle peut échouer",
+        "Pièges et parades observés",
+        "Confiance chiffrée",
+        "Points ouverts",
+        "Questions pour les entretiens",
+        "Glossaire",
+    )
+
+    def test_the_template_carries_each_section(self) -> None:
+        """No F-NNNN: ticket #93, A1: le gabarit de spec porte chaque section demandée, en titre."""
+        template = support.PLUGIN.joinpath("templates", "features", "spec.md").read_text(encoding="utf-8")
+        headings = [line for line in template.splitlines() if line.startswith("## ")]
+        for name in self.SECTIONS:
+            self.assertTrue(any(name in heading for heading in headings), name)
+
+    def test_the_template_gives_the_format_of_the_coded_sections(self) -> None:
+        """No F-NNNN: ticket #93, A1: EXI-nn, Cnn et Gn ont leur format : colonnes, niveaux de preuve, effet."""
+        template = self.read("templates", "features", "spec.md")
+        self.assertIn("| Identifiant | Exigence | Critère mesurable | Classement | Niveau de preuve | Lot |", template)
+        for level in ("T texte réglementaire", "P principe du projet", "O piège observé", "M parité marché", "S souhait d'une source unique"):
+            self.assertIn(level, template)
+        self.assertIn("| Identifiant | Calcul exact | Tolérance par défaut | Effet |", template)
+        self.assertIn("quarantaine, avertissement, condition de signature", template)
+        self.assertIn("| Identifiant | Structure | Règles |", template)
+        self.assertIn("`EXI-nn`", template)
+        self.assertIn("`Cnn`", template)
+        self.assertIn("`Gn`", template)
+
+    def test_the_glossary_section_feeds_the_glossary_key(self) -> None:
+        """No F-NNNN: ticket #93, A1: le glossaire de la spec alimente la clé glossary."""
+        template = self.read("templates", "features", "spec.md")
+        self.assertIn("clé `glossary`", template[template.index("Glossaire"):])
+
+    def test_feature_accept_cites_the_open_points_section_of_the_template(self) -> None:
+        """No F-NNNN: ticket #93, A1: feature-accept cite la section des points ouverts sous le titre du gabarit."""
+        accept = self.read("skills", "feature-accept", "SKILL.md")
+        titles = re.findall(r"^## \d+\. (.+)$", support.PLUGIN.joinpath("templates", "features", "spec.md").read_text(encoding="utf-8"), re.M)
+        cited = re.search(r"sa section « ([^»]+) »", accept)
+        self.assertIsNotNone(cited)
+        self.assertIn(cited.group(1), titles)
+
+    def test_the_skill_fills_each_section_or_says_why_it_is_without_object(self) -> None:
+        """No F-NNNN: ticket #93, A2: le skill remplit chaque section ou dit pourquoi elle est sans objet."""
+        skill = self.read("skills", "feature-spec", "SKILL.md")
+        self.assertIn("remplis chaque section du gabarit ou écris « sans objet » avec la raison", skill)
+        for name in ("exigences atomiques", "contrôles codés", "gabarits et conventions", "déroulé pas à pas", "pièges et parades observés", "confiance chiffrée", "glossaire"):
+            self.assertIn(name, skill.lower())
+        self.assertIn("jamais seulement « doit gérer X »", skill)
 
 
 class UiLabels(unittest.TestCase):

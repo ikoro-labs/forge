@@ -19,7 +19,7 @@ la taper, et n'écris rien.
    dans les en-têtes, selon le tableau de la chaîne du protocole, et dis que la porte est « sans
    objet (clé feature-gate absente) ».
 3. **Ce qu'il engage.** Affiche en cinq lignes au plus : ce que le document décide, ses décisions
-   prises par défaut, et sa section « Questions ouvertes ». Si des questions restent ouvertes, dis
+   prises par défaut, et sa section « Points ouverts ». Si des questions restent ouvertes, dis
    lesquelles et demande confirmation avant d'écrire.
 4. **Écrire**, dans l'en-tête seulement : `statut: accepte`, `accepte_par: <l'identifiant
    court de la ligne de la clé `accepting-human`, ou son nom si la ligne est sans ` | `>`,

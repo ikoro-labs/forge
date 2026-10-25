@@ -157,6 +157,71 @@ class Exclusions(unittest.TestCase):
         self.assertIn("sans objet (clé source-author absente)", out)
 
 
+NON_GOALS = "## 3. Non-goals\n\n- Hors périmètre : CT-10\n\n## 4. Exigences\n\nSans objet.\n"
+
+
+class NonGoals(unittest.TestCase):
+    def test_an_identifier_cited_in_the_non_goals_without_agreement_is_refused(self) -> None:
+        """No F-NNNN: ticket #93, A5: Hors périmètre : CT-10 sans ligne Écarté ni accord n'est pas une reprise."""
+        code, out = run({"source.md": SOURCE, "spec.md": "Reprend EX-1, EX-2 et RG-3.1.\n\n" + NON_GOALS})
+        lines = out.splitlines()
+        self.assertEqual(code, 1)
+        self.assertTrue(any(line.startswith("REFUSED\tCT-10\t") and "Non-goals" in line for line in lines))
+
+    def test_an_element_taken_up_elsewhere_and_cited_in_the_non_goals_is_still_refused(self) -> None:
+        """No F-NNNN: ticket #93, A5: l'élément repris puis déclaré hors périmètre est une contradiction, refusée."""
+        code, out = run({"source.md": SOURCE, "spec.md": "Reprend EX-1, EX-2, CT-10, RG-3.1.\n\n" + NON_GOALS})
+        self.assertEqual(code, 1)
+        self.assertIn("REFUSED\tCT-10\t", out)
+
+    def test_an_accepted_exclusion_may_be_cited_in_the_non_goals(self) -> None:
+        """No F-NNNN: ticket #93, A5: avec une ligne Écarté et son accord, la mention dans les Non-goals est permise."""
+        code, out = run({"source.md": SOURCE, "spec.md": SPEC_EXCLUDING + "\n" + NON_GOALS, "accord.md": "CT-10 écarté.\n"})
+        self.assertEqual(code, 0)
+        self.assertEqual(out.splitlines()[0], "EXCLUDED\tCT-10\taccord.md\t2026-10-20 expert métier")
+
+    def test_a_non_goals_section_without_source_identifier_changes_nothing(self) -> None:
+        """No F-NNNN: ticket #93, A5: des Non-goals qui ne citent aucun identifiant de la source laissent le code à 0."""
+        spec = SPEC_FULL + "\n## 3. Non-goals\n\n- Le paiement des factures.\n"
+        code, out = run({"source.md": SOURCE, "spec.md": spec})
+        self.assertEqual((code, out.splitlines()[0].split("\t")[0]), (0, "NONE"))
+
+
+EXAMPLES = Path(__file__).resolve().parent / "exemples"
+TEMPLATE = Path(__file__).resolve().parent.parent / "plugins" / "forge" / "templates" / "features" / "spec.md"
+
+
+def titles(text: str) -> list[str]:
+    """The level-2 headings of a Markdown text, without their number or their parenthesis."""
+    return [line[3:].split(". ", 1)[-1].split(" (")[0] for line in text.splitlines() if line.startswith("## ")]
+
+
+class FilledExample(unittest.TestCase):
+    """Ticket #93: a spec filled on the template passes the count of #92."""
+
+    source = (EXAMPLES / "source.md").read_text(encoding="utf-8")
+    spec = (EXAMPLES / "spec.md").read_text(encoding="utf-8")
+
+    def test_the_filled_example_takes_up_every_element_of_its_source(self) -> None:
+        """No F-NNNN: ticket #93, A3: l'exemple rempli passe le comptage, liste vide et code 0."""
+        self.assertEqual(ids_of_source(self.source), ["EXI-01", "EXI-02", "EXI-03", "C01", "C02", "G1", "G2", "P1"])
+        code, out = run({"source.md": self.source, "spec.md": self.spec})
+        self.assertEqual(code, 0)
+        self.assertEqual(out.splitlines()[0].split("\t")[0], "NONE")
+
+    def test_the_example_loses_the_count_when_an_element_is_dropped(self) -> None:
+        """No F-NNNN: ticket #93, A3: sans les lignes qui citent C02, le comptage liste C02."""
+        spec = "\n".join(line for line in self.spec.splitlines() if "C02" not in line)
+        code, out = run({"source.md": self.source, "spec.md": spec})
+        self.assertEqual(code, 1)
+        self.assertIn("MISSING\tC02\tsource.md\t", out)
+
+    def test_the_example_holds_every_section_of_the_template(self) -> None:
+        """No F-NNNN: ticket #93, A3: l'exemple suit le gabarit, section par section, dans l'ordre."""
+        template = titles(TEMPLATE.read_text(encoding="utf-8"))
+        self.assertEqual(titles(self.spec), template)
+
+
 class Usage(unittest.TestCase):
     def test_a_missing_source_file_exits_two(self) -> None:
         """No F-NNNN: ticket #92, A1: une source déclarée et introuvable sort 2, elle n'est pas vide."""
