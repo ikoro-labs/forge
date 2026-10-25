@@ -23,11 +23,27 @@ of the whole path (`PORTEE: entière`) holds zero `bloquant` and zero `majeur`. 
     python revue_boucle.py retours <journal>
 
 The journal keeps, for each round of the loop, the state of every element the judge has judged
-(`TOUR <n> <identifier> <état>`). An identifier of the source is a gap in a round when its state is not
-`tenu`; it returns once for each round after its first gap in which it is a gap again, whether the fix
-did not hold or a fixed element broke again. `retours` prints `RETOUR <id> <n>` for those, and
-`ARRET <id> <n>` (exit 1) for each identifier that returned twice: the loop stops and the human takes
-over. The count rests on the identifier of the source and the state alone, never on a ticket number.
+(`TOUR <n> <identifier> <état>`), and, in the order they happened, the merged tickets that covered an
+identifier (`CORRECTION <ticket> <identifier>`, written by `correction <journal> --ticket '#n' --couvre
+'<identifiers>'` when a ticket that lists them under `Couvre :` merges, before the review it triggers).
+
+    python revue_boucle.py correction <journal> --ticket '#n' --couvre 'EXI-01, C01'
+
+An identifier of the source is a gap in a round when its state is not `tenu`. It returns once each time it
+is a gap again after a first gap AND a fix happened since that gap was last seen: a merged ticket that
+covered it, or a round where it was `tenu`. Two rounds with no such fix between them are one gap seen
+twice, not a return (several tickets merge before the first fix does). `retours` prints `RETOUR <id> <n>`
+for those, and `ARRET <id> <n>` (exit 1) for each identifier that returned twice: the loop stops and the
+human takes over. The count rests on the identifier of the source, the state and the merged fixes, never
+on a ticket number as a key of the gap.
+
+    python revue_boucle.py doublons <tickets> <ouverts>
+
+The loop publishes no second ticket for an identifier an open ticket already covers. `<tickets>` holds the
+`TICKET` lines of `revue_bout_en_bout.py verdict --tickets`; `<ouverts>` one line `#n<TAB>id, id` per open
+ticket of the feature (its `Couvre :` line; open until merged, so in flight too). Prints `DEJA-COUVERT <id>
+#n` for each covered identifier, then `PUBLIER` with the ticket line narrowed to the identifiers left, or
+`OMIS` when none is left.
 """
 
 from __future__ import annotations
@@ -145,20 +161,72 @@ def tour(args: argparse.Namespace) -> int:
     return 0
 
 
+def correction(args: argparse.Namespace) -> int:
+    """Record that a merged ticket covered these identifiers, before the review it triggers."""
+    identifiers = [i.strip() for i in args.couvre.split(",") if i.strip()]
+    if not identifiers or not re.fullmatch(r"#\d+", args.ticket):
+        _print("INVALID", args.ticket, "attendu : --ticket '#n' et --couvre 'identifiants séparés par des virgules'")
+        return 1
+    with Path(args.journal).open("a", encoding="utf-8", newline="\n") as handle:
+        for identifier in identifiers:
+            handle.write(f"CORRECTION\t{args.ticket}\t{identifier}\n")
+    _print("CORRECTION", args.ticket, ", ".join(identifiers))
+    return 0
+
+
+def doublons(args: argparse.Namespace) -> int:
+    """Narrow the ticket drafts to the identifiers no open ticket covers."""
+    covered: dict[str, str] = {}
+    for text in Path(args.ouverts).read_text(encoding="utf-8").splitlines():
+        fields = text.split("\t")
+        if len(fields) == 2 and re.fullmatch(r"#\d+", fields[0].strip()):
+            for identifier in fields[1].split(","):
+                covered.setdefault(identifier.strip(), fields[0].strip())
+    for text in Path(args.tickets).read_text(encoding="utf-8").splitlines():
+        fields = text.split("\t")
+        if len(fields) != 6 or fields[0] != "TICKET":
+            continue
+        identifiers = [i.strip() for i in fields[3].split(",")]
+        for identifier in identifiers:
+            if identifier in covered:
+                _print("DEJA-COUVERT", identifier, covered[identifier])
+        left = [i for i in identifiers if i not in covered]
+        if not left:
+            _print("OMIS", fields[1], fields[2], fields[3])
+            continue
+        findings = [f for f in fields[5].split(" ; ") if f.split(" : ")[0].strip() in left]
+        _print("PUBLIER", fields[1], fields[2], ", ".join(left), fields[4], " ; ".join(findings))
+    return 0
+
+
 def retours(args: argparse.Namespace) -> int:
     """The returns of each gap, and the stop when one returned MAX_RETURNS times."""
-    history: dict[str, list[bool]] = {}
-    for _, states in sorted(_rounds(Path(args.journal)).items()):
-        for identifier, state in states.items():
-            history.setdefault(identifier, []).append(state != "tenu")
+    seen_gap: dict[str, bool] = {}
+    fixed: dict[str, bool] = {}
+    count: dict[str, int] = {}
+    journal = Path(args.journal)
+    lines = journal.read_text(encoding="utf-8").splitlines() if journal.is_file() else []
+    for text in lines:
+        fields = text.split("\t")
+        if len(fields) == 3 and fields[0] == "CORRECTION":
+            fixed[fields[2]] = True
+        elif len(fields) == 4 and fields[0] == "TOUR" and fields[1].isdigit():
+            identifier, state = fields[2], fields[3]
+            if state == "tenu":
+                # Held again: whatever changed it, the gap was fixed; a break after it is a return.
+                fixed[identifier] = seen_gap.get(identifier, False)
+            else:
+                if seen_gap.get(identifier) and fixed.get(identifier):
+                    count[identifier] = count.get(identifier, 0) + 1
+                seen_gap[identifier] = True
+                fixed[identifier] = False
     stop = False
-    for identifier, gaps in history.items():
-        count = sum(gaps[gaps.index(True) + 1:]) if True in gaps else 0
-        if count >= MAX_RETURNS:
-            _print("ARRET", identifier, str(count), f"revenu {count} fois : la boucle s'arrête, l'humain reprend la main")
+    for identifier, number in count.items():
+        if number >= MAX_RETURNS:
+            _print("ARRET", identifier, str(number), f"revenu {number} fois : la boucle s'arrête, l'humain reprend la main")
             stop = True
-        elif count:
-            _print("RETOUR", identifier, str(count))
+        else:
+            _print("RETOUR", identifier, str(number))
     return 1 if stop else 0
 
 
@@ -178,13 +246,20 @@ def main(argv: list[str] | None = None) -> int:
     record.add_argument("verdict", help="the verdict of the judge")
     record.add_argument("--matrice", help="the matrix of the feature, with --ecrans")
     record.add_argument("--ecrans", help="a review on the touched screens: only their elements enter the round")
+    fix = commands.add_parser("correction", help="record the identifiers a merged ticket covered")
+    fix.add_argument("journal", help="the journal file of the loop")
+    fix.add_argument("--ticket", required=True, help="the merged ticket, written #n")
+    fix.add_argument("--couvre", required=True, help="the identifiers of its `Couvre :` line, separated by commas")
+    twice = commands.add_parser("doublons", help="drop from the drafts the identifiers an open ticket covers")
+    twice.add_argument("tickets", help="the TICKET lines of the verdict")
+    twice.add_argument("ouverts", help="one line `#n<TAB>identifiers` per open ticket")
     back = commands.add_parser("retours", help="the gaps that returned, and the stop")
     back.add_argument("journal", help="the journal file of the loop")
     args = parser.parse_args(argv)
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     try:
-        return {"porte": porte, "tour": tour, "retours": retours}.get(args.command, declencher)(args)
+        return {"porte": porte, "tour": tour, "retours": retours, "correction": correction, "doublons": doublons}.get(args.command, declencher)(args)
     except (OSError, UnicodeDecodeError, ValueError) as error:
         print(f"revue_boucle: {error}", file=sys.stderr)
         return 2

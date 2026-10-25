@@ -11,8 +11,9 @@ le design s'il existe, sont acceptés.
 
 0. **La porte de la revue.** Quand `matrice.md` existe, la recette ne démarre qu'après une revue de bout
    en bout **en entier** (`forge:feature-review`) à zéro `bloquant` et zéro `majeur` :
-   `uv run --no-project --quiet python ${CLAUDE_PLUGIN_ROOT}/scripts/revue_boucle.py porte <compte-rendu>`
-   doit rendre `OUVERTE`. `FERMEE` (ou pas de compte rendu) : dis-le et arrête-toi, ces écarts
+   `uv run --no-project --quiet python ${CLAUDE_PLUGIN_ROOT}/scripts/revue_boucle.py porte <dossier de la feature>/revue/compte-rendu.txt`
+   (le compte rendu `RESULT: REVUE` que `forge:feature-review` livre dans sa PR) doit rendre
+   `OUVERTE`. `FERMEE` (ou pas de compte rendu : la revue n'a pas encore été livrée et fusionnée) : dis-le et arrête-toi, ces écarts
    repartent en construction par `forge:feature-build` ; tu n'écris pas la recette à leur place.
    Les `mineur` restent au rapport de la revue. Sans `matrice.md` (pas de clé `product-source`),
    la porte est sans objet.

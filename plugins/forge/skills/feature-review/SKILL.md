@@ -104,7 +104,9 @@ rend son étape « sans objet (clé `<nom>` absente) », jamais `PASS` : forge n
      « Ses limites » de son `README.md`). Elle dit la date, le système et ce qui n'a pas été vu, la
      couverture (`scripts/matrice.py --reste`), les écarts par gravité avec leur ticket, les `NON-JOUE`,
      et reprend les captures citées, copiées dans le dossier de la feature sous `revue/`.
-7. **Livrer** le tout dans une PR vers la base : matrice, rapport, captures citées. La revue ne
+7. **Livrer** le tout dans une PR vers la base : matrice, rapport, captures citées, et le compte
+   rendu ci-dessous écrit dans le dossier de la feature sous `revue/compte-rendu.txt` (c'est là que
+   `forge:feature-verify` et `forge:feature-build` le lisent pour la porte de la recette). La revue ne
    corrige jamais le code d'une feature : ce sont les tickets qui repartent en construction.
 
 ## Gravité

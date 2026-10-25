@@ -114,14 +114,19 @@ class Gate(unittest.TestCase):
         self.assertIn("FERMEE", out)
 
 
-def journal_run(*verdicts: str) -> tuple[int, str]:
-    """Record each verdict as a round of the journal, then read the returns: the last call's code and output."""
+def journal_run(*steps: str | tuple[str, str]) -> tuple[int, str]:
+    """Play the steps on a journal, then read the returns: the last call's code and output.
+
+    A string is the verdict of a review (a round); `("#n", "EXI-01, C01")` is a merged ticket that covered those identifiers."""
     with tempfile.TemporaryDirectory() as folder:
         root = Path(folder)
-        for text in verdicts:
-            (root / "verdict.tsv").write_text(text, encoding="utf-8")
+        for step in steps:
             with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
-                main(["tour", str(root / "journal.tsv"), str(root / "verdict.tsv")])
+                if isinstance(step, tuple):
+                    main(["correction", str(root / "journal.tsv"), "--ticket", step[0], "--couvre", step[1]])
+                else:
+                    (root / "verdict.tsv").write_text(step, encoding="utf-8")
+                    main(["tour", str(root / "journal.tsv"), str(root / "verdict.tsv")])
         out = io.StringIO()
         with redirect_stdout(out), redirect_stderr(io.StringIO()):
             code = main(["retours", str(root / "journal.tsv")])
@@ -133,17 +138,20 @@ def line(identifier: str, state: str) -> str:
     return f"ELEMENT\t{identifier}\t{state}\t{severity}\tÉcran 1\te1.png\tconstat\n"
 
 
+FIX = ("#12", "EXI-01")
+
+
 class Loop(unittest.TestCase):
     def test_a_gap_seen_again_after_its_fix_is_a_return(self) -> None:
         """No F-NNNN: ticket #101, un écart encore non tenu au tour suivant revient une fois, la boucle continue."""
-        code, out = journal_run(line("EXI-01", "absent"), line("EXI-01", "partiel"))
+        code, out = journal_run(line("EXI-01", "absent"), FIX, line("EXI-01", "partiel"))
         self.assertEqual(code, 0)
         self.assertIn("RETOUR\tEXI-01\t1", out)
         self.assertNotIn("ARRET", out)
 
     def test_a_gap_that_returns_twice_stops_the_loop_and_goes_back_to_the_human(self) -> None:
         """No F-NNNN: ticket #101, l'arrêt sur un écart revenu deux fois, nommé par son identifiant de la source."""
-        code, out = journal_run(line("EXI-01", "absent"), line("EXI-01", "partiel"), line("EXI-01", "absent"))
+        code, out = journal_run(line("EXI-01", "absent"), FIX, line("EXI-01", "partiel"), FIX, line("EXI-01", "absent"))
         self.assertEqual(code, 1)
         self.assertIn("ARRET\tEXI-01\t2", out)
 
@@ -168,6 +176,57 @@ class Loop(unittest.TestCase):
         code, out = journal_run(line("EXI-01", "absent") + line("C01", "tenu"), line("EXI-01", "tenu") + line("C01", "absent"))
         self.assertEqual(code, 0)
         self.assertNotIn("ARRET", out)
+
+    def test_two_rounds_with_no_fix_between_them_are_not_a_return(self) -> None:
+        """No F-NNNN: ticket #101, un écart ne revient qu'après une correction fusionnée qui le couvrait."""
+        code, out = journal_run(line("EXI-09", "absent"), line("EXI-09", "absent"), line("EXI-09", "absent"))
+        self.assertEqual(code, 0)
+        self.assertNotIn("RETOUR", out)
+        self.assertNotIn("ARRET", out)
+
+    def test_a_fix_that_covered_another_element_is_no_fix_of_this_one(self) -> None:
+        """No F-NNNN: ticket #101, la correction fusionnée compte pour les identifiants qu'elle couvrait, pas pour les autres."""
+        code, out = journal_run(line("EXI-09", "absent"), ("#12", "EXI-01"), line("EXI-09", "absent"))
+        self.assertNotIn("RETOUR", out)
+
+    def test_parallel_merges_publish_one_ticket_and_stop_only_after_fixes_that_did_not_hold(self) -> None:
+        """No F-NNNN: ticket #101, trois fusions A, B, C sans correction : ni arrêt ni ticket en double ; puis la correction fusionnée."""
+        gap = line("EXI-09", "absent")
+        draft = "TICKET\tmajeur\tL1\tEXI-09\te1.png\tEXI-09 : le champ manque\n"
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            journal = str(root / "journal.tsv")
+
+            def call(*argv: str) -> tuple[int, str]:
+                out = io.StringIO()
+                with redirect_stdout(out), redirect_stderr(io.StringIO()):
+                    code = main(list(argv))
+                return code, out.getvalue()
+
+            def review(text: str, open_tickets: str) -> tuple[int, str, str]:
+                (root / "verdict.tsv").write_text(text, encoding="utf-8")
+                (root / "brouillons.tsv").write_text(draft, encoding="utf-8")
+                (root / "ouverts.tsv").write_text(open_tickets, encoding="utf-8")
+                call("tour", journal, str(root / "verdict.tsv"))
+                code, published = call("doublons", str(root / "brouillons.tsv"), str(root / "ouverts.tsv"))
+                code_back, back = call("retours", journal)
+                return code_back, back, published
+
+            code, back, published = review(gap, "")                    # A merges: T1 is published
+            self.assertIn("PUBLIER\tmajeur\tL1\tEXI-09", published)
+            for _ in range(2):                                         # B and C merge, T1 is still open
+                code, back, published = review(gap, "#21\tEXI-09\n")
+                self.assertEqual(code, 0, back)
+                self.assertNotIn("PUBLIER", published)
+                self.assertIn("DEJA-COUVERT\tEXI-09\t#21", published)
+            call("correction", journal, "--ticket", "#21", "--couvre", "EXI-09")   # T1 merges
+            code, back, published = review(gap, "")
+            self.assertEqual((code, "RETOUR\tEXI-09\t1" in back), (0, True))
+            self.assertIn("PUBLIER", published)
+            call("correction", journal, "--ticket", "#22", "--couvre", "EXI-09")   # T2 merges
+            code, back, _ = review(gap, "")
+            self.assertEqual(code, 1)
+            self.assertIn("ARRET\tEXI-09\t2", back)
 
     def test_a_line_outside_the_touched_screens_never_enters_the_journal(self) -> None:
         """No F-NNNN: ticket #101, une revue sur écrans touchés n'inscrit au journal que les éléments de ces écrans."""
@@ -257,3 +316,16 @@ class Contents(unittest.TestCase):
         ]:
             with self.subTest(text=text):
                 self.assertIn(text, build)
+
+
+class Delivery(unittest.TestCase):
+    def test_the_report_of_the_gate_and_the_pr_of_each_review_have_a_place_and_a_reader(self) -> None:
+        """No F-NNNN: ticket #101, où le compte rendu est gardé pour la porte, et qui fusionne la PR de chaque revue."""
+        path = "revue/compte-rendu.txt"
+        for skill in ("feature-review", "feature-verify", "feature-build"):
+            with self.subTest(skill=skill):
+                self.assertIn(path, read("skills", skill, "SKILL.md"))
+        build = read("skills", "feature-build", "SKILL.md")
+        self.assertIn("avant la revue suivante", build)
+        self.assertIn("revue_boucle.py\" doublons", build)
+        self.assertIn("revue_boucle.py correction", build)
