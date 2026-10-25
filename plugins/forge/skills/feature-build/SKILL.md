@@ -297,8 +297,8 @@ Ni minuterie, ni geste humain : la fusion déclenche, ou rien ne se lance.
    ```
 
    Seules les lignes `PUBLIER` (déjà réduites aux identifiants non couverts) deviennent des tickets ;
-   `DEJA-COUVERT` et `OMIS` se rapportent, sans ticket. Un ticket par lot, étiqueté `ready-for-agent`, rattaché aux
-   sous-issues de l'issue de suivi, avec `Couvre :` et `Feature: F-NNNN`. Ils entrent dans la
+   `DEJA-COUVERT` et `OMIS` se rapportent, sans ticket. Un ticket par lot, étiqueté `ready-for-agent` et `gravite:<gravité>`
+   (celle de sa ligne `TICKET`), rattaché aux sous-issues de l'issue de suivi, avec `Couvre :` et `Feature: F-NNNN`. Ils entrent dans la
    frontière de l'étape 1, puis dans le passage comme tout ticket (coder à l'étape 2, `forge:qc`
    à l'étape 3), et leur fusion déclenche à son tour la revue de l'étape 1 de cette section, qui
    rejoue le parcours.

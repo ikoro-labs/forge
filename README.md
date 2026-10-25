@@ -151,7 +151,7 @@ du front matter qu'un agent de plugin ignore : le détail est dans
 | [`docs/installation.md`](docs/installation.md) | l'installation pas à pas, les montées de version, les gestes humains, les limites connues |
 | [`docs/sessions.md`](docs/sessions.md) | une session par dépôt, la passation drainée, les variables et les codes du relais |
 | [`docs/modeles-et-jetons.md`](docs/modeles-et-jetons.md) | le modèle et l'effort de chaque rôle, un autre fournisseur, l'audit des jetons, les sorties raccourcies |
-| [`docs/indicateurs-de-service.md`](docs/indicateurs-de-service.md) | les indicateurs de service de l'usine (SLI), calculés sans modèle, et leurs objectifs (SLO) avec leur budget d'erreur et les actions quand il est épuisé |
+| [`docs/indicateurs-de-service.md`](docs/indicateurs-de-service.md) | les indicateurs de service de l'usine (SLI), calculés sans modèle (revue de bout en bout comprise : écarts, délai, couverture de la matrice, retours), et leurs objectifs (SLO) avec leur budget d'erreur et les actions quand il est épuisé |
 | [`docs/gravite-et-sla.md`](docs/gravite-et-sla.md) | les classes de gravité (`sev1` à `sev3`), les engagements de délai de la clé `sla` et la file de `forge:feature-build` |
 | [`docs/contribuer.md`](docs/contribuer.md) | modifier le plugin, publier une version, l'organisation du dépôt |
 | [`CHANGELOG.md`](CHANGELOG.md) | ce qui est entré dans chaque version, et ce qui en est resté dehors |

@@ -197,6 +197,47 @@ Elle imprime la section « Objectifs de service » de l'entrée d'une version : 
 à la date de la version (`--le`, maintenant par défaut) et les `escaped-defect` ouverts depuis la
 précédente. La PR `chore(release)` la colle sous l'entrée qu'elle ouvre (`docs/contribuer.md`).
 
+## Les indicateurs de la revue de bout en bout
+
+La revue de bout en bout (`forge:feature-review`, bouclée par `forge:feature-build`) a ses propres
+indicateurs : ceux ci-dessus ne mesurent rien de ce que voit l'utilisateur (série
+ikoro-labs/forge#91). Ils se calculent sans modèle, depuis les tickets d'écart, les `matrice.md` et
+les journaux `revue/boucle.tsv` des features du dossier de la clé `feature-dir`. Sans cette clé, chacun
+est « sans objet (clé `feature-dir` absente) ».
+
+| SLI | Définition |
+| --- | --- |
+| `review-gaps` | écarts des tickets d'écart ouverts dans la fenêtre, **par gravité** (un identifiant de la ligne `Couvre :` compte pour un écart), et **par passage** : pour chaque tour du journal, les identifiants non `tenu`, rangés par la gravité du ticket qui les couvre. Une gravité inconnue est « sans gravité ». Sans objectif possible : c'est un compte, il se lit |
+| `review-gap-lead-time` | médiane et p90 du délai entre l'ouverture d'un ticket d'écart et sa fermeture, pour les tickets fermés dans la fenêtre |
+| `matrix-coverage` | lignes `tenu` ou `écarté` sur toutes les lignes des matrices, à l'état actuel |
+| `review-regressions` | identifiants qui redeviennent un écart après une correction (la règle de `revue_boucle.py retours`), sur ceux qui ont été un écart dans un tour du journal |
+
+Un **ticket d'écart** est un ticket dont le corps porte une ligne `Couvre : <identifiants>` et une ligne
+`Feature: F-NNNN` (ce que la boucle écrit en publiant un écart). Sa gravité se lit sur l'étiquette
+`gravite:bloquant`, `gravite:majeur` ou `gravite:mineur`, que la boucle pose avec `ready-for-agent`. Le
+délai d'un écart est celui de son ticket : un écart est fermé quand son ticket l'est, non quand un tour
+suivant le trouve `tenu`.
+
+Deux limites, dites par le rapport : le journal et la matrice n'ont pas de date par ligne, si bien que
+`matrix-coverage` et `review-regressions` se lisent à l'état actuel, sur toute l'histoire du journal,
+quelle que soit la fenêtre (leur tendance est donc stable tant que les fichiers ne changent pas) ; et le
+numéro de passage vaut pour chaque feature, les passages de plusieurs features s'additionnent. Une matrice
+illisible est comptée à part (`illisibles`) ; une feature sans journal n'a pas de retours à compter.
+
+`report` ajoute une section « Revue de bout en bout » (fenêtre de 30 jours) avec ces quatre indicateurs,
+que la clé `slo` les déclare ou non.
+
+**L'objectif proposé** porte sur les écarts réintroduits : un écart qui revient après sa correction dit
+que la correction n'a pas tenu, et la boucle s'arrête à deux retours du même identifiant. Dix pour cent
+laisse passer un identifiant sur dix et rend un projet qui retombe deux fois sur quatre `épuisé`. Il n'est
+pas mesuré sur un vrai projet : c'est un point de départ, à ajuster quand une feature aura bouclé.
+
+```text
+- `slo` : `review-regressions | <= 10 % | 30`
+```
+
+Éprouvé dans les tests seulement, sur des tickets, des matrices et des journaux fictifs, sous Linux.
+
 ## Éprouvé, et pas encore
 
 Le script est éprouvé dans les tests, sur des réponses `gh` fictives et des dépôts git jetables, sous
