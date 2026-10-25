@@ -290,7 +290,7 @@ class BaseReplayProbe(unittest.TestCase):
     def test_the_output_hands_the_probe_lines_to_the_judge(self) -> None:
         """No F-NNNN: ticket #43, critère 1: les lignes de la sonde figurent verbatim sous le tableau."""
         gate = self.read("agents", "qc-gate.md")
-        self.assertIn("les éléments verbatim des sondes 2, 5, 6, 7, 10, 11 et 12", gate)
+        self.assertIn("les éléments verbatim des sondes 2, 5, 6, 7, 10, 11, 12 et 13", gate)
 
     def test_the_template_documents_the_two_keys(self) -> None:
         """No F-NNNN: ticket #43, critère 3: test-path et red-replay sont documentées dans le gabarit."""

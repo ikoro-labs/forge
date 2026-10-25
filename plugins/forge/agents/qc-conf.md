@@ -149,6 +149,24 @@ Une sonde `FAIL` ou `NOT RUN` se dit dans `GATES`, jamais lue comme « aucun lib
 « sans objet » (clé `ui-labels`, `ui-forbidden-word` ou `glossary` absente) se dit aussi dans `GATES` et
 ne donne aucun constat pour sa partie.
 
+## Lecture des preuves d'écran
+
+Le tableau de `forge:qc-gate` porte une sonde **Preuves d'écran** : les critères d'écran que le ticket
+couvre, avec ou sans capture dans la colonne `Capture` de la matrice, et les images ou vidéos jointes
+au corps de la PR. Elle n'a aucun avis, et tu lis ses lignes sans refaire sa mesure.
+
+- Une ligne `SANS-CAPTURE` ou `MANQUE` : le projet a déclaré un moyen de prendre la preuve d'écran
+  là où tourne la PR (`screenshot-command` ou `recording-command` ; `browser-drive` et
+  `computer-use-host` servent la recette sur leur poste et n'ouvrent aucune attente) et un
+  critère d'écran de ce ticket n'en a pas. Sévérité `BLOCKER` quand rien d'autre qu'un test qui ne
+  regarde pas l'écran ne prouve le critère ; `MINOR` quand un test d'interface le prouve déjà. Le
+  scénario d'échec est la recette : l'écran est livré sans que personne l'ait vu.
+- Une capture jointe que tu ouvres et qui ne montre pas ce que le critère dit (autre écran, état
+  vide) : un constat, avec le fichier et le critère.
+- Des clés toutes absentes : « sans objet (clé `<nom>` absente) » pour chacune, dit dans `GATES`, et
+  aucun constat : un projet sans moyen de capture n'est pas pris en faute de ne pas en joindre. Une
+  sonde `FAIL` ou `NOT RUN` se dit aussi dans `GATES`, jamais lue comme « rien ne manque ».
+
 ## Lecture de la matrice
 
 Le coder met à jour la matrice avec son ticket (voir son étape 3). Quand le corps du ticket porte une

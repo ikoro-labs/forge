@@ -315,6 +315,44 @@ Avec la clé `glossary`, la sonde rend aussi `UNKNOWN` chaque mot capitalisé d'
 mot du libellé mis à part) qui n'est dans aucun fichier du glossaire ; `forge:qc-conf` en fait un
 `MINOR`. Sans la clé `glossary`, cette partie est « sans objet (clé `glossary` absente) ».
 
+## Preuves d'écran
+
+Quatre capacités de vérification du front, que le projet active **une par une**, chacune par sa propre
+clé. Une clé absente rend sa capacité « sans objet (clé `<nom>` absente) », jamais `PASS`, et aucun
+agent n'en suppose une : le projet qui n'a pas d'interface n'en déclare aucune. `scripts/preuves_ecran.py`
+les lit et dit, sans avis, ce que chacune déclare et si les captures que la matrice attend sont jointes à
+la PR. `forge:coder` s'en sert pour la section **Preuves**, `forge:qc-gate` mesure, `forge:qc-conf` juge
+et `forge:feature-verify` relie le critère à sa capture. Éprouvé sous Linux seulement, sur des
+fichiers écrits à la main, et sur aucun vrai poste.
+
+`screenshot-command` : la commande qui prend des captures du navigateur sans écran (en CI comme en
+local), lancée depuis la racine du dépôt. `{out}` y est obligatoire : le dossier où elle écrit ses
+fichiers, que l'appelant choisit et protège par des guillemets. Une valeur sans `{out}` fait échouer le
+script. La commande d'exemple n'a pas de `--` avant le fichier de spec (avec lui, `pnpm` le transmet tel
+quel et Playwright ignore le filtre : toute la suite se lance).
+
+- `screenshot-command` : `<pnpm --filter <app> e2e e2e/<spec> --output {out}>`
+
+`recording-command` : la même chose pour une vidéo ou un GIF d'un parcours, `{out}` obligatoire.
+
+- `recording-command` : `<pnpm --filter <app> e2e e2e/<parcours> --output {out}>`
+
+`browser-drive` : un navigateur piloté par un agent, `<outil> | <poste>`. Il ne tourne que sur un poste
+avec une session ouverte, **jamais en CI** : la clé nomme le poste où le faire, et un agent ne le lance
+pas ailleurs. Sans la clé, aucun navigateur n'est piloté. Elle sert la recette sur ce poste : une PR faite ailleurs
+n'en attend aucune capture.
+
+- `browser-drive` : `<nom de l'outil de pilotage | nom du poste de recette>`
+
+`computer-use-host` : le poste **dédié** où l'ordinateur se commande (clics, saisie, captures de
+l'écran entier), par son nom, jamais le poste personnel d'un membre : la clé ne se remplit pas par
+défaut avec le poste de celui qui lance la session, et sans elle la commande de l'ordinateur est
+« sans objet (clé `computer-use-host` absente) ». Comme `browser-drive`, elle sert la recette sur son
+poste et n'ouvre aucune attente de capture sur une PR : seules `screenshot-command` et `recording-command`
+l'ouvrent.
+
+- `computer-use-host` : `<nom du poste dédié à la recette>`
+
 ## Revue
 
 La grille de revue de `forge:qc-conf`, dans son ordre : un skill ou un fichier.

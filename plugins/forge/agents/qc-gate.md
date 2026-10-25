@@ -119,6 +119,19 @@ Le numéro de PR, et le numéro du tour (1 ou 2).
     rend ligne à ligne comme le script l'écrit : `sans objet (clé ui-labels absente)`, ou la même
     phrase pour `ui-forbidden-word` ou `glossary`, qui ne coupe que sa partie. Tu ne juges pas un
     libellé : tu rends ce que le script a mesuré.
+13. **Preuves d'écran.** Si les captures qu'un critère d'écran attend sont jointes. Avec le
+    `usine-base.md` de la sonde 10, le corps de la PR (`gh pr view <n> --json body -q .body`, rangé
+    dans le scratchpad sous `body.md`) et la matrice de la tête quand `matrice.md` existe dans le
+    dossier de la feature, lancée **dans la copie de la tête** :
+    `uv run --no-project --quiet python "${CLAUDE_PLUGIN_ROOT}/scripts/preuves_ecran.py" --usine "<scratchpad>/usine-base.md" --root . --matrice <matrice.md> --ticket '#<n>' "<scratchpad>/body.md"`
+    (sans `--matrice` quand la feature n'en a pas). Recopie chaque ligne du script, verbatim, et son
+    code de sortie : 0 rien ne manque, 1 une preuve attendue manque (`SANS-CAPTURE` ou `MANQUE`),
+    2 une valeur de clé invalide ou un appel en échec (`FAIL`, jamais `PASS`). Une clé absente se
+    rend ligne à ligne comme le script l'écrit : `sans objet (clé screenshot-command absente)`, et de
+    même pour `recording-command`, `browser-drive` et `computer-use-host`. Seules `screenshot-command` et `recording-command`
+    ouvrent l'attente d'une capture ; les deux autres clés se rendent en lignes `CAPACITE` sans rien
+    attendre de la PR. Tu ne juges pas une capture
+    et tu ne l'ouvres pas : tu rends ce que le script a mesuré.
 
 Au tour 2, rejoue toutes les sondes : une correction peut casser ce qui passait.
 
@@ -134,5 +147,5 @@ Un tableau, rien d'autre, au plus trente lignes :
 | ... | ... | ... |
 ```
 
-Puis, sous le tableau, les éléments verbatim des sondes 2, 5, 6, 7, 10, 11 et 12. Une sonde que tu n'as pas
+Puis, sous le tableau, les éléments verbatim des sondes 2, 5, 6, 7, 10, 11, 12 et 13. Une sonde que tu n'as pas
 pu exécuter s'écrit `NOT RUN` avec la commande et sa sortie d'erreur : jamais `PASS`.

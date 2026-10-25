@@ -25,6 +25,14 @@ le design s'il existe, sont acceptés.
    toutes les PR sont fusionnées. Les états se jugent par la règle de `matrice.md`, une seule pour
    tous les agents. Sans la clé `product-source`, l'étape est « sans objet (clé `product-source`
    absente) » et la recette se juge sur les critères de la spec.
+   **Les critères d'écran.** Un critère qui se voit à l'écran est relié à sa capture ou son
+   enregistrement : le fichier de la colonne `Capture` de la matrice, ou celui que la section
+   **Preuves** de sa PR joint. Une capture ou un enregistrement n'est écrit « vu » que si tu l'as
+   ouvert ; sinon, le critère reste prouvé par son test et la ligne dit que l'écran n'a pas été vu.
+   Les moyens d'en prendre viennent des clés `screenshot-command`, `recording-command`,
+   `browser-drive` et `computer-use-host`, lues par `${CLAUDE_PLUGIN_ROOT}/scripts/preuves_ecran.py` ;
+   une clé absente est « sans objet (clé `<nom>` absente) », jamais une capture supposée. Le rejeu
+   d'un parcours entier et la revue de bout en bout sur captures réelles ne sont pas de cette étape.
 3. **La PR** de chaque critère, par `git log --grep` sur les tickets.
 4. **L'environnement cible** : où, quand, quelle version, par qui. Tant qu'aucun environnement
    cible n'est déployé, écris « pas encore déployable » et la raison, jamais « vérifié ».

@@ -121,6 +121,10 @@ documente chaque clé.
 Une clé absente ne prend jamais de valeur par défaut : l'étape qui la lit se dit « sans objet »,
 jamais `PASS`. Une revue vaut donc ce que la configuration déclare.
 
+Quatre clés activent, une par une, les preuves d'écran d'un projet qui a une interface : captures sans
+écran, navigateur piloté (jamais en CI), commande de l'ordinateur (sur un poste dédié), vidéo ou GIF
+d'un parcours. Le détail est dans [`docs/installation.md`](docs/installation.md).
+
 Pour adapter forge sans toucher au plugin, le projet ajoute ses propres skills, agents et hooks
 dans son `.claude/` : ils coexistent avec ceux de forge, dont les noms sont préfixés (`forge:`).
 Le cache du plugin ne s'édite jamais.

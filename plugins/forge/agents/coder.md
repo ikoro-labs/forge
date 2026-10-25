@@ -104,6 +104,23 @@ lançant. Charge aussi le skill de chaque domaine que le ticket touche, parmi ce
   sortie non nulle se corrige avant de pousser. Un ticket sans ligne `Couvre :`, ou une feature sans
   `matrice.md`, ne touche pas la matrice, et tu le dis dans la PR. Sans la clé `product-source`,
   l'étape est « sans objet (clé `product-source` absente) » : pas de matrice.
+- **Un critère d'écran se prouve par une capture, quand le projet en a les moyens.** Quand un critère
+  que tu tiens se voit à l'écran (la ligne de la matrice porte un `Écran`), les clés de l'usine disent
+  ce que tu peux prendre, chacune pour elle-même : `screenshot-command` (captures du navigateur sans
+  écran) et `recording-command` (vidéo ou GIF d'un parcours) se lancent depuis la racine de ton
+  worktree, `{out}` remplacé par un dossier de ton worktree hors du suivi ; `browser-drive` (navigateur
+  piloté) ne se lance que si ta session tourne sur le poste qu'elle nomme, jamais en CI ;
+  `computer-use-host` nomme le seul poste dédié où commander l'ordinateur, jamais un poste
+  personnel : tu ne le fais pas depuis un autre. Une clé absente rend sa capacité « sans objet (clé
+  `<nom>` absente) » : tu le dis dans la PR et tu ne devines ni commande ni poste. Chaque fichier pris
+  est nommé dans la colonne `Capture` de la matrice (quand elle existe) et joint à la section
+  **Preuves** de la PR, avec le critère `A<n>` qu'il montre.
+  `uv run --no-project --quiet python ${CLAUDE_PLUGIN_ROOT}/scripts/preuves_ecran.py --matrice <matrice.md> --ticket '#<n>' <corps de PR>`
+  dit, sans avis, ce qui manque encore : une sortie en `SANS-CAPTURE` ou `MANQUE` se corrige avant de
+  pousser. Elle ne s'ouvre que si `screenshot-command` ou `recording-command` est déclarée, les seules
+  clés qui prennent la preuve là où tourne ta PR ; `browser-drive` et `computer-use-host` servent la
+  recette sur leur poste, pas la PR, et ne te font rien attendre. Quand aucune de ces deux commandes
+  n'est déclarée, le critère reste prouvé par son test, et la PR dit que l'écran n'a pas été vu.
 - **Un formateur qui échoue se reporte.** Chaque ligne `format-on-write: ... failed on ...` que le
   hook te montre après une écriture, tu la recopies dans les `NOTES` de ta sortie (sur la ligne
   `NOTES:`, séparées par ` ; `, pour que `parse_output.py` la lise). Le fichier reste écrit : la
