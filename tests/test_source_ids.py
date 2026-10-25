@@ -187,6 +187,41 @@ class NonGoals(unittest.TestCase):
         self.assertEqual((code, out.splitlines()[0].split("\t")[0]), (0, "NONE"))
 
 
+EXAMPLES = Path(__file__).resolve().parent / "exemples"
+TEMPLATE = Path(__file__).resolve().parent.parent / "plugins" / "forge" / "templates" / "features" / "spec.md"
+
+
+def titles(text: str) -> list[str]:
+    """The level-2 headings of a Markdown text, without their number or their parenthesis."""
+    return [line[3:].split(". ", 1)[-1].split(" (")[0] for line in text.splitlines() if line.startswith("## ")]
+
+
+class FilledExample(unittest.TestCase):
+    """Ticket #93: a spec filled on the template passes the count of #92."""
+
+    source = (EXAMPLES / "source.md").read_text(encoding="utf-8")
+    spec = (EXAMPLES / "spec.md").read_text(encoding="utf-8")
+
+    def test_the_filled_example_takes_up_every_element_of_its_source(self) -> None:
+        """No F-NNNN: ticket #93, A3: l'exemple rempli passe le comptage, liste vide et code 0."""
+        self.assertEqual(ids_of_source(self.source), ["EXI-01", "EXI-02", "EXI-03", "C01", "C02", "G1", "G2", "P1"])
+        code, out = run({"source.md": self.source, "spec.md": self.spec})
+        self.assertEqual(code, 0)
+        self.assertEqual(out.splitlines()[0].split("\t")[0], "NONE")
+
+    def test_the_example_loses_the_count_when_an_element_is_dropped(self) -> None:
+        """No F-NNNN: ticket #93, A3: sans les lignes qui citent C02, le comptage liste C02."""
+        spec = "\n".join(line for line in self.spec.splitlines() if "C02" not in line)
+        code, out = run({"source.md": self.source, "spec.md": spec})
+        self.assertEqual(code, 1)
+        self.assertIn("MISSING\tC02\tsource.md\t", out)
+
+    def test_the_example_holds_every_section_of_the_template(self) -> None:
+        """No F-NNNN: ticket #93, A3: l'exemple suit le gabarit, section par section, dans l'ordre."""
+        template = titles(TEMPLATE.read_text(encoding="utf-8"))
+        self.assertEqual(titles(self.spec), template)
+
+
 class Usage(unittest.TestCase):
     def test_a_missing_source_file_exits_two(self) -> None:
         """No F-NNNN: ticket #92, A1: une source déclarée et introuvable sort 2, elle n'est pas vide."""
