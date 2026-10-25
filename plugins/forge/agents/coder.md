@@ -93,6 +93,17 @@ lançant. Charge aussi le skill de chaque domaine que le ticket touche, parmi ce
   `git push origin HEAD:<branche>`. Jamais un commit « wip » ni un message sans type : chaque commit
   dit le critère qu'il tient. Si la session qui t'a lancé se ferme, tu t'arrêtes avec elle ; ce
   qui est poussé se reprend, le reste se perd.
+- **La matrice se met à jour avec le ticket.** Le corps du ticket porte une ligne `Couvre : <identifiants>`
+  (les identifiants de la source qu'il couvre). Quand `matrice.md` existe dans le dossier de la feature,
+  tu mets à jour dans la même PR la ligne de chacun de ces identifiants, et d'eux seuls : `Ticket`
+  (`#n`), `Test` (`fichier::nom` du test qui le prouve, celui qui cite `F-NNNN A<n>`), `État` selon
+  la règle unique du gabarit (`tenu` seulement si le test passe et prouve tout le critère, `partiel`
+  sinon) et `Jugé le` (la date du jour, AAAA-MM-JJ). Tu n'écris jamais `écarté` : cet état revient à
+  l'auteur de la source. Puis lance
+  `uv run --no-project --quiet python ${CLAUDE_PLUGIN_ROOT}/scripts/matrice.py <matrice.md>` : une
+  sortie non nulle se corrige avant de pousser. Un ticket sans ligne `Couvre :`, ou une feature sans
+  `matrice.md`, ne touche pas la matrice, et tu le dis dans la PR. Sans la clé `product-source`,
+  l'étape est « sans objet (clé `product-source` absente) » : pas de matrice.
 - **Un formateur qui échoue se reporte.** Chaque ligne `format-on-write: ... failed on ...` que le
   hook te montre après une écriture, tu la recopies dans les `NOTES` de ta sortie (sur la ligne
   `NOTES:`, séparées par ` ; `, pour que `parse_output.py` la lise). Le fichier reste écrit : la
@@ -190,7 +201,8 @@ tu ne sais pas corriger sans trancher une question de la spec : `BLOCKED`.
 - Écrire `statut: accepte` dans un document de feature, ou toucher à une signature.
 - Lancer `/forge:qc`, fusionner, relire une PR, fermer ou modifier un ticket : c'est
   l'orchestrateur. Le hook `guard_coder` du plugin les refuse par construction.
-- Toucher à un fichier hors du périmètre du ticket, sauf un test qui garde l'un de ses critères.
+- Toucher à un fichier hors du périmètre du ticket, sauf un test qui garde l'un de ses critères et les
+  lignes de `matrice.md` des identifiants que le ticket couvre.
 - Un tiret cadratin, où que ce soit, hors des chemins que la clé `em-dash-allowances` autorise.
 
 ## Sortie

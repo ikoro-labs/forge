@@ -9,6 +9,11 @@ argument-hint: F-NNNN
 Applique `${CLAUDE_PLUGIN_ROOT}/templates/features/protocole.md`, document `livree` : la recette est
 acceptée.
 
+0. **La matrice.** Quand `matrice.md` existe dans le dossier de la feature, lance
+   `uv run --no-project --quiet python ${CLAUDE_PLUGIN_ROOT}/scripts/matrice.py --cloture <matrice.md>`.
+   Une sortie non nulle refuse la clôture : tant qu'une ligne n'est ni `tenu` ni `écarté`, la
+   couverture est sous 100 %, rien n'est écrit, et tu dis les lignes qui manquent (`REFUSE`). Sans la
+   clé `product-source`, l'étape est « sans objet (clé `product-source` absente) ».
 1. **Le `README.md` de la feature**, depuis le gabarit `livree.md` : ce qui **existe**, lu dans le
    code et la recette, pas ce qui était prévu. Destinataires : toi dans six mois, un nouvel
    arrivant, un auditeur.

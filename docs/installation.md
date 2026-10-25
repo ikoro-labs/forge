@@ -133,6 +133,18 @@ comme `F-0000`, `A1` ou `L1` y a la forme d'un identifiant sans être un éléme
 clé, la correspondance est « sans objet (clé `product-source` absente) » et rien n'est dit vérifié. Il ne lit aucune autre clé. Éprouvé
 sous Linux seulement, sur des parcours écrits à la main ; pas encore sur un vrai projet.
 
+`plugins/forge/scripts/matrice.py` lit la matrice de traçabilité d'une feature (`matrice.md`, une ligne
+par identifiant de la source avec ticket, test, écran, capture, état et date) et applique l'état unique
+(`tenu`, `partiel`, `absent`, `contraire`, `écarté`) : un `tenu` sans test ni capture est refusé, un
+`écarté` exige l'accord que `source_ids.py` accepte (clé `source-author`). Elle lit `product-source`
+comme `parcours.py` : sans la clé, « sans objet (clé `product-source` absente) ». `--reste` dit ce qui
+reste par lot et par état, `--sans-ticket` les identifiants que nul ticket ne couvre (ceux de la source sans ligne comptent, aux deux modes, comme `absent`), `--cloture`
+refuse sous 100 % (`feature-close` l'appelle). Chaque coder met à jour, avec son ticket, les lignes des identifiants que le
+ticket couvre (ligne `Couvre :`), et le juge de la revue le vérifie. Les tickets voisins qui écrivent la
+matrice initiale (à la conception) et la relisent de bout en bout (à la revue de la feature) passent par
+ce script et ce gabarit ; ils ne sont pas livrés avec lui. Éprouvé sous Linux seulement, sur des matrices écrites à la
+main ; pas encore sur un vrai projet.
+
 Le skill de découpage en tickets du projet se déclare avec `ticket-skill` : `/forge:feature-design`
 l'utilise à son étape de découpage. Sans la clé, il découpe à la main, dans l'ordre du §7 du
 design, et le dit.
