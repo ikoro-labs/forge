@@ -133,9 +133,21 @@ critères d'écran de la matrice (colonne `Capture`) et le corps de la PR porten
 `forge:qc-gate` rend (sonde 13) ; `forge:qc-conf` fait d'une preuve manquante un constat, et
 `forge:feature-verify` relie le critère à sa capture. La commande d'exemple s'écrit
 `pnpm --filter <app> e2e e2e/<spec>`, sans `--` : avec lui, Playwright ignore le filtre et lance toute la
-suite. Cette partie est la ligne de commande seulement : le cockpit et la revue de bout en bout sur captures réelles viennent après et liront ces clés.
+suite. Cette partie est la ligne de commande seulement : le cockpit vient après ; la revue de bout en
+bout sur captures réelles (`/forge:feature-review`) lit déjà ces clés.
 Éprouvé sous Linux seulement, sur des fichiers écrits à la main ; aucun navigateur ni poste réel n'a
 encore servi.
+
+**La revue en boucle.** `forge:feature-build` lance la revue de bout en bout après chaque fusion dont le
+diff touche un chemin de `journey-paths` (étape 3 bis), sans minuterie ni geste humain, sur les écrans
+que la matrice relie au ticket fusionné. Les tickets d'écart que la revue publie entrent dans le passage
+(`forge:coder`, puis `forge:qc`), sans accord de l'humain, et la revue rejoue le parcours. Avant la
+recette, une revue en entier doit laisser zéro `bloquant` et zéro `majeur`
+(`scripts/revue_boucle.py porte`). Les plafonds de la boucle sont ceux du passage (`--max`, durée,
+jetons, `.claude/PAUSED`) et elle n'en ajoute aucun. Un identifiant de la source encore non `tenu` à deux
+tours après son premier écart arrête la boucle et pose `needs-your-attention` sur l'issue de suivi :
+l'humain tranche. Éprouvé sous Linux seulement, sur des fichiers écrits à la main ; aucune vraie
+application ni aucun vrai navigateur n'a servi à la boucle.
 
 Deux clés de plus rendent le parcours voulu obligatoire. `journey-replay` s'écrit
 `<contexte de CI> | <commande>` : la commande joue le parcours de bout en bout, depuis un dépôt propre

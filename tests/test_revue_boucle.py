@@ -221,6 +221,14 @@ class Contents(unittest.TestCase):
         self.assertIn("matrice.py --cloture", read("skills", "feature-close", "SKILL.md"))
         self.assertIn("PORTEE:", read("skills", "feature-review", "SKILL.md"))
 
+    def test_the_keys_page_no_longer_announces_the_review_as_to_come(self) -> None:
+        """No F-NNNN: ticket #101 (report de la revue de #116) : la page des clés dit que la revue lit ces clés et décrit la boucle."""
+        page = " ".join((support.REPO_ROOT / "docs" / "installation.md").read_text(encoding="utf-8").split())
+        self.assertNotIn("viennent après et liront ces clés", page)
+        self.assertIn("lit déjà ces clés", page)
+        self.assertIn("**La revue en boucle.**", page)
+        self.assertIn("revue_boucle.py", page)
+
     def test_the_caps_are_those_of_the_passage_and_the_stop_rests_on_a_measured_datum(self) -> None:
         """No F-NNNN: ticket #101, plafonds pris dans ceux du passage, arrêt sur un écart revenu deux fois."""
         build = read("skills", "feature-build", "SKILL.md")
