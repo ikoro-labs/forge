@@ -65,6 +65,16 @@ dit : « sans objet (clé `source-author` absente) ».
 
 - `source-author` : `<expert métier>`
 
+Le support partagé où l'expert métier relit et commente le document vivant d'une conception guidée
+(`/forge:feature-guide`), quand le projet en a un : la valeur nomme le support et l'endroit où le
+trouver (un nom de service et un espace, une adresse, un dossier partagé), en une ligne. Forge ne câble
+aucun service précis : la clé nomme le support, et le skill dit seulement quoi en faire. Le fichier
+du dépôt reste la référence : ce que l'expert écrit ou commente sur le support se recopie dans le
+fichier, qui seul devient la source. Sans la clé : « sans objet (clé `shared-doc` absente) » et seul le
+fichier du dépôt sert, sans valeur par défaut.
+
+- `shared-doc` : `<le support partagé, par exemple une page d'un wiki ou un dossier partagé>`
+
 La règle qui dit si une feature entre au périmètre (`/forge:feature-frame`). Sans elle, l'entrée est
 réservée à un humain.
 
