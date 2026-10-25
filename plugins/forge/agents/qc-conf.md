@@ -167,8 +167,10 @@ au corps de la PR. Elle n'a aucun avis, et tu lis ses lignes sans refaire sa mes
   Les captures sont réelles et non retouchées ; une capture manifestement retouchée ou prise hors du
   parcours est un constat, avec le fichier.
 - Une ligne `CONTEXTE-NON-REQUIS` : le contexte de CI de `journey-replay` n'est pas dans
-  `required-contexts`, donc un parcours cassé ne bloque aucune PR. Sévérité `BLOCKER` quand la PR
-  introduit ou change la clé, `MINOR` sinon.
+  `required-contexts`, donc un parcours cassé ne bloque aucune PR. La sonde lit l'usine de la base,
+  et aussi l'usine de la tête : une PR qui introduit ou change `journey-replay` sans requérir son
+  contexte est donc relevée. Sévérité `BLOCKER` quand la PR introduit ou change la clé (le diff de
+  `docs/agents/usine.md` le montre), `MINOR` sinon.
 - Une capture jointe que tu ouvres et qui ne montre pas ce que le critère dit (autre écran, état
   vide) : un constat, avec le fichier et le critère.
 - Des clés toutes absentes : « sans objet (clé `<nom>` absente) » pour chacune, dit dans `GATES`, et

@@ -11,7 +11,6 @@ from preuves_ecran import main
 from usine import parse
 
 TEMPLATE = support.PLUGIN / "templates" / "usine.md"
-SCRATCH = Path.home() / ".cache" / "forge-tmp"
 REPLAY = "- `journey-replay` : `parcours (ubuntu-latest) | pnpm --filter <app> e2e e2e/parcours.spec.ts --output {out}`\n"
 CONTEXT = "- `required-contexts` : `parcours (ubuntu-latest)`\n"
 PATHS = "- `journey-paths` : `apps/web/`\n- `journey-paths` : `apps/api/routes/`\n"
@@ -21,9 +20,8 @@ BODY_WITH = "## Preuves\n\n![écran 1](captures/e1.png)\n"
 BODY_WITHOUT = "## Preuves\n\nrien\n"
 
 
-def run(usine: str, body: str = "", matrice: str | None = None, files: str | None = None, ticket: str | None = None):
-    SCRATCH.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(dir=SCRATCH) as root:
+def run(usine: str, body: str = "", matrice: str | None = None, files: str | None = None, ticket: str | None = None, tete: str | None = None):
+    with tempfile.TemporaryDirectory() as root:
         folder = Path(root)
         (folder / "usine.md").write_text(usine, encoding="utf-8")
         (folder / "body.md").write_text(body, encoding="utf-8")
@@ -36,6 +34,9 @@ def run(usine: str, body: str = "", matrice: str | None = None, files: str | Non
             argv = ["--files", str(folder / "files.txt")] + argv
         if ticket:
             argv = ["--ticket", ticket] + argv
+        if tete is not None:
+            (folder / "usine-tete.md").write_text(tete, encoding="utf-8")
+            argv = ["--usine-tete", str(folder / "usine-tete.md")] + argv
         out, err = io.StringIO(), io.StringIO()
         with redirect_stdout(out), redirect_stderr(err):
             code = main(argv)
@@ -69,6 +70,25 @@ class Key(unittest.TestCase):
         code, out, _ = run(REPLAY + CONTEXT)
         self.assertEqual(code, 0)
         self.assertNotIn("CONTEXTE-NON-REQUIS", out)
+
+    def test_a_journey_introduced_by_the_pr_with_a_context_not_required_is_found_on_the_head(self) -> None:
+        """No F-NNNN: ticket #99, A1: la base sans la clé, la tête qui l'ajoute sans requérir son contexte : CONTEXTE-NON-REQUIS."""
+        base = "- `required-contexts` : `validate`\n"
+        code, out, _ = run(base)
+        self.assertNotIn("CONTEXTE-NON-REQUIS", out)
+        code, out, _ = run(base, tete=REPLAY + base)
+        self.assertEqual(code, 1)
+        self.assertIn("CONTEXTE-NON-REQUIS\tparcours (ubuntu-latest)", out)
+        code, out, _ = run(base, tete=REPLAY + CONTEXT + base)
+        self.assertEqual(code, 0)
+        self.assertNotIn("CONTEXTE-NON-REQUIS", out)
+
+    def test_the_head_cannot_lift_the_rule_by_removing_the_key(self) -> None:
+        """No F-NNNN: ticket #99, A1: la tête qui retire la clé ou le contexte ne lève pas le constat de la base."""
+        base = REPLAY + "- `required-contexts` : `validate`\n"
+        code, out, _ = run(base, tete="- `required-contexts` : `validate`\n")
+        self.assertEqual(code, 1)
+        self.assertIn("CONTEXTE-NON-REQUIS", out)
 
     def test_without_required_contexts_the_check_is_sans_objet(self) -> None:
         """No F-NNNN: ticket #99, A1: sans la clé required-contexts, la mesure est sans objet et jamais un succès."""
@@ -168,6 +188,14 @@ class Roles(unittest.TestCase):
         self.assertIn("`journey-replay`", probe)
         self.assertIn("`journey-paths`", probe)
         self.assertIn("aucune matrice fournie", probe)
+        self.assertIn("--usine-tete", probe)
+
+    def test_the_judge_and_the_page_say_the_head_is_read_too(self) -> None:
+        """No F-NNNN: ticket #99, A1: la protection promise par la page est mesurée sur l'usine de la tête."""
+        conf = text("agents", "qc-conf.md")
+        section = conf[conf.index("## Lecture des preuves d'écran"):conf.index("## Lecture de la matrice")]
+        self.assertIn("usine de la tête", section)
+        self.assertIn("usine de la tête", page("docs/installation.md"))
 
     def test_the_judge_makes_missing_journey_captures_a_blocker(self) -> None:
         """No F-NNNN: ticket #99, A2: qc-conf fait un BLOCKER des captures du parcours manquantes."""

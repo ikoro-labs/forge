@@ -1,6 +1,6 @@
 """Say which screen proofs a PR is expected to carry and whether they are attached, without an opinion.
 
-    python preuves_ecran.py [--usine FILE] [--root DIR] [--matrice FILE] [--files FILE] [--ticket '#n'] <pr-body-file | ->
+    python preuves_ecran.py [--usine FILE] [--usine-tete FILE] [--root DIR] [--matrice FILE] [--files FILE] [--ticket '#n'] <pr-body-file | ->
 
 The four capabilities a project turns on, each by its own key of `docs/agents/usine.md`, none with a
 default value:
@@ -18,7 +18,11 @@ Two more keys serve the journey replayed in CI:
 - `journey-replay` : `<CI context> | <command>`. The command plays the wanted path (`parcours.md`) from a
   clean repository to the user's station and writes its captures in `{out}` (mandatory). The context is
   the name of the CI job: it must be listed in `required-contexts`, else `CONTEXTE-NON-REQUIS` (a broken
-  path would block no PR); without `required-contexts` the check prints `sans objet`.
+  path would block no PR); without `required-contexts` the check prints `sans objet`. `--usine` is the
+  configuration of the base, so that a PR cannot lift a rule by removing its key. With `--usine-tete`
+  (the configuration of the head) the same check also runs on the head, for the context of a
+  `journey-replay` that the PR introduces or changes: the head only adds `CONTEXTE-NON-REQUIS` lines,
+  it never removes one the base gives.
 - `journey-paths` : the path prefixes of the front and of the APIs it consumes, one per line. With
   `--files` (the files of the PR, one per line), each changed file under a prefix is printed
   `PARCOURS-TOUCHE` and the PR is expected to attach the captures of the path.
@@ -98,6 +102,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument("body", help="the body of the PR, or - for the standard input")
     parser.add_argument("--usine", help="the usine.md to read (default: docs/agents/usine.md)")
+    parser.add_argument("--usine-tete", help="the usine.md of the head of the PR, to check the context of a journey-replay it introduces")
     parser.add_argument("--root", help="the project copy to read (default: the project directory)")
     parser.add_argument("--matrice", help="the matrix of the feature, to find the screen criteria")
     parser.add_argument("--files", help="the files the PR changes, one path per line, to find the journey it touches")
@@ -114,6 +119,9 @@ def main(argv: list[str] | None = None) -> int:
             if args.usine:
                 raise
             config = {}
+        head_config = (
+            usine.parse(Path(args.usine_tete).read_text(encoding="utf-8")) if args.usine_tete else None
+        )
         body = sys.stdin.read() if args.body == "-" else Path(args.body).read_text(encoding="utf-8")
         changed = (
             [line.strip() for line in Path(args.files).read_text(encoding="utf-8").splitlines() if line.strip()]
@@ -124,7 +132,7 @@ def main(argv: list[str] | None = None) -> int:
     except (OSError, UnicodeDecodeError, ValueError) as error:
         print(f"preuves_ecran: {error}", file=sys.stderr)
         return 2
-    problems = invalid(config)
+    problems = invalid(config) + (invalid(head_config) if head_config is not None else [])
     if problems:
         for problem in problems:
             print(f"preuves_ecran: {problem}", file=sys.stderr)
@@ -136,17 +144,26 @@ def main(argv: list[str] | None = None) -> int:
         for value in values[key]:
             print(f"CAPACITE\t{key}\t{value}\t{LIMITS.get(key, 'commande du projet')}")
     missing = False
-    contexts = [value for value in config.get(CONTEXTS_KEY, []) if value.strip()]
-    for value in values[REPLAY_KEY]:
-        context = usine.split_value(value, 2)[0]
-        if not contexts:
-            print(f"sans objet (clé {CONTEXTS_KEY} absente)")
-        elif context not in contexts:
-            missing = True
-            print(f"CONTEXTE-NON-REQUIS\t{context}\tabsent de la clé {CONTEXTS_KEY} : un parcours cassé ne bloque aucune PR")
+    printed: set[str] = set()
+    for source in (config, head_config):
+        if source is None:
+            continue
+        contexts = [value for value in source.get(CONTEXTS_KEY, []) if value.strip()]
+        for value in (value for value in source.get(REPLAY_KEY, []) if value.strip()):
+            context = usine.split_value(value, 2)[0]
+            if not contexts:
+                line = f"sans objet (clé {CONTEXTS_KEY} absente)"
+            elif context not in contexts:
+                missing = True
+                line = f"CONTEXTE-NON-REQUIS\t{context}\tabsent de la clé {CONTEXTS_KEY} : un parcours cassé ne bloque aucune PR"
+            else:
+                continue
+            if line not in printed:
+                printed.add(line)
+                print(line)
     replayed = bool(values[REPLAY_KEY])
     if not replayed and not any(values[key] for key in COMMAND_KEYS):
-        return 0
+        return 1 if missing else 0
     count = attached(body)
     carried = 0
     if not args.matrice:

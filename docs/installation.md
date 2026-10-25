@@ -141,7 +141,7 @@ Deux clés de plus rendent le parcours voulu obligatoire. `journey-replay` s'éc
 `<contexte de CI> | <commande>` : la commande joue le parcours de bout en bout, depuis un dépôt propre
 jusqu'au poste de travail de l'utilisateur, écrit ses captures dans `{out}`, et le contexte, le nom du job
 de CI, se déclare aussi dans `required-contexts` pour qu'un parcours cassé bloque la PR (sinon la sonde rend
-`CONTEXTE-NON-REQUIS`). `journey-paths` liste les préfixes du front et des API qu'il consomme : toute PR
+`CONTEXTE-NON-REQUIS`, qu'elle mesure sur l'usine de la base et sur l'usine de la tête, pour qu'une PR qui introduit la clé sans requérir son contexte soit relevée alors que la base ne l'a pas encore). `journey-paths` liste les préfixes du front et des API qu'il consomme : toute PR
 qui y touche joint les captures du parcours, `forge:qc-gate` le dit par `PARCOURS-TOUCHE` et `MANQUE`
 (le script reçoit les fichiers de la PR par `--files`), et `forge:qc-conf` en fait un `BLOCKER` quand
 elles manquent. Elle s'articule avec les clés précédentes : `journey-replay` ouvre l'attente d'une capture

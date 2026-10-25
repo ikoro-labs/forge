@@ -123,8 +123,12 @@ Le numéro de PR, et le numéro du tour (1 ou 2).
     `usine-base.md` de la sonde 10, le corps de la PR (`gh pr view <n> --json body -q .body`, rangé
     dans le scratchpad sous `body.md`) et la matrice de la tête quand `matrice.md` existe dans le
     dossier de la feature, et la liste des fichiers de la PR (`gh pr diff <n> --name-only`, rangée sous
-    `files.txt`), lancée **dans la copie de la tête** :
-    `uv run --no-project --quiet python "${CLAUDE_PLUGIN_ROOT}/scripts/preuves_ecran.py" --usine "<scratchpad>/usine-base.md" --root . --matrice <matrice.md> --files "<scratchpad>/files.txt" --ticket '#<n>' "<scratchpad>/body.md"`
+    `files.txt`), lancée **dans la copie de la tête**. L'usine de la base fait foi (une PR ne lève pas
+    une règle en retirant sa clé) ; l'usine de la tête (`docs/agents/usine.md` de la copie) est passée
+    en plus par `--usine-tete`, pour qu'un `journey-replay` que la PR introduit ou change soit mesuré
+    contre le `required-contexts` de la tête : la tête n'ajoute que des lignes `CONTEXTE-NON-REQUIS`,
+    elle n'en retire jamais une que la base donne :
+    `uv run --no-project --quiet python "${CLAUDE_PLUGIN_ROOT}/scripts/preuves_ecran.py" --usine "<scratchpad>/usine-base.md" --usine-tete docs/agents/usine.md --root . --matrice <matrice.md> --files "<scratchpad>/files.txt" --ticket '#<n>' "<scratchpad>/body.md"`
     (sans `--matrice` quand la feature n'en a pas : le script le dit alors par
     `sans objet (aucune matrice fournie : critères d'écran non cherchés)`, que tu recopies). Recopie chaque ligne du script, verbatim, et son
     code de sortie : 0 rien ne manque, 1 une preuve attendue manque (`SANS-CAPTURE` ou `MANQUE`) ou
