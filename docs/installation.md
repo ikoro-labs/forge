@@ -262,5 +262,12 @@ Les quatre points restés à confirmer, essayés dans des projets jetables :
   `agent_type: "forge:coder"` dans l'événement du hook. Rejoué sur `guard_coder`, cet événement
   est refusé pour `gh pr merge` comme pour le skill `forge:qc`, et le même événement avec un autre
   `agent_type` passe.
+
+  Avec le ticket #65, `guard_coder` lit aussi le champ `cwd` de l'événement : il refuse au
+  coder une écriture (`Edit`, `Write`, `MultiEdit`, `NotebookEdit`) ou une commande git hors de son
+  worktree, tout `cwd` qui n'est pas un worktree lié (coder lancé sans isolation), `git push` avec
+  `-u`, `--set-upstream`, `-f` ou `--force`, et `git config` en écriture. Ce comportement n'a été
+  essayé que par les tests, sur un dépôt temporaire et un worktree lié réels, pas encore dans une
+  vraie session ; le champ `cwd` d'un coder isolé reste à confirmer sur un poste.
 - **Marketplace injoignable au démarrage** : avec git coupé vers GitHub, la session charge la
   version en cache, skills et agents compris.
