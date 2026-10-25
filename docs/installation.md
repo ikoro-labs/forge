@@ -149,8 +149,12 @@ main ; pas encore sur un vrai projet.
 la fois, dans ses mots, chacune avec une rédaction à valider ou corriger. Le document vivant est par
 défaut un fichier Markdown du dossier de la feature (clé `feature-dir`, `conception.md`), dont chaque
 rédaction reste `proposé` tant que l'expert ne l'a pas validée (son nom, clé `source-author`, et la
-date) ; validé en entier, il devient la source (clé `product-source`), et le skill en tire la spec, le
-parcours voulu et la matrice initiale, chacun passé par son script. La clé `shared-doc` nomme en plus un
+date) ; validé en entier, il devient une source du projet (clé `product-source`), et le skill en tire la spec, le
+parcours voulu et la matrice initiale, chacun passé par son script. La clé vaut pour toutes les
+features : les scripts lisent tous ses fichiers et fondent deux identifiants égaux en un élément. Les
+éléments neufs d'une conception portent donc le numéro de leur feature (`EXI0042-01`), ceux d'une
+source déjà déclarée gardent leur identifiant d'origine, et la conception se retire de la clé quand sa
+feature est close, faute de quoi les autres features rendent `MISSING` pour ses identifiants. La clé `shared-doc` nomme en plus un
 support partagé où l'expert relit et commente, quand le projet en a un ; le fichier du dépôt reste la
 référence, et forge ne câble aucun service. Sans elle, « sans objet (clé `shared-doc` absente) » et seul
 le fichier sert. Éprouvé sur des textes écrits à la main seulement : aucun expert réel ne l'a encore

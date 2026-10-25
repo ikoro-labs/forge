@@ -9,6 +9,7 @@ from pathlib import Path
 import support
 from matrice import main as matrice_main
 from source_ids import ids_of_source
+from source_ids import main as source_ids_main
 
 SKILL = support.PLUGIN / "skills" / "feature-guide" / "SKILL.md"
 
@@ -140,6 +141,85 @@ class Outputs(unittest.TestCase):
                 code = matrice_main(argv)
             self.assertEqual(code, 0, out.getvalue())
             self.assertTrue(out.getvalue().startswith("OK\t"), out.getvalue())
+
+
+def filled(number: str) -> str:
+    """The conception template for a feature, its example identifiers kept and the placeholders removed."""
+    text = (support.PLUGIN / "templates" / "features" / "conception.md").read_text(encoding="utf-8")
+    text = text.replace("F-NNNN", f"F-{number}").replace("NNNN", number)
+    return text.replace("<", "").replace(">", "")
+
+
+def spec_citing(identifiers: list[str]) -> str:
+    return "# Spec\n\n## Éléments de la source\n\n" + "".join(f"- {i} repris\n" for i in identifiers)
+
+
+def count(sources: dict[str, str], spec: str) -> str:
+    """The output of source_ids.py for a project whose product-source holds the given files."""
+    with tempfile.TemporaryDirectory() as folder:
+        root = Path(folder)
+        lines = "".join(f"- `product-source` : `{name}`\n" for name in sources)
+        (root / "usine.md").write_text(lines, encoding="utf-8")
+        for name, text in sources.items():
+            (root / name).write_text(text, encoding="utf-8")
+        (root / "spec.md").write_text(spec, encoding="utf-8")
+        out = io.StringIO()
+        argv = ["--usine", str(root / "usine.md"), "--root", str(root), str(root / "spec.md")]
+        with redirect_stdout(out), redirect_stderr(io.StringIO()):
+            source_ids_main(argv)
+        return out.getvalue()
+
+
+PROCEDURE = "# Procédure\n\n| Identifiant | Exigence |\n|---|---|\n| EXI-01 | Le relevé est daté |\n"
+
+
+class Collision(unittest.TestCase):
+    def test_two_conceptions_never_share_an_identifier(self) -> None:
+        """No F-NNNN: ticket #96, A2: deux conceptions déclarées dans product-source ne se fondent pas en un élément."""
+        first, second = ids_of_source(filled("0042")), ids_of_source(filled("0043"))
+        self.assertTrue(first and second)
+        self.assertEqual(set(first) & set(second), set())
+        out = count({"a.md": filled("0042"), "b.md": filled("0043")}, spec_citing([first[0]]))
+        for identifier in second:
+            self.assertIn(f"MISSING\t{identifier}\t", out)
+        self.assertEqual(sum(1 for line in out.splitlines() if line.startswith("MISSING")), len(first) + len(second) - 1)
+
+    def test_a_conception_never_borrows_the_identifier_of_a_declared_source(self) -> None:
+        """No F-NNNN: ticket #96, A2: l'identifiant neuf d'une conception ne se fond pas avec celui d'une source déclarée."""
+        mine = ids_of_source(filled("0042"))
+        self.assertNotIn("EXI-01", mine)
+        out = count({"procedure.md": PROCEDURE, "conception.md": filled("0042")}, spec_citing(mine))
+        self.assertIn("MISSING\tEXI-01\t", out)
+        out = count({"procedure.md": PROCEDURE, "conception.md": filled("0042")}, spec_citing(mine + ["EXI-01"]))
+        self.assertIn("NONE", out)
+
+    def test_the_initial_matrix_of_a_conception_does_not_hide_a_declared_source_element(self) -> None:
+        """No F-NNNN: ticket #96, A2: matrice.py voit l'élément d'une source déclarée même quand la conception en porte un du même rang."""
+        mine = ids_of_source(filled("0042"))
+        header = "| Identifiant | Lot | Ticket | Test | Écran | Capture | État | Jugé le |\n|---|---|---|---|---|---|---|---|\n"
+        rows = "".join(f"| {i} | | | | | | absent | |\n" for i in mine)
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / "usine.md").write_text("- `product-source` : `conception.md`\n- `product-source` : `procedure.md`\n", encoding="utf-8")
+            (root / "conception.md").write_text(filled("0042"), encoding="utf-8")
+            (root / "procedure.md").write_text(PROCEDURE, encoding="utf-8")
+            (root / "matrice.md").write_text("# F-0042 : matrice\n\n" + header + rows, encoding="utf-8")
+            out = io.StringIO()
+            argv = ["--usine", str(root / "usine.md"), "--root", str(root), str(root / "matrice.md")]
+            with redirect_stdout(out), redirect_stderr(io.StringIO()):
+                matrice_main(argv)
+            self.assertIn("MISSING\tEXI-01", out.getvalue())
+
+    def test_the_skill_and_the_page_say_the_reach_of_the_key_and_what_becomes_of_the_conception(self) -> None:
+        """No F-NNNN: ticket #96, A2: la portée de product-source, le préfixe, la reprise de l'origine, le retrait de la clé."""
+        skill = read(SKILL)
+        self.assertIn("Cette clé vaut pour tout le projet", skill)
+        self.assertIn("Numérote avec le numéro de la feature", skill)
+        self.assertIn("reprends son identifiant d'origine", skill)
+        self.assertIn("ne reste dans la clé que le temps de sa feature", skill)
+        install = read(support.REPO_ROOT / "docs" / "installation.md")
+        self.assertIn("La clé vaut pour toutes les features", install)
+        self.assertIn("se retire de la clé quand sa feature est close", install)
 
 
 class Reach(unittest.TestCase):

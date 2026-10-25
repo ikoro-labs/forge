@@ -1,6 +1,6 @@
 ---
 name: feature-guide
-description: "Mener une conception guidée avec un expert métier qui n'est pas développeur : une question à la fois, dans ses mots, une rédaction proposée à valider ou corriger, dans un document vivant qui devient la source une fois validé."
+description: "Mener une conception guidée avec un expert métier qui n'est pas développeur : une question à la fois, dans ses mots, une rédaction proposée à valider ou corriger, dans un document vivant qui devient une source du projet une fois validé."
 argument-hint: F-NNNN
 disable-model-invocation: true
 ---
@@ -32,11 +32,26 @@ La conception s'écrit dans `conception.md`, un fichier Markdown du dossier de l
 ligne : l'expert peut l'ouvrir et le commenter à tout moment, et la prochaine question part de ce
 qu'il y a lu.
 
-Quand l'expert a validé le document en entier, il **devient la source** de la feature : demande à
+Quand l'expert a validé le document en entier, il **devient une source du projet** : demande à
 l'humain de la clé `accepting-human` d'ajouter son fichier à la clé `product-source` de
 `docs/agents/usine.md`, en tête (la source de l'expert prime sur ce que des agents ont écrit), et pas avant :
 tant qu'une ligne reste `proposé`, le comptage de `forge:feature-spec` prendrait une
 rédaction d'agent pour un élément de la source.
+
+**La portée de `product-source`.** Cette clé vaut pour tout le projet : `source_ids.py` et `matrice.py`
+lisent tous ses fichiers, quelle que soit la feature, et fondent deux identifiants égaux en un seul
+élément. D'où trois règles :
+
+- **Numérote avec le numéro de la feature** : `EXI0042-01`, `C0042-01`, `G0042-1` pour `F-0042`,
+  jamais `EXI-01` seul. Deux conceptions numérotées chacune depuis 1 se fondraient, et la spec qui
+  cite un `EXI-01` passerait pour avoir repris les deux.
+- **Quand une source déjà déclarée porte l'élément, reprends son identifiant d'origine**, sans
+  préfixe : c'est le même élément, compté une fois. Un élément neuf n'emprunte jamais un identifiant
+  de cette source.
+- **La conception ne reste dans la clé que le temps de sa feature.** Tant qu'elle y figure, la spec
+  et la matrice de toute autre feature rendent `MISSING` pour ses identifiants, ce qui est juste
+  mais parasite : dis à l'humain de la retirer de la clé quand la feature est close. Le fichier reste
+  dans le dossier de la feature, et sa matrice garde la trace des identifiants.
 
 ### Le support partagé
 
