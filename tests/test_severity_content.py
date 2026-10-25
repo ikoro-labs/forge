@@ -1,0 +1,64 @@
+"""Le contenu qui porte les classes de gravité et les engagements de délai (ticket #60)."""
+
+import unittest
+
+import support
+
+
+def read(*parts: str) -> str:
+    return " ".join(support.PLUGIN.joinpath(*parts).read_text(encoding="utf-8").split())
+
+
+def read_doc(name: str) -> str:
+    return " ".join((support.REPO_ROOT / "docs" / name).read_text(encoding="utf-8").split())
+
+
+class Classes(unittest.TestCase):
+    def test_the_docs_define_the_three_classes_and_their_labels(self) -> None:
+        """Ticket #60, critère 1 : trois classes de gravité définies dans `docs/`, posées par `sev1`, `sev2`, `sev3`."""
+        page = read_doc("gravite-et-sla.md")
+        for label in ("`sev1`", "`sev2`", "`sev3`"):
+            self.assertIn(label, page)
+        self.assertIn("un garde contourné", page)
+        self.assertIn("un chemin protégé fusionné sans humain", page)
+        self.assertIn("une perte de données ou de travail", page)
+        self.assertIn("la branche de base rouge", page)
+        self.assertIn("un défaut échappé qui change un comportement", page)
+        self.assertIn("la prose, la documentation ou un confort", page)
+
+    def test_the_template_defines_the_same_classes(self) -> None:
+        """Ticket #60, critère 1 : les classes sont aussi dans le gabarit de `usine.md`."""
+        template = read("templates", "usine.md")
+        for label in ("`sev1`", "`sev2`", "`sev3`"):
+            self.assertIn(label, template)
+        self.assertIn("un garde contourné", template)
+        self.assertIn("la prose, la documentation ou un confort", template)
+
+    def test_the_template_documents_the_sla_key_without_default(self) -> None:
+        """Ticket #60, critère 2 : le gabarit documente `sla` et dit « sans objet » quand elle manque."""
+        template = read("templates", "usine.md")
+        self.assertIn("- `sla` : `<sev1 | ", template)
+        self.assertIn("<gravité> | <prise en charge> | <correctif fusionné> | <correctif publié>", template)
+        self.assertIn("sans objet (clé `sla` absente)", template)
+        self.assertIn("depuis l'ouverture du ticket", template)
+
+    def test_the_readme_points_to_the_page(self) -> None:
+        readme = " ".join((support.REPO_ROOT / "README.md").read_text(encoding="utf-8").split())
+        self.assertIn("docs/gravite-et-sla.md", readme)
+
+
+class Skills(unittest.TestCase):
+    def test_feature_build_orders_the_frontier_by_severity_then_deadline(self) -> None:
+        """Ticket #60, critère 3 : `forge:feature-build` prend les tickets par gravité, puis par échéance, sev1 devant."""
+        skill = read("skills", "feature-build", "SKILL.md")
+        self.assertIn('factory_slo.py" queue', skill)
+        section = skill[skill.index("**La frontière**"):]
+        section = section[:section.index("Tu tiens trois listes")]
+        self.assertIn("Par gravité, puis par échéance", section)
+        self.assertIn("`sev1`", section)
+        self.assertIn("devant", section)
+        self.assertIn("clé `sla` absente", section)
+
+
+if __name__ == "__main__":
+    unittest.main()
