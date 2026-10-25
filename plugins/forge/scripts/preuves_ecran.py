@@ -26,7 +26,8 @@ Two more keys serve the journey replayed in CI:
 Only `journey-replay`, `screenshot-command` and `recording-command` open the expectation of a capture: they produce the
 proof where the PR is made. The driven browser and the dedicated station serve the acceptance on their
 own station, not the PR, so declaring only them expects nothing of the PR. A key with an empty value
-names nothing and counts as absent.
+names nothing and counts as absent, without error. Without `--matrice` while a capture is expected, the
+script prints `sans objet (aucune matrice fournie : critères d'écran non cherchés)` instead of exiting 0 silently.
 
 One line per finding, fields separated by tabs. A missing key prints `sans objet (clé <nom> absente)`
 for itself and never stops the others. `CAPACITE` names a key that is declared, its value and its
@@ -76,6 +77,7 @@ def attached(body: str) -> int:
 def invalid(config: dict[str, list[str]]) -> list[str]:
     """What is wrong in a declared value, one message each."""
     problems = []
+    config = {key: [value for value in values if value.strip()] for key, values in config.items()}
     for key in COMMAND_KEYS:
         for value in config.get(key, []):
             if "{out}" not in value:
@@ -147,6 +149,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     count = attached(body)
     carried = 0
+    if not args.matrice:
+        print("sans objet (aucune matrice fournie : critères d'écran non cherchés)")
     if replayed:
         if values[PATHS_KEY] and changed is None:
             print("sans objet (liste des fichiers de la PR non fournie)")

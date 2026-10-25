@@ -132,5 +132,22 @@ class Touched(unittest.TestCase):
         self.assertNotIn("PARCOURS-TOUCHE", out)
 
 
+class Carried(unittest.TestCase):
+    def test_an_empty_value_is_sans_objet_and_not_an_error(self) -> None:
+        """No F-NNNN: ticket #99, A4 (MINOR de #113): une valeur vide ne nomme rien, la clé reste sans objet."""
+        for key in ("screenshot-command", "recording-command", "browser-drive", "journey-replay"):
+            code, out, err = run(f"- `{key}` : ``\n")
+            self.assertEqual(code, 0, key)
+            self.assertEqual(err, "", key)
+            self.assertIn(f"sans objet (clé {key} absente)", out)
+
+    def test_without_a_matrix_the_probe_says_it_looked_for_no_screen_criterion(self) -> None:
+        """No F-NNNN: ticket #99, A2 (MINOR de #113): sans matrice, la sonde ne rend pas 0 comme si elle avait cherché."""
+        _code, out, _ = run("- `screenshot-command` : `pnpm e2e e2e/a.spec.ts --output {out}`\n", BODY_WITHOUT)
+        self.assertIn("sans objet (aucune matrice fournie : critères d'écran non cherchés)", out)
+        _code, out, _ = run("# vide\n", BODY_WITHOUT)
+        self.assertNotIn("aucune matrice", out)
+
+
 if __name__ == "__main__":
     unittest.main()
