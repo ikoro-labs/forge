@@ -8,6 +8,9 @@ from pathlib import Path
 
 import support
 from preuves_ecran import main
+from usine import parse
+
+TEMPLATE = support.PLUGIN / "templates" / "usine.md"
 
 KEYS = ("screenshot-command", "browser-drive", "computer-use-host", "recording-command")
 HEADER = "| Identifiant | Lot | Ticket | Test | Écran | Capture | État | Jugé le |\n|---|---|---|---|---|---|---|---|\n"
@@ -111,6 +114,22 @@ class Probe(unittest.TestCase):
         _code, out, _ = run(self.ONE, "[parcours](preuves/parcours.mp4)\n![g](preuves/p.gif)\n", self.MATRIX, ticket="#55")
         self.assertNotIn("MANQUE", out)
         self.assertIn("JOINTE\tcorps de PR\t2", out)
+
+
+class Template(unittest.TestCase):
+    def test_the_template_documents_the_four_keys_and_their_limits(self) -> None:
+        """No F-NNNN: ticket #54, A6: chaque clé est documentée dans le gabarit, avec sa limite."""
+        text = TEMPLATE.read_text(encoding="utf-8")
+        documented = parse(text)
+        for key in KEYS:
+            self.assertIn(key, documented)
+        flat = " ".join(text.split())
+        self.assertIn("jamais en CI", flat)
+        self.assertIn("jamais le poste personnel d'un membre", flat)
+        self.assertIn("sans objet (clé `computer-use-host` absente)", flat)
+        # Une commande d'exemple n'a pas de `--` avant le fichier de spec: Playwright ignorerait le filtre.
+        self.assertNotIn("e2e -- e2e/", flat)
+        self.assertIn("pnpm --filter <app> e2e e2e/<spec>", flat)
 
 
 if __name__ == "__main__":
