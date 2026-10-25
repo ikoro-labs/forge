@@ -261,9 +261,58 @@ Après `/forge:qc` :
 - **`needs-your-attention` sans fusion**, ou fusion refusée : **arrêt sur incident**.
 
 Une fusion déplace la base : les autres PR de la file passeront par 3.1. Elle peut aussi débloquer
-des tickets : relis l'étape 1, puis retourne à l'étape 2.
+des tickets : passe par l'étape 3 bis (la revue de bout en bout), relis l'étape 1, puis retourne à
+l'étape 2.
 
-## 4. Arrêts
+## 3 bis. La revue de bout en bout
+
+Après chaque PR fusionnée sur la base du passage, et avant la fusion suivante (la revue joue
+l'application sur une base qui ne bouge pas), tu décides si le parcours de la feature est touché.
+Ni minuterie, ni geste humain : la fusion déclenche, ou rien ne se lance.
+
+1. **Déclencher.** Les fichiers de la PR fusionnée (`gh pr diff <n> --name-only`, écrits dans un
+   fichier), puis
+
+   ```
+   uv run --no-project --quiet python "${CLAUDE_PLUGIN_ROOT}/scripts/revue_boucle.py" declencher --files <fichier> --matrice <matrice.md> --ticket '#<n>'
+   ```
+
+   Code 0 (`REVUE declenchee`) : un fichier du diff est sous un chemin de la clé `journey-paths`
+   (le front, ou une API qu'il consomme), et les lignes `ECRAN` disent les écrans touchés, ceux que
+   la matrice relie au ticket (`ECRAN tous` : le ticket n'en nomme aucun, le parcours entier se
+   joue). Code 1 : pas de revue pour cette fusion, et le diff ne touche pas le parcours, ou la clé
+   est absente, « sans objet (clé `journey-paths` absente) », que tu rapportes sans rien deviner.
+   Sans `matrice.md` ni `parcours.md` dans le dossier de la feature, la revue est sans objet aussi.
+2. **Revoir.** Lance le skill `forge:feature-review F-NNNN` sur les écrans touchés, depuis la base à
+   jour. C'est toi qui l'exécutes, jamais un coder : le skill ne se confie pas à l'agent qui a codé.
+   Chaque clé qu'il lit et que le fichier ne porte pas rend son étape « sans objet », et sans
+   capture il n'y a pas de revue (la revue s'arrête et tu le rapportes).
+3. **Les écarts repartent en construction.** La boucle publie elle-même les tickets du compte rendu,
+   sans accord de l'humain : un ticket par lot, étiqueté `ready-for-agent`, rattaché aux
+   sous-issues de l'issue de suivi, avec `Couvre :` et `Feature: F-NNNN`. Ils entrent dans la
+   frontière de l'étape 1, puis dans le passage comme tout ticket (coder à l'étape 2, `forge:qc`
+   à l'étape 3), et leur fusion déclenche à son tour la revue de l'étape 1 de cette section, qui
+   rejoue le parcours.
+4. **Le journal et l'arrêt.** Après chaque revue publiée, inscris son verdict au journal de la
+   feature (`revue/boucle.tsv`, dans le dossier de la feature, livré avec la matrice) :
+
+   ```
+   uv run --no-project --quiet python "${CLAUDE_PLUGIN_ROOT}/scripts/revue_boucle.py" tour <journal> verdict.tsv
+   uv run --no-project --quiet python "${CLAUDE_PLUGIN_ROOT}/scripts/revue_boucle.py" retours <journal>
+   ```
+
+   Un écart qui revient est un identifiant de la source encore (ou de nouveau) non `tenu` à un tour
+   après le premier où il l'était : l'**identifiant de la source** et son état font foi, jamais le
+   numéro d'un ticket. Un écart revenu deux fois (code 1, ligne `ARRET`) arrête la boucle : plus aucun
+   ticket n'est publié pour cet identifiant, tu poses `needs-your-attention` sur l'issue de suivi
+   avec un commentaire qui nomme l'identifiant, ses constats de chaque tour et les captures, et
+   c'est un **arrêt sur incident** (étape 4). L'humain tranche : la source, la spec ou le code.
+5. **Plafonds.** La boucle n'a aucun plafond de tours propre et aucun défaut nouveau : ses tickets
+   comptent dans `--max`, sa durée dans celle du passage, les jetons de `forge:review-judge` et de
+   `forge:review-recheck` dans ses jetons d'agents, et `.claude/PAUSED` l'arrête comme le reste.
+   Un plafond atteint ferme le robinet des coders (étape 4) : les tickets déjà publiés restent
+   `ready-for-agent`, le compte rendu les nomme, et le passage suivant les reprend. Le retour de
+   l'écart borne les tours sinon.
 
 Un arrêt ferme le robinet, il ne coupe pas le travail en cours : plus aucun coder ne part, et ceux
 en vol vont jusqu'à leur sortie, que tu traites comme à l'étape 2.
@@ -282,8 +331,21 @@ en vol vont jusqu'à leur sortie, que tu traites comme à l'étape 2.
 
 ## 5. Après le dernier ticket
 
-Quand toutes les sous-issues sont fermées, lis l'état de la feature (`/forge:feature-status
-F-NNNN`, ou les en-têtes des documents de son dossier) :
+Quand toutes les sous-issues sont fermées, lance d'abord la revue de bout en bout **en entier** :
+`forge:feature-review F-NNNN` sur le parcours complet (son compte rendu porte `PORTEE: entière`),
+puis la porte de la recette :
+
+```
+uv run --no-project --quiet python "${CLAUDE_PLUGIN_ROOT}/scripts/revue_boucle.py" porte <compte-rendu>
+```
+
+`FERMEE` (code 1) : la revue a laissé un `bloquant` ou un `majeur`, ou n'a pas porté sur le parcours
+entier. Ses tickets, publiés comme à l'étape 3 bis, rouvrent des sous-issues : retourne à l'étape 1
+et rejoue la boucle jusqu'à la porte `OUVERTE` (zéro `bloquant` et zéro `majeur`), un `ARRET` ou un
+plafond. Les `mineur` restent au rapport et n'arrêtent rien. Le tour de cette revue entre au journal
+comme les autres. La clôture, elle, exige 100 % de la matrice (`matrice.py --cloture`, dans
+`forge:feature-close`). Puis lis l'état de la feature (`/forge:feature-status F-NNNN`, ou les
+en-têtes des documents de son dossier) :
 
 - pas de recette : lance le skill `forge:feature-verify F-NNNN`, sur la base du passage. Sa PR est
   de la doc, relue par `/forge:qc` en une passe. Puis arrête-toi :

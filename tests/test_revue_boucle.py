@@ -178,3 +178,60 @@ class Loop(unittest.TestCase):
                 code = main(["tour", str(root / "journal.tsv"), str(root / "verdict.tsv")])
             self.assertEqual(code, 1)
             self.assertFalse((root / "journal.tsv").exists())
+
+
+def read(*parts: str) -> str:
+    return " ".join(support.PLUGIN.joinpath(*parts).read_text(encoding="utf-8").split())
+
+
+class Contents(unittest.TestCase):
+    """Les skills disent la boucle que le script mesure."""
+
+    def test_the_build_triggers_the_review_after_a_merge_with_no_timer_and_no_human_gesture(self) -> None:
+        """No F-NNNN: ticket #101, le déclenchement par la fusion dans forge:feature-build, sur les écrans touchés."""
+        skill = read("skills", "feature-build", "SKILL.md")
+        for text in [
+            "## 3 bis. La revue de bout en bout",
+            'revue_boucle.py" declencher',
+            "gh pr diff <n> --name-only",
+            "Ni minuterie, ni geste humain",
+            "forge:feature-review",
+        ]:
+            with self.subTest(text=text):
+                self.assertIn(text, skill)
+
+    def test_the_gaps_of_the_review_enter_the_passage_as_tickets_the_loop_publishes(self) -> None:
+        """No F-NNNN: ticket #101, les tickets d'écart entrent dans le passage puis la revue rejoue le parcours."""
+        build = read("skills", "feature-build", "SKILL.md")
+        for text in ["sans accord de l'humain", "`ready-for-agent`", "sous-issues de l'issue de suivi", "rejoue le parcours"]:
+            with self.subTest(text=text):
+                self.assertIn(text, build)
+        review = read("skills", "feature-review", "SKILL.md")
+        self.assertIn("publie lui-même, sans accord de l'humain", review)
+        self.assertNotIn("tant que la boucle de la revue", review)
+
+    def test_the_recette_waits_for_the_gate_and_the_closure_for_the_whole_matrix(self) -> None:
+        """No F-NNNN: ticket #101, la porte de recette de forge:feature-verify et la clôture à 100 % (#94)."""
+        build = read("skills", "feature-build", "SKILL.md")
+        self.assertIn('revue_boucle.py" porte', build)
+        self.assertIn("zéro `bloquant` et zéro `majeur`", build)
+        verify = read("skills", "feature-verify", "SKILL.md")
+        self.assertIn("revue_boucle.py", verify)
+        self.assertIn("zéro `bloquant` et zéro `majeur`", verify)
+        self.assertIn("matrice.py --cloture", read("skills", "feature-close", "SKILL.md"))
+        self.assertIn("PORTEE:", read("skills", "feature-review", "SKILL.md"))
+
+    def test_the_caps_are_those_of_the_passage_and_the_stop_rests_on_a_measured_datum(self) -> None:
+        """No F-NNNN: ticket #101, plafonds pris dans ceux du passage, arrêt sur un écart revenu deux fois."""
+        build = read("skills", "feature-build", "SKILL.md")
+        for text in [
+            "aucun plafond de tours propre",
+            "comptent dans `--max`",
+            'revue_boucle.py" tour',
+            'revue_boucle.py" retours',
+            "identifiant de la source",
+            "revenu deux fois",
+            "`needs-your-attention`",
+        ]:
+            with self.subTest(text=text):
+                self.assertIn(text, build)
