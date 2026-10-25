@@ -1,6 +1,7 @@
 import io
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import tempfile
@@ -154,15 +155,43 @@ class OwnWorktree(unittest.TestCase):
     def test_a_git_command_under_the_worktree_passes(self) -> None:
         for command in [
             "git status",
-            f"git -C {self.tree} log",
+            f"git -C {shlex.quote(self.tree)} log",
             "git -C src log",
-            f"cd {self.other} && cd {self.tree} && git status",
+            f"cd {shlex.quote(self.other)} && cd {shlex.quote(self.tree)} && git status",
             f"(cd {self.other}); git status",
             "git commit -m 'cd ../main-copy'",
             "ls ../main-copy",
         ]:
             with self.subTest(command=command):
                 self.assertIsNone(self.judge("Bash", {"command": command}))
+
+    def test_a_windows_path_is_read_whole_by_powershell(self) -> None:
+        """#65: in PowerShell a backslash escapes nothing, so `C:\\x\\tree` is a path, not `C:xtree`.
+
+        Read as POSIX words the drive path loses its backslashes and passes for a relative one,
+        which is pasted onto the event's directory: a command outside the worktree went through,
+        and, on Windows, one inside it was refused. The tree is a fixed Windows-style root here, so
+        the splitting is reproduced on any system.
+        """
+        tree = "C:/work/tree"
+
+        def judge(command: str) -> str | None:
+            return refusal("PowerShell", {"command": command}, tree, lambda _cwd: (tree, None))
+
+        for command in [
+            "git -C C:\\work\\main status",
+            "cd C:\\work\\main; git status",
+            "git -C 'C:\\work\\main' log",
+        ]:
+            with self.subTest(command=command):
+                self.assertIn("outside the coder's worktree", judge(command) or "")
+        for command in [
+            "git -C C:\\work\\tree log",
+            "cd C:\\work\\main; cd C:\\work\\tree; git status",
+            "git -C C:\\work\\tree\\sub log",
+        ]:
+            with self.subTest(command=command):
+                self.assertIsNone(judge(command))
 
     def test_a_coder_without_a_worktree_is_refused_with_the_reason(self) -> None:
         def without(_cwd: str | None) -> tuple[None, str]:

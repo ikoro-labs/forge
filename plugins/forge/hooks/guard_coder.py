@@ -17,7 +17,9 @@ agent through. For the coder, it refuses, with the reason on stderr and exit cod
   (`git rev-parse --git-dir` equal to `--git-common-dir`) is a coder launched without isolation,
   and is refused from its first write.
 
-The command is parsed with `guard_git`'s splitter, so a commit message that says
+The command is parsed with `guard_git`'s splitter, which reads a backslash as an escape, as Bash
+does; from a `PowerShell` call, where it escapes nothing, the backslashes become slashes first so
+that a Windows path stays whole. A commit message that says
 `gh pr merge` is data. As there, this guards against an accident, not against intent: a wrapper
 (`env gh`, `gh.exe`) or `gh api` on the same endpoint is intent and is left alone.
 An event the hook cannot read is refused, and `hooks.json` turns any crash into a refusal.
@@ -215,6 +217,10 @@ def refusal(
             return "a write without a path the hook can read"
         return _outside(path if os.path.isabs(path) else os.path.join(cwd or "", path), root, "the file")
     command = str(tool_input.get("command", ""))
+    if tool_name == "PowerShell":
+        # A backslash escapes nothing in PowerShell, but the POSIX splitter eats it: `C:\work\tree`
+        # would reach the guard as `C:worktree`, a relative path. Slashes are read by Windows too.
+        command = command.replace("\\", "/")
     for item in _commands(command):
         if isinstance(item, list) and (act := gh_act(item)) is not None:
             if reason := REFUSED_GH.get(act[:2]):
