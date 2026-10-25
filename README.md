@@ -28,7 +28,8 @@ configuration, ses règles, ses skills de domaine.
 4. **On vérifie et on clôt.** `/forge:feature-verify` relie chaque critère d'acceptation au test
    qui le prouve, `/forge:feature-review` joue le parcours sur l'application réelle et juge chaque
    écran contre la source (un juge en lecture seule, une seconde lecture des `tenu`, la matrice mise à
-   jour, un ticket par lot d'écarts), `/forge:feature-close` écrit ce qui a été livré.
+   jour, un ticket par lot d'écarts, en boucle sous `/forge:feature-build` : déclenchée par la fusion,
+   ses écarts repartent en construction, et la recette attend zéro bloquant et zéro majeur), `/forge:feature-close` écrit ce qui a été livré.
 
 Une question technique ou produit en chemin va d'abord à `forge:staff-engineer` ou à
 `forge:product-owner`, qui la tranchent selon la matrice des droits de décision du projet, ou

@@ -1,7 +1,7 @@
 ---
 name: feature-review
 description: "Revue de bout en bout d'une feature livrée : l'application réelle lancée, le parcours voulu joué dans un vrai navigateur sur des captures en clair et en sombre, sur bureau et sur mobile, chaque écran jugé contre la source par un juge en lecture seule, puis la matrice mise à jour, un ticket par lot d'écarts et un rapport dans la page de la feature. À lancer quand les tickets d'une feature sont fusionnés, jamais par l'agent qui a codé."
-argument-hint: F-NNNN
+argument-hint: F-NNNN [--ecrans "Écran n, Écran m"]
 ---
 
 # Revue de bout en bout d'une feature
@@ -70,6 +70,7 @@ rend son étape « sans objet (clé `<nom>` absente) », jamais `PASS` : forge n
    uv run --no-project --quiet python "${CLAUDE_PLUGIN_ROOT}/scripts/revue_bout_en_bout.py" verdict verdict.tsv --matrice matrice.md --manifeste manifeste.tsv --captures <dossier>
    ```
 
+   Sur écrans touchés, ajoute `--ecrans "<liste>"` à cette commande et aux suivantes.
    Il ne doit rester que des lignes `A-RELIRE` (et des `SUSPECT`, qui sont à la seconde lecture). Tout
    autre constat (`NON-JUGE`, `CONTRADICTION`, `INVALID`, `SANS-FICHIER`, `HORS-MANIFESTE`) revient
    au juge, avec la ligne du script, une fois ; au second échec, arrête-toi et pose
@@ -92,16 +93,20 @@ rend son étape « sans objet (clé `<nom>` absente) », jamais `PASS` : forge n
      au moins grave. Rédige un ticket par lot : titre, gravité, capture, identifiants de la source cités,
      constat, et un **critère de sortie** (« chaque identifiant repasse `tenu` à la revue suivante,
      capture à l'appui »), la ligne `Couvre : <identifiants>` que `forge:qc-conf` lit et la ligne
-     `Feature: F-NNNN`. C'est la session qui lance ce skill qui les publie, étiquetés `ready-for-agent`
-     et rattachés à l'issue de suivi de la feature (`issue:` de `idee.md`), après l'accord de l'humain de
-     la clé `accepting-human` tant que la boucle de la revue (`forge:feature-build`) ne les publie pas
-     elle-même. Elle ne câble aucun projet : le dépôt et les étiquettes sont ceux du projet.
+     `Feature: F-NNNN`. Ils sont étiquetés `ready-for-agent` et rattachés à l'issue de suivi de la
+     feature (`issue:` de `idee.md`). Lancé par `forge:feature-build` (étape 3 bis), le passage les
+     publie lui-même, sans accord de l'humain : c'est la boucle, et un geste humain l'arrêterait.
+     Lancé à la main, hors de la boucle, la session qui l'a lancé montre les brouillons et ne les
+     publie qu'après l'accord de l'humain de la clé `accepting-human`. Le skill ne câble aucun
+     projet : le dépôt et les étiquettes sont ceux du projet.
    - **Le rapport** enrichit la page de la feature, sans en créer une nouvelle : une section
      « Revue de bout en bout » ajoutée à `recette.md` (ou, si la feature est déjà close, à la section
      « Ses limites » de son `README.md`). Elle dit la date, le système et ce qui n'a pas été vu, la
      couverture (`scripts/matrice.py --reste`), les écarts par gravité avec leur ticket, les `NON-JOUE`,
      et reprend les captures citées, copiées dans le dossier de la feature sous `revue/`.
-7. **Livrer** le tout dans une PR vers la base : matrice, rapport, captures citées. La revue ne
+7. **Livrer** le tout dans une PR vers la base : matrice, rapport, captures citées, et le compte
+   rendu ci-dessous écrit dans le dossier de la feature sous `revue/compte-rendu.txt` (c'est là que
+   `forge:feature-verify` et `forge:feature-build` le lisent pour la porte de la recette). La revue ne
    corrige jamais le code d'une feature : ce sont les tickets qui repartent en construction.
 
 ## Gravité
@@ -118,9 +123,20 @@ d'où vient l'écart.
 
 ## Ce qui n'est pas ici
 
-La boucle (déclencher la revue à la fusion, porte de recette, plafonds de tours) est celle de
-`forge:feature-build` ; les indicateurs de la revue sont à part. Ce skill se termine par un compte
-rendu que ces étapes pourront lire :
+La boucle (déclencher la revue à la fusion, porte de recette, arrêt sur un écart revenu) est celle de
+`forge:feature-build`, étape 3 bis, avec `scripts/revue_boucle.py` ; les indicateurs de la revue sont
+à part. Deux portées :
+
+- **En entier** (par défaut) : tous les écrans du parcours, tous les éléments de la matrice.
+- **Sur écrans touchés** (`--ecrans "Écran 2, Écran 3"`, donnés par la ligne `ECRAN` de
+  `revue_boucle.py declencher`) : les écrans hors de la liste sont écrits `NON-JOUE` au manifeste
+  (« hors de la revue sur écrans touchés »), et la commande de l'étape 4 reçoit
+  `--ecrans "Écran 2, Écran 3"` : seuls les éléments de ces écrans sont jugés. Une ligne du verdict pour un
+  élément d'un autre écran (le juge dit `absent` un écran non joué) est écartée, ligne `HORS-PORTEE` :
+  `--appliquer` ne l'écrit pas, `--tickets` n'en fait pas un ticket, et la ligne de la matrice garde
+  son état et sa capture. Une revue sur écrans touchés n'ouvre jamais la recette.
+
+Ce skill se termine par un compte rendu que ces étapes lisent :
 
 ```text
 RESULT: REVUE
@@ -128,6 +144,7 @@ FEATURE: F-NNNN
 COUVERTURE: <tenus et écartés>/<total>, <pourcentage> %
 ECARTS: bloquant <n>, majeur <n>, mineur <n>
 TICKETS: brouillons | publiés (#n, #m)
+PORTEE: entière | écrans touchés (<Écran n>, ...)
 RAPPORT: <fichier de la page de la feature>
 SYSTEME: <ce sur quoi la revue a tourné, et ce qu'elle n'a pas vu>
 ```

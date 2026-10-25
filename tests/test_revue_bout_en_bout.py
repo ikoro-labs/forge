@@ -158,6 +158,15 @@ class Judgment(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("NON-JUGE\tC01", out)
 
+    def test_a_review_on_the_touched_screens_judges_only_their_elements(self) -> None:
+        """No F-NNNN: ticket #101, la revue sur écrans touchés ne juge que les éléments de ces écrans."""
+        code, out = verdict(LINE_EXI02 + LINE_C01, "--ecrans", "Écran 2")
+        self.assertEqual(code, 0, out)
+        self.assertNotIn("NON-JUGE", out)
+        code, out = verdict(LINE_EXI02, "--ecrans", "Écran 2")
+        self.assertEqual(code, 1)
+        self.assertIn("NON-JUGE\tC01", out)
+
     def test_only_the_four_judged_states_exist(self) -> None:
         """No F-NNNN: ticket #100, A3: l'état suit la règle unique ; « écarté » est à l'auteur de la source, jamais au juge."""
         for state in ("écarté", "ok", "tenu partiellement"):
@@ -277,6 +286,15 @@ class Outputs(unittest.TestCase):
         self.assertIn("| C01 | L2 | #7 | tests/a.py::t3 | Écran 2 | e2-sombre-mobile.png | partiel | 2026-11-02 |", after)
         self.assertIn("APPLIQUE", out)
 
+    def test_a_rejudged_row_takes_the_capture_of_its_new_verdict(self) -> None:
+        """No F-NNNN: ticket #101, la boucle rejuge : la ligne ne garde pas la capture d'un jugement d'avant."""
+        before = MATRICE.replace("| EXI-01 | L1 | #5 | tests/a.py::t1 | Écran 1 | | absent | |",
+                                 "| EXI-01 | L1 | #5 | tests/a.py::t1 | Écran 1 | e1-clair-bureau.png | tenu | 2026-10-01 |")
+        absent = element("EXI-01", "absent", "majeur", "-", "-", "l'écran n'a pas été joué")
+        code, out, after = apply(absent + LINE_EXI02 + LINE_C01, before, "--appliquer", "--date", "2026-11-02")
+        self.assertEqual(code, 0, out)
+        self.assertIn("| EXI-01 | L1 | #5 | tests/a.py::t1 | Écran 1 |  | absent | 2026-11-02 |", after)
+
     def test_a_blocked_verdict_leaves_the_matrix_untouched(self) -> None:
         """No F-NNNN: ticket #100, A5: rien ne s'écrit tant que le verdict a un constat."""
         code, out, after = apply(LINE_EXI01 + LINE_EXI02, MATRICE, "--appliquer", "--date", "2026-11-02")
@@ -297,6 +315,18 @@ class Outputs(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("REFUSED\tEXI-02", out)
         self.assertEqual(after, written)
+
+    def test_a_line_outside_the_touched_screens_is_neither_written_nor_ticketed(self) -> None:
+        """No F-NNNN: ticket #101, une revue sur écrans touchés ne change ni ne publie rien hors de ces écrans."""
+        before = MATRICE.replace("| EXI-01 | L1 | #5 | tests/a.py::t1 | Écran 1 | | absent | |",
+                                 "| EXI-01 | L1 | #5 | tests/a.py::t1 | Écran 1 | e1-clair-bureau.png | tenu | 2026-10-01 |")
+        absent = element("EXI-01", "absent", "majeur", "Écran 1", "-", "écran non joué")
+        code, out, after = apply(absent + LINE_EXI02 + LINE_C01, before, "--ecrans", "Écran 2", "--appliquer", "--date", "2026-11-02", "--tickets")
+        self.assertEqual(code, 0, out)
+        self.assertIn("| EXI-01 | L1 | #5 | tests/a.py::t1 | Écran 1 | e1-clair-bureau.png | tenu | 2026-10-01 |", after)
+        self.assertIn("| EXI-02 | L1 | #6 | tests/a.py::t2 | Écran 2 | e2-clair-bureau.png | contraire | 2026-11-02 |", after)
+        self.assertNotIn("EXI-01", " ".join(line for line in out.splitlines() if line.startswith("TICKET")))
+        self.assertIn("HORS-PORTEE\tEXI-01", out)
 
     def test_the_gaps_become_one_ticket_per_batch_and_severity_worst_first(self) -> None:
         """No F-NNNN: ticket #100, A5: un ticket par lot cohérent d'écarts, avec gravité, capture et identifiants cités."""
@@ -379,7 +409,8 @@ class Contents(unittest.TestCase):
     def test_the_skill_says_who_publishes_the_tickets_and_under_which_label(self) -> None:
         """No F-NNNN: ticket #100, A5: qui publie les tickets et sous quelle étiquette ; le rapport enrichit la page de la feature."""
         skill = read("skills", "feature-review", "SKILL.md")
-        self.assertIn("C'est la session qui lance ce skill qui les publie", skill)
+        self.assertIn("le passage les publie lui-même, sans accord de l'humain", skill)
+        self.assertIn("ne les publie qu'après l'accord de l'humain de la clé `accepting-human`", skill)
         self.assertIn("`ready-for-agent`", skill)
         self.assertIn("critère de sortie", skill)
         self.assertIn("sans en créer une nouvelle", skill)

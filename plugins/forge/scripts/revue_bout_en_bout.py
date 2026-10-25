@@ -20,7 +20,7 @@ SANS-ENVIRONNEMENT. Exit 0 when none of MANQUE, INVALID or SANS-ENVIRONNEMENT is
 2 when a file is unreadable or the call wrong.
 
     python revue_bout_en_bout.py verdict <verdict.tsv> --matrice <matrice.md> [--usine FILE] [--root DIR]
-        [--manifeste F] [--captures DIR] [--relecture F] [--appliquer --date AAAA-MM-JJ] [--tickets]
+        [--manifeste F] [--captures DIR] [--relecture F] [--ecrans "Écran n, Écran m"] [--appliquer --date AAAA-MM-JJ] [--tickets]
 
 The judge (`forge:review-judge`) writes one line per identifier of the matrix that is not `écarté`:
 `ELEMENT <id> <état> <gravité> <Écran n|-> <capture|-> <constat>`. The state is `tenu`, `partiel`, `absent`
@@ -32,6 +32,12 @@ SANS-FICHIER (a capture that is no file under `--captures`), HORS-MANIFESTE (a c
 take), SUSPECT (a `tenu` whose finding describes a lack; informative), A-RELIRE (a `tenu` with no second
 reading yet), NON-RELU and CONTESTE (the second reading, `LECTURE <id> <confirmé|contesté> <raison>`, did
 not confirm it), then OK. Exit 0 only when nothing blocks.
+
+With `--ecrans`, only the rows of the listed screens (the `Écran` column of the matrix) are judged (a
+review on the touched screens run after a merge). A verdict line for any other row is printed
+HORS-PORTEE (informative) and dropped: it is not checked, not written by `--appliquer`, not turned into a
+ticket by `--tickets`, and `revue_boucle.py tour` leaves it out of the journal. Those rows keep their
+state and their capture, and NON-JUGE is not raised for them.
 
 With a clean verdict, `--appliquer` writes the state, the capture and the date of each judged row into the
 matrix (`--date` is required; the new text must pass `matrice.py` or nothing is written, NON-APPLIQUE) and
@@ -179,6 +185,25 @@ def _matrix_cells(line: str) -> list[str]:
     return matrice._cells(line)
 
 
+def scope_of(ecrans: str | None) -> set[str] | None:
+    """The screens of a review on the touched screens (`--ecrans "Écran 2, Écran 3"`), None for the whole path."""
+    return {screen.strip() for screen in ecrans.split(",")} if ecrans else None
+
+
+def drop_out_of_scope(entries: list[dict[str, str]], by_id: dict[str, dict[str, str]], scope: set[str] | None) -> list[dict[str, str]]:
+    """The verdict lines of the rows in scope; each other line is printed HORS-PORTEE and dropped."""
+    if scope is None:
+        return entries
+    kept = []
+    for entry in entries:
+        row = by_id.get(entry["id"])
+        if row is not None and row["Écran"] not in scope:
+            _print("HORS-PORTEE", entry["id"], f"{row['Écran']} : hors de la revue sur écrans touchés, la ligne garde son état")
+        else:
+            kept.append(entry)
+    return kept
+
+
 def judge(args: argparse.Namespace, verdict_text: str, matrix_text: str) -> int:
     """Check a verdict against the matrix, the captures and the second reading; apply it when asked."""
     try:
@@ -206,8 +231,13 @@ def judge(args: argparse.Namespace, verdict_text: str, matrix_text: str) -> int:
         else:
             judged.append(group[0])
     invalid_ids = {subject for subject, _ in invalid}
+    # A review on the touched screens judges the rows of those screens only; the others keep their state.
+    scope = scope_of(args.ecrans)
+    judged = drop_out_of_scope(judged, by_id, scope)
     for row in rows:
         identifier = row["Identifiant"]
+        if scope is not None and row["Écran"] not in scope:
+            continue
         if row["État"] != "écarté" and identifier not in grouped and identifier not in invalid_ids:
             findings.append(("NON-JUGE", identifier, "aucune ligne du verdict : la revue juge chaque élément de la source"))
     taken = _manifest_captures(Path(args.manifeste).read_text(encoding="utf-8")) if args.manifeste else None
@@ -237,7 +267,7 @@ def judge(args: argparse.Namespace, verdict_text: str, matrix_text: str) -> int:
 def _apply(args: argparse.Namespace, matrix_text: str, rows: list[dict[str, str]], judged: list[dict[str, str]]) -> int:
     """Write the state, the capture and the date of each judged row into the matrix, then check the result.
 
-    Only these three columns change; the matrix is written only when `matrice.py` accepts the new text."""
+    Only these three columns change (the capture is emptied when the new verdict has none); the matrix is written only when `matrice.py` accepts the new text."""
     lines = matrix_text.split("\n")
     by_id = {e["id"]: e for e in judged}
     for row in rows:
@@ -248,8 +278,8 @@ def _apply(args: argparse.Namespace, matrix_text: str, rows: list[dict[str, str]
         cells = (_matrix_cells(lines[index]) + [""] * len(matrice.COLUMNS))[: len(matrice.COLUMNS)]
         cells[matrice.COLUMNS.index("État")] = entry["state"]
         cells[matrice.COLUMNS.index("Jugé le")] = args.date
-        if entry["capture"] not in ("", "-"):
-            cells[matrice.COLUMNS.index("Capture")] = entry["capture"]
+        # The capture of the new verdict, empty when it has none: the one of an earlier judgment would contradict the state.
+        cells[matrice.COLUMNS.index("Capture")] = "" if entry["capture"] in ("", "-") else entry["capture"]
         lines[index] = "| " + " | ".join(cells) + " |"
     new_text = "\n".join(lines)
     with tempfile.TemporaryDirectory() as folder:
@@ -322,6 +352,7 @@ def main(argv: list[str] | None = None) -> int:
     verdict.add_argument("--root", help="the project copy to read (default: the project directory)")
     verdict.add_argument("--manifeste", help="the manifest of the run: a capture cited must be in it")
     verdict.add_argument("--captures", help="the folder of the capture files, checked when given")
+    verdict.add_argument("--ecrans", help="a review on the touched screens: the screens judged, separated by commas")
     verdict.add_argument("--relecture", help="the second reading of the `tenu` verdicts")
     verdict.add_argument("--appliquer", action="store_true", help="write the verdict into the matrix when it has no finding")
     verdict.add_argument("--date", help="the ISO date of the judgment, required with --appliquer")
