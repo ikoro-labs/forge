@@ -14,7 +14,14 @@ Refused, with the reason on stderr and exit code 2 so Claude Code blocks the cal
   PR of a split ticket must leave it open, and GitHub reads a closing keyword anywhere, prose
   included, in the squash message as in the description. The message is read from `--subject`,
   `--body` and `--body-file`, the description from `gh pr view`; a body built by a shell
-  substitution cannot be read here, which is why `/forge:qc` writes it to a file.
+  substitution cannot be read here, which is why `/forge:qc` writes it to a file;
+- `gh pr merge`, for every agent whatever its name, when a file of the PR's diff starts with a
+  line of the project's `protected-path` key (a path or a prefix, compared word for word on the
+  POSIX path): the merge is the human's. The files come from `gh pr view --json files`, under
+  the timeout of the other calls. Closed by default: once the key is declared, a list that
+  cannot be read, or a `gh` that fails or times out, refuses the merge too. Without the key the
+  guard refuses nothing on that account and reads nothing. `/forge:qc` keeps its own rule, which
+  stops before the merge: the guard is the net, the rule avoids the refusal.
 
 The command is parsed, not grepped: a commit message that says "push --force" is data. Heredoc
 bodies are dropped first, then the command is split on shell operators with `shlex`. This is
@@ -63,6 +70,8 @@ from usine import load, project_root, split_value
 
 # The project's own owner gestures, one per line: `<command prefix> | <reason>`.
 OWNER_KEY = "owner-gesture"
+# The paths and prefixes no agent merges, one per line.
+PROTECTED_KEY = "protected-path"
 
 # Every external call has a timeout: a hook that hangs blocks the agent's command.
 TIMEOUT_SECONDS = 20
@@ -947,6 +956,41 @@ def _declared_gesture(words: list[str], declared: Iterable[str]) -> str | None:
     return None
 
 
+def _posix(path: str) -> str:
+    """A path as `forge:qc` compares it: relative, with `/`, without a leading `./`."""
+    text = path.strip().replace("\\", "/")
+    while text.startswith("./"):
+        text = text[2:]
+    return text
+
+
+def protected_refusal(
+    protected: Iterable[str], changed: Callable[[str | None], list[str] | None], pr: str | None
+) -> str | None:
+    """Why a merge is the human's: a file of the diff under a `protected-path` prefix, or None.
+
+    Without a declared prefix nothing is read. Once one is, a list that cannot be read refuses.
+    """
+    prefixes = [_posix(value) for value in protected if _posix(value)]
+    if not prefixes:
+        return None
+    paths = changed(pr)
+    if paths is None:
+        return (
+            "la liste des fichiers de la PR est illisible (appel `gh pr view --json files` en échec,"
+            f" hors délai ou réponse inattendue) et la clé `{PROTECTED_KEY}` est déclarée : refusée par"
+            " précaution, la fusion revient à l'humain, à lister en fin de compte rendu"
+        )
+    for path in paths:
+        for prefix in prefixes:
+            if _posix(path).startswith(prefix):
+                return (
+                    f"le fichier `{path}` de la PR commence par le préfixe `{prefix}` de la clé"
+                    f" `{PROTECTED_KEY}` : la fusion revient à l'humain, à lister en fin de compte rendu"
+                )
+    return None
+
+
 def refusal(
     command: str,
     branch: str | Callable[[str | None], str],
@@ -956,6 +1000,8 @@ def refusal(
     description: Callable[[str | None], str] = lambda _pr: "",
     owner_gestures: Iterable[str] = (),
     budget: Callable[[], str | None] = lambda: None,
+    protected_paths: Iterable[str] = (),
+    changed_files: Callable[[str | None], list[str] | None] = lambda _pr: None,
 ) -> str | None:
     """Why the command is refused, or None when it may run.
 
@@ -964,6 +1010,8 @@ def refusal(
     `description` is the body of a PR, by its number (None for the current branch's PR).
     `owner_gestures` are the values of the project's `owner-gesture` key, beside the built-in list.
     `budget` says why the error budget forbids a merge (key `budget-action`), or None.
+    `protected_paths` are the values of the `protected-path` key, and `changed_files` the files
+    of a PR by its number (None for the current branch's PR), or None when they cannot be read.
     """
     declared = list(owner_gestures)
     bodies = split_heredocs(command)[1]
@@ -1020,6 +1068,8 @@ def refusal(
                 )
             if exhausted := budget():
                 return exhausted
+            if protected := protected_refusal(protected_paths, changed_files, number):
+                return protected
             if not checks_green(number):
                 return "merge with checks not green: wait for every check, `gh pr checks`"
     return None
@@ -1081,6 +1131,36 @@ def description_via_gh(cwd: str | None) -> Callable[[str | None], str]:
     return body
 
 
+def parse_changed_files(text: str) -> list[str] | None:
+    """The paths of `gh pr view --json files`, or None when the answer is not that list."""
+    try:
+        document = json.loads(text)
+    except ValueError:
+        return None
+    entries = document.get("files") if isinstance(document, dict) else None
+    if not isinstance(entries, list):
+        return None
+    paths: list[str] = []
+    for entry in entries:
+        path = entry.get("path") if isinstance(entry, dict) else None
+        if not isinstance(path, str) or not path:
+            return None
+        paths.append(path)
+    return paths
+
+
+def changed_files_via_gh(cwd: str | None) -> Callable[[str | None], list[str] | None]:
+    def files(pr: str | None) -> list[str] | None:
+        gh = shutil.which("gh")
+        completed = _run([gh, "pr", "view", *([pr] if pr else []), "--json", "files"], cwd) if gh else None
+        # No gh, a failure or a timeout: the list is unknown, and the caller refuses.
+        if completed is None or completed.returncode != 0:
+            return None
+        return parse_changed_files(completed.stdout)
+
+    return files
+
+
 def main() -> int:
     event = json.load(sys.stdin)
     command = str(event.get("tool_input", {}).get("command", ""))
@@ -1095,6 +1175,8 @@ def main() -> int:
         description=description_via_gh(cwd),
         owner_gestures=config.get(OWNER_KEY, []),
         budget=lambda: merge_refusal(config, state_path(root), datetime.now(tz=timezone.utc)),
+        protected_paths=config.get(PROTECTED_KEY, []),
+        changed_files=changed_files_via_gh(cwd),
     )
     if reason is None:
         return 0

@@ -58,7 +58,7 @@ ne fusionne une PR rouge, ou ne sort de son rôle.
 
 | Hook | Ce qu'il garde |
 | --- | --- |
-| `guard_git` | pas de commit ni de push sur `main`, pas de `--force`, pas de fusion d'une PR dont un check n'est pas vert, pas de geste du propriétaire du dépôt (runners, protection, collaborateurs, secrets, visibilité) |
+| `guard_git` | pas de commit ni de push sur `main`, pas de `--force`, pas de fusion d'une PR dont un check n'est pas vert ou dont un fichier touche la clé `protected-path`, pas de geste du propriétaire du dépôt (runners, protection, collaborateurs, secrets, visibilité) |
 | `guard_coder` | le coder ne fusionne pas, ne relit pas, ne ferme pas de ticket, n'écrit que dans son worktree, ne pousse ni avec `-u` ni avec `-f` |
 | `guard_readonly` | les juges et les décideurs lisent, n'écrivent jamais |
 | `guard_pause` | tant que `.claude/PAUSED` existe, aucun agent n'est lancé |
