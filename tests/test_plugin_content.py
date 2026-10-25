@@ -637,6 +637,14 @@ class SpecGrain(unittest.TestCase):
         template = self.read("templates", "features", "spec.md")
         self.assertIn("clé `glossary`", template[template.index("Glossaire"):])
 
+    def test_feature_accept_cites_the_open_points_section_of_the_template(self) -> None:
+        """No F-NNNN: ticket #93, A1: feature-accept cite la section des points ouverts sous le titre du gabarit."""
+        accept = self.read("skills", "feature-accept", "SKILL.md")
+        titles = re.findall(r"^## \d+\. (.+)$", support.PLUGIN.joinpath("templates", "features", "spec.md").read_text(encoding="utf-8"), re.M)
+        cited = re.search(r"sa section « ([^»]+) »", accept)
+        self.assertIsNotNone(cited)
+        self.assertIn(cited.group(1), titles)
+
     def test_the_skill_fills_each_section_or_says_why_it_is_without_object(self) -> None:
         """No F-NNNN: ticket #93, A2: le skill remplit chaque section ou dit pourquoi elle est sans objet."""
         skill = self.read("skills", "feature-spec", "SKILL.md")
