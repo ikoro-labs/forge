@@ -268,6 +268,31 @@ en local, appelée avec `--title "<titre>" --body-file body.md`.
 - `trace-check` : `<trace>`
 - `trace-replay` : `<uv run python -m scripts.trace>`
 
+## Libellés de l'écran
+
+Les libellés qu'une PR ajoute ou change, confrontés par `forge:qc-gate` (`scripts/ui_labels.py`) aux
+mots refusés et au glossaire. Deux clés, qui ne se remplacent pas : une clé absente rend sa partie
+« sans objet », jamais `PASS`, sans valeur supposée.
+
+`ui-labels` : les fichiers de libellés du projet, un par ligne ; un chemin qui finit par `/` est un
+dossier. Un libellé est la valeur d'une ligne ajoutée (`clé: "Valeur"`, `clé=Valeur`, ou la ligne
+seule) ; la clé qui le porte, une ligne vide et un commentaire (`#`, `//`) n'en sont pas. Sans cette clé,
+toute la sonde est « sans objet (clé `ui-labels` absente) ».
+
+- `ui-labels` : `<app/i18n/>`
+
+`ui-forbidden-word` : un mot ou un motif refusé à l'écran, **une ligne par mot**. C'est une expression
+régulière, cherchée sans égard à la casse et comme mot entier (un mot simple ne correspond pas au mot
+plus long qui le contient). Un libellé qui en contient un est rendu `FORBIDDEN`, et `forge:qc-conf` en
+fait un `BLOCKER`. Sans cette clé, cette partie est « sans objet (clé `ui-forbidden-word` absente) ».
+
+- `ui-forbidden-word` : `<commit>`
+- `ui-forbidden-word` : `<F-\d{4}>`
+
+Avec la clé `glossary`, la sonde rend aussi `UNKNOWN` chaque mot capitalisé d'un libellé (le premier
+mot du libellé mis à part) qui n'est dans aucun fichier du glossaire ; `forge:qc-conf` en fait un
+`MINOR`. Sans la clé `glossary`, cette partie est « sans objet (clé `glossary` absente) ».
+
 ## Revue
 
 La grille de revue de `forge:qc-conf`, dans son ordre : un skill ou un fichier.

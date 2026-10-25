@@ -109,6 +109,14 @@ contre un code qui ne l'attend pas : éprouvé sous Linux seulement : le côté 
 tâche, la commande démarrée suspendue) n'a tourné que dans la CI, où sa première version a échoué (borne
 non tenue) ; la version corrigée n'est pas encore vue verte. Il juge au grain du fichier, qu'il rejoue en entier.
 
+Deux clés, `ui-labels` (les fichiers de libellés de l'interface, une ligne par fichier ou dossier) et
+`ui-forbidden-word` (un mot ou un motif refusé à l'écran, une ligne par mot), ouvrent la sonde des
+libellés de `forge:qc-gate` : `plugins/forge/scripts/ui_labels.py` lit les lignes que la PR ajoute
+sous ces fichiers, rend `FORBIDDEN` pour un mot refusé (un `BLOCKER` pour `forge:qc-conf`) et, avec la
+clé `glossary`, `UNKNOWN` pour un mot capitalisé absent du glossaire (un `MINOR`). Cette lecture des
+mots capitalisés est une approximation du « terme métier » : elle peut relever un mot qui n'en est pas
+un. Éprouvé sous Linux seulement, sur des diffs écrits à la main ; pas encore sur un vrai projet.
+
 Le skill de découpage en tickets du projet se déclare avec `ticket-skill` : `/forge:feature-design`
 l'utilise à son étape de découpage. Sans la clé, il découpe à la main, dans l'ordre du §7 du
 design, et le dit.
