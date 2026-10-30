@@ -93,8 +93,13 @@ rend son étape « sans objet (clé `<nom>` absente) », jamais `PASS` : forge n
      au moins grave. Rédige un ticket par lot : titre, gravité, capture, identifiants de la source cités,
      constat, et un **critère de sortie** (« chaque identifiant repasse `tenu` à la revue suivante,
      capture à l'appui »), la ligne `Couvre : <identifiants>` que `forge:qc-conf` lit et la ligne
-     `Feature: F-NNNN`. Ils sont étiquetés `ready-for-agent` et rattachés à l'issue de suivi de la
-     feature (`issue:` de `idee.md`). Lancé par `forge:feature-build` (étape 3 bis), le passage les
+     `Feature: F-NNNN`. Ils sont étiquetés `ready-for-agent` et `gravite:<gravité>` (`bloquant`,
+     `majeur` ou `mineur`, celle de leur ligne `TICKET`) : les indicateurs de la revue de
+     `factory_slo.py` les comptent par cette étiquette. Ils sont rattachés à l'issue de suivi de la
+     feature (`issue:` de `idee.md`). Avant de publier le premier, vérifie par `gh label list` que
+     `ready-for-agent` et les étiquettes de gravité des lots (`bloquant`, `majeur`, `mineur`) existent
+     (`docs/installation.md`) : le skill ne les crée pas, et s'il en manque une il ne publie rien et le
+     dit en nommant l'étiquette. Lancé par `forge:feature-build` (étape 3 bis), le passage les
      publie lui-même, sans accord de l'humain : c'est la boucle, et un geste humain l'arrêterait.
      Lancé à la main, hors de la boucle, la session qui l'a lancé montre les brouillons et ne les
      publie qu'après l'accord de l'humain de la clé `accepting-human`. Le skill ne câble aucun

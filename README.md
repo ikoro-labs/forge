@@ -131,8 +131,9 @@ Quatre clés activent, une par une, les preuves d'écran d'un projet qui a une i
 écran, navigateur piloté (jamais en CI), commande de l'ordinateur (sur un poste dédié), vidéo ou GIF
 d'un parcours. Deux clés de plus rejouent le parcours voulu en CI : `journey-replay` (le contexte de CI,
 nommé parmi les contextes requis, et la commande qui joue le parcours) et `journey-paths` (les chemins
-du front et des API qu'il consomme, dont toute PR doit joindre les captures). Le détail est dans
-[`docs/installation.md`](docs/installation.md).
+du front et des API qu'il consomme, dont toute PR doit joindre les captures). La revue en boucle pose des étiquettes `gravite:bloquant`,
+`gravite:majeur` et `gravite:mineur` sur ses tickets d'écart : elles doivent exister sur le dépôt, l'agent
+ne les crée pas. Le détail est dans [`docs/installation.md`](docs/installation.md).
 
 Pour adapter forge sans toucher au plugin, le projet ajoute ses propres skills, agents et hooks
 dans son `.claude/` : ils coexistent avec ceux de forge, dont les noms sont préfixés (`forge:`).
@@ -151,7 +152,7 @@ du front matter qu'un agent de plugin ignore : le détail est dans
 | [`docs/installation.md`](docs/installation.md) | l'installation pas à pas, les montées de version, les gestes humains, les limites connues |
 | [`docs/sessions.md`](docs/sessions.md) | une session par dépôt, la passation drainée, les variables et les codes du relais |
 | [`docs/modeles-et-jetons.md`](docs/modeles-et-jetons.md) | le modèle et l'effort de chaque rôle, un autre fournisseur, l'audit des jetons, les sorties raccourcies |
-| [`docs/indicateurs-de-service.md`](docs/indicateurs-de-service.md) | les indicateurs de service de l'usine (SLI), calculés sans modèle, et leurs objectifs (SLO) avec leur budget d'erreur et les actions quand il est épuisé |
+| [`docs/indicateurs-de-service.md`](docs/indicateurs-de-service.md) | les indicateurs de service de l'usine (SLI), calculés sans modèle (revue de bout en bout comprise : écarts, délai, couverture de la matrice, retours), et leurs objectifs (SLO) avec leur budget d'erreur et les actions quand il est épuisé |
 | [`docs/gravite-et-sla.md`](docs/gravite-et-sla.md) | les classes de gravité (`sev1` à `sev3`), les engagements de délai de la clé `sla` et la file de `forge:feature-build` |
 | [`docs/contribuer.md`](docs/contribuer.md) | modifier le plugin, publier une version, l'organisation du dépôt |
 | [`CHANGELOG.md`](CHANGELOG.md) | ce qui est entré dans chaque version, et ce qui en est resté dehors |

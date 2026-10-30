@@ -232,6 +232,15 @@ commande. Sans la clé, les objectifs sont « sans objet (clé `slo` absente) »
 - `slo` : `<accept-round-1 | >= 80 % | 30>`
 - `slo` : `<lead-time p90 | <= 24 h | 30>`
 
+Les indicateurs de la revue de bout en bout (`review-gaps`, `review-gap-lead-time`, `matrix-coverage`,
+`review-regressions`) se calculent depuis les tickets d'écart de la boucle, les `matrice.md` et les
+`revue/boucle.tsv` des features du dossier de la clé `feature-dir` ; sans elle, ils sont « sans objet
+(clé `feature-dir` absente) ». Les deux ratios (`matrix-coverage`, `review-regressions`) et la durée
+`review-gap-lead-time` se déclarent comme les autres. L'objectif proposé porte sur les écarts
+réintroduits, ceux qui reviennent après une correction (voir `docs/indicateurs-de-service.md`) :
+
+- `slo` : `<review-regressions | <= 10 % | 30>`
+
 Le ticket de suivi de l'usine du projet (un par projet), où `scripts/factory_slo.py report --publier`
 (le skill `forge:slo`) réécrit le rapport des objectifs dans un commentaire unique, retrouvé par un
 marqueur caché, et pose `needs-your-attention` quand des objectifs sont `menacé` ou `épuisé`, puis la

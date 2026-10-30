@@ -296,9 +296,14 @@ Ni minuterie, ni geste humain : la fusion déclenche, ou rien ne se lance.
    uv run --no-project --quiet python "${CLAUDE_PLUGIN_ROOT}/scripts/revue_boucle.py" doublons <lignes TICKET> <ouverts>
    ```
 
+   Avant de publier, vérifie par `gh label list` que `ready-for-agent` et les étiquettes de gravité
+   des lignes `PUBLIER` (`gravite:bloquant`, `gravite:majeur`, `gravite:mineur`) existent
+   (`docs/installation.md`) : la boucle ne les crée pas ; s'il en manque une, elle ne publie rien,
+   s'arrête, nomme l'étiquette absente dans le compte rendu et pose `needs-your-attention` sur l'issue de
+   suivi, plutôt que de laisser `gh issue create` échouer.
    Seules les lignes `PUBLIER` (déjà réduites aux identifiants non couverts) deviennent des tickets ;
-   `DEJA-COUVERT` et `OMIS` se rapportent, sans ticket. Un ticket par lot, étiqueté `ready-for-agent`, rattaché aux
-   sous-issues de l'issue de suivi, avec `Couvre :` et `Feature: F-NNNN`. Ils entrent dans la
+   `DEJA-COUVERT` et `OMIS` se rapportent, sans ticket. Un ticket par lot, étiqueté `ready-for-agent` et `gravite:<gravité>`
+   (celle de sa ligne `TICKET`), rattaché aux sous-issues de l'issue de suivi, avec `Couvre :` et `Feature: F-NNNN`. Ils entrent dans la
    frontière de l'étape 1, puis dans le passage comme tout ticket (coder à l'étape 2, `forge:qc`
    à l'étape 3), et leur fusion déclenche à son tour la revue de l'étape 1 de cette section, qui
    rejoue le parcours.
