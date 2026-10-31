@@ -3,9 +3,8 @@
 import unittest
 from datetime import datetime, timedelta, timezone
 
-import support  # noqa: F401  met les hooks sur le chemin d'import
-
 import sla
+import support  # noqa: F401  met les hooks sur le chemin d'import
 
 OPENED = datetime(2026, 10, 1, 8, 0, tzinfo=timezone.utc)
 LINES = ["sev1 | 4 h | 24 h | 3 j", "sev2 | 2 j | 7 j | 14 j", "sev3 | 7 j | 30 j | 60 j"]

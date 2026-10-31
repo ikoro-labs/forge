@@ -8,11 +8,11 @@ import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any, cast
 
 import support  # met le plugin sur le chemin d'import, et sert aussi à lire ses fichiers (`support.PLUGIN`)
-from test_factory_slo import USINE, build, isolate
-
 from factory_slo import main
+from test_factory_slo import USINE, build, isolate
 
 NOW = datetime(2026, 11, 1, tzinfo=timezone.utc)
 URL = "https://github.com/ikoro-labs/forge"
@@ -98,7 +98,9 @@ class Report(unittest.TestCase):
 
     def stored_states(self) -> dict:
         body = next(c["body"] for c in self.issue.comments if "forge-slo-report" in c["body"])
-        return json.loads(re.search(r"<!-- forge-slo-etats: (.*?) -->", body).group(1))
+        found = re.search(r"<!-- forge-slo-etats: (.*?) -->", body)
+        assert found is not None
+        return json.loads(found.group(1))
 
     def attention_comments(self) -> list[str]:
         return [c["body"] for c in self.issue.comments if "forge-slo-report" not in c["body"]]
@@ -250,7 +252,7 @@ class Report(unittest.TestCase):
                 raise RuntimeError("`gh issue edit` a échoué : forbidden")
             return real(cmd, cwd)
 
-        self.issue = failing
+        self.issue = cast("Any", failing)
         code, _, err = self.report("--publier")
         self.assertNotEqual(code, 0)
         self.assertIn("forbidden", err)

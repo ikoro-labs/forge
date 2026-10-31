@@ -13,9 +13,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import support
-from test_factory_slo import SINCE, UNTIL, USINE, build, isolate
-
 from factory_slo import compute, main, parse_slo, review_check
+from test_factory_slo import SINCE, UNTIL, USINE, build, isolate
 
 HEADER = "| Identifiant | Lot | Ticket | Test | Écran | Capture | État | Jugé le |\n|---|---|---|---|---|---|---|---|\n"
 MATRICE = HEADER + (

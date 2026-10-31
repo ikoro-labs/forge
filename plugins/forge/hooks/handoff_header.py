@@ -53,6 +53,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 REQUIRED = (
     "projet",
@@ -174,7 +175,7 @@ def successor_ok(path: Path, session: str, wait: float = SUCCESSOR_WAIT_SECONDS)
     return False, f"the successor is {successor}, not this session ({session[:8] or 'unknown'}): stop here"
 
 
-def _win32():
+def _win32() -> tuple[Any, Any, Any]:
     """kernel32 with the signatures the process questions need; loaded on first use."""
     import ctypes
     from ctypes import wintypes
@@ -279,7 +280,7 @@ def parent_pid(pid: int) -> int | None:
         kernel32.CloseHandle(snapshot)
 
 
-def group_options(suspended: bool = False) -> dict[str, object]:
+def group_options(suspended: bool = False) -> dict[str, Any]:
     """`subprocess.Popen` options that make a command the leader of its own process group.
 
     Linux: a new session, so `os.killpg` reaches the command and what it started. Windows: the
@@ -378,7 +379,7 @@ class ProcessGroup:
         ctypes = _win32()[0]
         ntdll = ctypes.WinDLL("ntdll")
         ntdll.NtResumeProcess.argtypes = (ctypes.c_void_p,)
-        ntdll.NtResumeProcess(int(self.process._handle))  # type: ignore[attr-defined]  # Popen's own handle
+        ntdll.NtResumeProcess(int(self.process._handle))  # Popen's own handle
 
     def kill(self) -> None:
         """Kill the command and its descendants, then reap the command."""
@@ -430,7 +431,7 @@ def live_agents(repo: Path, owners: set[int] | None = None) -> list[tuple[str, s
     ).stdout
     found = []
     for block in listing.strip().split("\n\n"):
-        fields = dict(line.split(" ", 1) if " " in line else (line, "") for line in block.splitlines())
+        fields = {key: rest for key, _, rest in (line.partition(" ") for line in block.splitlines())}
         path = fields.get("worktree", "")
         if "/.claude/worktrees/agent-" not in path or "locked" not in fields:
             continue

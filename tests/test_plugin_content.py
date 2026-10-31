@@ -238,7 +238,7 @@ class CitedNames(unittest.TestCase):
             and "tests" not in path.parts
         ]
         self.assertGreater(len(texts), 10)
-        unknown = {}
+        unknown: dict[str, str] = {}
         for path in texts:
             for name in CITED.findall(path.read_text(encoding="utf-8")):
                 if name not in known:
@@ -646,7 +646,7 @@ class SpecGrain(unittest.TestCase):
         accept = self.read("skills", "feature-accept", "SKILL.md")
         titles = re.findall(r"^## \d+\. (.+)$", support.PLUGIN.joinpath("templates", "features", "spec.md").read_text(encoding="utf-8"), re.M)
         cited = re.search(r"sa section « ([^»]+) »", accept)
-        self.assertIsNotNone(cited)
+        assert cited is not None
         self.assertIn(cited.group(1), titles)
 
     def test_the_skill_fills_each_section_or_says_why_it_is_without_object(self) -> None:
@@ -1156,7 +1156,7 @@ class Matrice(unittest.TestCase):
 
     def test_the_template_has_the_columns_the_script_reads(self) -> None:
         """No F-NNNN: ticket #94, A1: le gabarit porte les colonnes de matrice.py et les cinq états."""
-        from matrice import COLUMNS, STATES, parse
+        from matrice import STATES, parse
 
         text = (support.PLUGIN / "templates" / "features" / "matrice.md").read_text(encoding="utf-8")
         self.assertIn("document: matrice", text)

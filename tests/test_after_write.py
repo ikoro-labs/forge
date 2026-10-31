@@ -9,6 +9,8 @@ from pathlib import Path
 from unittest import mock
 
 import support  # noqa: F401
+
+# isort: split
 import after_write
 from after_write import (
     EM_DASH,
@@ -349,7 +351,7 @@ class FormatOnWrite(unittest.TestCase):
 
     def test_the_formatters_run_before_the_em_dash_check(self) -> None:
         command = self.script(
-            "fmt.py", f"import sys\nopen(sys.argv[1], 'w').write('clean')\n"
+            "fmt.py", "import sys\nopen(sys.argv[1], 'w').write('clean')\n"
         )
         self.configure(f"**/*.txt | {command}")
         target = self.root / "a.txt"

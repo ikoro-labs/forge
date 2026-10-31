@@ -7,12 +7,10 @@ import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from datetime import datetime, timezone
 from pathlib import Path
-from unittest import mock
 
 import support  # noqa: F401  met le plugin sur le chemin d'import
-from test_factory_slo import USINE, World, build, isolate
-
 from factory_slo import Sli, SloError, evaluate, main, parse_slo
+from test_factory_slo import USINE, build, isolate
 
 NOW = datetime(2026, 11, 1, tzinfo=timezone.utc)
 

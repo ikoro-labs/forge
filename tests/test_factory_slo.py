@@ -9,12 +9,21 @@ import unittest
 from contextlib import redirect_stdout
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 from unittest import mock
 
 import support
+from factory_slo import (
+    Factory,
+    compute,
+    lead_time,
+    main,
+    percentile,
+    release_lag,
+    restore_time,
+    run_command,
+)
 from test_token_audit import line
-
-from factory_slo import Factory, compute, lead_time, main, percentile, release_lag, restore_time, run_command
 
 SINCE = datetime(2026, 10, 1, tzinfo=timezone.utc)
 UNTIL = datetime(2026, 11, 1, tzinfo=timezone.utc)
@@ -82,7 +91,7 @@ class World:
         self.git("init", "-q", "-b", "main")
         (self.root / "docs" / "agents").mkdir(parents=True)
         (self.root / "docs" / "agents" / "usine.md").write_text(USINE, encoding="utf-8")
-        self.answers: dict[str, object] = {}
+        self.answers: dict[str, Any] = {}
         self.count = 0
 
     def git(self, *args: str, when: str | None = None) -> str:

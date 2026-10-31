@@ -54,6 +54,7 @@ the reference set; without it both indicators are "sans objet".
 from __future__ import annotations
 
 import argparse
+import functools
 import json
 import math
 import re
@@ -213,7 +214,9 @@ class Factory:
         for name in sla.CLASSES:
             items = self.cached(
                 f"severe-{name}",
-                lambda name=name: self.gh("issue", "list", "--state", "all", "--label", name, "--limit", "1000", "--json", fields),
+                functools.partial(
+                    self.gh, "issue", "list", "--state", "all", "--label", name, "--limit", "1000", "--json", fields
+                ),
             )
             for item in cast("list[dict]", items):
                 if str(item.get("state")).upper() != "CLOSED" or self.inside(when(item, "createdAt")):
@@ -920,7 +923,7 @@ def publish(project: Path, document: dict, run: Runner = run_command) -> list[st
     mine = next((c for c in comments if MARKER in str(c.get("body"))), None)
     found = STATES_MARKER.search(str(mine.get("body"))) if mine else None
     before: dict[str, str] = json.loads(found.group(1)) if found else {}
-    was_set = bool(mine) and (m := POSED_MARKER.search(str(mine.get("body")))) is not None and m.group(1) == "oui"
+    was_set = mine is not None and (m := POSED_MARKER.search(str(mine.get("body")))) is not None and m.group(1) == "oui"
     info = gh("issue", "view", str(ticket), "--json", "labels")
     posed = ATTENTION in label_names(info[0] if info else {})
     now_bad = bad_states(document)

@@ -17,18 +17,28 @@ jobs:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.3.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           # La suite ne tourne qu'avec la bibliothèque standard (uv run --no-project) :
           # le dépôt n'a ni uv.lock ni requirements, et le cache n'aurait rien à garder.
           enable-cache: false
       - run: uv run --no-project --quiet python -m unittest discover -s tests -v
 
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          enable-cache: false
+      - run: uv run --no-project --quiet --with ruff==0.17.3 ruff check plugins/forge tests
+      - run: uv run --no-project --quiet --with mypy==2.4.1 mypy
+
   validate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - run: npm install --global @anthropic-ai/claude-code@2.1.304
       - run: claude plugin validate .
       - run: claude plugin validate plugins/forge

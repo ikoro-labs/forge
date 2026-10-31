@@ -21,6 +21,8 @@ La configuration de l'usine qui développe le plugin `forge` dans ce dépôt. Le
 ## Rejeu et contrôles
 
 - `ci-replay` : `uv run --no-project --quiet python -m unittest discover -s tests`
+- `ci-replay` : `uv run --no-project --quiet --with ruff==0.17.3 ruff check plugins/forge tests`
+- `ci-replay` : `uv run --no-project --quiet --with mypy==2.4.1 mypy`
 - `ci-replay` : `claude plugin validate .`
 - `ci-replay` : `claude plugin validate plugins/forge`
 

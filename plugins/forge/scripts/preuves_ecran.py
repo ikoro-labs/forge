@@ -51,6 +51,7 @@ import argparse
 import re
 import sys
 from pathlib import Path
+from typing import cast
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "hooks"))
 
@@ -150,7 +151,7 @@ def main(argv: list[str] | None = None) -> int:
             continue
         contexts = [value for value in source.get(CONTEXTS_KEY, []) if value.strip()]
         for value in (value for value in source.get(REPLAY_KEY, []) if value.strip()):
-            context = usine.split_value(value, 2)[0]
+            context = cast("list[str]", usine.split_value(value, 2))[0]
             if not contexts:
                 line = f"sans objet (clé {CONTEXTS_KEY} absente)"
             elif context not in contexts:
@@ -171,7 +172,7 @@ def main(argv: list[str] | None = None) -> int:
     if replayed:
         if values[PATHS_KEY] and changed is None:
             print("sans objet (liste des fichiers de la PR non fournie)")
-        elif values[PATHS_KEY]:
+        elif values[PATHS_KEY] and changed is not None:
             for path in changed:
                 if any(path.startswith(prefix) for prefix in values[PATHS_KEY]):
                     carried += 1

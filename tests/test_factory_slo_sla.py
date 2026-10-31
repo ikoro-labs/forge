@@ -9,9 +9,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import support  # noqa: F401  met les scripts sur le chemin d'import
-from test_factory_slo import USINE, World, isolate, issue, pr
-
 from factory_slo import compute, main
+from test_factory_slo import USINE, World, isolate, issue, pr
 
 NOW = datetime(2026, 10, 20, 12, 0, tzinfo=timezone.utc)
 SLA = "- `sla` : `sev1 | 4 h | 24 h | 3 j`\n- `sla` : `sev2 | 2 j | 7 j | 14 j`\n"

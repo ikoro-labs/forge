@@ -11,7 +11,6 @@ from pathlib import Path
 from unittest import mock
 
 import support  # noqa: F401  met le plugin sur le chemin d'import
-
 from budget import (
     MAX_AGE,
     carry,
@@ -20,7 +19,8 @@ from budget import (
     merge_refusal,
     parse_actions,
 )
-from factory_slo import Sli, evaluate as objective_state, parse_slo
+from factory_slo import Sli, parse_slo
+from factory_slo import evaluate as objective_state
 from guard_git import guarded_main
 
 NOW = datetime(2026, 11, 1, 12, 0, tzinfo=timezone.utc)
@@ -118,6 +118,7 @@ class State(unittest.TestCase):
             path = self.write(folder, json.dumps(document(objective("a", "tenu"))))
             state, reason = load_state(path, NOW + timedelta(hours=23))
         self.assertIsNone(reason)
+        assert state is not None
         self.assertEqual(state["objectifs"][0]["sli"], "a")
 
     def test_a_missing_stale_or_unreadable_file_is_unusable_and_says_why(self) -> None:
@@ -142,6 +143,7 @@ class State(unittest.TestCase):
                     self.assertIsNone(state)
                     self.assertTrue(reason)
             _, reason = load_state(self.write(folder, json.dumps(document())), NOW + timedelta(hours=25))
+            assert reason is not None
             self.assertIn("24 h", reason)
 
     def test_exactly_one_day_old_is_still_fresh(self) -> None:

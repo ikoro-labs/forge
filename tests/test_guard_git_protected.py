@@ -10,7 +10,7 @@ from collections.abc import Callable
 from pathlib import Path
 from unittest import mock
 
-import support
+import support  # noqa: F401  met les hooks sur le chemin d'import
 from guard_git import changed_files_via_gh, guarded_main, parse_changed_files, refusal
 
 PROTECTED = [".github/", "plugins/forge/hooks/guard_", ".claude/settings.json"]
@@ -35,7 +35,7 @@ def merge(command: str, changed: Callable[[str | None], list[str] | None], prote
 class ProtectedPaths(unittest.TestCase):
     def test_a_file_under_a_protected_prefix_refuses_the_merge_and_names_file_and_prefix(self) -> None:
         verdict = merge("gh pr merge 5 --merge", listing("README.md", "plugins/forge/hooks/guard_git.py"))
-        self.assertIsNotNone(verdict)
+        assert verdict is not None
         self.assertIn("plugins/forge/hooks/guard_git.py", verdict)
         self.assertIn("plugins/forge/hooks/guard_", verdict)
         self.assertIn("humain", verdict)
@@ -78,7 +78,7 @@ class ProtectedPaths(unittest.TestCase):
 class FailsClosed(unittest.TestCase):
     def test_an_unreadable_list_refuses_when_the_key_is_declared(self) -> None:
         verdict = merge("gh pr merge 5", unreadable)
-        self.assertIsNotNone(verdict)
+        assert verdict is not None
         self.assertIn("protected-path", verdict)
         self.assertIn("humain", verdict)
 

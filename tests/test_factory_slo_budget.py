@@ -9,9 +9,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import support  # noqa: F401  met le plugin sur le chemin d'import
-from test_factory_slo import USINE, build, isolate
-
 from factory_slo import main
+from test_factory_slo import USINE, build, isolate
 
 NOW = datetime(2026, 11, 1, tzinfo=timezone.utc)
 # Sur ce monde : `accept-round-1` est tenu (33,33 % >= 5 %) et `main-green` est épuisé (>= 90 %).

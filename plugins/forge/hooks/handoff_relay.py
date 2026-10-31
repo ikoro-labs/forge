@@ -55,6 +55,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import Any, cast
 
 import handoff_header
 
@@ -84,13 +85,13 @@ def counter_path(state: Path, project: Path) -> Path:
     return state / f"relay-{name}-{datetime.date.today().isoformat()}.count"
 
 
-def detached(breakaway: bool = True) -> dict[str, object]:
+def detached(breakaway: bool = True) -> dict[str, Any]:
     """Popen options for a process that survives the session that starts it.
 
     Under Windows, `breakaway` also takes it out of the session's job, which a job may forbid:
     a command the relay waits for stays in the job it runs in.
     """
-    options: dict[str, object] = {
+    options: dict[str, Any] = {
         "stdin": subprocess.DEVNULL, "stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL,
     }
     if WINDOWS:
@@ -465,6 +466,6 @@ def main(argv: list[str]) -> int:
 
 if __name__ == "__main__":
     if hasattr(sys.stdout, "reconfigure"):
-        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+        cast("Any", sys.stdout).reconfigure(encoding="utf-8", errors="replace")
+        cast("Any", sys.stderr).reconfigure(encoding="utf-8", errors="replace")
     sys.exit(main(sys.argv[1:]))

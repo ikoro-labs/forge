@@ -16,6 +16,8 @@ développe avec sa propre usine : le plugin y est installé à la version éping
 
   ```sh
   uv run --no-project --quiet python -m unittest discover -s tests
+  uv run --no-project --quiet --with ruff==0.17.3 ruff check plugins/forge tests
+  uv run --no-project --quiet --with mypy==2.4.1 mypy
   claude plugin validate .
   claude plugin validate plugins/forge
   ```
