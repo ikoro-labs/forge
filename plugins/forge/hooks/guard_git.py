@@ -76,7 +76,8 @@ PROTECTED_KEY = "protected-path"
 # Every external call has a timeout: a hook that hangs blocks the agent's command.
 TIMEOUT_SECONDS = 20
 
-HEREDOC = re.compile(r"<<-?\s*(['\"]?)(\w+)\1")
+# `<<<` is a here-string, which has no body: only a `<<` that is neither preceded nor followed by `<`.
+HEREDOC = re.compile(r"(?<!<)<<(?!<)-?\s*(['\"]?)(\w+)\1")
 OPERATORS = {";", "&&", "||", "|", "&", "(", ")"}
 BRANCH_SWITCH = ({"checkout", "-b"}, {"checkout", "-B"}, {"switch", "-c"}, {"switch", "-C"})
 
@@ -121,6 +122,10 @@ def _mask_quoted(text: str) -> str:
         if quote == "'":
             quote = "" if char == "'" else quote
             out.append(char if char == "'" else char.translate(_MASK))
+        elif char == "\\" and text[index + 1 : index + 2] == "\n" and quote != "'":
+            index += 1  # a line continuation joins the lines: it is no separator
+        elif char == "\n" and not quote:
+            out.append(" ; ")  # a newline outside quotes ends a command, like `;`
         elif char == "\\" and index + 1 < len(text):
             index += 1
             following = text[index]
