@@ -37,6 +37,7 @@ Les jobs de `.github/workflows/tests.yml`.
 - `required-contexts` : `tests (ubuntu-latest)`
 - `required-contexts` : `tests (windows-latest)`
 - `required-contexts` : `validate`
+- `required-contexts` : `lint`
 
 ## Revue
 
