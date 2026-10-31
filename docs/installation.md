@@ -291,9 +291,6 @@ Cette garde protège d'un accident, pas d'une intention. Les formes qu'elle ne l
   fichier que le garde ne peut pas lire depuis la machine où il tourne ;
 - un script de runner appelé sans argument de runner depuis un dossier qui n'en porte pas les
   fichiers, ou dont le dossier n'est pas connu du garde (`cd "$DIR"`, `cd -`) ;
-- une commande placée sur une autre ligne que la première : les sauts de ligne ne séparent pas les
-  commandes pour le garde, hors des heredocs qu'il lit (constaté, hors du périmètre de ce
-  changement) ;
 - le contenu d'un heredoc envoyé à autre chose qu'un shell ou qu'un `gh api graphql`.
 
 Éprouvé sous Linux seulement. Sous Windows, les chemins `C:\...`, `config.cmd` et le dossier d'un
