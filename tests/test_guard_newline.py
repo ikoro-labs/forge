@@ -6,9 +6,9 @@ import unittest
 from unittest import mock
 
 import support  # noqa: F401
-import guard_coder
-import guard_readonly
+from guard_coder import _runs_git
 from guard_git import _commands, refusal
+from guard_readonly import reader_refusal
 
 
 def refused(command: str) -> str | None:
@@ -31,10 +31,10 @@ class NewlineSeparatesCommands(unittest.TestCase):
 
     def test_29_p1_the_other_guards_split_on_a_newline_too(self) -> None:
         self.assertEqual(_commands("echo hi\ngit status"), [["echo", "hi"], ["git", "status"]])
-        self.assertIsNotNone(guard_readonly.reader_refusal("cat a\nrm -rf /"))
+        self.assertIsNotNone(reader_refusal("cat a\nrm -rf /"))
 
     def test_29_p1_the_coder_guard_sees_git_on_a_second_line(self) -> None:
-        self.assertTrue(guard_coder._runs_git("echo hi\ngit status"))
+        self.assertTrue(_runs_git("echo hi\ngit status"))
 
     def test_29_p5_an_ordinary_multiline_command_passes(self) -> None:
         for command in (
