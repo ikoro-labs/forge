@@ -61,6 +61,7 @@ plugins/forge/                    le plugin
                                   bibliothèque standard, sous Linux comme sous Windows
   scripts/parse_output.py         lecture du RESULT du coder et du verdict du juge
   scripts/token_audit.py          les jetons de chaque rôle, lus dans les journaux de Claude Code
+  scripts/ticket_budget.py        la somme des jetons d'agents par ticket, contre la clé `ticket-budget`
   scripts/factory_slo.py          les indicateurs de service de l'usine, calculés sans modèle
   templates/                      usine.md, adr.md, features/
 tests/                            tests des hooks, du parseur et du contenu

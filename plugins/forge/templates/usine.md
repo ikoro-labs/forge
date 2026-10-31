@@ -277,6 +277,16 @@ aucune valeur par défaut.
 - `budget-action` : `<accept-round-1 | feature-freeze>`
 - `budget-action` : `<lead-time p90 | alert>`
 
+Le plafond de jetons d'agents par ticket, un nombre entier sur une seule ligne. `forge:feature-build`
+tient, pour chaque ticket, la somme des jetons de chaque agent lancé pour lui (coder, remise à jour,
+corrections, `forge:qc-gate`, `forge:qc-conf`, décideurs) plus la part de la session principale, et
+ne lance plus rien pour un ticket dont la somme dépasse ce nombre : il pose `needs-your-attention`
+sur le ticket et sa PR. Une somme égale au plafond lance encore. Sans la clé, « sans objet (clé
+`ticket-budget` absente) » : aucun plafond, aucune valeur par défaut. Une valeur qui n'est pas un
+nombre entier fait échouer le contrôle.
+
+- `ticket-budget` : `<300000>`
+
 Les noms des checks obligatoires de la branche protégée, un par ligne, comparés par
 `forge:qc-gate` aux check-runs de la PR et à la protection en place.
 

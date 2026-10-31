@@ -341,6 +341,31 @@ Ni minuterie, ni geste humain : la fusion déclenche, ou rien ne se lance.
 Un arrêt ferme le robinet, il ne coupe pas le travail en cours : plus aucun coder ne part, et ceux
 en vol vont jusqu'à leur sortie, que tu traites comme à l'étape 2.
 
+- **Le budget d'un ticket** (clé `ticket-budget`). Chaque agent lancé pour un ticket (coder, remise
+  à jour, correction, `forge:qc-gate`, `forge:qc-conf`, décideur) s'inscrit à sa fin, depuis le texte
+  de sa notification, dans un registre du passage (un fichier hors du dépôt) :
+
+  ```
+  uv run --no-project --quiet python "${CLAUDE_PLUGIN_ROOT}/scripts/ticket_budget.py" ajouter <registre> --ticket '#n' --role <rôle> --notification <fichier>
+  ```
+
+  Une notification sans `subagent_tokens` est refusée (code 2) : dis-le, ne compte pas zéro. Avant
+  chaque lancement pour un ticket (coder, remise à jour, correction, `forge:qc`, décideur), lance
+
+  ```
+  uv run --no-project --quiet python "${CLAUDE_PLUGIN_ROOT}/scripts/ticket_budget.py" controle <registre> <projet> --ticket '#n' --depuis <heure de la prise du ticket, ISO> --verdict '<dernier verdict>'
+  ```
+
+  `--depuis` ajoute la part de la session principale depuis la prise du ticket, lue par
+  `token_audit.py`. Code 0 : lance. Sortie « sans objet (clé `ticket-budget` absente) » : aucun
+  plafond, tu le dis dans le compte rendu avec le nom de la clé. Code 1 (`BUDGET depasse`) : tu ne
+  lances rien pour ce ticket, tu poses `needs-your-attention` sur le ticket et sur sa PR avec un
+  commentaire qui donne la somme, le budget, le détail par rôle (lignes `DETAIL`) et le dernier
+  verdict, puis tu passes au ticket suivant : ce n'est pas un arrêt sur incident. Code 2 : la clé
+  est mal formée, arrête-toi et rends le message. Les sommes entrent dans la passation : sous
+  `jetons_agents`, les lignes de `ticket_budget.py passation <registre>`. Un relais qui reprend le
+  passage charge ces lignes (`ticket_budget.py reprendre <registre> <passation>`) avant son premier
+  contrôle, et ne repart pas de zéro.
 - **Plafond atteint** : `--max` tickets lancés, la durée depuis l'heure de départ, ou les jetons
   d'agents. Ces jetons sont la somme des `subagent_tokens` que rend le bloc `<usage>` de chaque
   agent du passage, coders et agents de `/forge:qc` compris ; les tiens ne se lisent pas. Vérifie
