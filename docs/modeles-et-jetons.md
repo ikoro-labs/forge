@@ -75,6 +75,20 @@ ne le sont pas. Le format des journaux a été lu dans Claude Code 2.1.302 à 2.
 n'est pas documenté et peut changer. Seul le script a tourné sur un vrai poste, sous Linux : le
 skill lui-même n'a été lancé dans aucune session, et rien n'a été essayé sous Windows hors CI.
 
+## Un budget de jetons par ticket
+
+La clé `ticket-budget` de `docs/agents/usine.md` (un nombre entier de jetons, sans valeur par défaut)
+plafonne ce qu'un ticket peut coûter. `forge:feature-build` additionne, par ticket, le
+`subagent_tokens` de la notification de fin de chaque agent lancé pour lui, plus la part de la
+session principale depuis la prise du ticket, lue comme `token_audit.py` la lit
+(`scripts/ticket_budget.py`). Avant chaque lancement pour ce ticket, une somme strictement au-dessus
+du budget ne lance rien : le ticket et sa PR reçoivent `needs-your-attention`, avec la somme, le détail par rôle et le dernier
+verdict, et le passage continue avec le ticket suivant. La somme est écrite sous `jetons_agents` dans
+la passation, qu'un relais reprend. Sans la clé, aucun plafond. Le coût par fusion en indicateur
+(`tokens-per-merge`) reste à part (#56). Éprouvé par les tests sur des notifications fictives ; le
+format de la notification d'un vrai agent n'est lu que dans le champ `subagent_tokens`, déjà utilisé par le
+plafond de passage, et le contrôle n'a tourné dans aucun vrai passage.
+
 ## Les sorties de tests raccourcies
 
 Une suite de tests qui passe rend des centaines de lignes que l'agent relit et paie en jetons, alors

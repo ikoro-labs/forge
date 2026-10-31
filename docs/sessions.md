@@ -167,6 +167,11 @@ Il commence par un front matter de onze clés (`projet`, `feature`, `passage_dep
 `contexte_passation`), que `handoff_header.py` valide ; son corps est le prompt de reprise. Le
 skill `handoff` de l'utilisateur (`~/.claude/skills/handoff/`) est suivi s'il existe.
 
+`jetons_agents` porte les jetons d'agents par ticket (ticket #72, clé `ticket-budget`) : une liste
+d'éléments `- #n <rôle> <jetons>`, que `ticket_budget.py passation` imprime et que
+`ticket_budget.py reprendre` recharge, pour que le relais reprenne les sommes au lieu de repartir de
+zéro. Un nombre seul (`jetons_agents: 0`, les passations d'avant le budget) ne porte rien.
+
 ### Les refus du relais
 
 Le relais refuse (code 5) tant qu'un agent de la session est vivant ou que `en_vol` n'est pas vide,
