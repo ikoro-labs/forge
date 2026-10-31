@@ -34,7 +34,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "hooks"))
 
 import usine  # noqa: E402
-from source_ids import IDENTIFIER, MARKDOWN, SOURCE_KEY, ids_of_source, mentions  # noqa: E402
+from source_ids import IDENTIFIER, MARKDOWN, SOURCE_KEY, ids_of_source  # noqa: E402
 
 FIELDS = ("Voit", "Fait", "Suivant", "Source")
 _SCREEN = re.compile(r"^##\s+Écran\s+(\d+)\s*:\s*(\S.*?)\s*$")

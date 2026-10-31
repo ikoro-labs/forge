@@ -3,14 +3,15 @@ import io
 import json
 import os
 import shutil
-import subprocess
 import stat
+import subprocess
 import sys
 import tempfile
 import time
 import unittest
 from collections.abc import Callable, Iterator
 from pathlib import Path
+from typing import Any, cast
 from unittest import mock
 
 import support
@@ -965,7 +966,7 @@ def _refuse_unsafe_open(path: object) -> None:
     """
     if isinstance(path, int):
         raise AssertionError(f"opened the descriptor {path}")
-    text = os.fspath(path)  # type: ignore[arg-type]
+    text = os.fspath(cast("Any", path))
     if isinstance(text, bytes):
         text = os.fsdecode(text)
     for candidate in (text, os.path.realpath(text)):
@@ -989,9 +990,9 @@ def no_open_under_devices() -> Iterator[None]:
     """
     real_io_open, real_os_open = io.open, os.open
 
-    def checked_io_open(path: object, *args: object, **kwargs: object) -> object:
+    def checked_io_open(path: Any, *args: Any, **kwargs: Any) -> object:
         _refuse_unsafe_open(path)
-        return real_io_open(path, *args, **kwargs)  # type: ignore[arg-type]
+        return real_io_open(path, *args, **kwargs)
 
     def checked_os_open(path: object, *args: object, **kwargs: object) -> int:
         _refuse_unsafe_open(path)
@@ -1256,7 +1257,7 @@ class AnOperatorWordMayBeTheValueOfAnOption(unittest.TestCase):
             f"gh api -X PUT 2>&1 {COLLABORATOR}",
             f"gh api -X PUT {COLLABORATOR} -q .name > out.json 2>&1",
             f"gh api -q .name -X PUT {COLLABORATOR} 2>/dev/null",
-            f"gh api graphql --input - < m.json 2>/dev/null",
+            "gh api graphql --input - < m.json 2>/dev/null",
         ):
             with self.subTest(command=command):
                 self.assertIsNotNone(

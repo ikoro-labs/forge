@@ -17,8 +17,8 @@ from contextlib import redirect_stdout
 from pathlib import Path
 from unittest import mock
 
-import support
 import handoff_header
+import support
 
 HOOK = support.PLUGIN / "hooks" / "sessions_notice.py"
 SKILL = support.PLUGIN / "skills" / "feature-build" / "SKILL.md"

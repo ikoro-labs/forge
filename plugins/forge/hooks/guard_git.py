@@ -360,7 +360,7 @@ def _merge_message(
             elif value and value != "-":
                 path = _moved(here, value)
                 reads = path is not None and path != UNKNOWN and device_path_kind(path, here) is None
-                parts.append((read_text(path) if reads else None) or "")
+                parts.append((read_text(path) if path is not None and reads else None) or "")
         index += 1
     return "\n".join(parts)
 

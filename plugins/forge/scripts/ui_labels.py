@@ -90,7 +90,7 @@ def check(paths: list[str], forbidden: list[str], diff_text: str) -> list[Findin
     patterns = [(word, compile_word(word)) for word in forbidden]
     findings: list[Finding] = []
     for path, label in labels(paths, diff_text):
-        for word, pattern in patterns:
+        for _word, pattern in patterns:
             if hit := pattern.search(label):
                 findings.append(Finding(FORBIDDEN, path, label, hit.group()))
     return findings

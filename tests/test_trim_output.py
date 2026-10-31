@@ -1,11 +1,12 @@
 import io
 import json
 import os
-import time
 import tempfile
+import time
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
+from typing import cast
 from unittest import mock
 
 import support
@@ -37,7 +38,7 @@ class Trimming(unittest.TestCase):
         self.assertEqual(trimmed["interrupted"], False)
         self.assertEqual(trimmed["isImage"], False)
         self.assertEqual(trimmed["stdout"], lines(5, "out"))
-        stderr = trimmed["stderr"].splitlines()
+        stderr = cast("str", trimmed["stderr"]).splitlines()
         self.assertIn("journal.log", stderr[0])
         self.assertIn(f"{KEEP_LINES} of {MAX_LINES * 3}", stderr[0])
         self.assertEqual(stderr[1:], lines(MAX_LINES * 3, "err").splitlines()[-KEEP_LINES:])

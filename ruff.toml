@@ -1,0 +1,12 @@
+# Configuration de `ruff check` (voir docs/agents/usine.md, clé `ci-replay`).
+target-version = "py310"
+line-length = 100
+
+[lint]
+# E4, E7, E9 et F : erreurs de syntaxe, imports et noms ; I : imports triés ; B : pièges courants ;
+# UP : syntaxe de Python 3.10 ; SIM exclu, sa réécriture change la lisibilité sans changer le sens.
+select = ["E4", "E7", "E9", "F", "I", "B", "UP"]
+
+# B905 : `zip(strict=True)` lève là où le code actuel tronque ; choisir l'un ou l'autre change un
+# comportement, ce que le ticket #75 renvoie à un ticket à part.
+ignore = ["B905"]

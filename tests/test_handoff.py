@@ -16,9 +16,9 @@ from contextlib import redirect_stdout
 from pathlib import Path
 from unittest import mock
 
-import support
 import handoff_header
 import handoff_trigger
+import support
 
 RELAY = support.PLUGIN / "hooks" / "handoff_relay.py"
 HEADER = support.PLUGIN / "hooks" / "handoff_header.py"

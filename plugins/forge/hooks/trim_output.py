@@ -21,6 +21,7 @@ import sys
 import time
 from collections.abc import Iterable, Mapping
 from pathlib import Path
+from typing import cast
 
 from usine import load, project_root
 
@@ -78,7 +79,8 @@ def written_at(journal: Path) -> int:
 
 
 def run(event: Mapping[str, object]) -> dict[str, object] | None:
-    command = str((event.get("tool_input") or {}).get("command") or "")
+    tool_input = cast("dict[str, object]", event.get("tool_input") or {})
+    command = str(tool_input.get("command") or "")
     response = event.get("tool_response")
     if event.get("tool_name") != "Bash" or not isinstance(response, dict):
         return None

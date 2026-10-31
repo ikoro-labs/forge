@@ -365,8 +365,8 @@ class RealGitDiffs(unittest.TestCase):
         self.assertEqual(statuses(entries, real_diff(before, after, "-c", "core.quotePath=false")), [APPLIES])
 
     def test_a_non_ascii_file_entry_and_a_raised_number_are_matched(self) -> None:
-        before = {"config/tolérances.toml": "rel_tol = 1e-9\n".encode()}
-        after = {"config/tolérances.toml": "rel_tol = 1e-3\n".encode()}
+        before = {"config/tolérances.toml": b"rel_tol = 1e-9\n"}
+        after = {"config/tolérances.toml": b"rel_tol = 1e-3\n"}
         entry = "config/tolérances.toml | raised-number | ^rel_tol = (\\S+)"
         self.assertEqual(statuses([entry], real_diff(before, after)), [APPLIES])
 

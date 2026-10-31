@@ -6,7 +6,7 @@ import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
-import support
+import support  # noqa: F401  met les hooks sur le chemin d'import
 from matrice import STATES, main, parse
 
 SOURCE = "- EXI-01 : date\n- EXI-02 : index\n- C01 : avertissement\n"

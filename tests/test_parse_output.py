@@ -1,5 +1,6 @@
 import io
 import unittest
+from typing import cast
 from unittest import mock
 
 import support  # noqa: F401
@@ -64,7 +65,7 @@ class Verdict(unittest.TestCase):
         parsed = parse_verdict(VERDICT)
         self.assertEqual(parsed["ROUND"], 1)
         self.assertEqual(parsed["SPEC"], ["#12 A1 met", "#12 A2 missing"])
-        self.assertEqual([finding["severity"] for finding in parsed["FINDINGS"]], ["BLOCKER", "NOTE"])
+        self.assertEqual([finding["severity"] for finding in cast("list[dict[str, str]]", parsed["FINDINGS"])], ["BLOCKER", "NOTE"])
 
     def test_an_accept_without_findings_is_read(self) -> None:
         text = VERDICT.replace("REJECT", "ACCEPT").replace(

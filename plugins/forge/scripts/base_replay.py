@@ -51,6 +51,7 @@ import sys
 import tarfile
 import tempfile
 from pathlib import Path, PurePosixPath
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "hooks"))
 
@@ -134,7 +135,7 @@ def run(command: str, cwd: Path, timeout: int, memory_mb: int) -> tuple[int | No
     """
     with tempfile.TemporaryFile() as log:
         try:
-            options = {"preexec_fn": _limit_posix(memory_mb)} if os.name != "nt" else {}
+            options: dict[str, Any] = {"preexec_fn": _limit_posix(memory_mb)} if os.name != "nt" else {}
             process = subprocess.Popen(
                 command, shell=True, cwd=cwd, stdout=log, stderr=subprocess.STDOUT,
                 **group_options(suspended=True), **options,

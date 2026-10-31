@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import os
 import re
+from collections.abc import Mapping
 from pathlib import Path
 
 CONFIG_PATH = Path("docs") / "agents" / "usine.md"
@@ -40,7 +41,7 @@ def split_value(value: str, parts: int) -> list[str] | None:
     return pieces
 
 
-def project_root(event: dict[str, object] | None = None) -> Path:
+def project_root(event: Mapping[str, object] | None = None) -> Path:
     """The project's directory: Claude Code's `CLAUDE_PROJECT_DIR`, else the event's cwd."""
     root = os.environ.get("CLAUDE_PROJECT_DIR") or (event or {}).get("cwd") or "."
     return Path(str(root))
