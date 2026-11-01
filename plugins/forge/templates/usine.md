@@ -481,13 +481,17 @@ racine du dépôt, le chemin absolu du fichier ajouté en dernier argument ; ell
 (la coupe se fait au premier ` | `). Plusieurs motifs qui correspondent : toutes les commandes,
 dans l'ordre du fichier, avant le contrôle du tiret cadratin. Chacune a 30 s, 120 s au total.
 Chaque formateur est lancé dans son propre groupe de processus (une session neuve sous Linux, un
-job Win32 sous Windows) : au délai, tout le groupe est tué, pas seulement la commande. Sous Windows,
-un formateur résolu en `.cmd` ou `.bat` passe par `cmd.exe` : le hook refuse de lui donner un chemin
-qui contient `&|<>^%!"` ou une parenthèse, plutôt que de le citer. Un échec ou un délai dépassé ne
-défait pas l'écriture : une ligne sur stderr que l'agent voit, `format-on-write: <commande> failed
-on <chemin> (<raison>)`, la raison étant `exit <n>`, `timed out after <n>s` (arrondi au supérieur),
-`command not found`, `could not start: <cause>` ou `not run: <cause>`. Sans la clé, rien n'est
-formaté.
+job Win32 sous Windows) : au délai, tout le groupe est tué, pas seulement la commande, avec deux
+limites sous Windows : un petit-enfant lancé avant `AssignProcessToJobObject` échappe au job, et si
+le job ne peut être créé ou assigné, seul l'enfant direct est tué. Le `wait` qui suit le `kill` est
+borné : un processus qui ne meurt pas en temps ne bloque pas la session. Sous Windows, un formateur
+résolu en `.cmd` ou `.bat` passe par `cmd.exe` : le hook refuse de lui donner un chemin qui contient
+`&|<>^%!"` ou une parenthèse, plutôt que de le citer. Le refus ne couvre pas une commande que le
+projet fait passer par `cmd /c` : `cmd` se résout en `cmd.exe`, qui n'est ni `.cmd` ni `.bat`, et le
+chemin du fichier arrive en argument après `/c`. Un échec ou un délai dépassé ne défait pas
+l'écriture : une ligne sur stderr que l'agent voit, `format-on-write: <commande> failed on <chemin>
+(<raison>)`, la raison étant `exit <n>`, `timed out after <n>s` (arrondi au supérieur), `command not
+found`, `could not start: <cause>` ou `not run: <cause>`. Sans la clé, rien n'est formaté.
 
 - `format-on-write` : `<**/*.py | uv run ruff format>`
 - `format-on-write` : `<apps/web/**/*.{ts,tsx} | pnpm --dir apps/web exec prettier --write>`
