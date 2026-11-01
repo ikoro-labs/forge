@@ -100,6 +100,12 @@ rend l'étape « sans objet ».
 
 - `test-skill` : `<nom du skill de tests>`
 
+La bibliothèque de tests par propriétés du projet, lue par `forge:tdd` (section « Les tests par propriétés »)
+et par `forge:qc-conf`. Sans la clé, le skill ne demande aucun test par propriétés et le juge n'en attend
+pas. Aucune valeur par défaut.
+
+- `property-test-lib` : `<hypothesis>`
+
 Le skill qui découpe le design en tickets, lu par `/forge:feature-design` à l'étape du découpage.
 Sans lui, le découpage se fait à la main, dans l'ordre du §7 du design, et le dit.
 
