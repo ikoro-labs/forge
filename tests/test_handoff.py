@@ -165,15 +165,28 @@ class ProcessGroupKill(unittest.TestCase):
         self.addCleanup(sleeper.kill)
         self.addCleanup(sleeper.wait)
         group = handoff_header.ProcessGroup(sleeper)
-        with (
-            mock.patch.object(handoff_header, "WINDOWS", False),
-            mock.patch.object(handoff_header, "LINUX", True),
-            mock.patch.object(handoff_header.os, "killpg", side_effect=OSError("no such group")),
-            mock.patch.object(handoff_header, "KILL_WAIT_SECONDS", 0.1),
-        ):
-            start = time.monotonic()
-            group.kill()
-            elapsed = time.monotonic() - start
+        if handoff_header.WINDOWS:
+            with (
+                mock.patch.object(handoff_header, "_win32") as win32,
+                mock.patch.object(handoff_header, "KILL_WAIT_SECONDS", 0.1),
+            ):
+                kernel32 = mock.Mock()
+                kernel32.TerminateJobObject.return_value = 0
+                win32.return_value = (mock.Mock(), mock.Mock(), kernel32)
+                group.job = mock.sentinel.job
+                start = time.monotonic()
+                group.kill()
+                elapsed = time.monotonic() - start
+        else:
+            fake_os = mock.Mock(wraps=handoff_header.os)
+            fake_os.killpg = mock.Mock(side_effect=OSError("no such group"))
+            with (
+                mock.patch.object(handoff_header, "os", fake_os),
+                mock.patch.object(handoff_header, "KILL_WAIT_SECONDS", 0.1),
+            ):
+                start = time.monotonic()
+                group.kill()
+                elapsed = time.monotonic() - start
         self.assertLess(elapsed, 5, "kill blocked waiting for a process that would not die")
         self.assertIsNotNone(sleeper.poll(), "the process was not killed by the fallback")
 
