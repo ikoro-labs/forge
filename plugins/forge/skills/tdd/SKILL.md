@@ -1,6 +1,6 @@
 ---
 name: tdd
-description: "Développement piloté par les tests : ce qu'est un bon test, où les écrire (les coutures), les trois anti-patterns, les règles de la boucle rouge puis verte et l'usage des mocks. Pour forge:coder, quand la clé test-skill de docs/agents/usine.md le désigne, et pour forge:qc-conf."
+description: "Développement piloté par les tests : ce qu'est un bon test, où les écrire (les coutures), les trois anti-patterns, les règles de la boucle rouge puis verte, l'usage des mocks et le test par propriétés. Pour forge:coder, quand la clé test-skill de docs/agents/usine.md le désigne, et pour forge:qc-conf."
 ---
 
 # Développement piloté par les tests
@@ -37,6 +37,26 @@ Quand la forme de l'interface est elle-même en question (profondeur du module, 
 ## Les mocks
 
 Ne simuler qu'aux **frontières du système** : service externe, temps, hasard, parfois fichiers ou base. Jamais un collaborateur interne. Pour qu'une frontière se remplace, la dépendance entre par injection et l'interface est découpée par opération. Détail : [references/mocking.md](references/mocking.md).
+
+## Les tests par propriétés
+
+Un test par propriétés énonce une règle qui vaut pour toute entrée, et la bibliothèque du projet (clé `property-test-lib` de `docs/agents/usine.md`) cherche l'entrée qui la contredit. Il trouve seul les cas limites que quelques exemples laissent passer. **Clé absente : ce skill ne demande aucun test par propriétés**, et la PR le dit (« sans objet, clé `property-test-lib` absente »).
+
+**Quand en écrire un** (clé présente) :
+
+- une fonction pure de calcul ;
+- un parseur et son sérialiseur, en aller-retour (`lire(écrire(x)) == x`) ;
+- un invariant d'une structure (toujours trié, jamais négatif, taille conservée) ;
+- l'équivalence avec une implémentation de référence, simple et lente, prise comme oracle.
+
+**Quand s'en passer** : une interface (écran, route, format d'échange) dont l'attendu est un exemple travaillé, et tout code à effets de bord (fichier, réseau, base, horloge), où l'entrée aléatoire coûte cher et ne prouve rien de plus qu'un exemple.
+
+**Dans la boucle rouge puis verte** :
+
+1. La propriété échoue d'abord, sur le code qui manque ou qui est faux ; on la lance et on lit pourquoi.
+2. L'outil rend un exemple minimal (l'entrée réduite) et une graine. On corrige le code pour cet exemple.
+3. L'exemple minimal devient un test par exemple gardé, nommé comme les autres et citant le critère : la propriété cherche, l'exemple retient.
+4. La graine et l'exemple minimal de l'échec sont recopiés dans les **Preuves** de la PR, pour que le juge et un rejeu les retrouvent. Une propriété ne s'affaiblit pas pour passer.
 
 ## Règles de la boucle
 
