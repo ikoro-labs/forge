@@ -775,6 +775,32 @@ class AttentionLabel(unittest.TestCase):
         self.assertIn("Une étiquette dont aucun texte d'agent ne donne la raison vient d'un humain : elle reste", skill)
 
 
+class StackedPullRequests(unittest.TestCase):
+    """ikoro-labs/forge#170: merging with --delete-branch closed a PR stacked on the merged branch."""
+
+    def test_qc_retargets_stacked_prs_before_merging(self) -> None:
+        skill = " ".join((support.PLUGIN / "skills" / "qc" / "SKILL.md").read_text(encoding="utf-8").split())
+        step = skill[skill.index("8. **Fusionner.**"):]
+        listing = step.index("`gh pr list --base <branche de tête> --state open --json number`")
+        retarget = step.index("`gh pr edit <m> --base <base de la PR>`")
+        merge = step.index("`gh pr merge <n> --squash --delete-branch")
+        self.assertLess(listing, retarget)
+        self.assertLess(retarget, merge)
+
+    def test_qc_restores_the_old_base_when_the_merge_is_refused(self) -> None:
+        skill = " ".join((support.PLUGIN / "skills" / "qc" / "SKILL.md").read_text(encoding="utf-8").split())
+        self.assertIn("`gh pr edit <m> --base <branche de tête>`", skill)
+
+    def test_qc_retargets_stacked_prs_again_after_updating_a_late_branch(self) -> None:
+        skill = " ".join((support.PLUGIN / "skills" / "qc" / "SKILL.md").read_text(encoding="utf-8").split())
+        late = skill[skill.index("Si la protection de la base refuse"):]
+        self.assertIn("reprends cette étape depuis le report des PR empilées", late[: late.index("Checks rouges")])
+
+    def test_qc_no_longer_says_github_retargets_stacked_prs(self) -> None:
+        skill = " ".join((support.PLUGIN / "skills" / "qc" / "SKILL.md").read_text(encoding="utf-8").split())
+        self.assertNotIn("GitHub reporte sur la base", skill)
+
+
 class OneSessionPerRepository(unittest.TestCase):
     """ikoro-labs/forge#4: one session acts on a repository at a time."""
 
