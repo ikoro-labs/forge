@@ -75,9 +75,11 @@ verdict, le rapport et la suite sont les mêmes. Tout le reste passe par les deu
      `needs-your-attention`, arrête-toi.
 8. **Fusionner.** D'abord, reporte chaque PR empilée : pour chaque numéro que rend
    `gh pr list --base <branche de tête> --state open --json number`, lance
-   `gh pr edit <m> --base <base de la PR>`. La suppression de la branche de tête ferme une PR
-   ouverte qui la vise encore (constaté le 2026-11-03 sur un projet consommateur, fusion à
-   16:15:10, PR fille fermée à 16:15:14). Puis
+   `gh pr edit <m> --base <base de la PR>`. La suppression par `gh pr merge --delete-branch`
+   ferme une PR ouverte qui vise encore la branche de tête (constaté le 2026-11-03 sur un projet
+   consommateur, fusion à 16:15:10, PR fille fermée à 16:15:14). Si la fusion est ensuite
+   refusée, remets chaque PR reportée sur sa base d'avant, `gh pr edit <m> --base <branche de
+   tête>`, sans quoi son diff porterait les commits non fusionnés de la mère. Puis
    `gh pr merge <n> --squash --delete-branch --body-file <fichier>`, puis
    `gh pr edit <n> --add-label agent-merged` : tu agis sous le compte de l'humain, et sans
    l'étiquette la fusion paraîtrait lue par lui. Toujours avec un corps que tu écris : sans lui,
