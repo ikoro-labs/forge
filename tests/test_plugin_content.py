@@ -791,6 +791,11 @@ class StackedPullRequests(unittest.TestCase):
         skill = " ".join((support.PLUGIN / "skills" / "qc" / "SKILL.md").read_text(encoding="utf-8").split())
         self.assertIn("`gh pr edit <m> --base <branche de tête>`", skill)
 
+    def test_qc_retargets_stacked_prs_again_after_updating_a_late_branch(self) -> None:
+        skill = " ".join((support.PLUGIN / "skills" / "qc" / "SKILL.md").read_text(encoding="utf-8").split())
+        late = skill[skill.index("Si la protection de la base refuse"):]
+        self.assertIn("reprends cette étape depuis le report des PR empilées", late[: late.index("Checks rouges")])
+
     def test_qc_no_longer_says_github_retargets_stacked_prs(self) -> None:
         skill = " ".join((support.PLUGIN / "skills" / "qc" / "SKILL.md").read_text(encoding="utf-8").split())
         self.assertNotIn("GitHub reporte sur la base", skill)

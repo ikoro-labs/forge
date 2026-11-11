@@ -100,7 +100,8 @@ verdict, le rapport et la suite sont les mêmes. Tout le reste passe par les deu
    `gh pr update-branch`.
 
    Si la protection de la base refuse parce que la branche est en retard, `gh pr update-branch <n>`,
-   attends les checks, et fusionne. Checks rouges : ce n'est pas un ACCEPT, reprends à l'étape 1.
+   attends les checks, et reprends cette étape depuis le report des PR empilées. Checks rouges :
+   ce n'est pas un ACCEPT, reprends à l'étape 1.
 
 ## Budget d'erreur
 
