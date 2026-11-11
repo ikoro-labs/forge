@@ -73,7 +73,12 @@ verdict, le rapport et la suite sont les mêmes. Tout le reste passe par les deu
      PR et arrête-toi. Une seule reprise par ticket.
    - REJECT au tour 2, PR sans ticket (Dependabot) : laisse-la ouverte, pose
      `needs-your-attention`, arrête-toi.
-8. **Fusionner.** `gh pr merge <n> --squash --delete-branch --body-file <fichier>`, puis
+8. **Fusionner.** D'abord, reporte chaque PR empilée : pour chaque numéro que rend
+   `gh pr list --base <branche de tête> --state open --json number`, lance
+   `gh pr edit <m> --base <base de la PR>`. La suppression de la branche de tête ferme une PR
+   ouverte qui la vise encore (constaté le 2026-11-03 sur un projet consommateur, fusion à
+   16:15:10, PR fille fermée à 16:15:14). Puis
+   `gh pr merge <n> --squash --delete-branch --body-file <fichier>`, puis
    `gh pr edit <n> --add-label agent-merged` : tu agis sous le compte de l'humain, et sans
    l'étiquette la fusion paraîtrait lue par lui. Toujours avec un corps que tu écris : sans lui,
    GitHub écrit sur la base tous les messages de commit de la branche, périmés compris, et une PR
@@ -89,9 +94,8 @@ verdict, le rapport et la suite sont les mêmes. Tout le reste passe par les deu
    agents. Une branche encore extraite dans le worktree d'un coder fait échouer gh après la fusion
    (`failed to delete local branch`), et il s'arrête avant `origin` : la fusion est faite, pose
    l'étiquette, puis `git push origin --delete <branche>` ; la copie locale reste, elle est à ce
-   worktree. Une PR empilée sur cette branche n'est pas fermée : GitHub reporte sur la base de
-   celle-ci chaque PR ouverte qui la visait, et il reste à y fusionner la base
-   (`gh pr update-branch`).
+   worktree. Une PR empilée, reportée avant la fusion, reçoit ensuite la base à jour par
+   `gh pr update-branch`.
 
    Si la protection de la base refuse parce que la branche est en retard, `gh pr update-branch <n>`,
    attends les checks, et fusionne. Checks rouges : ce n'est pas un ACCEPT, reprends à l'étape 1.
