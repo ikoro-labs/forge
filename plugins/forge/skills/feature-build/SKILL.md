@@ -324,12 +324,11 @@ Ni minuterie, ni geste humain : la fusion déclenche, ou rien ne se lance.
    écart n'est commenté pour cet identifiant, tu poses `needs-your-attention` sur l'issue de suivi
    avec un commentaire qui nomme l'identifiant, ses constats de chaque tour et les captures, et
    c'est un **arrêt sur incident** (étape 4). L'humain tranche : la source, la spec ou le code.
-5. **Plafonds.** La boucle n'a aucun plafond de tours propre et aucun défaut nouveau : ses tickets
-   comptent dans `--max`, sa durée dans celle du passage, les jetons de `forge:review-judge` et de
-   `forge:review-recheck` dans ses jetons d'agents, et `.claude/PAUSED` l'arrête comme le reste.
-   Un plafond atteint ferme le robinet des coders (étape 4) : les tickets déjà publiés restent
-   `ready-for-agent`, le compte rendu les nomme, et le passage suivant les reprend. Le retour de
-   l'écart borne les tours sinon.
+5. **Caps.** The loop has no round cap of its own and adds no default: its duration counts in the
+   passage's, the tokens of `forge:review-judge` and `forge:review-recheck` in its agent tokens, and
+   `.claude/PAUSED` stops it like the rest. A cap reached closes the tap of coders (step 4): the
+   commented tickets stay `ready-for-agent`, the report names them, and the next passage takes them
+   back. The return of a gap bounds the rounds otherwise.
 6. **La PR de la revue.** Chaque revue ouvre une PR (matrice, rapport, captures, compte rendu,
    journal), qui ne ferme aucun ticket. Passe-la par l'étape 3 (`/forge:qc`, fusion si `ACCEPT`)
    **avant la revue suivante** : la revue d'après part ainsi d'une base qui porte la matrice et le

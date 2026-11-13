@@ -140,8 +140,10 @@ encore servi.
 
 **La revue en boucle.** `forge:feature-build` lance la revue de bout en bout après chaque fusion dont le
 diff touche un chemin de `journey-paths` (étape 3 bis), sans minuterie ni geste humain, sur les écrans
-que la matrice relie au ticket fusionné. Les tickets d'écart que la revue publie entrent dans le passage
-(`forge:coder`, puis `forge:qc`), sans accord de l'humain (jamais un second ticket pour un identifiant qu'un ticket ouvert couvre déjà), et la revue rejoue le parcours. Avant la
+que la matrice relie au ticket fusionné. A review opens no ticket: each gap is a comment on the open
+ticket of the feature that covers the identifier, or on the feature's tracking issue when none covers it;
+a commented ticket goes back through the passage (`forge:coder`, then `forge:qc`), without the human's
+agreement, and the review replays the journey. Avant la
 recette, une revue en entier doit laisser zéro `bloquant` et zéro `majeur`
 (`scripts/revue_boucle.py porte`). Les plafonds de la boucle sont ceux du passage (`--max`, durée,
 jetons, `.claude/PAUSED`) et elle n'en ajoute aucun. Un identifiant de la source de nouveau non `tenu`, après une correction fusionnée qui le couvrait,
@@ -149,15 +151,12 @@ deux fois, arrête la boucle et pose `needs-your-attention` sur l'issue de suivi
 l'humain tranche. Éprouvé sous Linux seulement, sur des fichiers écrits à la main ; aucune vraie
 application ni aucun vrai navigateur n'a servi à la boucle.
 
-Les tickets d'écart portent l'étiquette `ready-for-agent` et une étiquette de gravité, `gravite:bloquant`,
-`gravite:majeur` ou `gravite:mineur` (celle de leur lot), que les indicateurs de la revue
-(`docs/indicateurs-de-service.md`) lisent. Ces trois étiquettes doivent exister sur le dépôt ; l'agent ne
-les crée pas, c'est un geste du propriétaire du dépôt (`gh label create gravite:bloquant`, et de même pour
-les deux autres), à faire avant la première revue en boucle. La boucle les cherche avec `gh label list`
-avant de publier : si l'une manque, la boucle s'arrête sans rien publier, nomme l'étiquette absente dans
-son compte rendu et pose `needs-your-attention` sur l'issue de suivi, plutôt que de laisser `gh issue
-create` échouer ticket par ticket. Ce geste vaut pour tout projet qui fait tourner la boucle, avec ou sans
-la clé `slo`.
+The loop needs no label of its own: the severity of a gap is written in its comment, and the review
+indicators (`docs/indicateurs-de-service.md`) read the matrices and the journals, not tickets. The only
+ticket the loop may open is a defect that prevents a merge, whose body carries `Motif : fusion-bloquee
+#<pr>` and `Feature: F-NNNN` (see [the ticket budget of a feature](#the-ticket-budget-of-a-feature)).
+A gap left on a comment comes back into the feature at the next `to-tickets` publication or when the
+product-owner re-splits it.
 
 Deux clés de plus rendent le parcours voulu obligatoire. `journey-replay` s'écrit
 `<contexte de CI> | <commande>` : la commande joue le parcours de bout en bout, depuis un dépôt propre

@@ -306,8 +306,7 @@ class Contents(unittest.TestCase):
         """No F-NNNN: ticket #101, plafonds pris dans ceux du passage, arrêt sur un écart revenu deux fois."""
         build = read("skills", "feature-build", "SKILL.md")
         for text in [
-            "aucun plafond de tours propre",
-            "comptent dans `--max`",
+            "no round cap of its own",
             'revue_boucle.py" tour',
             'revue_boucle.py" retours',
             "identifiant de la source",
@@ -316,6 +315,7 @@ class Contents(unittest.TestCase):
         ]:
             with self.subTest(text=text):
                 self.assertIn(text, build)
+        self.assertNotIn("comptent dans `--max`", build)
 
 
 class Delivery(unittest.TestCase):

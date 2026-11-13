@@ -1,10 +1,8 @@
-"""No F-NNNN: ticket #102 A7 : les étiquettes `gravite:*` de la boucle de revue sont décrites pour le projet, et les skills s'y tiennent."""
+"""The review loop opens no ticket and needs no `gravite:*` label (decision of 2026-11-13)."""
 
 import unittest
 
 import support
-
-LABELS = ("`gravite:bloquant`", "`gravite:majeur`", "`gravite:mineur`")
 
 
 def squash(path) -> str:
@@ -12,16 +10,13 @@ def squash(path) -> str:
 
 
 class Etiquettes(unittest.TestCase):
-    def test_the_installation_page_says_the_labels_must_exist_and_who_creates_them(self) -> None:
-        """No F-NNNN: ticket #102 A7 : la page de la boucle dit que les trois étiquettes doivent exister, que l'agent ne les crée pas, et ce que fait la boucle."""
+    def test_the_installation_page_says_the_loop_comments_gaps_and_needs_no_label(self) -> None:
+        """The page of the loop says a review opens no ticket, needs no label, and names the one exception."""
         page = squash(support.REPO_ROOT / "docs" / "installation.md")
-        for label in LABELS:
-            self.assertIn(label, page)
-        self.assertIn("doivent exister sur le dépôt", page)
-        self.assertIn("l'agent ne les crée pas", page)
-        self.assertIn("propriétaire du dépôt", page)
-        self.assertIn("la boucle s'arrête", page)
-        self.assertIn("avant de publier", page)
+        self.assertIn("A review opens no ticket", page)
+        self.assertIn("The loop needs no label of its own", page)
+        self.assertIn("Motif : fusion-bloquee #<pr>", page)
+        self.assertNotIn("gravite:", page)
 
     def test_the_skills_comment_gaps_instead_of_publishing_gap_tickets(self) -> None:
         """A review opens no ticket (decision of 2026-11-13): its gaps are comments on existing tickets."""
@@ -32,11 +27,11 @@ class Etiquettes(unittest.TestCase):
             self.assertNotIn("gh label list", text, skill)
 
     def test_the_readme_points_to_the_page(self) -> None:
-        """No F-NNNN: ticket #102 A7 : le README renvoie à la page qui décrit les étiquettes."""
+        """The README says the loop opens no ticket and points to the page, without any `gravite:*` label."""
         readme = squash(support.REPO_ROOT / "README.md")
-        self.assertIn("gravite:", readme)
+        self.assertIn("The review loop opens no ticket", readme)
+        self.assertNotIn("gravite:", readme)
         self.assertIn("docs/installation.md", readme)
-
 
 if __name__ == "__main__":
     unittest.main()

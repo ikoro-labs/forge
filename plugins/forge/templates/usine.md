@@ -232,12 +232,11 @@ commande. Sans la clé, les objectifs sont « sans objet (clé `slo` absente) »
 - `slo` : `<accept-round-1 | >= 80 % | 30>`
 - `slo` : `<lead-time p90 | <= 24 h | 30>`
 
-Les indicateurs de la revue de bout en bout (`review-gaps`, `review-gap-lead-time`, `matrix-coverage`,
-`review-regressions`) se calculent depuis les tickets d'écart de la boucle, les `matrice.md` et les
-`revue/boucle.tsv` des features du dossier de la clé `feature-dir` ; sans elle, ils sont « sans objet
-(clé `feature-dir` absente) ». Les deux ratios (`matrix-coverage`, `review-regressions`) et la durée
-`review-gap-lead-time` se déclarent comme les autres. L'objectif proposé porte sur les écarts
-réintroduits, ceux qui reviennent après une correction (voir `docs/indicateurs-de-service.md`) :
+The indicators of the end-to-end review (`matrix-coverage`, `review-regressions`) are computed from the
+`matrice.md` and the `revue/boucle.tsv` of the features under the folder of the key `feature-dir`; without
+it, they are « sans objet (clé `feature-dir` absente) ». Both ratios are declared like the others. The
+proposed objective is on the reintroduced gaps, those that come back after a fix (see
+`docs/indicateurs-de-service.md`):
 
 - `slo` : `<review-regressions | <= 10 % | 30>`
 
