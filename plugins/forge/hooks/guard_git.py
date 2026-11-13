@@ -47,6 +47,11 @@ refusal names the gesture and says it is the human's, to list at the end of the 
 adds its own with the `owner-gesture` key of `docs/agents/usine.md`, one `<command prefix> |
 <reason>` per line; the built-in list holds without it. This replaces the earlier choice to leave
 every owner gesture to the project's own hooks.
+
+Also refused, to every agent, is the merge of a PR whose diff touches the infra guard
+(`plugins/forge/hooks/guard_infra.py` or its tests): `gh pr merge`, a REST merge by `gh api` (its
+files read by `gh pr view <n> -R <repo> --json files`, a reading that fails refusing too) and any
+GraphQL merge mutation, whose node id the guard does not look up. Only the owner merges it, by hand.
 """
 
 from __future__ import annotations
@@ -686,20 +691,19 @@ def _standard_input_text(
     return bodies or None
 
 
-def _graphql_gesture(
+def _graphql_texts(
     args: list[str],
     words: list[str],
     redirections: list[tuple[str, str]],
     here: str | None,
     bodies: str,
     read_text: Callable[[str], str | None],
-) -> str | None:
-    """The owner gesture of a `gh api graphql` call: a mutation of the owner, read wherever it is.
+) -> tuple[list[str], str]:
+    """`(texts, unread)` of a `gh api graphql` call: what its query is made of, and what is not read.
 
     The query is read in the arguments, in the heredocs of the command (`--input - <<EOF`, or
-    `query="$(cat <<EOF ...)"`) and in the files it names. What cannot be read (a file that is not
-    there, stdin from a pipe, a substitution or a variable) is refused as a precaution: a mutation
-    of the owner could hide in it, and a guard that fails closed.
+    `query="$(cat <<EOF ...)"`) and in the files it names. `unread` says what cannot be read (a
+    file that is not there, stdin from a pipe, a substitution or a variable), empty when all is.
     """
     texts = [" ".join(args)]
     unread = ""
@@ -727,6 +731,23 @@ def _graphql_gesture(
                 unread = unread or f"le fichier `{value}` ne peut pas être lu"
             else:
                 texts.append(text)
+    return texts, unread
+
+
+def _graphql_gesture(
+    args: list[str],
+    words: list[str],
+    redirections: list[tuple[str, str]],
+    here: str | None,
+    bodies: str,
+    read_text: Callable[[str], str | None],
+) -> str | None:
+    """The owner gesture of a `gh api graphql` call: a mutation of the owner, read wherever it is.
+
+    What cannot be read is refused as a precaution: a mutation of the owner could hide in it, and a
+    guard that fails closed.
+    """
+    texts, unread = _graphql_texts(args, words, redirections, here, bodies, read_text)
     if OWNER_MUTATION.search("\n".join(texts)):
         return GRAPHQL_MUTATION_GESTURE
     if unread:
@@ -996,6 +1017,74 @@ def protected_refusal(
     return None
 
 
+# The files of the infra guard (`guard_infra.py`, which holds its read list, and its tests, which
+# also prove this refusal): a PR whose diff touches one is merged by the owner, by hand. Compared
+# with the POSIX path of each file of the diff, so it holds in forge and in any copy of it.
+INFRA_GUARD_FILES = frozenset({"plugins/forge/hooks/guard_infra.py", "tests/test_guard_infra.py"})
+INFRA_GUARD_REFUSAL = "this PR changes the infra guard: only the owner merges it, by hand"
+MERGE_ENDPOINT = re.compile(r"^repos/([^/]+/[^/]+)/pulls/([^/]+)/merge$")
+MERGE_MUTATION = re.compile(r"\b(?:mergePullRequest|enablePullRequestAutoMerge)\b", re.IGNORECASE)
+# The files of a PR by its number and its repository (None: the current branch, the current
+# repository), or None when they cannot be read.
+PrFiles = Callable[[str | None, str | None], list[str] | None]
+
+
+def gh_repository(words: list[str]) -> str | None:
+    """The repository a gh call names with `-R`, `--repo`, `--repo=` or `-R<repo>`, or None."""
+    for index, word in enumerate(words):
+        if word in GH_OPTIONS_WITH_VALUE:
+            return words[index + 1] if index + 1 < len(words) else None
+        if word.startswith("--repo="):
+            return word.partition("=")[2]
+        if word.startswith("-R") and len(word) > 2:
+            return word[2:]
+    return None
+
+
+def infra_guard_refusal(pr: str | None, repository: str | None, pr_files: PrFiles) -> str | None:
+    """Why a merge is the owner's: the PR changes the infra guard, or its files cannot be read."""
+    paths = pr_files(pr, repository)
+    if paths is None:
+        return (
+            "the files of the PR cannot be read (`gh pr view --json files` failed, timed out or"
+            f" answered something else), so it may change the infra guard; {INFRA_GUARD_REFUSAL}"
+        )
+    if any(_posix(path) in INFRA_GUARD_FILES for path in paths):
+        return INFRA_GUARD_REFUSAL
+    return None
+
+
+def _api_merge_refusal(
+    args: list[str],
+    here: str | None,
+    bodies: str,
+    read_text: Callable[[str], str | None],
+    pr_files: PrFiles,
+) -> str | None:
+    """The infra guard's refusal of a merge by `gh api` (the words after `api`), or None.
+
+    A REST merge names its PR, whose files are read. A GraphQL merge names it by node id, whose
+    files the guard does not look up: it is refused. A query that cannot be read is refused
+    before, as an owner gesture.
+    """
+    for words, redirections in api_readings(args) or []:
+        endpoint = parse_api(words).endpoint.split("?", 1)[0].strip("/")
+        if endpoint.lower() == "graphql":
+            texts, _ = _graphql_texts(args, words, redirections, here, bodies, read_text)
+            if MERGE_MUTATION.search("\n".join(texts)):
+                return (
+                    "a GraphQL merge names its PR by node id, whose files the guard does not read,"
+                    f" so it may change the infra guard; {INFRA_GUARD_REFUSAL}"
+                )
+            continue
+        merge = MERGE_ENDPOINT.match(endpoint)
+        if merge is not None and not _reads(words):
+            repository = None if "{" in merge.group(1) else merge.group(1)
+            if found := infra_guard_refusal(merge.group(2), repository, pr_files):
+                return found
+    return None
+
+
 def refusal(
     command: str,
     branch: str | Callable[[str | None], str],
@@ -1007,6 +1096,7 @@ def refusal(
     budget: Callable[[], str | None] = lambda: None,
     protected_paths: Iterable[str] = (),
     changed_files: Callable[[str | None], list[str] | None] = lambda _pr: None,
+    pr_files: PrFiles = lambda _pr, _repository: [],
 ) -> str | None:
     """Why the command is refused, or None when it may run.
 
@@ -1017,6 +1107,7 @@ def refusal(
     `budget` says why the error budget forbids a merge (key `budget-action`), or None.
     `protected_paths` are the values of the `protected-path` key, and `changed_files` the files
     of a PR by its number (None for the current branch's PR), or None when they cannot be read.
+    `pr_files` are the files of a PR by its number and repository, for the infra guard's refusal.
     """
     declared = list(owner_gestures)
     bodies = split_heredocs(command)[1]
@@ -1060,6 +1151,10 @@ def refusal(
             return _owner_refusal(gesture)
         if declared_refusal := _declared_gesture(words, declared):
             return declared_refusal
+        call = gh_command(words)
+        if call and call[0] == "api":
+            if infra := _api_merge_refusal(call[1:], here, bodies, read_text, pr_files):
+                return infra
         act = gh_act(words)
         if act is not None and act[:2] == ("pr", "merge"):
             rest = act[2]
@@ -1073,6 +1168,8 @@ def refusal(
                 )
             if exhausted := budget():
                 return exhausted
+            if infra := infra_guard_refusal(number, gh_repository(words), pr_files):
+                return infra
             if protected := protected_refusal(protected_paths, changed_files, number):
                 return protected
             if not checks_green(number):
@@ -1154,6 +1251,20 @@ def parse_changed_files(text: str) -> list[str] | None:
     return paths
 
 
+def pr_files_via_gh(cwd: str | None) -> PrFiles:
+    """`gh pr view <n> -R <repo> --json files`, for the infra guard; None when it cannot be read."""
+
+    def files(pr: str | None, repository: str | None) -> list[str] | None:
+        gh = shutil.which("gh")
+        target = [*([pr] if pr else []), *(["-R", repository] if repository else [])]
+        completed = _run([gh, "pr", "view", *target, "--json", "files"], cwd) if gh else None
+        if completed is None or completed.returncode != 0:
+            return None
+        return parse_changed_files(completed.stdout)
+
+    return files
+
+
 def changed_files_via_gh(cwd: str | None) -> Callable[[str | None], list[str] | None]:
     def files(pr: str | None) -> list[str] | None:
         gh = shutil.which("gh")
@@ -1182,6 +1293,7 @@ def main() -> int:
         budget=lambda: merge_refusal(config, state_path(root), datetime.now(tz=timezone.utc)),
         protected_paths=config.get(PROTECTED_KEY, []),
         changed_files=changed_files_via_gh(cwd),
+        pr_files=pr_files_via_gh(cwd),
     )
     if reason is None:
         return 0
