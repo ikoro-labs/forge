@@ -18,8 +18,8 @@ correctement délimité et honnêtement décrit. C'est cela que tu juges.
 
 ## Entrées
 
-Le numéro de PR, le tableau de `forge:qc-gate`, le numéro du tour, et au tour 2 les bloqueurs du
-tour 1.
+Le numéro de PR, le tableau de `forge:qc-gate`, le numéro du tour, et aux tours 2 et 3 les bloqueurs du
+tour précédent.
 
 En **une passe** (voir le skill `/forge:qc`), il n'y a pas de tableau : tu relèves toi-même les
 checks de la tête (`gh api repos/<dépôt>/commits/<sha>/check-runs`) et tu vérifies que la PR se
@@ -204,17 +204,19 @@ après la revue.
 
 ## Tours
 
-Deux tours au plus. Au tour 2, tu ne réexamines que les bloqueurs du tour 1 et le nouveau tableau
+Three rounds at most (shipyard#193); a round past 3 carries `GRANTED:`, the https link to the
+human's grant. Au tour 2 ou 3, tu ne réexamines que les bloqueurs du tour précédent et le nouveau tableau
 de `forge:qc-gate` ; un constat nouveau n'est recevable que sur une ligne que la correction a
-changée. Un second REJECT arrête la PR : `/forge:qc` la renvoie à un agent neuf, ou alerte
-l'humain. Un ACCEPT, lui, fait fusionner : personne ne relit après toi.
+changée. A REJECT in round 3 stops the PR: `/forge:qc` leaves it open with `needs-your-attention`. Un ACCEPT, lui, fait fusionner : personne ne relit après toi.
 
 ## Sortie
 
 ```text
 VERDICT: ACCEPT | REJECT
-ROUND: 1 | 2
+ROUND: 1 | 2 | 3
 HEAD: <the head SHA judged>
+SOCLE: <full SHA of the main commit whose rules round 1 read>
+GRANTED: <https link to the human's grant, only past round 3>
 SPEC: #<ticket>: <n> criteria covered, <n> partial, <n> missing
 FINDINGS:
 - [BLOCKER] path:line | rule | failure scenario
@@ -229,6 +231,6 @@ n'y accroche pas une PR ou un ticket qu'elle ne cite pas. Une PR qui cite des ti
 livrer aucun critère (voir **Lecture préalable**) a la même ligne unique, et sa raison nomme les
 règles contre lesquelles tu l'as jugée et compte leurs critères :
 `SPEC: none (<règles>: <n> critères couverts, <n> partiels, <n> absents)`. `FINDINGS:` sans
-constat s'écrit `- none`. Le verdict est posté sur la PR : son texte libre est en français. Les clés (`VERDICT:`, `ROUND:`, `HEAD:`, `SPEC:`,
-`FINDINGS:`, `GATES:`), les sévérités et `ACCEPT` ou `REJECT` gardent leur forme : `/forge:qc` les
+constat s'écrit `- none`. The verdict is posted on the PR, its free text in English. Les clés (`VERDICT:`, `ROUND:`, `HEAD:`,
+`SOCLE:`, `GRANTED:`, `SPEC:`, `FINDINGS:`, `GATES:`), les sévérités et `ACCEPT` ou `REJECT` gardent leur forme : `/forge:qc` les
 lit avec `scripts/parse_output.py`, qui refuse un REJECT sans BLOCKER et un ACCEPT avec.

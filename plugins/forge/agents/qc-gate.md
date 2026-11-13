@@ -142,7 +142,7 @@ Le numéro de PR, et le numéro du tour (1 ou 2).
     du parcours est une ligne `PARCOURS-TOUCHE`, et sans capture jointe, `MANQUE`. Tu ne juges pas une capture
     et tu ne l'ouvres pas : tu rends ce que le script a mesuré.
 
-Au tour 2, rejoue toutes les sondes : une correction peut casser ce qui passait.
+Aux tours 2 et 3, rejoue toutes les sondes : une correction peut casser ce qui passait.
 
 ## Sortie
 

@@ -24,7 +24,7 @@ solution.>
 
 ## Decision
 
-<The option kept, and why in three lines at least, on a figure or a verifiable criterion.>
+<The option kept, and why in five lines at most, on a figure or a verifiable criterion.>
 
 ## Consequences
 
