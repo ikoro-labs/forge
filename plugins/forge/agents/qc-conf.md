@@ -18,8 +18,8 @@ correctement délimité et honnêtement décrit. C'est cela que tu juges.
 
 ## Entrées
 
-Le numéro de PR, le tableau de `forge:qc-gate`, le numéro du tour, et au tour 2 les bloqueurs du
-tour 1.
+Le numéro de PR, le tableau de `forge:qc-gate`, le numéro du tour, et aux tours 2 et 3 les bloqueurs du
+tour précédent.
 
 En **une passe** (voir le skill `/forge:qc`), il n'y a pas de tableau : tu relèves toi-même les
 checks de la tête (`gh api repos/<dépôt>/commits/<sha>/check-runs`) et tu vérifies que la PR se
@@ -207,8 +207,7 @@ après la revue.
 Three rounds at most (shipyard#193); a round past 3 carries `GRANTED:`, the https link to the
 human's grant. Au tour 2 ou 3, tu ne réexamines que les bloqueurs du tour précédent et le nouveau tableau
 de `forge:qc-gate` ; un constat nouveau n'est recevable que sur une ligne que la correction a
-changée. Un REJECT au dernier tour arrête la PR : `/forge:qc` la renvoie à un agent neuf, ou alerte
-l'humain. Un ACCEPT, lui, fait fusionner : personne ne relit après toi.
+changée. A REJECT in round 3 stops the PR: `/forge:qc` leaves it open with `needs-your-attention`. Un ACCEPT, lui, fait fusionner : personne ne relit après toi.
 
 ## Sortie
 

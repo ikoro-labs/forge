@@ -94,5 +94,29 @@ class QcConfLanguage(unittest.TestCase):
         self.assertIn("free text in English", text)
 
 
+class QcRounds(unittest.TestCase):
+    """`/forge:qc` holds three rounds at most (shipyard#193): the third REJECT leaves the PR open
+    with `needs-your-attention`, and no round 4 runs without `GRANTED`."""
+
+    SKILLS = support.PLUGIN / "skills"
+
+    def test_the_qc_skill_holds_three_rounds(self) -> None:
+        text = (self.SKILLS / "qc" / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("three rounds at most", text)
+        self.assertRegex(text, r"REJECT in round 3[^\n]*`needs-your-attention`")
+        self.assertIn("GRANTED", text)
+        self.assertNotIn("il n'y a pas de tour 3", text)
+        self.assertNotIn("Une seule reprise par ticket", text)
+        self.assertNotIn("ferme la PR avec l'étiquette `agent-rework`", text)
+
+    def test_no_file_of_the_plugin_keeps_two_qc_rounds(self) -> None:
+        pattern = re.compile(r"deux tours|2 tours|two rounds|une seule reprise|ROUND: 2|second REJECT")
+        for path in sorted(support.PLUGIN.rglob("*.md")):
+            if path.relative_to(support.PLUGIN).parts[:2] == ("skills", "feature-review"):
+                continue  # its two rounds are the end-to-end review's re-reading, not `/forge:qc`
+            with self.subTest(file=str(path.relative_to(support.PLUGIN))):
+                self.assertIsNone(pattern.search(path.read_text(encoding="utf-8")))
+
+
 if __name__ == "__main__":
     unittest.main()

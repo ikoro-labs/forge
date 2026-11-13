@@ -241,13 +241,13 @@ Jamais deux `/forge:qc` en même temps : la fusion est sérielle. Prends la prem
 2. **Intacte ?** `gh pr view <n> --json state,reviews,comments` : la PR est ouverte, sans revue
    GitHub, et sans verdict `ROUND:` si un coder de ce passage l'a ouverte. Sinon elle a été jugée
    ou fusionnée hors de `/forge:qc` : pose `needs-your-attention`, **arrêt sur incident**.
-3. Lance le skill `forge:qc` sur la PR. Il mesure, juge, fusionne sur ACCEPT, et renvoie le ticket
-   en reprise sur un second REJECT (une seule par ticket). Sur un REJECT au tour 1, la correction
+3. Lance le skill `forge:qc` sur la PR. Il mesure, juge, fusionne sur ACCEPT, and stops the PR open with
+   `needs-your-attention` on its third REJECT. Sur un REJECT au tour 1 ou 2, la correction
    revient à un `forge:coder` en **mode correction** (au premier plan, `isolation: worktree`), avec
    la PR, le ticket, la base et le verdict ; le coder qui a ouvert la PR, repris par
    `SendMessage`, s'il est encore joignable. Lis sa sortie comme à l'étape 2 ; `BLOCKED` ou
    `FAILED` : **arrêt sur incident**. Tu ne corriges rien toi-même. Puis `/forge:qc` reprend au
-   tour 2.
+   tour suivant.
 
 Après `/forge:qc` :
 
@@ -255,9 +255,8 @@ Après `/forge:qc` :
 - **Fusionnée sur une autre base** : GitHub ne ferme un ticket que sur la branche par défaut.
   Ferme-le toi-même, pour débloquer la suite :
   `gh issue close <n> --comment "Fusionné dans <base> par #<pr> ; atteindra la branche par défaut avec <base>."`
-- **Renvoyé en reprise** (`agent-rework`) : `/forge:qc` l'a remis en `ready-for-agent` mais
-  assigné. Retire l'assignation et `agent-claimed` : la frontière exige un ticket sans assigné. Il
-  y revient, et un coder neuf le reprend à l'étape 2 dans ce passage, sous les mêmes plafonds.
+- **Stopped in round 3** (`needs-your-attention`, PR open): the ticket leaves the queue of this
+  pass; the human decides, and only their grant (`GRANTED:`) opens a round 4.
 - **`needs-your-attention` sans fusion**, ou fusion refusée : **arrêt sur incident**.
 
 Une fusion déplace la base : les autres PR de la file passeront par 3.1. Elle peut aussi débloquer
