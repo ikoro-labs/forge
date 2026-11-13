@@ -1,7 +1,7 @@
 <!-- template: pr | max-lines: 40, this comment excluded | required: Summary, Door, Blast radius, Proofs | rules: socle.md -->
 ## Summary
 
-<!-- What the PR changes and why, in three lines at least. Cite the ticket: `Closes #n`, or
+<!-- What the PR changes and why, in five lines at most. Cite the ticket: `Closes #n`, or
 `Refs #n` with the points this PR delivers. -->
 
 ### Change view
