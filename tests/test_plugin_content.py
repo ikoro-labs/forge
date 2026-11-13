@@ -1098,10 +1098,10 @@ class PrShowsChangeDoorAndRadius(unittest.TestCase):
     def test_a_template_carries_the_sections_and_usine_offers_it_without_defaulting(self) -> None:
         """No F-NNNN: ticket #45, critère 2 (gabarit dans templates/, valeur possible)."""
         template = self.read("templates", "pr.md")
-        for heading in ("## Résumé", "## Porte", "## Rayon d'impact", "## Preuves"):
+        for heading in ("## Summary", "## Door", "## Blast radius", "## Proofs"):
             self.assertIn(heading, template)
-        self.assertIn("double sens", template)
-        self.assertIn("sens unique", template)
+        self.assertIn("`two-way`", template)
+        self.assertIn("`one-way`", template)
         usine = self.read("templates", "usine.md")
         block = usine.split("Le modèle de description de PR", 1)[1].split("- `pr-template` :", 1)[0]
         self.assertIn("templates/pr.md", block)

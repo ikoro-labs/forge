@@ -1,62 +1,42 @@
-# ADR-<NNNN> : <titre court à l'impératif ou nominal>
+<!-- template: adr | max-lines: 45, this comment excluded | rules: socle.md -->
+# ADR-<NNNN>: <short title, a decision or a noun phrase>
 
-- **Statut** : proposé | accepté | rejeté | déprécié | remplacé par ADR-XXXX
-- **Date** : YYYY-MM-DD
-- **Décideurs** :
-- **Contexte technique** : <bounded context ou composant concerné>
-- **Catégorie** : architecture | technologie | API | données | modèle IA | sécurité | opérations
+- **Status**: proposed | accepted | rejected | deprecated | superseded by ADR-<NNNN>
+- **Date**: YYYY-MM-DD
+- **Deciders**: <names, or agent and its decision-matrix cell>
+- **Scope**: <bounded context or component>
 
-## Contexte
+## Context
 
-Quel problème se pose, dans quelles contraintes (métier, réglementaires, délai, coût, équipe).
-Les faits, pas la solution. Chiffrer quand c'est possible.
+<The problem and its constraints (business, regulatory, delay, cost), with figures. Facts, not the
+solution.>
 
-## Contraintes
+## Options
 
-- Réglementaires : <ex. un résultat engagé exige la reproductibilité>
-- Techniques :
-- Coût / SLO :
-- Organisationnelles :
+### A: <name>
+<What it is, what it gains, what it costs to build and run.>
 
-## Options envisagées
+### B: <name>
+<...>
 
-### Option A : <nom>
-- Description
-- Avantages
-- Inconvénients
-- Coût estimé (build et run)
+### Do nothing
+<What happens if nothing is decided now. Always present.>
 
-### Option B : <nom>
-...
+## Decision
 
-### Option C : ne rien faire
-Toujours présente. Que se passe-t-il si on ne décide pas maintenant ?
+<The option kept, and why in three lines at least, on a figure or a verifiable criterion.>
 
-## Décision
+## Consequences
 
-Option retenue et **justification en au moins trois lignes**, appuyée sur un chiffre ou un critère vérifiable.
+- Positive: <...>
+- Negative (required): <what this costs, complicates or closes>
 
-## Conséquences
+## Reversibility
 
-### Positives
--
+<Cost and delay to go back; the point of no return, if any.>
 
-### Négatives (section obligatoire)
-Ce que cette décision coûte, complique ou ferme. Un ADR sans conséquence négative est incomplet : il n'y a pas de décision sans contrepartie.
+## Review when
 
-### Impact réglementaire
-La décision affecte-t-elle la reproductibilité, l'auditabilité, la contre-validation ou la frontière LLM/calcul ? Si oui, comment est-ce compensé ?
+<The condition that reopens this decision: volume, cost, incident, new need.>
 
-## Réversibilité
-
-Coût et délai pour revenir en arrière. Point de non-retour identifié.
-
-## Conditions de réexamen
-
-À quelles conditions cette décision devra être rouverte (volume, coût, nouveau besoin, incident, évolution réglementaire).
-
-## Références
-
-- Issue / PR :
-- ADR liés :
-- Documents :
+Refs: <tickets, PRs, linked ADRs>
