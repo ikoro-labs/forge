@@ -151,6 +151,9 @@ def parse_verdict(text: str) -> dict[str, object]:
         if match is None:
             raise OutputError(f"finding `{line}`: it must read `- [BLOCKER|MINOR|NOTE] ...`")
         findings.append({"severity": match.group(1), "text": match.group(2)})
+    socle = fields.get("SOCLE", [""])[0]
+    if "SOCLE" in fields and not HEAD.match(socle):
+        raise OutputError(f"`SOCLE: {socle}`: it must be the hexadecimal SHA, 7 to 40 characters, of the socle read")
     proposals = fields.get("PROPOSAL", [])
     for proposal in proposals:
         if not PROPOSAL.match(proposal):
@@ -167,7 +170,7 @@ def parse_verdict(text: str) -> dict[str, object]:
         "SPEC": fields["SPEC"],
         "FINDINGS": findings,
         "GATES": fields["GATES"][0],
-        "SOCLE": fields.get("SOCLE", [""])[0],
+        "SOCLE": socle,
         "GRANTED": grant,
         "BATTERY CORRECTION": fields.get("BATTERY CORRECTION", [""])[0],
         "PROPOSAL": proposals,

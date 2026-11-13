@@ -118,5 +118,17 @@ class QcRounds(unittest.TestCase):
                 self.assertIsNone(pattern.search(path.read_text(encoding="utf-8")))
 
 
+
+class SocleNamesTheCappedTemplates(unittest.TestCase):
+    """`socle.md` names as capped exactly the templates whose head declares a cap."""
+
+    def test_the_capped_list_matches_the_headers(self) -> None:
+        socle = (support.PLUGIN / "socle.md").read_text(encoding="utf-8")
+        sentence = socle.split("## Templates", 1)[1].split("\n\n", 2)[1]
+        claim = next(part for part in re.split(r"\.\s", sentence) if "line cap" in part)
+        named = {name.removesuffix(".md") for name in re.findall(r"`([\w./-]+)`", claim) if name != "templates/"}
+        self.assertEqual(named, {name for name, _, _ in capped()})
+
+
 if __name__ == "__main__":
     unittest.main()

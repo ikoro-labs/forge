@@ -90,5 +90,6 @@ in between applies from the next PR.
 
 ## Templates
 
-Each document an agent writes follows its template under `templates/`, within the line cap written
-at its head: `ticket.md`, `pr.md`, `verdict.md`, `adr.md`, and `features/` for feature documents.
+Each document an agent writes follows its template under `templates/`, and `features/` for feature
+documents. Four hold a line cap at their head: `ticket.md`, `pr.md`, `verdict.md`, `adr.md`; the
+feature templates hold none.
