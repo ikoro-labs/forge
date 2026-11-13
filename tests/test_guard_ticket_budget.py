@@ -17,7 +17,7 @@ DESIGN = "---\nfeature: F-0001\ndocument: design\nstatut: {statut}\n{budget}base
 
 
 def design(statut: str = "en-revue", budget: int | None = None) -> str:
-    line = "" if budget is None else f"ticket-budget: {budget}\n"
+    line = "" if budget is None else f"feature-tickets: {budget}\n"
     return DESIGN.format(statut=statut, budget=line)
 
 
@@ -101,7 +101,7 @@ class DesignAcceptance(unittest.TestCase):
 
     def test_a_design_without_a_budget_is_refused(self) -> None:
         project = Project(self, design())
-        self.assertIn("ticket-budget", project.write(design("accepte")) or "")
+        self.assertIn("feature-tickets", project.write(design("accepte")) or "")
 
     def test_a_budget_of_zero_is_refused(self) -> None:
         project = Project(self, design())
@@ -238,7 +238,7 @@ class ClosedBudget(unittest.TestCase):
     def test_a_design_without_a_budget_refuses_the_ticket(self) -> None:
         project = Project(self, design("accepte"))
         reason = project.create(ticket("to-tickets F-0001"), full(0))
-        self.assertIn("declare ticket-budget in the design first", reason or "")
+        self.assertIn("declare feature-tickets in the design first", reason or "")
         self.assertIn("re-split the feature with the product-owner", reason or "")
 
     def test_a_missing_or_unaccepted_design_refuses_the_ticket(self) -> None:
@@ -364,7 +364,7 @@ class Binding(unittest.TestCase):
         template = (support.PLUGIN / "templates" / "features" / "design.md").read_text(
             encoding="utf-8"
         )
-        self.assertIn("\nticket-budget: <N, at most 15", template.split("\n---\n")[0])
+        self.assertIn("\nfeature-tickets: <N, at most 15", template.split("\n---\n")[0])
         skill = (support.PLUGIN / "skills" / "feature-design" / "SKILL.md").read_text(
             encoding="utf-8"
         )

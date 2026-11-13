@@ -54,7 +54,7 @@ Applique `${CLAUDE_PLUGIN_ROOT}/templates/features/protocole.md`, document `desi
      ticket bloqué par la précédente.
 
    **The budget.** The `forge:product-owner` cuts the feature into at most 15 tickets, the
-   `ticket-budget` of the design header; `guard_ticket_budget` refuses the ticket beyond it.
+   `feature-tickets` of the design header; `guard_ticket_budget` refuses the ticket beyond it.
 
    **La matrice.** Chaque ticket cite les identifiants de la source qu'il couvre (une ligne
    `Couvre : <identifiants>` dans son corps). Quand `matrice.md` existe dans le dossier de la

@@ -1,10 +1,10 @@
 """PreToolUse hook: the ticket budget of a feature, a standard common to every forge project.
 
-The design of a feature declares `ticket-budget: N` in its header, and the hook holds it at two
+The design of a feature declares `feature-tickets: N` in its header, and the hook holds it at two
 moments:
 
 - **Accepting a design.** An Edit, Write or MultiEdit of a `design.md` that turns its `statut` to
-  `accepte` passes only when the header declares `ticket-budget` as an integer from 1 to
+  `accepte` passes only when the header declares `feature-tickets` as an integer from 1 to
   `CEILING`. Above it, the feature is split. A design already accepted may not raise its budget
   (it may declare one when it had none). A shell command that names a `design.md`, writes, and
   carries `statut: accepte` is refused: the acceptance is written with Edit or Write, so that it
@@ -17,7 +17,7 @@ moments:
   F-NNNN` line belongs to that feature; one with neither line (a feature's tracking issue) is not
   this hook's concern. A ticket
   of a feature is refused when its design (`<feature-dir>/NNNN-*/design.md`, header `feature:
-  F-NNNN`) is missing, not accepted, has no `ticket-budget`, has one above `CEILING`, or when the
+  F-NNNN`) is missing, not accepted, has no `feature-tickets`, has one above `CEILING`, or when the
   tickets the feature already has, open or closed (`gh issue list --state all --search`), fill
   its budget. A body the hook cannot read, and a count it cannot make (no gh, the network, a gh
   error or timeout), refuse the ticket.
@@ -112,8 +112,8 @@ def front_matter(text: str) -> dict[str, str]:
 
 
 def budget_of(header: Mapping[str, str]) -> int | None:
-    """The declared `ticket-budget`, or None when it is absent or not a whole number."""
-    value = header.get("ticket-budget", "")
+    """The declared `feature-tickets`, or None when it is absent or not a whole number."""
+    value = header.get("feature-tickets", "")
     return int(value) if re.fullmatch(r"\d+", value) else None
 
 
@@ -130,18 +130,16 @@ def design_refusal(old: str, new: str) -> str | None:
     if not accepted(before):
         if budget is None:
             return (
-                "a design is accepted only with `ticket-budget: N` in its header, N from 1 to"
+                "a design is accepted only with `feature-tickets: N` in its header, N from 1 to"
                 f" {CEILING}: declare it, or {RESPLIT}"
             )
         if not 1 <= budget <= CEILING:
-            return (
-                f"the design declares `ticket-budget: {budget}`, outside 1 to {CEILING}: {RESPLIT}"
-            )
+            return f"the design declares `feature-tickets: {budget}`, outside 1 to {CEILING}: {RESPLIT}"
         return None
     previous = budget_of(before)
     if previous is not None and (budget is None or budget > previous):
         shown = "removes it" if budget is None else f"raises it to {budget}"
-        return f"the design is accepted with `ticket-budget: {previous}` and the write {shown}: the budget is closed"
+        return f"the design is accepted with `feature-tickets: {previous}` and the write {shown}: the budget is closed"
     return None
 
 
@@ -490,7 +488,7 @@ def ticket_refusal(
     if place.kind != "feature":
         return None
     feature = place.detail
-    declare = f"declare ticket-budget in the design first, and {RESPLIT}"
+    declare = f"declare feature-tickets in the design first, and {RESPLIT}"
     directories = config.get(FEATURE_DIR_KEY, [])
     if not directories:
         return f"{feature} has no design to read its budget from (key `{FEATURE_DIR_KEY}` absent): {declare}"
@@ -503,9 +501,9 @@ def ticket_refusal(
         return f"the design of {feature} is not accepted: its tickets are published once it is"
     budget = budget_of(header)
     if budget is None:
-        return f"the design of {feature} has no `ticket-budget`: {declare}"
+        return f"the design of {feature} has no `feature-tickets`: {declare}"
     if budget > CEILING:
-        return f"the design of {feature} declares `ticket-budget: {budget}`, above {CEILING}: {RESPLIT}"
+        return f"the design of {feature} declares `feature-tickets: {budget}`, above {CEILING}: {RESPLIT}"
     count = count_tickets(feature, creation.repo, cwd, run)
     if count is None:
         return (

@@ -313,11 +313,11 @@ le refus. Essayé sur Linux seulement, par les tests ; pas encore sur un vrai po
 
 ## The ticket budget of a feature
 
-The design of a feature declares `ticket-budget: N` in its header; the ceiling is 15, a constant of
+The design of a feature declares `feature-tickets: N` in its header; the ceiling is 15, a constant of
 the plugin and not a key of `usine.md`. `guard_ticket_budget` holds it twice:
 
 - **At acceptance.** An Edit, Write or MultiEdit that turns a `design.md` to `statut: accepte` is
-  refused without `ticket-budget`, or with a value outside 1 to 15: the `forge:product-owner`
+  refused without `feature-tickets`, or with a value outside 1 to 15: the `forge:product-owner`
   re-splits the feature. An accepted design may not raise its budget. A shell command that writes
   `statut: accepte` into a `design.md` is refused: the acceptance goes through Edit or Write.
 - **At each ticket.** `gh issue create`, a POST by `gh api` on `repos/<owner>/<repo>/issues` and a
