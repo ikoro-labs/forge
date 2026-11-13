@@ -1,4 +1,4 @@
-<!-- template: verdict | max-lines: 30, this comment excluded | required: VERDICT, ROUND, HEAD, SPEC, FINDINGS, GATES | rules: socle.md -->
+<!-- template: verdict | max-lines: 30, this comment excluded | rules: socle.md -->
 ```text
 VERDICT: ACCEPT | REJECT
 ROUND: 1 | 2 | 3
@@ -24,5 +24,5 @@ GATES:
   `ROUND:` holds the number alone.
 - Rounds 2 and 3 copy the round 1 `SOCLE`. They judge the previous round's blockers, then only the
   lines the correction changed.
-- The hook `guard_output` refuses a verdict comment without the `required:` keys of the header
-  line. `SOCLE:` stays out of that list until a reader checks it.
+- The hook `guard_output` refuses a verdict comment that `scripts/parse_output.py` refuses, the
+  one source of its rules: a missing or unknown key, a `ROUND:` with text, a REJECT without blocker.

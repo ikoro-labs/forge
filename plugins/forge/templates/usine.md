@@ -497,7 +497,7 @@ formaté.
 The hook `guard_output` checks every output against its template under `templates/`: a subagent's
 final text, the body of a gh ticket, pull request or comment, and the session's reply to the human.
 These keys are the exception to the rule above: an absent key keeps the cap written here, so the
-check holds in every project. Tables, code blocks and HTML comments do not count; `0` lifts a cap.
+check holds in every project. Code blocks and table cells count, HTML comments do not; `0` lifts a cap.
 
 - `output-words-ticket` : `150`
 - `output-words-comment` : `150`
@@ -516,3 +516,8 @@ A project agent checked against a declared format rather than the generic rule: 
 `decider` (keys `VERDICT:` and `DECISION:`), `gate` (a table), `subagent-return`, or `exempt`.
 
 - `output-agent-format` : `<security-reviewer | exempt>`
+
+The keys a project adds to a structured format (`verdict`, `coder`, `decider`): any other key is
+refused.
+
+- `output-extra-keys` : `<verdict | REGIME, VERIFIED, REMARKS, OUT OF SCOPE>`

@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import re
 import sys
+from collections.abc import Callable, Mapping
 from pathlib import Path
 
 KEY = re.compile(r"^([A-Z][A-Z_ ]*[A-Z]):[ \t]?(.*)$")
@@ -66,7 +67,11 @@ def _fields(text: str, first: str, known: set[str]) -> dict[str, list[str]]:
     current: list[str] | None = None
     for line in lines:
         match = KEY.match(line)
-        if match and match.group(1) in known:
+        if match and match.group(1) not in known:
+            # The set of keys is closed: a key the block does not take is refused, never folded
+            # into the key above it.
+            raise OutputError(f"`{match.group(1)}:` is not a key of this block")
+        if match:
             key, value = match.group(1), match.group(2).strip()
             if key in fields and key not in REPEATED:
                 raise OutputError(f"`{key}:` appears twice")
@@ -80,8 +85,9 @@ def _fields(text: str, first: str, known: set[str]) -> dict[str, list[str]]:
     return fields
 
 
-def parse_result(text: str) -> dict[str, str]:
-    known = {"RESULT", *(key for keys in RESULT_KEYS.values() for key in keys)}
+def parse_result(text: str, extra: tuple[str, ...] = ()) -> dict[str, str]:
+    """The coder's block; `extra` names the further keys a project's coder writes."""
+    known = {"RESULT", *(key for keys in RESULT_KEYS.values() for key in keys), *extra}
     fields = _fields(text, "RESULT", known)
     kind = fields["RESULT"][0]
     if kind not in RESULT_KEYS:
@@ -90,9 +96,9 @@ def parse_result(text: str) -> dict[str, str]:
     for key in expected:
         if key not in fields or not fields[key][0]:
             raise OutputError(f"`RESULT: {kind}` needs a non-empty `{key}:` line")
-    extra = sorted(set(fields) - {"RESULT", *expected})
-    if extra:
-        raise OutputError(f"`RESULT: {kind}` takes no `{extra[0]}:` line")
+    unexpected = sorted(set(fields) - {"RESULT", *expected, *extra})
+    if unexpected:
+        raise OutputError(f"`RESULT: {kind}` takes no `{unexpected[0]}:` line")
     ticket = fields["TICKET"][0]
     if not re.match(r"^#\d+\b", ticket):
         raise OutputError(f"`TICKET: {ticket}`: it must start with `#<number>`")
@@ -120,8 +126,9 @@ def _sub_lines(values: list[str]) -> list[str]:
     return items
 
 
-def parse_verdict(text: str) -> dict[str, object]:
-    fields = _fields(text, "VERDICT", {*VERDICT_KEYS, *VERDICT_OPTIONAL})
+def parse_verdict(text: str, extra: tuple[str, ...] = ()) -> dict[str, object]:
+    """qc-conf's verdict; `extra` names the further optional keys a project's verdict writes."""
+    fields = _fields(text, "VERDICT", {*VERDICT_KEYS, *VERDICT_OPTIONAL, *extra})
     for key in VERDICT_KEYS:
         if key not in fields:
             raise OutputError(f"the verdict needs a `{key}:` line")
@@ -199,7 +206,7 @@ def parse_domain(text: str) -> dict[str, str]:
     return {"ANSWER": kind, **{key: fields[key][0] for key in expected}}
 
 
-PARSERS = {"result": parse_result, "verdict": parse_verdict, "domain": parse_domain}
+PARSERS: dict[str, Callable[[str], Mapping[str, object]]] = {"result": parse_result, "verdict": parse_verdict, "domain": parse_domain}
 
 
 def main(argv: list[str]) -> int:

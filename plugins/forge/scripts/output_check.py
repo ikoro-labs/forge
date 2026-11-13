@@ -10,22 +10,27 @@ events; a skill can run this command on a body before it posts it.
 
 The rules, the same for every kind that has them:
 
-- a word cap per kind (keys `output-words-<kind>` of `docs/agents/usine.md`, `0` for none); tables,
-  code blocks and HTML comments do not count, and a span between backticks counts as one word;
-- no prose paragraph over `output-words-paragraph` words; a list item is a paragraph of its own;
+- a word cap per kind (keys `output-words-<kind>` of `docs/agents/usine.md`, `0` for none) over the
+  whole text, code blocks and table cells included, HTML comments left out; a span between
+  backticks counts as one word;
+- no prose paragraph over `output-words-paragraph` words; a list item is a paragraph of its own; a
+  table line or a code block is no paragraph;
 - each field the template names in the `required:` part of its header line, present and not empty.
-  A project replaces a template with the key `output-template` (`<kind> | <path>`).
+  A project replaces a template with the key `output-template` (`<kind> | <path>`);
+- a structured format (`verdict`, `coder`, `decider`) takes a closed set of keys: an unknown key is
+  refused, unless the project names it with `output-extra-keys` (`<kind> | KEY, KEY`). The verdict
+  and the coder's block are read by `parse_output.py`, their one source of rules.
 """
 
 from __future__ import annotations
 
 import re
 import sys
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-from parse_output import FINDING, HEAD, RESULT_KEYS
+from parse_output import OutputError, parse_result, parse_verdict
 
 PLUGIN = Path(__file__).resolve().parents[1]
 TEMPLATES = PLUGIN / "templates"
@@ -43,6 +48,7 @@ WORDS_KEY = "output-words-{}"
 PARAGRAPH_KEY = "output-words-paragraph"
 TEMPLATE_KEY = "output-template"
 AGENT_FORMAT_KEY = "output-agent-format"
+EXTRA_KEYS_KEY = "output-extra-keys"
 
 
 @dataclass(frozen=True)
@@ -58,8 +64,9 @@ KINDS = {
     "ticket": Kind("ticket.md", "ticket"),
     "pr": Kind("pr.md", "pr"),
     "comment": Kind("comment.md", "comment"),
-    # A verdict has no word cap: the review never shortens its findings to fit one.
-    "verdict": Kind("verdict.md", None),
+    # A verdict has no word cap: the review never shortens its findings to fit one. Its rules are
+    # `parse_verdict`'s alone, the template's `required:` is not read for it.
+    "verdict": Kind(None, None),
     "session-reply": Kind("session-reply.md", "session-reply"),
     "subagent-return": Kind("subagent-return.md", "subagent-return"),
     "coder": Kind(None, "subagent-return"),
@@ -71,17 +78,24 @@ KINDS = {
 # The plugin's agents and the declared format of each (`agents/<name>.md`, section "Sortie").
 # The end-to-end review's two agents write tab-separated lines that `revue_bout_en_bout.py`
 # checks already: no Markdown paragraph applies to them.
+# A project that copies an agent into `.claude/agents/` runs it under its bare name: `coder` is held
+# to the format of `forge:coder`. A name under another plugin's prefix is not one of them.
 FORGE_AGENTS = {
-    "forge:coder": "coder",
-    "forge:qc-conf": "verdict",
-    "forge:qc-gate": "gate",
-    "forge:staff-engineer": "decider",
-    "forge:product-owner": "decider",
-    "forge:review-judge": "exempt",
-    "forge:review-recheck": "exempt",
+    "coder": "coder",
+    "qc-conf": "verdict",
+    "qc-gate": "gate",
+    "staff-engineer": "decider",
+    "product-owner": "decider",
+    "review-judge": "exempt",
+    "review-recheck": "exempt",
 }
 AGENT_FORMATS = frozenset({"coder", "verdict", "decider", "gate", "exempt", "subagent-return"})
 DECIDER_KEYS = ("VERDICT", "DECISION")
+# The keys of the deciders' block (`agents/staff-engineer.md` and `agents/product-owner.md`, "Sortie").
+DECIDER_KNOWN = frozenset({
+    "VERDICT", "QUESTION", "DECISION", "GROUND", "MATRIX_CELL", "REVERSIBLE", "USER_IMPACT", "VETO",
+    "REFERENTIAL_UPDATE", "WRITE_TO", "READ",
+})
 GATE_MOST_TABLE_LINES = 30
 
 HEADER = re.compile(r"<!--\s*template:(.*?)-->", re.DOTALL)
@@ -122,7 +136,20 @@ def agent_kind(agent_type: str, config: Mapping[str, list[str]]) -> str:
         name, _, kind = (part.strip() for part in value.partition(" | "))
         if name == agent_type and kind in AGENT_FORMATS:
             return kind
-    return FORGE_AGENTS.get(agent_type, "subagent-return")
+    prefix, _, name = agent_type.rpartition(":")
+    if prefix not in ("", "forge"):
+        return "subagent-return"
+    return FORGE_AGENTS.get(name, "subagent-return")
+
+
+def extra_keys(kind: str, config: Mapping[str, list[str]]) -> tuple[str, ...]:
+    """The keys a project adds to the structured format `kind` (key `output-extra-keys`)."""
+    keys: list[str] = []
+    for value in config.get(EXTRA_KEYS_KEY, []):
+        name, _, listed = (part.strip() for part in value.partition(" | "))
+        if name == kind:
+            keys += [key.strip() for key in listed.split(",") if key.strip()]
+    return tuple(keys)
 
 
 def required_fields(template: str) -> list[list[str]]:
@@ -253,7 +280,7 @@ def _keys(lines: list[str], first: str) -> dict[str, str]:
     for line in lines[starts[-1] :]:
         if FENCE.match(line):
             continue
-        match = re.match(r"^\s*([A-Z][A-Z_ ]*[A-Z]):[ \t]?(.*)$", line)
+        match = re.match(r"^([A-Z][A-Z_ ]*[A-Z]):[ \t]?(.*)$", line)
         if match:
             current = match.group(1)
             fields.setdefault(current, match.group(2).strip())
@@ -262,54 +289,20 @@ def _keys(lines: list[str], first: str) -> dict[str, str]:
     return fields
 
 
-def _coder(lines: list[str]) -> list[str]:
-    fields = _keys(lines, "RESULT")
-    if not fields:
-        return ["no line starts with `RESULT:`: the block of the coder is missing"]
-    kind = fields["RESULT"].split()[0] if fields["RESULT"] else ""
-    if kind not in RESULT_KEYS:
-        return [f"`RESULT: {fields['RESULT']}`: the value must be PR, BLOCKED or FAILED"]
-    found = [f"`RESULT: {kind}` needs a non-empty `{key}:` line" for key in RESULT_KEYS[kind]
-             if not fields.get(key)]
-    ticket = fields.get("TICKET", "")
-    if ticket and not re.match(r"^(#\d+\b|none\b)", ticket):
-        found.append(f"`TICKET: {ticket}`: it starts with `#<number>` or `none`")
-    return found
+def _parsed(parser: Callable[[str, tuple[str, ...]], object], text: str, extra: tuple[str, ...]) -> list[str]:
+    try:
+        parser(text, extra)
+    except OutputError as error:
+        return [str(error)]
+    return []
 
 
-def _verdict(lines: list[str]) -> list[str]:
+def _decider(lines: list[str], extra: tuple[str, ...]) -> list[str]:
     fields = _keys(lines, "VERDICT")
-    if not fields:
-        return []  # the missing `VERDICT:` line is a required field of the template
-    found: list[str] = []
-    verdict = fields["VERDICT"]
-    if verdict not in ("ACCEPT", "REJECT"):
-        found.append(f"`VERDICT: {verdict}`: the value must be ACCEPT or REJECT")
-    if "ROUND" in fields and fields["ROUND"] not in ("1", "2", "3"):
-        found.append(f"`ROUND: {fields['ROUND']}`: the value must be 1, 2 or 3")
-    if "HEAD" in fields and not HEAD.match(fields["HEAD"]):
-        found.append(f"`HEAD: {fields['HEAD']}`: it must be the hexadecimal SHA of the judged head")
-    blockers = 0
-    for line in fields.get("FINDINGS", "").splitlines():
-        line = line.strip()
-        if not line or line.lower() in ("none", "- none", "aucun", "- aucun"):
-            continue
-        match = FINDING.match(line)
-        if match is None:
-            found.append(f"finding `{line}`: it must read `- [BLOCKER|MINOR|NOTE] ...`")
-        elif match.group(1) == "BLOCKER":
-            blockers += 1
-    if verdict == "REJECT" and not blockers:
-        found.append("`VERDICT: REJECT` with no `[BLOCKER]` finding: only a blocker rejects")
-    if verdict == "ACCEPT" and blockers:
-        found.append(f"`VERDICT: ACCEPT` with {blockers} `[BLOCKER]` finding(s)")
+    found = [f"the decision needs a non-empty `{key}:` line" for key in DECIDER_KEYS if not fields.get(key)]
+    known = DECIDER_KNOWN | set(extra)
+    found += [f"`{key}:` is not a key of this block" for key in fields if key not in known]
     return found
-
-
-def _decider(lines: list[str]) -> list[str]:
-    fields = _keys(lines, "VERDICT")
-    return [f"the decision needs a non-empty `{key}:` line" for key in DECIDER_KEYS
-            if not fields.get(key)]
 
 
 def _gate(lines: list[str]) -> list[str]:
@@ -367,12 +360,13 @@ def deviations(
             found.append(f"the field {name} is missing (template `{kind}`)")
         elif _empty(lines, index, labels):
             found.append(f"the field {name} is empty")
+    extra = extra_keys(kind, config)
     if kind == "coder":
-        found += _coder(lines)
+        found += _parsed(parse_result, text, extra)
     elif kind == "verdict":
-        found += _verdict(lines)
+        found += _parsed(parse_verdict, text, extra)
     elif kind == "decider":
-        found += _decider(lines)
+        found += _decider(lines, extra)
     elif kind == "gate":
         found += _gate(lines)
     elif kind == "session-reply":
@@ -381,12 +375,12 @@ def deviations(
             for run in _list_runs(prose) if run > 2
         ]
     cap = word_cap(kind, config)
-    words = sum(count_words(line) for line in prose)
+    words = sum(count_words(line) for line in lines if not FENCE.match(line))
     if cap is not None and words > cap:
         cap_name = KINDS[kind].words
         found.append(
-            f"{words} words of prose, at most {cap} (key `{WORDS_KEY.format(cap_name)}`): tables and"
-            " code blocks do not count"
+            f"{words} words, at most {cap} (key `{WORDS_KEY.format(cap_name)}`): code blocks and"
+            " tables count too"
         )
     if KINDS[kind].paragraphs:
         most = _integer(config, PARAGRAPH_KEY, DEFAULT_PARAGRAPH_WORDS)

@@ -183,6 +183,25 @@ class VerdictSocle(unittest.TestCase):
         self.assertEqual((parsed["HEAD"], parsed["SOCLE"]), ("3f2a9c1", "260522a7767bc437"))
 
 
+class ClosedKeys(unittest.TestCase):
+    """An unknown key is refused, never folded into the key above it."""
+
+    def test_an_unknown_key_is_refused_in_each_block(self) -> None:
+        for parser, text in [(parse_verdict, VERDICT), (parse_result, PR_RESULT)]:
+            with self.subTest(parser=parser.__name__), self.assertRaisesRegex(OutputError, "`GARBAGE:`"):
+                parser(text.replace("\n```\n", "\nGARBAGE: x\n```\n") if "```" in text else text + "GARBAGE: x\n")
+
+    def test_a_project_names_its_extra_keys(self) -> None:
+        text = VERDICT + "REGIME: strict\n"
+        with self.assertRaises(OutputError):
+            parse_verdict(text)
+        self.assertEqual(parse_verdict(text, ("REGIME",))["VERDICT"], "REJECT")
+
+    def test_an_indented_key_like_line_is_a_continuation(self) -> None:
+        parsed = parse_result(PR_RESULT.replace("  and replayed twice", "  TODO: replayed twice"))
+        self.assertIn("TODO: replayed twice", parsed["NOTES"])
+
+
 class Domain(unittest.TestCase):
     def test_open_answer_is_read_with_its_prudent_path(self) -> None:
         parsed = parse_domain(OPEN_ANSWER)

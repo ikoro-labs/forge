@@ -117,7 +117,7 @@ class Conforming(unittest.TestCase):
 
     def test_the_other_forms_of_the_coder_conform(self) -> None:
         blocked = (
-            "RESULT: BLOCKED\nTICKET: none\nQUESTION: which cap?\nRECOMMENDATION: 150\nSTATE: pushed\n"
+            "RESULT: BLOCKED\nTICKET: #3\nQUESTION: which cap?\nRECOMMENDATION: 150\nSTATE: pushed\n"
         )
         failed = "RESULT: FAILED\nTICKET: #3\nCOMMAND: make\nOUTPUT: error\nSTATE: not pushed\n"
         self.assertEqual(deviations(blocked, "coder"), [])
@@ -144,14 +144,12 @@ class Conforming(unittest.TestCase):
             "VERDICT: REJECT\nROUND: 3\nREGIME: strict\nHEAD: abcdef1\nSPEC: none (pin bump)\n"
             f"FINDINGS:\n{findings}REMARKS:\n- [REMARK] a.py:1 | r | s\nGATES: pass\n"
         )
-        self.assertEqual(deviations(verdict, "verdict"), [])
+        config = {"output-extra-keys": ["verdict | REGIME, REMARKS"]}
+        self.assertEqual(deviations(verdict, "verdict", config), [])
 
-    def test_tables_code_blocks_and_html_comments_do_not_count(self) -> None:
-        table = "".join(f"| {words(10)} |\n" for _ in range(30))
-        code = "```\n" + "\n".join(words(30) for _ in range(20)) + "\n```\n"
+    def test_html_comments_do_not_count(self) -> None:
         comment = f"<!-- {words(300)} -->\n"
-        text = f"Merged.\n\n{table}\n{code}\n{comment}"
-        self.assertEqual(deviations(text, "comment"), [])
+        self.assertEqual(deviations(f"Merged.\n\n{comment}", "comment"), [])
 
     def test_exempt_checks_nothing(self) -> None:
         self.assertEqual(deviations(words(500), "exempt"), [])
@@ -166,7 +164,7 @@ class Refused(unittest.TestCase):
         self.assertRefused(TICKET.replace("Motif:", "Reason:"), "ticket", "`Motif` is missing")
         self.assertRefused(TICKET.replace("## Criteria", "## Tests"), "ticket", "`Criteria` is missing")
         self.assertRefused(PR.replace("## Door", "## Gate"), "pr", "`Door` is missing")
-        self.assertRefused(VERDICT.replace("GATES:", "PROBES:"), "verdict", "`GATES` is missing")
+        self.assertRefused(VERDICT.replace("GATES: all probes pass\n", ""), "verdict", "`GATES:`")
         self.assertRefused(REPLY.replace("Measured:", "Numbers:"), "session-reply", "`Measured`")
 
     def test_an_empty_required_field(self) -> None:
@@ -199,7 +197,7 @@ class Refused(unittest.TestCase):
         no_blocker = VERDICT.replace("[BLOCKER]", "[MINOR]")
         self.assertRefused(no_blocker, "verdict", "no `[BLOCKER]` finding")
         self.assertRefused(VERDICT.replace("REJECT", "MAYBE"), "verdict", "ACCEPT or REJECT")
-        self.assertRefused(VERDICT.replace("ROUND: 1", "ROUND: 4"), "verdict", "1, 2 or 3")
+        self.assertRefused(VERDICT.replace("ROUND: 1", "ROUND: 4"), "verdict", "past round 3")
         self.assertRefused(VERDICT.replace("0123456789abcdef", "zz", 1), "verdict", "hexadecimal")
         bad = VERDICT.replace("- [BLOCKER]", "* BLOCKER")
         self.assertRefused(bad, "verdict", "it must read `- [BLOCKER|MINOR|NOTE]")
@@ -208,7 +206,7 @@ class Refused(unittest.TestCase):
         self.assertRefused("Done, PR opened.", "coder", "no line starts with `RESULT:`")
         self.assertRefused(CODER_PR.replace("RESULT: PR", "RESULT: DONE"), "coder", "PR, BLOCKED")
         self.assertRefused(CODER_PR.replace("NOTES: none\n", ""), "coder", "`NOTES:`")
-        self.assertRefused(CODER_PR.replace("#12 closes", "twelve"), "coder", "`#<number>` or `none`")
+        self.assertRefused(CODER_PR.replace("#12 closes", "twelve"), "coder", "it must start with `#<number>`")
 
     def test_a_decision_without_its_decision(self) -> None:
         self.assertRefused(DECIDER.replace("DECISION:", "ANSWER:"), "decider", "`DECISION:`")
@@ -279,9 +277,14 @@ class TemplatesAndAgents(unittest.TestCase):
             with self.subTest(template=name):
                 self.assertLessEqual(len(text.splitlines()) - 1, cap)
 
-    def test_the_verdict_template_requires_the_keys_parse_output_reads(self) -> None:
+    def test_the_verdict_has_one_source_of_rules_parse_output(self) -> None:
         text = (support.PLUGIN / "templates" / "verdict.md").read_text(encoding="utf-8")
-        self.assertEqual([labels[0] for labels in required_fields(text)], list(VERDICT_KEYS))
+        self.assertEqual(required_fields(text), [])
+        self.assertIsNone(KINDS["verdict"].template)
+        for key in ("ROUND", "HEAD", "SPEC", "GATES"):
+            with self.subTest(key=key):
+                found = deviations(re.sub(rf"(?m)^{key}:.*\n", "", VERDICT), "verdict")
+                self.assertTrue(any(f"`{key}:`" in deviation for deviation in found), found)
 
     def test_the_reply_template_names_the_three_fields_in_both_languages(self) -> None:
         text = (support.PLUGIN / "templates" / "session-reply.md").read_text(encoding="utf-8")
@@ -361,6 +364,54 @@ class StaffDecisionOfTheThirteenth(unittest.TestCase):
         )
         found = deviations(verdict, "verdict")
         self.assertTrue(any("a paragraph of 61 words" in d for d in found), found)
+
+
+class MeridianReviewChecks(unittest.TestCase):
+    """The review of the MeridianRE session, 2026-11-13, on `deviations`."""
+
+    def assertRefused(self, text: str, kind: str, phrase: str, config: dict[str, list[str]] | None = None) -> None:
+        found = deviations(text, kind, config)
+        self.assertTrue(any(phrase in deviation for deviation in found), found)
+
+    def test_code_blocks_and_table_cells_count_in_the_total(self) -> None:
+        code = "```\n" + "\n".join(words(30) for _ in range(30)) + "\n```\n"
+        self.assertRefused(f"Done.\n\n{code}", "comment", "at most 150")
+        self.assertRefused(f"Done.\n\n| {words(800)} |\n", "comment", "at most 150")
+
+    def test_the_paragraph_rule_skips_tables_and_code_blocks(self) -> None:
+        text = f"Done.\n\n| {words(70)} |\n\n```\n{words(70)}\n```\n"
+        self.assertFalse(any("paragraph" in d for d in deviations(text, "comment")))
+
+    def test_an_unknown_key_is_refused_in_a_structured_format(self) -> None:
+        self.assertRefused(VERDICT.replace("GATES:", "GARBAGE: x\nGATES:"), "verdict", "`GARBAGE:`")
+        self.assertRefused(CODER_PR + "GARBAGE: x\n", "coder", "`GARBAGE:`")
+        self.assertRefused(DECIDER + "GARBAGE: x\n", "decider", "`GARBAGE:`")
+
+    def test_a_project_declares_the_extra_keys_of_its_verdict(self) -> None:
+        text = VERDICT.replace("GATES:", "REGIME: strict\nREMARKS:\n- [REMARK] a.py:1 | r | s\nGATES:")
+        self.assertRefused(text, "verdict", "`REGIME:`")
+        config = {"output-extra-keys": ["verdict | REGIME, VERIFIED, REMARKS, OUT OF SCOPE"]}
+        self.assertEqual(deviations(text, "verdict", config), [])
+
+    def test_the_verdict_rules_come_from_parse_verdict(self) -> None:
+        self.assertRefused(VERDICT.replace("ROUND: 1", "ROUND: 4"), "verdict", "`GRANTED: <https link>`")
+        grant = "ROUND: 4\nGRANTED: https://github.com/o/r/issues/9#issuecomment-1"
+        self.assertEqual(deviations(VERDICT.replace("ROUND: 1", grant), "verdict"), [])
+
+    def test_an_accept_may_leave_findings_empty(self) -> None:
+        accept = VERDICT.replace("VERDICT: REJECT", "VERDICT: ACCEPT").replace(
+            "- [BLOCKER] a.py:3 | A1 | the cap is never read\n", ""
+        )
+        self.assertEqual(deviations(accept, "verdict"), [])
+
+    def test_a_round_followed_by_text_is_refused(self) -> None:
+        self.assertRefused(VERDICT.replace("ROUND: 1", "ROUND: 2 (after the sync)"), "verdict", "`ROUND:")
+
+    def test_an_agent_without_the_forge_prefix_is_matched_by_its_name(self) -> None:
+        for name, kind in [("coder", "coder"), ("qc-conf", "verdict"), ("staff-engineer", "decider")]:
+            with self.subTest(name=name):
+                self.assertEqual(agent_kind(name, {}), kind)
+        self.assertEqual(agent_kind("other:coder", {}), "subagent-return")
 
 
 if __name__ == "__main__":
