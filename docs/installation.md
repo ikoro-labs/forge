@@ -354,6 +354,27 @@ Ce qu'aucun agent ne fait à la place d'un humain :
    protection, seul `guard_git` retient une fusion dont un check n'est pas vert. `forge:qc-gate`
    lit la protection dans les rulesets comme dans l'ancienne protection de branche.
 
+## Output structure
+
+`guard_output` (hooks `SubagentStop`, `Stop`, and `PreToolUse` on `Bash`, `PowerShell` and
+`SubagentHandback`) checks each output with `plugins/forge/scripts/output_check.py`, which a skill
+can also run on a body before it posts it:
+
+| Output | Checked against | Refused |
+| --- | --- | --- |
+| final text of `forge:coder`, `forge:qc-conf`, `forge:qc-gate`, `forge:staff-engineer`, `forge:product-owner` | the block its `agents/<name>.md` declares | once; a second non-conforming output passes and is logged |
+| final text of any other agent | `templates/subagent-return.md` | once, then logged |
+| body of `gh issue create\|edit\|comment`, `gh pr create\|edit\|comment\|review`, `gh api ... -f\|-F body=` | `ticket.md`, `pr.md`, `comment.md`, or `verdict.md` when it opens with `VERDICT:` | every time |
+| the session's reply to the human | `templates/session-reply.md` | once per stop (`stop_hook_active`), then logged |
+
+The word caps (ticket 150, comment 150, PR 200, session reply 150, subagent return 200) and the
+60-word paragraph cap hold when the project sets no key; tables, code blocks and HTML comments do
+not count. The keys `output-words-<kind>`, `output-template` and `output-agent-format` of
+`plugins/forge/templates/usine.md` adjust them. The journal of outputs let through is
+`~/.claude/hooks/state/structured-output/journal.jsonl`. A body the guard cannot read (a variable,
+a file it cannot open, a JSON `--input`) passes, and so does a crash: only exit 3 blocks. Tried by
+the suite of `tests/` only, not yet in a real session.
+
 ## Limites connues
 
 - **Une source par marketplace et par poste** : la marketplace `ikoro-labs` n'est connue qu'une

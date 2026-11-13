@@ -69,6 +69,7 @@ ne fusionne une PR rouge, ou ne sort de son rôle.
 | `guard_coder` | le coder ne fusionne pas, ne relit pas, ne lance ni `forge:qc` ni la revue de bout en bout, ne ferme pas de ticket, n'écrit que dans son worktree, ne pousse ni avec `-u` ni avec `-f` |
 | `guard_readonly` | les juges et les décideurs lisent, n'écrivent jamais |
 | `guard_pause` | tant que `.claude/PAUSED` existe, aucun agent n'est lancé |
+| `guard_output` | every output follows its template and its word caps: a subagent's final text, the body of a gh ticket, PR or comment, the session's reply to the human ([details](docs/installation.md#output-structure)) |
 | `after_write` | formate chaque fichier écrit avec les formateurs que le projet déclare (clé `format-on-write`), puis refuse le tiret cadratin au-delà de ce que le projet admet |
 | `trim_output` | la longue sortie d'une commande de tests qui réussit est raccourcie, la sortie complète gardée dans un journal |
 | `sessions_notice`, `handoff_*` | une seule session par dépôt, et la passation à une nouvelle session quand le contexte est plein |
