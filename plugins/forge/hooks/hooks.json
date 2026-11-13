@@ -43,6 +43,17 @@
         ]
       },
       {
+        "matcher": "Bash|PowerShell|Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run --no-project --quiet python \"${CLAUDE_PLUGIN_ROOT}/hooks/guard_ticket_budget.py\" || exit 2",
+            "onFailure": "block",
+            "timeout": 60
+          }
+        ]
+      },
+      {
         "matcher": "Agent|Task",
         "hooks": [
           {
