@@ -32,12 +32,15 @@ def ticket(motif: str, feature: str | None = None) -> str:
 class FakeGh:
     """`gh issue list` answered from a list of bodies; None plays an unreachable gh."""
 
-    def __init__(self, bodies: list[str] | None) -> None:
+    def __init__(self, bodies: list[str] | None, viewed: str | None = None) -> None:
         self.bodies = bodies
+        self.viewed = viewed  # the body `gh issue view` gives, None plays a gh error
         self.calls: list[list[str]] = []
 
     def __call__(self, argv: list[str], cwd: str | None) -> str | None:
         self.calls.append(argv)
+        if argv[:2] == ["issue", "view"]:
+            return None if self.viewed is None else json.dumps({"body": self.viewed})
         if self.bodies is None:
             return None
         issues = [{"number": n, "body": body} for n, body in enumerate(self.bodies, start=1)]
@@ -47,19 +50,25 @@ class FakeGh:
 class Project:
     """A project folder with its usine.md and one design, the session's CLAUDE_ variables kept out."""
 
-    def __init__(self, test: unittest.TestCase, design_text: str | None) -> None:
+    def __init__(
+        self,
+        test: unittest.TestCase,
+        design_text: str | None,
+        memory: bool = False,
+        usine: str = "# Usine\n- `feature-dir` : `docs/features`\n",
+    ) -> None:
         self.dir = Path(tempfile.mkdtemp())
         test.addCleanup(shutil.rmtree, self.dir, True)
         (self.dir / "docs" / "agents").mkdir(parents=True)
-        (self.dir / "docs" / "agents" / "usine.md").write_text(
-            "# Usine\n- `feature-dir` : `docs/features`\n", encoding="utf-8"
-        )
+        (self.dir / "docs" / "agents" / "usine.md").write_text(usine, encoding="utf-8")
         self.design = self.dir / "docs" / "features" / "0001-runner" / "design.md"
         self.design.parent.mkdir(parents=True)
         if design_text is not None:
             self.design.write_text(design_text, encoding="utf-8")
         env = {k: v for k, v in os.environ.items() if not k.startswith("CLAUDE_")}
         env.update(HOME=str(self.dir), USERPROFILE=str(self.dir))
+        if memory:
+            env["CLAUDE_PLUGIN_DATA"] = str(self.dir / "plugin-data")
         patcher = mock.patch.dict(os.environ, env, clear=True)
         patcher.start()
         test.addCleanup(patcher.stop)
@@ -73,13 +82,17 @@ class Project:
         body_file.write_text(body, encoding="utf-8")
         return self.bash(f"gh issue create --title T --body-file {body_file}", gh)
 
-    def write(self, content: str) -> str | None:
+    def write(self, content: str, gh: Runner | None = None) -> str | None:
         event = {
             "tool_name": "Write",
             "tool_input": {"file_path": str(self.design), "content": content},
             "cwd": str(self.dir),
         }
-        return refusal(event, FakeGh([]))
+        return refusal(event, gh or FakeGh([]))
+
+    def tool(self, name: str, tool_input: dict, gh: Runner) -> str | None:
+        event = {"tool_name": name, "tool_input": tool_input, "cwd": str(self.dir)}
+        return refusal(event, gh)
 
 
 def full(count: int) -> FakeGh:
@@ -108,9 +121,10 @@ class DesignAcceptance(unittest.TestCase):
         project = Project(self, design())
         self.assertIsNotNone(project.write(design("accepte", 0)))
 
-    def test_a_design_in_review_is_not_checked(self) -> None:
+    def test_a_design_in_review_is_held_to_the_ceiling_too(self) -> None:
         project = Project(self, design())
-        self.assertIsNone(project.write(design("en-revue", 40)))
+        self.assertIsNone(project.write(design("en-revue", 12)))
+        self.assertIn("outside 1 to 15", project.write(design("en-revue", 40)) or "")
 
     def test_an_edit_that_accepts_is_checked_on_the_resulting_header(self) -> None:
         project = Project(self, design("en-revue", 16))
@@ -147,7 +161,8 @@ class DesignAcceptance(unittest.TestCase):
 
     def test_an_accepted_design_without_a_budget_may_declare_one(self) -> None:
         project = Project(self, design("accepte"))
-        self.assertIsNone(project.write(design("accepte", 24)))
+        self.assertIsNone(project.write(design("accepte", 12)))
+        self.assertIn("outside 1 to 15", project.write(design("accepte", 24)) or "")
 
     def test_another_file_is_not_checked(self) -> None:
         project = Project(self, design())
@@ -372,6 +387,234 @@ class CommandForms(unittest.TestCase):
         self.assertEqual(placement("Motif : to-tickets\n").kind, "refused")
 
 
+UNREADABLE = "the ticket's body cannot be read"
+
+
+class Bodies(unittest.TestCase):
+    """2026-11-13 findings 1 and 6: a body passed by a variable, a nested shell, a backtick."""
+
+    def test_a_body_passed_by_a_variable_is_refused(self) -> None:
+        project = Project(self, design("accepte", 5))
+        for command in (
+            'gh issue create -t T --body "Motif : to-tickets F-0001\n$REST"',
+            "gh issue create -t T --body Motif\\ :\\ securite$REST",
+            'gh api repos/o/r/issues -f title=T -f body="Motif : securite $REST"',
+            'gh issue create -t T --body-file "$FILE"',
+            'gh issue create -t T --body "$(cat <<EOF\nMotif : securite $X\nEOF\n)"',
+        ):
+            with self.subTest(command=command):
+                self.assertIn(UNREADABLE, project.bash(command, full(0)) or "")
+
+    def test_a_dollar_in_single_quotes_or_escaped_is_literal(self) -> None:
+        project = Project(self, design("accepte", 5))
+        for command in (
+            "gh issue create -t T --body 'Motif : to-tickets F-0001\n\nCosts $5, see $HOME.'",
+            'gh issue create -t T --body "Motif : to-tickets F-0001 costs \\$HOME"',
+            "gh issue create -t T --body \"$(cat <<'EOF'\nMotif : to-tickets F-0001\n$X\nEOF\n)\"",
+        ):
+            with self.subTest(command=command):
+                self.assertIsNone(project.bash(command, full(0)))
+
+    def test_a_ticket_opened_inside_a_nested_shell_is_read(self) -> None:
+        project = Project(self, design("accepte", 1))
+        inner = "gh issue create -t T --body 'Motif : to-tickets F-0001'"
+        for command in (
+            f'bash -c "{inner}"',
+            f'sh -c "{inner}"',
+            f'bash -lc "{inner}"',
+            f'eval "{inner}"',
+            f"env FOO=1 {inner}",
+            f"timeout 30 {inner}",
+            f'echo "$({inner})"',
+            f"bash <<'EOF'\n{inner}\nEOF",
+        ):
+            with self.subTest(command=command):
+                self.assertIn("already has 1 tickets", project.bash(command, full(1)) or "")
+                self.assertIsNone(project.bash(command, full(0)))
+        self.assertIn(
+            UNREADABLE, project.bash('bash -c "gh issue create -t T -b \\"$B\\""', full(0)) or ""
+        )
+        self.assertIn(
+            Reason.MESSAGE, project.bash("sh -c 'gh issue create -t T -b idea'", full(0)) or ""
+        )
+
+    def test_a_backtick_in_a_quoted_inline_body_keeps_it_readable(self) -> None:
+        project = Project(self, design("accepte", 5))
+        body = "Motif : to-tickets F-0001\n\nRun `make check`."
+        self.assertIsNone(project.bash(f"gh issue create -t T --body '{body}'", full(0)))
+        escaped = body.replace("`", "\\`")
+        self.assertIsNone(project.bash(f'gh issue create -t T --body "{escaped}"', full(0)))
+        self.assertIn(
+            UNREADABLE, project.bash(f'gh issue create -t T --body "{body}"', full(0)) or ""
+        )
+
+    def test_a_misspelled_motif_is_refused(self) -> None:
+        project = Project(self, design("accepte", 5))
+        for motif in ("to-ticket F-0001", "totickets F-0001", "fusion-bloque #3"):
+            with self.subTest(motif=motif):
+                reason = project.create(ticket(motif, "F-0001"), full(0))
+                self.assertIn(Reason.MESSAGE, reason or "")
+
+
+class Detours(unittest.TestCase):
+    """2026-11-13 finding 2: another HTTP client, an alias, an edit of the reason, a GitHub MCP tool."""
+
+    def test_another_client_on_the_issues_api_is_refused(self) -> None:
+        project = Project(self, design("accepte", 5))
+        for command in (
+            'curl -X POST https://api.github.com/repos/o/r/issues -d \'{"title":"T"}\'',
+            "wget --post-data x https://api.github.com/graphql",
+            "python3 - <<'EOF'\nurlopen('https://api.github.com/repos/o/r/issues')\nEOF",
+        ):
+            with self.subTest(command=command):
+                self.assertIn("api.github.com", project.bash(command, full(0)) or "")
+        self.assertIsNone(project.bash("curl https://api.github.com/repos/o/r/pulls", full(0)))
+
+    def test_an_alias_or_a_variable_for_gh_is_refused(self) -> None:
+        project = Project(self, design("accepte", 5))
+        for command in (
+            "alias g=gh; g issue create -t T -b x",
+            "alias g='gh issue create'",
+            "G=gh; $G issue create -t T -b x",
+            'g() { gh "$@"; }',
+            "gh $GROUP create -t T -b x",
+        ):
+            with self.subTest(command=command):
+                self.assertIsNotNone(project.bash(command, full(0)))
+        self.assertIsNone(project.bash("alias ll='ls -l'", full(0)))
+
+    def test_an_edit_may_not_change_the_reason_or_the_feature(self) -> None:
+        project = Project(self, design("accepte", 5))
+        old = ticket("to-tickets F-0001", "F-0001")
+        for new in (
+            "No reason any more.\n",
+            ticket("securite", "F-0001"),
+            ticket("to-tickets F-0001", "F-0002"),
+            ticket("to-tickets F-0001", "F-0001") + "Motif : securite\n",
+        ):
+            with self.subTest(new=new):
+                (project.dir / "new.md").write_text(new, encoding="utf-8")
+                reason = project.bash("gh issue edit 7 --body-file new.md", FakeGh([], old))
+                self.assertIn("`Motif :` or `Feature:` lines of ticket #7", reason or "")
+        kept = old + "\nOne more sentence.\n"
+        (project.dir / "new.md").write_text(kept, encoding="utf-8")
+        self.assertIsNone(project.bash("gh issue edit 7 --body-file new.md", FakeGh([], old)))
+        self.assertIsNone(project.bash("gh issue edit 7 --add-label x", FakeGh([], None)))
+        self.assertIn(
+            "cannot be read", project.bash("gh issue edit 7 -F new.md", FakeGh([], None)) or ""
+        )
+        patch = "gh api -X PATCH repos/o/r/issues/7 -f body='No reason.'"
+        self.assertIn("ticket #7", project.bash(patch, FakeGh([], old)) or "")
+        update = 'gh api graphql -f query=\'mutation { updateIssue(input: {id: "I", body: "x"}) { issue { id } } }\''
+        self.assertIn("updateIssue", project.bash(update, FakeGh([], old)) or "")
+
+    def test_the_issue_tools_of_a_github_mcp_server_are_held_too(self) -> None:
+        project = Project(self, design("accepte", 1))
+        create = {"owner": "o", "repo": "r", "title": "T", "body": "idea"}
+        self.assertIn(
+            Reason.MESSAGE, project.tool("mcp__github__create_issue", create, full(0)) or ""
+        )
+        create["body"] = "Motif : to-tickets F-0001"
+        self.assertIsNone(project.tool("mcp__github__create_issue", create, full(0)))
+        self.assertIsNotNone(project.tool("mcp__github__create_issue", create, full(1)))
+        written = {**create, "method": "create"}
+        self.assertIsNotNone(project.tool("mcp__claude_ai_GitHub__issue_write", written, full(1)))
+        old = ticket("to-tickets F-0001")
+        update = {"owner": "o", "repo": "r", "issue_number": 3, "body": "gone"}
+        self.assertIn(
+            "ticket #3", project.tool("mcp__github__update_issue", update, FakeGh([], old)) or ""
+        )
+        self.assertIsNone(project.tool("mcp__github__get_issue", {"issue_number": 3}, full(9)))
+
+
+class CeilingEverywhere(unittest.TestCase):
+    """2026-11-13 finding 3: the ceiling and the published tickets bound every write of the budget."""
+
+    def test_a_budget_below_the_published_tickets_is_refused(self) -> None:
+        project = Project(self, design("accepte", 10))
+        self.assertIn("already has 6 tickets", project.write(design("accepte", 5), full(6)) or "")
+        self.assertIsNone(project.write(design("accepte", 7), full(6)))
+        self.assertIn("cannot be counted", project.write(design("accepte", 7), FakeGh(None)) or "")
+
+    def test_taking_the_acceptance_off_does_not_raise_the_budget(self) -> None:
+        project = Project(self, design("accepte", 10), memory=True)
+        self.assertIsNone(project.write(design("en-revue", 10)))
+        project.design.write_text(design("en-revue", 10), encoding="utf-8")
+        self.assertIn("never rises", project.write(design("en-revue", 14)) or "")
+        self.assertIn("never rises", project.write(design("accepte", 14)) or "")
+        self.assertIsNone(project.write(design("accepte", 9)))
+
+    def test_git_history_keeps_the_accepted_budget(self) -> None:
+        if shutil.which("git") is None:
+            self.skipTest("git absent")
+        project = Project(self, design("accepte", 10))
+
+        def git(*args: str) -> None:
+            subprocess.run(  # noqa: S603 - git with fixed arguments, in a temporary folder
+                ["git", "-c", "user.name=t", "-c", "user.email=t@t", "-C", str(project.dir), *args],
+                check=True,
+                capture_output=True,
+            )
+
+        git("init", "-q")
+        git("add", "-A")
+        git("commit", "-q", "-m", "accepted")
+        project.design.write_text(design("en-revue", 10), encoding="utf-8")
+        self.assertIn("never rises", project.write(design("en-revue", 12)) or "")
+        self.assertIsNone(project.write(design("en-revue", 8)))
+
+    def test_a_shell_write_of_the_budget_is_refused(self) -> None:
+        project = Project(self, design("accepte", 10))
+        command = "sed -i 's/feature-tickets: 10/feature-tickets: 14/' docs/features/0001-runner/design.md"
+        self.assertIn("with Edit or Write", project.bash(command, full(0)) or "")
+        self.assertIsNone(
+            project.bash("grep feature-tickets docs/features/0001-runner/design.md", full(0))
+        )
+
+
+class DefaultFeatureDir(unittest.TestCase):
+    """2026-11-13 finding 4: without the key, the template's `feature-dir` is read."""
+
+    def test_the_template_value_stands_in_for_an_absent_key(self) -> None:
+        project = Project(self, design("accepte", 2), usine="# Usine\n")
+        self.assertIsNone(project.create(ticket("to-tickets F-0001"), full(1)))
+        self.assertIn(
+            "already has 2 tickets", project.create(ticket("to-tickets F-0001"), full(2)) or ""
+        )
+
+
+class Burst(unittest.TestCase):
+    """2026-11-13 finding 5: the tickets let through count while GitHub's index lags."""
+
+    def test_a_burst_stops_at_the_budget_although_the_index_lags(self) -> None:
+        project = Project(self, design("accepte", 2), memory=True)
+        body = ticket("to-tickets F-0001")
+        self.assertIsNone(project.create(body, full(0)))
+        self.assertIsNone(project.create(body, full(0)))
+        self.assertIn("already has 2 tickets", project.create(body, full(0)) or "")
+        self.assertIn("already has 2 tickets", project.create(body, full(2)) or "")
+
+    def test_one_command_that_opens_more_than_the_budget_is_refused_whole(self) -> None:
+        project = Project(self, design("accepte", 2), memory=True)
+        one = "gh issue create -t T -b 'Motif : to-tickets F-0001'"
+        self.assertIsNotNone(project.bash(f"{one}; {one}; {one}", full(0)))
+        self.assertIsNone(project.bash(f"{one}; {one}", full(0)))
+
+    def test_a_second_tracking_ticket_in_a_burst_is_refused(self) -> None:
+        project = Project(self, None, memory=True)
+        self.assertIsNone(project.create(ticket("feature-new F-0004"), FakeGh([])))
+        self.assertIn(
+            "one per feature", project.create(ticket("feature-new F-0004"), FakeGh([])) or ""
+        )
+
+    def test_reservations_expire(self) -> None:
+        project = Project(self, design("accepte", 1), memory=True)
+        body = ticket("to-tickets F-0001")
+        self.assertIsNone(project.create(body, full(0)))
+        with mock.patch("time.time", return_value=__import__("time").time() + 601):
+            self.assertIsNone(project.create(body, full(0)))
+
+
 def skill_text(name: str) -> str:
     return (support.PLUGIN / "skills" / name / "SKILL.md").read_text(encoding="utf-8")
 
@@ -430,6 +673,9 @@ class Binding(unittest.TestCase):
         matcher, hook = found[0]
         for tool in ("Bash", "PowerShell", "Edit", "Write", "MultiEdit"):
             self.assertIn(tool, matcher.split("|"))
+        for tool in ("mcp__github__create_issue", "mcp__claude_ai_GitHub__issue_write"):
+            self.assertRegex(tool, f"^(?:{matcher})$")
+        self.assertNotRegex("mcp__notion__create_page", f"^(?:{matcher})$")
         self.assertIn("${CLAUDE_PLUGIN_ROOT}/hooks/", hook["command"])
         self.assertTrue(hook["command"].endswith("|| exit 2"))
         self.assertEqual(hook.get("onFailure"), "block")

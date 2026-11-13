@@ -313,27 +313,57 @@ le refus. Essayé sur Linux seulement, par les tests ; pas encore sur un vrai po
 ## The ticket budget of a feature
 
 The design of a feature declares `feature-tickets: N` in its header; the ceiling is 15, a constant of
-the plugin and not a key of `usine.md`. `guard_ticket_budget` holds it twice:
+the plugin and not a key of `usine.md`. `guard_ticket_budget` holds it at three moments:
 
-- **At acceptance.** An Edit, Write or MultiEdit that turns a `design.md` to `statut: accepte` is
-  refused without `feature-tickets`, or with a value outside 1 to 15: the `forge:product-owner`
-  re-splits the feature. An accepted design may not raise its budget. A shell command that writes
-  `statut: accepte` into a `design.md` is refused: the acceptance goes through Edit or Write.
-- **At each ticket.** `gh issue create`, a POST by `gh api` on `repos/<owner>/<repo>/issues` and a
-  `createIssue` mutation are read for the body's `Motif : <reason>` line, which every ticket carries
-  with an admitted reason, or it is refused. `to-tickets F-NNNN` counts for that feature, and so
-  does `fusion-bloquee` with its required `Feature: F-NNNN` line. `main-rouge`, `securite` and
-  `demande-<who>` are out of budget, and so is `feature-new F-NNNN`, the tracking ticket that
-  `/forge:feature-new` opens: one per feature, a second one is refused. A ticket opened earlier with
-  a `Feature: F-NNNN` line and no admitted reason still counts. A feature ticket is refused when
-  its design (`<feature-dir>/NNNN-*/design.md`) is missing, not accepted, has no budget or one above
-  15, or when the feature's tickets, open or closed (`gh issue list --state all --search`), fill the
-  budget: the refusal says to add a part to an existing ticket (`Refs #n`). An unreadable body and a
-  count gh cannot make (absent, network, error, timeout) refuse the ticket.
+- **At each write of a design.** An Edit, Write or MultiEdit of a `design.md` is refused when it
+  leaves `feature-tickets` above 15, below 1 once accepted, below the tickets the feature already
+  has, or above a budget the design was once accepted with: taking `statut: accepte` off and back
+  on raises nothing, since the hook reads that budget in the file, in its git history (any ref, the
+  last 30 commits of the file) and in its state file. A design is accepted only with the key, and an
+  accepted design may not remove it. A shell command that writes `statut: accepte` or
+  `feature-tickets` into a `design.md` (`sed -i`...) is refused: these go through Edit or Write.
+- **At each ticket.** `gh issue create`, a POST by `gh api` on `repos/<owner>/<repo>/issues`, a
+  `createIssue` mutation and the issue tools of a GitHub MCP server (`create_issue`, `issue_write`)
+  are read for the body's `Motif : <reason>` line, also inside `sh -c`, `bash -c`, `eval`, a shell fed
+  by a heredoc, a quoted `$(...)` and behind a wrapper (`env`, `timeout`, `xargs`...). Every ticket
+  carries an admitted reason, or it is refused; a misspelled one (`to-ticket`) is no admitted reason.
+  `to-tickets F-NNNN` counts for that feature, and so does `fusion-bloquee` with its required
+  `Feature: F-NNNN` line. `main-rouge`, `securite` and `demande-<who>` are out of budget, and so is
+  `feature-new F-NNNN`, the tracking ticket that `/forge:feature-new` opens: one per feature, a
+  second one is refused. A ticket opened earlier with a `Feature: F-NNNN` line and no admitted reason
+  still counts. A feature ticket is refused when its design (`<feature-dir>/NNNN-*/design.md`) is
+  missing, not accepted, has no budget or one above 15, or when the feature's tickets fill the
+  budget: those GitHub's search finds, open or closed (`gh issue list --state all --search`), plus
+  those the hook let through in the last 10 minutes, which the search index may not show yet. The
+  refusal says to add a part to an existing ticket (`Refs #n`).
+- **At each edit of a ticket.** `gh issue edit`, a PATCH by `gh api` on `repos/<owner>/<repo>/issues/<n>`
+  and the update tools of a GitHub MCP server may not add, remove or change a `Motif :` or `Feature:`
+  line of the body (the hook reads the current body with `gh issue view`). A body set by an
+  `updateIssue` mutation is refused.
 
-Tried on Linux only, by the tests with a simulated gh; not yet in a real session. A ticket created
-seconds before may not be in GitHub's search index yet, so two tickets opened back to back can both
-pass at the last slot.
+The hook refuses what it cannot read: a body passed by a variable (`--body "$BODY"`), a command
+substitution other than `$(cat <<'EOF' ... EOF)`, a heredoc with an unquoted delimiter whose body
+holds `$`, a backtick or a backslash, an editor or a pipe; a count gh cannot make (absent, network,
+error, timeout); an alias of gh, gh called through a variable, and any command that names
+`api.github.com` with issues or GraphQL (`curl`, `wget`, a script), refused as a precaution. Text in
+single quotes, an escaped `\$` or `` \` `` and a quoted heredoc (`<<'EOF'`) are read as written, a
+backtick included. Without the key `feature-dir`, the hook takes the value of the plugin's
+`templates/usine.md` (`docs/features`): an exception to the rule that an absent key takes no default,
+so that a project without the key is not refused every ticket.
+
+The state file is `ticket-budget.json` under `CLAUDE_PLUGIN_DATA`, the plugin's data directory, which
+Claude Code gives to hooks; an older Claude Code without it leaves the hook without memory, and the
+index lag below is then open. The file is locked on Linux and macOS, not on Windows.
+
+Limits, tried on Linux only, by the tests with a simulated gh, not yet in a real session:
+- the memory is per machine: two machines that publish the same feature at the same second can both
+  pass at the last slot, as can a ticket created outside the hook (the GitHub web page, another tool);
+- a ticket the hook let through but that gh failed to create still counts for 10 minutes;
+- a shell fed by a pipe (`... | bash`), a script file run by a shell or an interpreter, and a design
+  renamed into place by `mv` are not read;
+- a GraphQL body variable fed by a JSON `--input` is refused as a precaution, and so is a backtick in
+  a double-quoted body under PowerShell, where it is an escape;
+- `gh issue delete` and `gh issue transfer` are not held: they free a slot of the budget.
 
 ## Compléter ou remplacer, sans éditer le plugin
 

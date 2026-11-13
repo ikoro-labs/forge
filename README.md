@@ -68,7 +68,7 @@ ne fusionne une PR rouge, ou ne sort de son rôle.
 | `guard_git` | pas de commit ni de push sur `main`, pas de `--force`, pas de fusion d'une PR dont un check n'est pas vert ou dont un fichier touche la clé `protected-path`, pas de geste du propriétaire du dépôt (runners, protection, collaborateurs, secrets, visibilité) |
 | `guard_coder` | le coder ne fusionne pas, ne relit pas, ne lance ni `forge:qc` ni la revue de bout en bout, ne ferme pas de ticket, n'écrit que dans son worktree, ne pousse ni avec `-u` ni avec `-f` |
 | `guard_readonly` | les juges et les décideurs lisent, n'écrivent jamais |
-| `guard_ticket_budget` | a design is accepted only with `feature-tickets: N`, N at most 15, and every ticket names an admitted reason (`Motif :`), and a feature never opens more tickets than its budget nor a second tracking ticket ([details](docs/installation.md#the-ticket-budget-of-a-feature)) |
+| `guard_ticket_budget` | a design holds `feature-tickets: N`, N at most 15, never raised once accepted nor below the tickets published; every ticket names an admitted reason (`Motif :`) that no edit changes, and a feature never opens more tickets than its budget nor a second tracking ticket, by gh, a nested shell or a GitHub MCP tool ([details](docs/installation.md#the-ticket-budget-of-a-feature)) |
 | `guard_pause` | tant que `.claude/PAUSED` existe, aucun agent n'est lancé |
 | `after_write` | formate chaque fichier écrit avec les formateurs que le projet déclare (clé `format-on-write`), puis refuse le tiret cadratin au-delà de ce que le projet admet |
 | `trim_output` | la longue sortie d'une commande de tests qui réussit est raccourcie, la sortie complète gardée dans un journal |
