@@ -311,6 +311,71 @@ qui échoue ou dépasse son délai, vaut refus. Sans la clé, le garde ne refuse
 consigne de `forge:qc` reste (s'arrêter avant la fusion) : le garde est le filet, la consigne évite
 le refus. Essayé sur Linux seulement, par les tests ; pas encore sur un vrai poste Windows.
 
+## The infrastructure guard
+
+`guard_infra` runs before every `Bash` and `PowerShell` call. A command it holds is refused to a
+subagent (exit 2: Claude Code sets `agent_id` only within a subagent) and gets
+`permissionDecision: ask` in the main session, where the human answers the prompt. A failure of the
+guard refuses the command (`|| exit 2` and `"onFailure": "block"` in `hooks.json`).
+
+**Held wherever it runs** (a deny list):
+
+- Docker: `rm`, `rmi`, `kill`, `system prune`, `container`, `volume`, `builder`, `buildx`, `image` and
+  `network` `prune`, `volume rm`, `network rm`, and their long forms (`container rm` and `kill`,
+  `image rm`, the `remove` alias), Docker's global options (`-H`, `--context`) skipped;
+  `docker compose down -v` and `--volumes` (also `docker-compose`), while `up` and `down` pass;
+- `systemctl` `restart` (and `try-restart`, `reload-or-restart`...), `stop`, `disable`, `mask`,
+  `kill`, the power verbs (`reboot`, `poweroff`, `halt`, `kexec`, `isolate`...), and the commands
+  `reboot`, `shutdown`, `poweroff` and `halt`;
+- `lxc` `config set`, `config unset`, `delete` (alias `rm`), `stop`, `restart`;
+- `networkctl`, every verb but `status`, `list` and `lldp`; `svc.sh stop` and `svc.sh uninstall`.
+
+**On a host of the `infra-hosts` key**, reached by `ssh`, `scp`, `rsync` or `lxc exec <host> --`,
+every command off the read list is held: it is a list of admission, not a detection of writes. The
+read list: `docker ps`, `logs`, `inspect`, `images`, `stats --no-stream`; `df`; `free`; `uptime`;
+`systemctl status`, `show`, `is-active`; `journalctl` (but `--vacuum-*`, `--rotate`, `--flush`...);
+`pgrep`; `ps`; `true`; `cat` of `/proc` files; `lxc list`, `info`, `config show`;
+`bash /root/infra/runner/provision-local.sh verify` and `infra/runner/host/lxd-container.sh verify`.
+`sh -c '<read> || true'` is a read. An output redirection to anything but `/dev/null`, an
+interactive `ssh`, and any `scp` or `rsync` to or from such a host are not. A destination is matched
+through `ssh -G` (aliases, `-o HostName=`, `-J`, `ProxyJump`) and the addresses it resolves to; an
+instance by its name. A destination the guard cannot read is held: a variable, a `-F` config, an
+`ssh -G` that fails, a resolver that does not answer in time, a jump chain too deep. Without the key
+no remote host is held, and the deny list still applies to the command `ssh` runs elsewhere.
+
+**Looked through**: the prefixes `sudo`, `env VAR=...`, `heavy-slot [opts] --`,
+`systemd-run [opts] --`, `timeout N`, `nice`, `nohup`, `exec`, `command`, `time` and `xargs`; `sh -c`,
+`bash -c`, `eval` and a heredoc fed to a shell; `;`, `&&`, `||`, `|` and a newline; `$(...)`,
+backticks (not under PowerShell, where a backtick escapes) and `<(...)`. A part the guard cannot
+read is held: unbalanced quotes, an unclosed substitution, a program or a verb named by a variable
+(`docker $VERB`), a shell reading a pipe (`... | bash`), `env -S`, an option `heavy-slot` does not
+take.
+
+**Out of reach, on purpose**: the hook sees the typed command only. A script that cleans its own
+resources (`bash infra/e2e-stack.sh`) and testcontainers run what they run. A command that contains
+none of the guarded words (`docker`, `systemctl`, `lxc`, `networkctl`, `svc.sh`, `ssh`, `scp`,
+`rsync`, `reboot`, `shutdown`, `poweroff`, `halt`) is not parsed at all, so `$CMD rm web` passes;
+nor are `find -exec`, `watch` or a PowerShell `-Command` string. This guards against an accident,
+not against intent.
+
+**The human's gesture**: answer the permission prompt, or type the command in the prompt with
+`! <command>`. It is not documented that `!` escapes the hooks: the page
+[Interactive mode](https://code.claude.com/docs/en/interactive-mode), section "Shell mode with `!`
+prefix", only says the command runs "without going through Claude".
+
+**Final by construction**: `guard_git` refuses to every agent the merge of a PR whose diff touches
+`plugins/forge/hooks/guard_infra.py` (which holds the read list) or `tests/test_guard_infra.py`:
+"this PR changes the infra guard: only the owner merges it, by hand". It reads the files by
+`gh pr view <n> -R <repo> --json files`, and a reading that fails refuses too. A REST merge by
+`gh api` is judged on the same files; a GraphQL merge mutation is refused, since it names the PR by
+a node id the guard does not look up. The tests of this refusal live in `tests/test_guard_infra.py`:
+removing it from `guard_git` turns them red, and changing them is itself such a PR. The owner
+merges it in GitHub's web interface (a `! gh pr merge` may still meet `guard_git`, see above).
+
+Tried under Linux only: by the tests, and by hand against the real `ssh -G` and resolver of one
+workstation (an alias, an address, a `-J` jump). Not yet in a real Claude Code session, nor under
+Windows or PowerShell.
+
 ## Compléter ou remplacer, sans éditer le plugin
 
 - **Un complément** est un fichier du projet : ses skills de domaine, son arbitre du métier, ses

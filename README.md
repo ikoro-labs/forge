@@ -66,12 +66,27 @@ ne fusionne une PR rouge, ou ne sort de son rôle.
 | Hook | Ce qu'il garde |
 | --- | --- |
 | `guard_git` | pas de commit ni de push sur `main`, pas de `--force`, pas de fusion d'une PR dont un check n'est pas vert ou dont un fichier touche la clé `protected-path`, pas de geste du propriétaire du dépôt (runners, protection, collaborateurs, secrets, visibilité) |
+| `guard_infra` | the infrastructure gestures (`docker rm`, `systemctl restart`, `lxc delete`..., and anything off the read list on a host of the `infra-hosts` key): refused to a subagent, asked in the main session; see [The infrastructure guard](#the-infrastructure-guard) |
 | `guard_coder` | le coder ne fusionne pas, ne relit pas, ne lance ni `forge:qc` ni la revue de bout en bout, ne ferme pas de ticket, n'écrit que dans son worktree, ne pousse ni avec `-u` ni avec `-f` |
 | `guard_readonly` | les juges et les décideurs lisent, n'écrivent jamais |
 | `guard_pause` | tant que `.claude/PAUSED` existe, aucun agent n'est lancé |
 | `after_write` | formate chaque fichier écrit avec les formateurs que le projet déclare (clé `format-on-write`), puis refuse le tiret cadratin au-delà de ce que le projet admet |
 | `trim_output` | la longue sortie d'une commande de tests qui réussit est raccourcie, la sortie complète gardée dans un journal |
 | `sessions_notice`, `handoff_*` | une seule session par dépôt, et la passation à une nouvelle session quand le contexte est plein |
+
+## The infrastructure guard
+
+`guard_infra` holds the commands that change the infrastructure: Docker deletions and prunes,
+`docker compose down -v`, `systemctl restart`, `stop`, `disable`, `mask` and `kill`, `lxc config
+set`, `delete`, `stop` and `restart`, `networkctl` (but `status`, `list`, `lldp`), a runner's `svc.sh
+stop` and `uninstall`. On a host of the project's `infra-hosts` key, reached by `ssh`, `scp`, `rsync`
+or `lxc exec`, everything off a short read list is held (`docker ps`, `df`, `systemctl status`,
+`journalctl`...). Wrappers (`sudo`, `env`, `timeout`...) and `sh -c`, `$(...)`, `;`, `&&`, `|` are
+looked through; what the guard cannot read is held. A subagent is refused; the main session asks
+the human, who answers the prompt or types the command himself with `! <command>`. A PR of forge
+that changes the guard or its tests is merged by the owner only, in GitHub's web interface. What
+passes, what is out of reach and what was tried:
+[`docs/installation.md`](docs/installation.md#the-infrastructure-guard).
 
 ## Prérequis
 
