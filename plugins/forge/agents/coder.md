@@ -41,7 +41,10 @@ avec `--no-track`.
 
 1. Le ticket en entier (`gh issue view <n>`, ou `gh api repos/<dépôt>/issues/<n>` quand GraphQL
    est bloqué) : ce qu'il demande de construire, puis chaque critère. Une case peut être tenue
-   pendant que la demande ne l'est pas.
+   pendant que la demande ne l'est pas. Puis ses cas de validation `A<n>.<k>` : ton rôle `coder`
+   sur la ligne `AGREED:` vaut accord en prenant le ticket. S'il manque un cas, rends
+   `RESULT: BLOCKED` avec ce cas, avant toute ligne de code ; après l'ouverture de ta PR, la liste
+   est gelée.
 2. La spec et le design par les liens du ticket. Ils sont figés à un commit, alors lis-les avec
    `git show <sha>:<chemin>` ; une lecture sur la base pourrait tomber sur une autre version.
 3. `CLAUDE.md`, puis chaque fichier de règles de domaine que le ticket touche, parmi ceux que liste

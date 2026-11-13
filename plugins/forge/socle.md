@@ -6,9 +6,13 @@ rules (see Local rules) and does not repeat these.
 
 ## How a finding rejects
 
-- A `[BLOCKER]` cites, in its rule field, a rule id `F-n` or `L-n`, a ticket criterion `A<n>`, or
-  an acceptance test `tests/<path>::<name>`. A finding that cites none of them is a `NOTE` and
-  never rejects; it can become a PR that adds a rule, valid for the PRs that follow.
+- A `[BLOCKER]` cites, in its rule field, a case `A<n>.<k>` of the ticket's frozen list (see
+  Validation cases), a rule id `F-n` or `L-n`, or `regression <test>`, a test green on the base and
+  red on the head. A finding that cites none of them is a `NOTE` and never rejects; a missing case
+  becomes a `PROPOSAL:` line for the next tickets, a missing rule a PR that adds it.
+- A security `[BLOCKER]` cites a frozen case or a security rule, and a rule with its proof: a test
+  or a command reproduced. The security rules are the `security` rows below, closed; a repository
+  adds its own with the key `security-rules` (`L-n` ids of its local rules).
 - A breach, in the diff, of a `security`, `code`, `test` or `architecture` rule is a `BLOCKER`.
   A breach of a `prose` rule, F-18 and F-19 included wherever the text sits, is a `MINOR` and does
   not reject.
@@ -46,6 +50,30 @@ Proof: the mechanism that enforces the rule, or `reading` when only a reviewer c
 | F-21 | prose | No third party used as a model, competitor or namesake is named, nor its people, repositories or identifiers: write "anonymous". Tools the project uses are named. | reading |
 | F-22 | prose | Branch `<type>/<slug>` (`feat`, `fix`, `docs`, `test`, `chore`; slug in lowercase English with hyphens); PR title and commit subject `<type>(<scope>): <what changes>`, never "wip"; a commit body says why and ends with `Refs #n` or `Closes #n`, then the `Co-Authored-By` line. | reading of `git log` and the PR title |
 | F-23 | prose | The PR body follows `templates/pr.md` and cites its ticket: `Closes #n`, or `Refs #n` with the points it delivers. | key `trace-check`; reading |
+
+## Validation cases
+
+Each ticket of a feature lists, in its body, the closed set of cases the review judges it on, one
+line each, `A<n>.<k> | <input> | <expected result>`, and one line `AGREED: <roles>`.
+
+- **Round 0**, before any code: the ticket cutting writes the cases; the test author, then
+  `forge:qc-conf` (the body and the files it names, once, no diff, no replay) and each reviewer of
+  the key `validation-reviewer` whose paths the ticket names read them once and add cases. The
+  coder agrees when it takes the ticket. Round 0 is not a REJECT; its tokens count in the ticket's
+  `ticket-budget`. Cost: one call per reader, not measured yet.
+- **Freeze**: the last edit of the body comes before the PR opens. A list found wrong later is
+  corrected in a next part of the ticket (a new PR `Refs #n`, opened after the edit), or by a login
+  of the key `validation-owner`.
+- **Transition**: on a ticket created before the date of the key `validation-cases`, a criterion
+  `A<n>` is the case `A<n>.1`.
+- **Held by `guard_cases`**: `gh pr create` needs the cases and a full `AGREED:` line (`test-author`,
+  `coder`, `qc-conf`, each reviewer whose paths the diff touches); a verdict is refused when a
+  blocker cites nothing above, a missing case or rule, a security rule without proof, or when a
+  ticket body was edited after the PR opened by a login outside `validation-owner`.
+- **Not held by a hook**: that a role read the list before its name went on `AGREED:`; that a case
+  is the right one; that a `regression` test is green on the base and red on the head (`qc-gate`
+  replays it); that a finding is about security when it cites no security rule; that the editor
+  login is the owner and not an agent sharing the owner's account.
 
 ## Local rules
 

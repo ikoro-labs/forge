@@ -1,5 +1,5 @@
 {
-  "description": "Forge factory guards: git and GitHub safety, the coder's role, the judges' read-only rule, the pause switch, the em dash check after a write, the trimmed output of a named command that passes, the drained session handoff at the context limit, and, at the start of a session, the other live sessions of its repository.",
+  "description": "Forge factory guards: git and GitHub safety, the coder's role, the judges' read-only rule, the agreed and frozen validation cases of a ticket, the pause switch, the em dash check after a write, the trimmed output of a named command that passes, the drained session handoff at the context limit, and, at the start of a session, the other live sessions of its repository.",
   "hooks": {
     "SessionStart": [
       {
@@ -39,6 +39,16 @@
           {
             "type": "command",
             "command": "uv run --no-project --quiet python \"${CLAUDE_PLUGIN_ROOT}/hooks/guard_readonly.py\" || exit 2"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run --no-project --quiet python \"${CLAUDE_PLUGIN_ROOT}/hooks/guard_cases.py\" || exit 2",
+            "timeout": 60
           }
         ]
       },

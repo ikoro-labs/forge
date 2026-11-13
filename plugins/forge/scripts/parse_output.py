@@ -34,12 +34,14 @@ RESULT_KEYS = {
     "FAILED": ("TICKET", "COMMAND", "OUTPUT", "STATE"),
 }
 VERDICT_KEYS = ("VERDICT", "ROUND", "HEAD", "SPEC", "FINDINGS", "GATES")
-VERDICT_OPTIONAL = ("SOCLE", "GRANTED", "BATTERY CORRECTION")
+VERDICT_OPTIONAL = ("SOCLE", "GRANTED", "BATTERY CORRECTION", "PROPOSAL")
 # Three rounds at most (shipyard#193); a later round names the human's grant by its https link.
 MAX_ROUNDS = 3
 ROUND = re.compile(r"^[1-9]\d*$")
 GRANT = re.compile(r"^https://\S+$")
-REPEATED = frozenset({"SPEC"})
+# A case proposed for the next tickets: `<input> | <expected result>`; it never blocks.
+PROPOSAL = re.compile(r"^[^|]*\S[^|]*\|.*\S.*$")
+REPEATED = frozenset({"SPEC", "PROPOSAL"})
 # The domain arbiter's answer: the keys each `ANSWER:` takes after `QUESTION:`.
 DOMAIN_KEYS = {
     "DECIDED": ("DECISION", "SOURCE"),
@@ -149,6 +151,10 @@ def parse_verdict(text: str) -> dict[str, object]:
         if match is None:
             raise OutputError(f"finding `{line}`: it must read `- [BLOCKER|MINOR|NOTE] ...`")
         findings.append({"severity": match.group(1), "text": match.group(2)})
+    proposals = fields.get("PROPOSAL", [])
+    for proposal in proposals:
+        if not PROPOSAL.match(proposal):
+            raise OutputError(f"`PROPOSAL: {proposal}`: it reads `<input> | <expected result>`")
     blockers = sum(finding["severity"] == "BLOCKER" for finding in findings)
     if verdict == "REJECT" and not blockers:
         raise OutputError("`VERDICT: REJECT` with no `[BLOCKER]` finding: only a blocker rejects")
@@ -164,6 +170,7 @@ def parse_verdict(text: str) -> dict[str, object]:
         "SOCLE": fields.get("SOCLE", [""])[0],
         "GRANTED": grant,
         "BATTERY CORRECTION": fields.get("BATTERY CORRECTION", [""])[0],
+        "PROPOSAL": proposals,
     }
 
 

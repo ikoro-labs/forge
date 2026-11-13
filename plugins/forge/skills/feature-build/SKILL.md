@@ -136,9 +136,27 @@ Alors :
 
 1. `gh issue edit <n> --add-assignee @me --add-label agent-claimed` : le ticket est pris, et
    l'étiquette, qu'un humain ne pose jamais, dit que c'est par un passage et non par un humain.
-2. Lance l'agent `forge:coder` (outil Agent, `subagent_type: "forge:coder"`,
+2. **Tour 0, sans code**, quand la clé `validation-cases` est déclarée et que le ticket a été créé
+   depuis sa date (`socle.md`, Validation cases). Le corps du ticket porte ses cas
+   `A<n>.<k> | <entrée> | <résultat attendu>`. Lance une fois, au premier plan, chacun avec le seul
+   ticket : l'auteur des tests d'acceptation du projet, puis `forge:qc-conf` en mode tour 0, puis
+   chaque relecteur de la clé `validation-reviewer` dont le ticket nomme un chemin du périmètre.
+   Chacun rend les cas qu'il ajoute, ou `aucun`. Ajoute-les au corps (`gh issue edit <n>
+   --body-file`), puis écris la ligne `AGREED:` avec leurs rôles (`test-author`, `qc-conf`, le nom
+   de chaque relecteur) et `coder` : le coder signe en prenant le ticket, et c'est toi qui l'écris,
+   car `guard_coder` lui refuse `gh issue edit`. Après cette écriture, le corps ne change plus :
+   `guard_cases` refuse `gh pr create` sans cas ni `AGREED:` complet, et refuse un verdict quand le
+   corps a changé après l'ouverture de la PR. Une liste fausse se corrige par une partie suivante
+   du ticket (`Refs #n`), ouverte après la correction, ou par le login de la clé
+   `validation-owner`. Le tour 0 ne compte pas comme un REJECT. Ses jetons comptent dans le budget
+   du ticket (clé `ticket-budget`, rôles `tour-0-<agent>`), comme ceux de la PR : forge n'a pas de
+   clé de budget par PR. Coût : un appel par lecteur, sur le seul ticket et les fichiers qu'il
+   nomme, sans diff ni rejeu ; il n'est pas encore mesuré.
+3. Lance l'agent `forge:coder` (outil Agent, `subagent_type: "forge:coder"`,
    `isolation: worktree`, `run_in_background: true`) avec : le ticket, la feature, la base, et pour
-   une seconde partie les points de la première. Tous partent du même `origin/<base>`.
+   une seconde partie les points de la première. Tous partent du même `origin/<base>`. Le coder
+   lit d'abord les cas du ticket : s'il en manque un, il rend `RESULT: BLOCKED` avec ce cas, que
+   tu ajoutes au corps avant de le relancer, jamais après l'ouverture de sa PR.
 
 Puis passe à l'étape 3 si la file de revue n'est pas vide ; sinon attends la notification d'un
 coder. N'invente jamais la sortie d'un coder qui n'a pas rendu.
