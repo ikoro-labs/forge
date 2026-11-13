@@ -311,6 +311,29 @@ qui échoue ou dépasse son délai, vaut refus. Sans la clé, le garde ne refuse
 consigne de `forge:qc` reste (s'arrêter avant la fusion) : le garde est le filet, la consigne évite
 le refus. Essayé sur Linux seulement, par les tests ; pas encore sur un vrai poste Windows.
 
+## The ticket budget of a feature
+
+The design of a feature declares `ticket-budget: N` in its header; the ceiling is 15, a constant of
+the plugin and not a key of `usine.md`. `guard_ticket_budget` holds it twice:
+
+- **At acceptance.** An Edit, Write or MultiEdit that turns a `design.md` to `statut: accepte` is
+  refused without `ticket-budget`, or with a value outside 1 to 15: the `forge:product-owner`
+  re-splits the feature. An accepted design may not raise its budget. A shell command that writes
+  `statut: accepte` into a `design.md` is refused: the acceptance goes through Edit or Write.
+- **At each ticket.** `gh issue create`, a POST by `gh api` on `repos/<owner>/<repo>/issues` and a
+  `createIssue` mutation are read for the body's `Motif : <case>` line. `to-tickets F-NNNN` counts
+  for that feature, and so does `fusion-bloquee` with its required `Feature: F-NNNN` line (or any
+  other ticket carrying that line). `main-rouge`, `securite` and `demande-<who>` are out of budget;
+  a ticket with neither line (the tracking issue) is not concerned. A feature ticket is refused when
+  its design (`<feature-dir>/NNNN-*/design.md`) is missing, not accepted, has no budget or one above
+  15, or when the feature's tickets, open or closed (`gh issue list --state all --search`), fill the
+  budget: the refusal says to add a part to an existing ticket (`Refs #n`). An unreadable body and a
+  count gh cannot make (absent, network, error, timeout) refuse the ticket.
+
+Tried on Linux only, by the tests with a simulated gh; not yet in a real session. A ticket created
+seconds before may not be in GitHub's search index yet, so two tickets opened back to back can both
+pass at the last slot.
+
 ## Compléter ou remplacer, sans éditer le plugin
 
 - **Un complément** est un fichier du projet : ses skills de domaine, son arbitre du métier, ses
