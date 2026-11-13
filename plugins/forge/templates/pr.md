@@ -1,4 +1,4 @@
-<!-- template: pr | max-lines: 40, this comment excluded | rules: socle.md -->
+<!-- template: pr | max-lines: 40, this comment excluded | required: Summary, Door, Blast radius, Proofs | rules: socle.md -->
 ## Summary
 
 <!-- What the PR changes and why, in three lines at least. Cite the ticket: `Closes #n`, or

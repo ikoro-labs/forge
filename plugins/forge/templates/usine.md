@@ -491,3 +491,28 @@ formaté.
 
 - `format-on-write` : `<**/*.py | uv run ruff format>`
 - `format-on-write` : `<apps/web/**/*.{ts,tsx} | pnpm --dir apps/web exec prettier --write>`
+
+### Output structure
+
+The hook `guard_output` checks every output against its template under `templates/`: a subagent's
+final text, the body of a gh ticket, pull request or comment, and the session's reply to the human.
+These keys are the exception to the rule above: an absent key keeps the cap written here, so the
+check holds in every project. Tables, code blocks and HTML comments do not count; `0` lifts a cap.
+
+- `output-words-ticket` : `150`
+- `output-words-comment` : `150`
+- `output-words-pr` : `200`
+- `output-words-session-reply` : `150`
+- `output-words-subagent-return` : `200`
+- `output-words-paragraph` : `60`
+
+A project template replaces the plugin's for the required fields of one kind (`ticket`, `pr`,
+`comment`, `verdict`, `session-reply`, `subagent-return`): the `required:` part of its first line
+names them, or none.
+
+- `output-template` : `<pr | .github/pull_request_template.md>`
+
+A project agent checked against a declared format rather than the generic rule: `coder`, `verdict`,
+`decider` (keys `VERDICT:` and `DECISION:`), `gate` (a table), `subagent-return`, or `exempt`.
+
+- `output-agent-format` : `<security-reviewer | exempt>`
