@@ -19,7 +19,7 @@ il ne lit que `docs/agents/usine.md` en configuration.
 | SLI | Définition |
 | --- | --- |
 | `accept-round-1` | part des PR dont le premier verdict (`ROUND: 1`, posté dans la fenêtre) est `ACCEPT` |
-| `rework-rate` | part des tickets cités par les PR ouvertes dans la fenêtre qui finissent en `agent-rework` |
+| `rework-rate` | part des PR fusionnées dans la fenêtre qui ont reçu au moins un `VERDICT: REJECT` |
 | `escaped-defects` | tickets `escaped-defect` ouverts dans la fenêtre, rapportés aux PR fusionnées |
 | `lead-time` | médiane et p90 du délai entre la première pose de `ready-for-agent` sur le ticket et la fusion de la PR qui le ferme (`Closes`, pas `Refs`) |
 | `release-lag` | médiane et p90 du délai entre une fusion et le premier tag de version qui contient son commit |
