@@ -273,14 +273,14 @@ class Contents(unittest.TestCase):
             with self.subTest(text=text):
                 self.assertIn(text, skill)
 
-    def test_the_gaps_of_the_review_enter_the_passage_as_tickets_the_loop_publishes(self) -> None:
-        """No F-NNNN: ticket #101, les tickets d'écart entrent dans le passage puis la revue rejoue le parcours."""
+    def test_the_gaps_of_the_review_go_back_as_comments_on_existing_tickets(self) -> None:
+        """The gaps of a review are comments on existing tickets (2026-11-13), then the review replays the journey."""
         build = read("skills", "feature-build", "SKILL.md")
-        for text in ["sans accord de l'humain", "`ready-for-agent`", "sous-issues de l'issue de suivi", "rejoue le parcours"]:
+        for text in ["sans accord de l'humain", "`ready-for-agent`", "A review opens no ticket", "rejoue le parcours"]:
             with self.subTest(text=text):
                 self.assertIn(text, build)
         review = read("skills", "feature-review", "SKILL.md")
-        self.assertIn("publie lui-même, sans accord de l'humain", review)
+        self.assertIn("posts them itself, without the human's agreement", review)
         self.assertNotIn("tant que la boucle de la revue", review)
 
     def test_the_recette_waits_for_the_gate_and_the_closure_for_the_whole_matrix(self) -> None:

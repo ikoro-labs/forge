@@ -23,15 +23,13 @@ class Etiquettes(unittest.TestCase):
         self.assertIn("la boucle s'arrête", page)
         self.assertIn("avant de publier", page)
 
-    def test_the_skills_check_the_labels_before_publishing_a_gap_ticket(self) -> None:
-        """No F-NNNN: ticket #102 A7 : la revue et la boucle vérifient les trois étiquettes avant de publier, et s'arrêtent en le disant."""
+    def test_the_skills_comment_gaps_instead_of_publishing_gap_tickets(self) -> None:
+        """A review opens no ticket (decision of 2026-11-13): its gaps are comments on existing tickets."""
         for skill in ("feature-review", "feature-build"):
             text = squash(support.PLUGIN / "skills" / skill / "SKILL.md")
-            self.assertIn("gh label list", text, skill)
-            for name in ("bloquant", "majeur", "mineur"):
-                self.assertIn(name, text, skill)
-            self.assertIn("ne les crée pas", text, skill)
-            self.assertIn("docs/installation.md", text, skill)
+            self.assertIn("A review opens no ticket", text, skill)
+            self.assertIn("Motif : fusion-bloquee #<pr>", text, skill)
+            self.assertNotIn("gh label list", text, skill)
 
     def test_the_readme_points_to_the_page(self) -> None:
         """No F-NNNN: ticket #102 A7 : le README renvoie à la page qui décrit les étiquettes."""

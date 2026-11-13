@@ -55,6 +55,8 @@ Applique `${CLAUDE_PLUGIN_ROOT}/templates/features/protocole.md`, document `desi
 
    **The budget.** The `forge:product-owner` cuts the feature into at most 15 tickets, the
    `feature-tickets` of the design header; `guard_ticket_budget` refuses the ticket beyond it.
+   Each published ticket (`gh issue create`) carries the line `Motif : to-tickets F-NNNN`; once the
+   list is published, it is closed.
 
    **La matrice.** Chaque ticket cite les identifiants de la source qu'il couvre (une ligne
    `Couvre : <identifiants>` dans son corps). Quand `matrice.md` existe dans le dossier de la

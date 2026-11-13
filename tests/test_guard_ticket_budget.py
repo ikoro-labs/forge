@@ -372,6 +372,51 @@ class CommandForms(unittest.TestCase):
         self.assertEqual(placement("Motif : to-tickets\n").kind, "refused")
 
 
+def skill_text(name: str) -> str:
+    return (support.PLUGIN / "skills" / name / "SKILL.md").read_text(encoding="utf-8")
+
+
+class SkillTickets(unittest.TestCase):
+    """The tickets the skills describe pass the hook, and every `gh issue create` names a Motif."""
+
+    def test_the_tickets_of_the_feature_design_skill_pass(self) -> None:
+        found = re.search(r"`(Motif : to-tickets F-NNNN)`", skill_text("feature-design"))
+        self.assertIsNotNone(found)
+        line = (found.group(1) if found else "").replace("F-NNNN", "F-0001")
+        body = f"{line}\n\nWhat is missing.\n\n## Criteria\n\n- A1: a test proves it\n"
+        project = Project(self, design("accepte", 5))
+        self.assertIsNone(project.create(body, full(4)))
+        self.assertIsNotNone(project.create(body, full(5)))
+
+    def test_the_merge_blocking_ticket_of_the_review_skills_passes(self) -> None:
+        for name in ("feature-build", "feature-review"):
+            with self.subTest(skill=name):
+                text = skill_text(name)
+                motif = re.search(r"`(Motif : fusion-bloquee #<pr>)`", text)
+                feature = re.search(r"`(Feature: F-NNNN)`", text)
+                self.assertIsNotNone(motif)
+                self.assertIsNotNone(feature)
+                lines = [
+                    (motif.group(1) if motif else "").replace("#<pr>", "#12"),
+                    (feature.group(1) if feature else "").replace("F-NNNN", "F-0001"),
+                ]
+                body = f"{lines[0]}\n\nThe merge of #12 is blocked.\n\n{lines[1]}\n"
+                project = Project(self, design("accepte", 5))
+                self.assertIsNone(project.create(body, full(2)))
+
+    def test_no_skill_or_agent_creates_a_ticket_without_a_motif(self) -> None:
+        checked = 0
+        for folder in ("skills", "agents"):
+            for path in sorted((support.PLUGIN / folder).rglob("*.md")):
+                text = path.read_text(encoding="utf-8")
+                for paragraph in re.split(r"\n\s*\n", text):
+                    if "gh issue create" in paragraph or "createIssue" in paragraph:
+                        checked += 1
+                        with self.subTest(path=str(path.relative_to(support.PLUGIN))):
+                            self.assertRegex(paragraph, r"`Motif : [a-z-]+")
+        self.assertGreaterEqual(checked, 4)
+
+
 class Binding(unittest.TestCase):
     def test_hooks_json_binds_the_guard_and_fails_closed(self) -> None:
         hooks = json.loads((support.PLUGIN / "hooks" / "hooks.json").read_text(encoding="utf-8"))
