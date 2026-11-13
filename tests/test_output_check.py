@@ -336,5 +336,32 @@ class CommandLine(unittest.TestCase):
         self.assertEqual(self.run_main(["letter"], "x")[0], 2)
 
 
+class StaffDecisionOfTheThirteenth(unittest.TestCase):
+    """The 60-word cap holds in verdicts too; a span between backticks counts as one word."""
+
+    def test_a_span_between_backticks_counts_as_one_word(self) -> None:
+        spans = " ".join(["`git merge-tree --write-tree origin/main abc1234`"] * 15)
+        paragraph = f"{words(45)} {spans}"
+        self.assertEqual(deviations(paragraph, "comment"), [])
+        found = deviations(f"{words(46)} {spans}", "comment")
+        self.assertTrue(any("a paragraph of 61 words" in d for d in found), found)
+
+    def test_a_verdict_with_spec_and_gates_sub_lines_conforms(self) -> None:
+        verdict = (
+            "VERDICT: ACCEPT\nROUND: 1\nHEAD: abcdef1\nSPEC:\n"
+            "  - #12: 1 criteria covered, 0 partial, 0 missing\nFINDINGS:\n- none\nGATES:\n"
+            f"  - CI: {words(50)}\n  - merge-tree: `git merge-tree --write-tree origin/main x` clean\n"
+        )
+        self.assertEqual(deviations(verdict, "verdict"), [])
+
+    def test_a_gates_sub_line_over_the_cap_is_refused(self) -> None:
+        verdict = (
+            "VERDICT: ACCEPT\nROUND: 1\nHEAD: abcdef1\nSPEC:\n  - #12: 1 covered\n"
+            f"FINDINGS:\n- none\nGATES:\n  - CI: {words(60)}\n"
+        )
+        found = deviations(verdict, "verdict")
+        self.assertTrue(any("a paragraph of 61 words" in d for d in found), found)
+
+
 if __name__ == "__main__":
     unittest.main()

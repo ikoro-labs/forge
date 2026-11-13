@@ -11,7 +11,7 @@ events; a skill can run this command on a body before it posts it.
 The rules, the same for every kind that has them:
 
 - a word cap per kind (keys `output-words-<kind>` of `docs/agents/usine.md`, `0` for none); tables,
-  code blocks and HTML comments do not count;
+  code blocks and HTML comments do not count, and a span between backticks counts as one word;
 - no prose paragraph over `output-words-paragraph` words; a list item is a paragraph of its own;
 - each field the template names in the `required:` part of its header line, present and not empty.
   A project replaces a template with the key `output-template` (`<kind> | <path>`).
@@ -91,6 +91,8 @@ LIST_ITEM = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+")
 HEADING = re.compile(r"^\s*#{1,6}\s")
 MARKUP = re.compile(r"^[\s#>*_|`-]*")
 WORD = re.compile(r"\S+")
+# A span between backticks (a `path:line`, a command, a test id, a quotation) counts as one word.
+CODE_SPAN = re.compile(r"`[^`\n]+`")
 KEY_LINE = re.compile(r"^\s*[A-Z][A-Z_ ]*[A-Z]:")
 # The kinds made of `KEY:` lines, which an agent often wraps in a code fence as its role shows it.
 KEYED = frozenset({"verdict", "coder", "decider"})
@@ -337,6 +339,11 @@ def _list_runs(prose: list[str]) -> list[int]:
     return runs
 
 
+def count_words(text: str) -> int:
+    """The words of `text`, each span between backticks counted as one."""
+    return len(WORD.findall(CODE_SPAN.sub("`span`", text)))
+
+
 def _quote(paragraph: str) -> str:
     words = paragraph.split()
     return " ".join(words[:6]) + (" ..." if len(words) > 6 else "")
@@ -374,7 +381,7 @@ def deviations(
             for run in _list_runs(prose) if run > 2
         ]
     cap = word_cap(kind, config)
-    words = sum(len(WORD.findall(line)) for line in prose)
+    words = sum(count_words(line) for line in prose)
     if cap is not None and words > cap:
         cap_name = KINDS[kind].words
         found.append(
@@ -384,7 +391,7 @@ def deviations(
     if KINDS[kind].paragraphs:
         most = _integer(config, PARAGRAPH_KEY, DEFAULT_PARAGRAPH_WORDS)
         for paragraph in _paragraphs(prose):
-            count = len(paragraph.split())
+            count = count_words(paragraph)
             if most and count > most:
                 found.append(
                     f"a paragraph of {count} words, at most {most}: \"{_quote(paragraph)}\";"

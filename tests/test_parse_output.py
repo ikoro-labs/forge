@@ -195,5 +195,37 @@ class Cli(unittest.TestCase):
         self.assertEqual(self.run_cli(["other", "-"], "")[0], 2)
 
 
+class VerdictSubLines(unittest.TestCase):
+    """`SPEC:` and `GATES:` left empty on their line, one sub-line per ticket or measure."""
+
+    TEXT = """VERDICT: ACCEPT
+ROUND: 1
+HEAD: abcdef1
+SPEC:
+  - #12: 1 criteria covered, 0 partial, 0 missing
+  - #13: 2 criteria covered, 0 partial, 0 missing
+FINDINGS:
+- none
+GATES:
+  - CI: 9 check-runs, 7 success, 2 skipped
+  - merge-tree: clean
+"""
+
+    def test_each_spec_sub_line_is_a_ticket(self) -> None:
+        verdict = parse_verdict(self.TEXT)
+        self.assertEqual(
+            verdict["SPEC"],
+            ["#12: 1 criteria covered, 0 partial, 0 missing", "#13: 2 criteria covered, 0 partial, 0 missing"],
+        )
+
+    def test_the_gates_sub_lines_are_joined(self) -> None:
+        gates = cast(str, parse_verdict(self.TEXT)["GATES"])
+        self.assertEqual(gates.splitlines(), ["- CI: 9 check-runs, 7 success, 2 skipped", "- merge-tree: clean"])
+
+    def test_a_spec_sub_line_still_names_its_ticket(self) -> None:
+        with self.assertRaises(OutputError):
+            parse_verdict(self.TEXT.replace("  - #13:", "  - ticket 13:"))
+
+
 if __name__ == "__main__":
     unittest.main()

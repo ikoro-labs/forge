@@ -100,6 +100,22 @@ def parse_result(text: str) -> dict[str, str]:
     return {"RESULT": kind, **{key: fields[key][0] for key in expected}}
 
 
+def _sub_lines(values: list[str]) -> list[str]:
+    """Each value of a repeated key, a value left empty and cut into `- <item>` lines giving one each.
+
+    `SPEC:` reads one line per ticket, or an empty key followed by one `  - #<ticket>: ...` line per
+    ticket, so that no line runs past the paragraph cap.
+    """
+    items: list[str] = []
+    for value in values:
+        lines = [line.strip() for line in value.splitlines() if line.strip()]
+        if lines and all(line.startswith("- ") for line in lines):
+            items.extend(line[2:].strip() for line in lines)
+        else:
+            items.append(value)
+    return items
+
+
 def parse_verdict(text: str) -> dict[str, object]:
     fields = _fields(text, "VERDICT", {*VERDICT_KEYS, *VERDICT_OPTIONAL})
     for key in VERDICT_KEYS:
@@ -112,7 +128,7 @@ def parse_verdict(text: str) -> dict[str, object]:
         raise OutputError(f"`ROUND: {round_}`: the value must be 1 or 2")
     if not HEAD.match(head):
         raise OutputError(f"`HEAD: {head}`: it must be the hexadecimal SHA of the judged head")
-    specs = fields["SPEC"]
+    specs = _sub_lines(fields["SPEC"])
     # A PR with no ticket (a Dependabot bump, a pin bump) says so, and against what it was judged.
     if any(re.match(r"^none\b", spec) for spec in specs):
         if len(specs) > 1:
@@ -147,7 +163,7 @@ def parse_verdict(text: str) -> dict[str, object]:
         "VERDICT": verdict,
         "ROUND": int(round_),
         "HEAD": head,
-        "SPEC": fields["SPEC"],
+        "SPEC": specs,
         "FINDINGS": findings,
         "GATES": fields["GATES"][0],
         "BATTERY CORRECTION": fields.get("BATTERY CORRECTION", [""])[0],
