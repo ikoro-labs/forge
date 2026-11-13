@@ -327,11 +327,15 @@ guard refuses the command (`|| exit 2` and `"onFailure": "block"` in `hooks.json
 - `systemctl` `restart` (and `try-restart`, `reload-or-restart`...), `stop`, `disable`, `mask`,
   `kill`, the power verbs (`reboot`, `poweroff`, `halt`, `kexec`, `isolate`...), and the commands
   `reboot`, `shutdown`, `poweroff` and `halt`;
-- `lxc` `config set`, `config unset`, `delete` (alias `rm`), `stop`, `restart`;
+- `lxc` `config set`, `config unset`, `config edit`, `config device remove`, `delete` (alias `rm`),
+  `stop`, `restart`, `restore`, `pause`;
+- `service <unit>` and `invoke-rc.d <unit>` with `stop`, `restart` or another verb held for
+  `systemctl`;
 - `networkctl`, every verb but `status`, `list` and `lldp`; `svc.sh stop` and `svc.sh uninstall`.
 
-**On a host of the `infra-hosts` key**, reached by `ssh`, `scp`, `rsync` or `lxc exec <host> --`,
-every command off the read list is held: it is a list of admission, not a detection of writes. The
+**On a host of the `infra-hosts` key**, reached by `ssh`, `scp`, `sftp`, `rsync`, `lxc exec <host>
+--`, `lxc shell`, `lxc console` or `lxc file push|edit|delete`, every command off the read list is
+held: it is a list of admission, not a detection of writes. The
 read list: `docker ps`, `logs`, `inspect`, `images`, `stats --no-stream`; `df`; `free`; `uptime`;
 `systemctl status`, `show`, `is-active`; `journalctl` (but `--vacuum-*`, `--rotate`, `--flush`...);
 `pgrep`; `ps`; `true`; `cat` of `/proc` files; `lxc list`, `info`, `config show`; and the
@@ -342,22 +346,34 @@ names no command of a project: without the key, none is admitted.
 interactive `ssh`, and any `scp` or `rsync` to or from such a host are not. A destination is matched
 through `ssh -G` (aliases, `-o HostName=`, `-J`, `ProxyJump`) and the addresses it resolves to; an
 instance by its name. A destination the guard cannot read is held: a variable, a `-F` config, an
-`ssh -G` that fails, a resolver that does not answer in time, a jump chain too deep. Without the key
-no remote host is held, and the deny list still applies to the command `ssh` runs elsewhere.
+`ssh -G` that fails, a resolver that does not answer in time, a jump chain too deep. An IPv4-mapped
+IPv6 address (`::ffff:203.0.113.7`) is its IPv4. Without the key no remote host is held, and the
+deny list still applies to the command `ssh` runs elsewhere.
 
-**Looked through**: the prefixes `sudo`, `env VAR=...`, `heavy-slot [opts] --`,
-`systemd-run [opts] --`, `timeout N`, `nice`, `nohup`, `exec`, `command`, `time` and `xargs`; `sh -c`,
-`bash -c`, `eval` and a heredoc fed to a shell; `;`, `&&`, `||`, `|` and a newline; `$(...)`,
-backticks (not under PowerShell, where a backtick escapes) and `<(...)`. A part the guard cannot
-read is held: unbalanced quotes, an unclosed substitution, a program or a verb named by a variable
-(`docker $VERB`), a shell reading a pipe (`... | bash`), `env -S`, an option `heavy-slot` does not
-take.
+**Docker's endpoint** reaches a host too: a `docker` or `docker-compose` call off the read list is
+held when its endpoint is on a declared host. Every endpoint given is judged: `-H`, `--host`,
+`--context`, `-c`, `DOCKER_HOST` and `DOCKER_CONTEXT`, set before the command, by `env` or by an
+earlier `export`. Without any, the current context counts (the one `docker context use` chose). A
+context is resolved by `docker context inspect --format '{{.Endpoints.docker.Host}}'`, which reads
+the client's configuration and connects to nothing; a context that does not resolve, or a Docker
+that cannot be run, is held. Without the key, no context is read.
+
+**Parsed, every command**: a guarded program is found in the words the shell would run, so quotes
+and escapes hide none (`dock''er rm`, `d\ocker rm`, `"dock"er rm`). **Looked through**: the prefixes
+`sudo`, `env VAR=...`, `heavy-slot [opts] --`, `systemd-run [opts] --`, `timeout N`, `nice`,
+`nohup`, `exec`, `command`, `time`, `xargs` and `sshpass`; `sh -c`, `bash -c`, `eval` and a heredoc
+fed to a shell; `;`, `&&`, `||`, `|` and a newline; `$(...)`, backticks (not under PowerShell,
+where a backtick escapes) and `<(...)`, also in the body of a heredoc whose delimiter is unquoted.
+A part the guard cannot read is held: a program or a verb named by a variable (`docker $VERB`,
+`D=dock; ${D}er rm x`, `$CMD rm web`), a shell reading a pipe (`... | bash`), `env -S`, an option
+`heavy-slot` does not take. A text the lexer cannot split (unbalanced quotes, an unclosed
+substitution) is held when, its quotes and backslashes taken off, it holds a `$` or the name of a
+guarded program; otherwise it passes, since the shell cannot run it either. Under PowerShell,
+`$name = <command>` judges the command.
 
 **Out of reach, on purpose**: the hook sees the typed command only. A script that cleans its own
-resources (`bash infra/e2e-stack.sh`) and testcontainers run what they run. A command that contains
-none of the guarded words (`docker`, `systemctl`, `lxc`, `networkctl`, `svc.sh`, `ssh`, `scp`,
-`rsync`, `reboot`, `shutdown`, `poweroff`, `halt`) is not parsed at all, so `$CMD rm web` passes;
-nor are `find -exec`, `watch` or a PowerShell `-Command` string. This guards against an accident,
+resources (`bash infra/e2e-stack.sh`) and testcontainers run what they run. Neither are
+`find -exec`, `watch` nor a PowerShell `-Command` string followed. This guards against an accident,
 not against intent.
 
 **The human's gesture**: answer the permission prompt, or type the command in the prompt with
@@ -370,8 +386,11 @@ prefix", only says the command runs "without going through Claude".
 `plugins/forge/hooks/guard_git.py` (which holds this refusal) or `plugins/forge/hooks/hooks.json`
 (which runs the guard): "this PR changes the infra guard: only the owner merges it, by hand". It reads the files by
 `gh pr view <n> -R <repo> --json files`, and a reading that fails refuses too. A REST merge by
-`gh api` is judged on the same files; a GraphQL merge mutation is refused, since it names the PR by
-a node id the guard does not look up. The tests of this refusal live in `tests/test_guard_infra.py`:
+`gh api` is judged on the same files, its endpoint written `repos/...` or
+`https://api.github.com/repos/...`; a GraphQL merge mutation is refused, since it names the PR by
+a node id the guard does not look up. Like every refusal of `guard_git`, it looks through the
+wrappers `guard_infra` takes off (`env`, `sudo`, `command`, `timeout`, `xargs`...), a path or
+`.exe` (`/usr/bin/gh`), and the script of `sh -c` or of a shell reading a heredoc. The tests of this refusal live in `tests/test_guard_infra.py`:
 removing it from `guard_git` turns them red, and changing them is itself such a PR. The owner
 merges it in GitHub's web interface (a `! gh pr merge` may still meet `guard_git`, see above).
 

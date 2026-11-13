@@ -12,26 +12,36 @@ Guarded wherever it runs (a deny list):
 - `systemctl` `restart` (and its `try-` and `reload-or-` forms), `stop`, `disable`, `mask`, `kill`,
   and the power verbs (`reboot`, `poweroff`, `halt`, `kexec`, `isolate`...), and the standalone
   `reboot`, `shutdown`, `poweroff` and `halt`;
-- `lxc` `config set`, `config unset`, `delete` (alias `rm`), `stop`, `restart`;
+- `lxc` `config set`, `config unset`, `config edit`, `config device remove`, `delete` (alias `rm`),
+  `stop`, `restart`, `restore`, `pause`;
+- `service <unit>` and `invoke-rc.d <unit>` with a verb `systemctl` is guarded for;
 - `networkctl`, every verb but `status`, `list` and `lldp`; a runner's `svc.sh stop` and `uninstall`.
 
-On a host of the project's `infra-hosts` key, reached by `ssh`, `scp`, `rsync` or `lxc exec <host>
---`, every command off the read list is guarded (an allow list, not a detection of writes): `docker
-ps`, `logs`, `inspect`, `images` and `stats --no-stream`; `df`, `free`, `uptime`, `pgrep`, `ps`,
-`true`; `systemctl status`, `show` and `is-active`; `journalctl` without its writing options; `cat`
-of `/proc` files; `lxc list`, `info` and `config show`; and the project's own commands of its
-`infra-verify` key, word for word (`bash <command>` and `sh <command>` count as `<command>`). Without
-that key, no project command is admitted: the plugin names none.
+On a host of the project's `infra-hosts` key, reached by `ssh`, `scp`, `sftp`, `rsync`, `lxc exec
+<host> --`, `lxc shell`, `lxc console`, `lxc file push|edit|delete`, or by Docker's endpoint (`-H`,
+`--host`, `--context`, `-c`, `DOCKER_HOST`, `DOCKER_CONTEXT`, else the current context, resolved by
+`docker context inspect`), every command off the read list is guarded (an allow list, not a
+detection of writes): `docker ps`, `logs`, `inspect`, `images` and `stats --no-stream`; `df`,
+`free`, `uptime`, `pgrep`, `ps`, `true`; `systemctl status`, `show` and `is-active`; `journalctl`
+without its writing options; `cat` of `/proc` files; `lxc list`, `info` and `config show`; and the
+project's own commands of its `infra-verify` key, word for word (`bash <command>` and
+`sh <command>` count as `<command>`). Without that key, no project command is admitted: the plugin
+names none.
 An output redirection to anything but `/dev/null` is not a read; `scp` and `rsync` to such a host
 are never one. A destination is matched by `ssh -G` (aliases, `-o HostName=`, `-J`, `ProxyJump`)
-and by its addresses. Without the key no remote host is guarded; the deny list still holds, also
-for the command `ssh` runs on any other host.
+and by its addresses (an IPv4-mapped IPv6 address as its IPv4). Without the key no remote host is
+guarded and no Docker context is read; the deny list still holds, also for the command `ssh` runs
+on any other host.
 
-The wrappers `sudo`, `env`, `heavy-slot`, `systemd-run`, `timeout`, `nice`, `nohup`, `exec`,
-`command`, `time` and `xargs` are taken off; `sh -c`, `bash -c`, `eval`, a shell reading a heredoc,
-`;`, `&&`, `||`, `|`, `$(...)`, backticks and process substitutions are walked. What the guard
-cannot read is guarded: unbalanced quotes, an unclosed substitution, a program or a verb named by a
-variable, a shell reading a pipe, a destination it cannot resolve, a `-F` ssh config.
+Every command is parsed: a guarded program is found in its words, so quotes and escapes
+(`dock''er`, `d\\ocker`) hide none. The wrappers `sudo`, `env`, `heavy-slot`, `systemd-run`,
+`timeout`, `nice`, `nohup`, `exec`, `command`, `time`, `xargs` and `sshpass` are taken off; `sh -c`,
+`bash -c`, `eval`, a shell reading a heredoc, `;`, `&&`, `||`, `|`, `$(...)`, backticks and process
+substitutions are walked, and `export VAR=...` is followed. What the guard cannot read is guarded:
+a program or a verb named by a variable (`${D}er rm`), a shell reading a pipe, a destination or a
+Docker context it cannot resolve, a `-F` ssh config. A text the lexer cannot split (unbalanced
+quotes, an unclosed substitution) is guarded when it holds a `$` or a guarded program's name once
+its quotes and backslashes are taken off.
 
 Out of reach, on purpose: the hook sees the typed command only. A script that cleans its own
 resources (`bash infra/e2e-stack.sh`) and testcontainers run what they run. This guards against an
@@ -51,14 +61,15 @@ import threading
 from collections.abc import Callable, Iterable, Mapping
 from typing import Literal
 
-from guard_git import _MASK, _UNMASK, TIMEOUT_SECONDS, _run, split_heredocs
+from guard_git import _MASK, _UNMASK, HEREDOC, TIMEOUT_SECONDS, _run
 from usine import load, project_root
 
 HOSTS_KEY = "infra-hosts"
 VERIFY_KEY = "infra-verify"
 
-# A command without any of these words holds nothing the guard judges: it is not parsed.
-TRIGGERS = (
+# The programs a command the lexer cannot split may hide, searched in its text with quotes and
+# backslashes taken off; a `$` may hide any of them.
+HIDDEN_PROGRAMS = (
     "docker",
     "systemctl",
     "lxc",
@@ -66,11 +77,14 @@ TRIGGERS = (
     "svc.sh",
     "ssh",
     "scp",
+    "sftp",
     "rsync",
     "reboot",
     "shutdown",
     "poweroff",
     "halt",
+    "service",
+    "invoke-rc.d",
 )
 MAX_DEPTH = 8
 MAX_JUMPS = 4
@@ -79,10 +93,16 @@ SUBSTITUTED = "$FORGE_SUBSTITUTION"
 
 SshConfig = Callable[[list[str]], Mapping[str, str] | None]
 AddressLookup = Callable[[str], frozenset[str] | None]
+# The endpoint of a Docker context by name (None: the current one), None when it does not resolve.
+DockerContext = Callable[[str | None], str | None]
 
 
 class UnclearError(Exception):
     """A part of the command the guard cannot read: it is guarded."""
+
+
+class UnsplitError(UnclearError):
+    """A text the lexer cannot split into commands: unbalanced quotes, an unclosed substitution."""
 
 
 # Reading the shell.
@@ -108,13 +128,40 @@ def _closing(text: str, start: int) -> int:
             if depth == 0:
                 return index
         index += 1
-    raise UnclearError("a `$(` or `<(` that is never closed")
+    raise UnsplitError("a `$(` or `<(` that is never closed")
 
 
-def substitutions(text: str, backticks: bool = True) -> tuple[str, list[str]]:
+def heredocs(text: str) -> tuple[str, str, str]:
+    """`text` without its heredoc bodies, those bodies, and the ones the shell expands.
+
+    The body of a heredoc whose delimiter is unquoted runs its substitutions; a quoted one is data.
+    Its quotes are text: an apostrophe in a body opens nothing.
+    """
+    kept: list[str] = []
+    bodies: list[str] = []
+    expanded: list[str] = []
+    delimiter: str | None = None
+    quoted = False
+    for line in text.splitlines():
+        if delimiter is not None:
+            if line.strip() == delimiter:
+                delimiter = None
+            else:
+                bodies.append(line)
+                if not quoted:
+                    expanded.append(line)
+            continue
+        kept.append(line)
+        if match := HEREDOC.search(line):
+            quoted, delimiter = bool(match.group(1)), match.group(2)
+    return "\n".join(kept), "\n".join(bodies), "\n".join(expanded)
+
+
+def substitutions(text: str, backticks: bool = True, quotes: bool = True) -> tuple[str, list[str]]:
     """`text` with each `$(...)`, `<(...)`, `>(...)` and backtick replaced, and what they run.
 
     A single-quoted part is data. Under PowerShell a backtick is an escape, not a substitution.
+    In a heredoc body (`quotes` False) a quote is text and `<(` is no substitution.
     """
     out: list[str] = []
     inner: list[str] = []
@@ -131,9 +178,9 @@ def substitutions(text: str, backticks: bool = True) -> tuple[str, list[str]]:
             continue
         elif char == '"':
             quote = "" if quote else '"'
-        elif char == "'" and not quote:
+        elif char == "'" and not quote and quotes:
             quote = "'"
-        elif following == "(" and (char == "$" or (char in "<>" and not quote)):
+        elif following == "(" and (char == "$" or (char in "<>" and not quote and quotes)):
             end = _closing(text, index + 2)
             inner.append(text[index + 2 : end])
             out.append(SUBSTITUTED)
@@ -142,7 +189,7 @@ def substitutions(text: str, backticks: bool = True) -> tuple[str, list[str]]:
         elif char == "`" and backticks:
             end = text.find("`", index + 1)
             if end < 0:
-                raise UnclearError("a backtick that is never closed")
+                raise UnsplitError("a backtick that is never closed")
             inner.append(text[index + 1 : end])
             out.append(SUBSTITUTED)
             index = end + 1
@@ -197,7 +244,7 @@ def simple_commands(text: str) -> list[list[str]]:
             else:
                 current.append(token.translate(_UNMASK))
     except ValueError as error:
-        raise UnclearError(f"a command with unbalanced quotes ({error})") from error
+        raise UnsplitError(f"a command with unbalanced quotes ({error})") from error
     result.append(current)
     return [words for words in result if words]
 
@@ -371,6 +418,8 @@ def _wrapped(name: str, words: list[str]) -> list[str] | None:
         return words[_skip(words, 1, {"-o", "--output", "-f", "--format"}) :]
     if name == "xargs":
         return words[_skip(words, 1, XARGS_VALUED, "adEILnPs") :]
+    if name == "sshpass":
+        return words[_skip(words, 1, {"-p", "-f", "-d", "-P"}, "pfdP") :]
     return None
 
 
@@ -382,17 +431,32 @@ def program_name(word: str) -> str:
     return name[:-4] if name.endswith(".exe") else name
 
 
-def unwrap(words: list[str]) -> list[str]:
-    """The words of the command that actually runs, assignments, keywords and wrappers taken off."""
+def unwrap_with_env(words: list[str]) -> tuple[list[str], dict[str, str]]:
+    """`unwrap`, and the variables its assignments and wrappers (`env A=1`) set for the command."""
+    env: dict[str, str] = {}
     while words:
         if ASSIGNMENT.match(words[0]) or words[0] in KEYWORDS:
+            _assign(env, words[:1])
             words = words[1:]
             continue
         inner = _wrapped(program_name(words[0]), words)
         if inner is None:
-            return words
+            return words, env
+        _assign(env, words[1 : len(words) - len(inner)])
         words = inner
-    return words
+    return words, env
+
+
+def unwrap(words: list[str]) -> list[str]:
+    """The words of the command that actually runs, assignments, keywords and wrappers taken off."""
+    return unwrap_with_env(words)[0]
+
+
+def _assign(env: dict[str, str], words: Iterable[str]) -> None:
+    for word in words:
+        if ASSIGNMENT.match(word):
+            key, _, value = word.partition("=")
+            env[key] = value
 
 
 def _verb(word: str | None) -> str | None:
@@ -500,7 +564,7 @@ SYSTEMCTL_GUARDED = frozenset(
 )
 POWER_COMMANDS = frozenset({"reboot", "shutdown", "poweroff", "halt"})
 LXC_VALUED = {"--project"}
-LXC_GUARDED = frozenset({"delete", "rm", "stop", "restart"})
+LXC_GUARDED = frozenset({"delete", "rm", "stop", "restart", "restore", "pause"})
 LXC_EXEC_VALUED = {"--env", "--mode", "--user", "--group", "--cwd", "--project"}
 NETWORKCTL_VALUED = {"-n", "--lines"}
 NETWORKCTL_READS = frozenset({"status", "list", "lldp"})
@@ -549,14 +613,21 @@ def deny_list_refusal(name: str, args: list[str]) -> str | None:
         verb = _verb(verb)
         if verb in LXC_GUARDED:
             return f"`lxc {verb}`"
-        sub = _verb(_operand(args, index, ())[0]) if verb == "config" else None
-        return f"`lxc config {sub}`" if sub in ("set", "unset") else None
+        sub, index = _operand(args, index, ()) if verb == "config" else (None, index)
+        sub = _verb(sub)
+        if sub == "device" and _verb(_operand(args, index, ())[0]) in ("remove", "rm"):
+            return "`lxc config device remove`"
+        return f"`lxc config {sub}`" if sub in ("set", "unset", "edit") else None
     if name == "networkctl":
         verb = _verb(_operand(args, 0, NETWORKCTL_VALUED)[0])
         return None if verb is None or verb in NETWORKCTL_READS else f"`networkctl {verb}`"
     if name == "svc.sh":
         verb = _verb(args[0] if args else None)
         return f"`svc.sh {verb}`" if verb in ("stop", "uninstall") else None
+    if name in ("service", "invoke-rc.d"):
+        operands = [word for word in args if not word.startswith("-")]
+        verb = _verb(operands[1]) if len(operands) > 1 else None
+        return f"`{name} {operands[0]} {verb}`" if verb in SYSTEMCTL_GUARDED else None
     return None
 
 
@@ -627,12 +698,15 @@ def reads(words: list[str], verify: frozenset[tuple[str, ...]] = frozenset()) ->
 
 SSH_VALUED = frozenset("BbcDEeFIiJLlmOoPpQRSWw")
 SCP_VALUED = frozenset("cDFiJloPSX")
+SFTP_VALUED = frozenset("BbcDFiJloPRSsX")
 
 
 def _host(authority: str) -> str:
     """The host of `[user@]host[:port]`; `ssh -G` prints a jump's address in brackets."""
     host = authority.removeprefix("ssh://").rpartition("@")[2]
-    return host[1:].partition("]")[0] if host.startswith("[") else host.partition(":")[0]
+    if host.startswith("["):
+        return host[1:].partition("]")[0]
+    return host if host.count(":") > 1 else host.partition(":")[0]  # a bare IPv6 address
 
 
 def _remote_host(operand: str) -> str | None:
@@ -694,6 +768,16 @@ def parse_ssh(args: list[str]) -> tuple[str | None, list[tuple[str, str]], list[
     return destination, options, args[index:]
 
 
+def _address(text: str) -> str | None:
+    """An IP address in one spelling, an IPv4-mapped IPv6 one as its IPv4; None for a name."""
+    try:
+        address = ipaddress.ip_address(text)
+    except ValueError:
+        return None
+    mapped = getattr(address, "ipv4_mapped", None)
+    return str(mapped or address)
+
+
 class Hosts:
     """The declared hosts of the `infra-hosts` key, matched through `ssh -G` and a resolver."""
 
@@ -707,14 +791,12 @@ class Hosts:
         self._addresses: frozenset[str] | None = None
 
     def _addresses_of_name(self, name: str) -> frozenset[str]:
-        try:
-            return frozenset({str(ipaddress.ip_address(name))})
-        except ValueError:
-            pass
+        if (address := _address(name)) is not None:
+            return frozenset({address})
         found = self._addresses_of(name)
         if found is None:
             raise UnclearError(f"`{name}`, which the resolver did not answer in time")
-        return found
+        return frozenset(_address(value) or value for value in found)
 
     def _declared_names(self) -> frozenset[str]:
         if self._names is None:
@@ -775,46 +857,80 @@ class Judge:
         hosts: Hosts,
         verify: frozenset[tuple[str, ...]] = frozenset(),
         powershell: bool = False,
+        docker_context: DockerContext = lambda _name: None,
     ) -> None:
         self.hosts = hosts
         self.verify = verify
         self.powershell = powershell
+        self.docker_context = docker_context
 
-    def text(self, text: str, remote: str | None, depth: int) -> str | None:
-        """A command line, run locally (`remote` None) or on the declared host `remote`."""
+    def text(
+        self,
+        text: str,
+        remote: str | None,
+        depth: int,
+        env: Mapping[str, str] | None = None,
+        enclosing_bodies: str = "",
+    ) -> str | None:
+        """A command line, run locally (`remote` None) or on the declared host `remote`.
+
+        `env` holds the variables set before it; an `export` or a bare assignment adds to them for
+        the commands that follow. The heredoc bodies are set apart before the substitutions are
+        read; a substitution without bodies of its own reads those of the text around it
+        (`enclosing_bodies`), since its heredoc may have been cut there.
+        """
         if depth > MAX_DEPTH:
             raise UnclearError("commands nested deeper than the guard follows")
-        outer, inner = substitutions(text, backticks=not self.powershell)
+        shell_env = dict(env or {})
+        kept, bodies, expanded = heredocs(text)
+        bodies = bodies or enclosing_bodies
+        outer, inner = substitutions(kept, backticks=not self.powershell)
+        inner += substitutions(expanded, backticks=not self.powershell, quotes=False)[1]
         for part in inner:
-            if reason := self.text(part, remote, depth + 1):
+            if reason := self.text(part, remote, depth + 1, shell_env, bodies):
                 return reason
-        kept, bodies = split_heredocs(outer)
-        for words in simple_commands(kept):
-            if reason := self.command(words, remote, bodies, depth):
+        for words in simple_commands(outer):
+            bare = strip_redirections(words)[0]
+            if bare and bare[0] == "export":
+                _assign(shell_env, bare[1:])
+            elif all(ASSIGNMENT.match(word) for word in bare):
+                _assign(shell_env, bare)
+            if reason := self.command(words, remote, bodies, depth, shell_env):
                 return reason
         return None
 
-    def command(self, words: list[str], remote: str | None, bodies: str, depth: int) -> str | None:
+    def command(
+        self,
+        words: list[str],
+        remote: str | None,
+        bodies: str,
+        depth: int,
+        env: Mapping[str, str] | None = None,
+    ) -> str | None:
         words, redirections = strip_redirections(words)
         if remote is not None and (target := _writes_a_file(redirections)):
             return f"a redirection to `{target}`, which writes on the declared host `{remote}`"
-        words = unwrap(words)
+        if self.powershell and words:
+            words = _powershell_value(words)
+        words, assigned = unwrap_with_env(words)
+        env = {**(env or {}), **assigned}
         if not words:
             return None
         name, args = program_name(words[0]), words[1:]
         if name in SHELLS:
             dash_c, operands = _shell_script(args)
             if dash_c and operands:
-                return self.text(operands[0], remote, depth + 1)
+                return self.text(operands[0], remote, depth + 1, env)
             if operands:
-                return self.command(operands, remote, "", depth + 1)  # a script and its arguments
+                # a script and its arguments
+                return self.command(operands, remote, "", depth + 1, env)
             if bodies and any(operator.startswith("<<") for operator, _ in redirections):
-                return self.text(bodies, remote, depth + 1)
+                return self.text(bodies, remote, depth + 1, env)
             raise UnclearError(
                 f"`{' '.join(words)}`, a shell that reads its commands from standard input"
             )
         if name == "eval":
-            return self.text(" ".join(args), remote, depth + 1)
+            return self.text(" ".join(args), remote, depth + 1, env)
         if remote is not None:
             if reads(words, self.verify):
                 return None
@@ -831,8 +947,66 @@ class Judge:
                 host = _remote_host(operand)
                 if host and self.hosts.reaches(host, options):
                     return f"`{name}` to or from the declared host `{host}`"
+        if name == "sftp" and self.hosts.declared:
+            options, operands = _short_options(args, SFTP_VALUED)
+            if operands:
+                host = _host(operands[0].removeprefix("sftp://").partition("/")[0])
+                if self.hosts.reaches(host, options):
+                    return f"`sftp` to the declared host `{host}`"
+        if name in ("docker", "docker-compose") and self.hosts.declared:
+            if host := self._docker_host(name, words, env):
+                return (
+                    f"`{' '.join(words)[:120]}`, off the read list, on the declared host `{host}`"
+                    " through Docker's endpoint"
+                )
         if name == "lxc":
-            return self._lxc_exec(args, depth)
+            return self._lxc(args, depth)
+        return None
+
+    def _docker_host(self, name: str, words: list[str], env: Mapping[str, str]) -> str | None:
+        """The declared host a Docker call that is no read acts on, by its endpoint, or None.
+
+        The endpoint comes from `-H`, `--host`, `--context`, `-c`, `DOCKER_HOST` and
+        `DOCKER_CONTEXT`, every one given being judged; without any, from the current context.
+        A context that does not resolve cannot be read.
+        """
+        endpoints: list[str] = []
+        contexts: list[str | None] = []
+        args = words[1:]
+        index = 0
+        while name == "docker" and index < len(args) and args[index].startswith("-"):
+            flag, equals, value = args[index].partition("=")
+            if flag in ("-H", "--host", "-c", "--context"):
+                if not equals:
+                    index += 1
+                    value = args[index] if index < len(args) else ""
+                (endpoints if flag in ("-H", "--host") else contexts).append(value)
+            elif flag[:2] in ("-H", "-c") and not flag.startswith("--") and len(flag) > 2:
+                (endpoints if flag[1] == "H" else contexts).append(args[index][2:])
+            elif args[index] in DOCKER_VALUED:
+                index += 1
+            index += 1
+        endpoints += [env["DOCKER_HOST"]] if env.get("DOCKER_HOST") else []
+        contexts += [env["DOCKER_CONTEXT"]] if env.get("DOCKER_CONTEXT") else []
+        if not endpoints and not contexts:
+            if reads(words, self.verify):
+                return None
+            contexts.append(None)
+        for context in contexts:
+            resolved = self.docker_context(_verb(context))
+            if resolved is None:
+                raise UnclearError(
+                    f"the Docker context `{context or 'current'}`, which does not resolve"
+                )
+            endpoints.append(resolved)
+        for endpoint in endpoints:
+            _verb(endpoint)
+            scheme, separator, rest = endpoint.strip().partition("://")
+            if separator and scheme in ("unix", "npipe", "fd"):
+                continue
+            host = _host((rest if separator else scheme).partition("/")[0])
+            if host and self.hosts.reaches(host, []) and not reads(words, self.verify):
+                return host
         return None
 
     def _ssh(self, args: list[str], depth: int) -> str | None:
@@ -847,8 +1021,23 @@ class Judge:
         # Any other host: the remote command still meets the deny list.
         return self.text(" ".join(remote_words), None, depth + 1) if remote_words else None
 
-    def _lxc_exec(self, args: list[str], depth: int) -> str | None:
+    def _lxc(self, args: list[str], depth: int) -> str | None:
         verb, index = _operand(args, 0, LXC_VALUED)
+        if verb in ("shell", "console") and self.hosts.declared:
+            instance = _operand(args, index, LXC_VALUED)[0]
+            if instance is not None and self.hosts.instance(instance):
+                return f"`lxc {verb}` on the declared instance `{instance}`"
+            return None
+        if verb == "file" and self.hosts.declared:
+            sub, index = _operand(args, index, LXC_VALUED)
+            if _verb(sub) not in ("push", "edit", "delete"):
+                return None
+            # The values of its options (`--mode 0644`, `--uid 0`) hold no `/`.
+            for word in args[index:]:
+                instance = word.partition("/")[0]
+                if not word.startswith("-") and "/" in word and self.hosts.instance(instance):
+                    return f"`lxc file {sub}` on the declared instance `{instance}`"
+            return None
         if verb != "exec":
             return None
         instance, index = _operand(args, index, LXC_EXEC_VALUED)
@@ -867,28 +1056,54 @@ class Judge:
         return self.command(inner, instance if declared else None, "", depth + 1)
 
 
+def _powershell_value(words: list[str]) -> list[str]:
+    """Under PowerShell, the command of `$name = <command>`: the variable is no program."""
+    match = re.match(r"^\$[\w:.]+([-+*/%]?=)(.*)$", words[0])
+    if match is not None:
+        return ([match.group(2)] if match.group(2) else []) + words[1:]
+    if words[0].startswith("$") and len(words) > 1 and re.fullmatch(r"[-+*/%]?=", words[1]):
+        return words[2:]
+    return words
+
+
+def _may_hide(command: str) -> bool:
+    """Whether a text the lexer cannot split may hide a guarded program."""
+    flat = re.sub(r"[\\'\"]", "", command).lower()
+    return "$" in flat or any(program in flat for program in HIDDEN_PROGRAMS)
+
+
 def verdict(
     event: Mapping[str, object],
     declared: Iterable[str],
     ssh_config: SshConfig,
     addresses_of: AddressLookup,
     verify: Iterable[str] = (),
+    docker_context: DockerContext = lambda _name: None,
 ) -> tuple[Literal["deny", "ask"], str] | None:
     """`("deny" | "ask", reason)` for a shell call the guard holds, or None.
 
-    `declared` holds the values of the `infra-hosts` key, `verify` those of `infra-verify`.
+    `declared` holds the values of the `infra-hosts` key, `verify` those of `infra-verify`;
+    `docker_context` resolves a Docker context to its endpoint. Every command is parsed: the
+    guarded programs are found in its words, not in its text.
     """
     tool_input = event.get("tool_input")
     command = str(tool_input.get("command", "")) if isinstance(tool_input, Mapping) else ""
-    if not any(trigger in command.lower() for trigger in TRIGGERS):
-        return None
     judge = Judge(
         Hosts(declared, ssh_config, addresses_of),
         verify_commands(verify),
         powershell=event.get("tool_name") == "PowerShell",
+        docker_context=docker_context,
     )
     try:
         found = judge.text(command, None, 0)
+    except UnsplitError as unsplit:
+        # A text bash cannot run either, but whose earlier lines it may: held when it may hide a
+        # guarded program or a variable.
+        found = (
+            f"the guard cannot read {unsplit}, and guards what it cannot read"
+            if _may_hide(command)
+            else None
+        )
     except UnclearError as unclear:
         found = f"the guard cannot read {unclear}, and guards what it cannot read"
     if found is None:
@@ -913,6 +1128,26 @@ def ssh_config_via_ssh() -> SshConfig:
         return {key.lower(): value for key, _, value in lines}
 
     return printed
+
+
+def docker_context_via_docker() -> DockerContext:
+    """`docker context inspect`, which reads the client's configuration and connects to nothing."""
+
+    def endpoint(name: str | None) -> str | None:
+        docker = shutil.which("docker")
+        if docker is None:
+            return None
+        # No shell: docker resolved by shutil.which, a fixed argv and the context's name.
+        completed = _run(
+            [docker, "context", "inspect", "--format", "{{.Endpoints.docker.Host}}"]
+            + (["--", name] if name else []),
+            None,
+        )
+        if completed is None or completed.returncode != 0 or not completed.stdout.strip():
+            return None
+        return completed.stdout.strip()
+
+    return endpoint
 
 
 def addresses_via_dns(name: str) -> frozenset[str] | None:
@@ -948,6 +1183,7 @@ def main() -> int:
             ssh_config_via_ssh(),
             addresses_via_dns,
             verify=config.get(VERIFY_KEY, []),
+            docker_context=docker_context_via_docker(),
         )
     if found is None:
         return 0

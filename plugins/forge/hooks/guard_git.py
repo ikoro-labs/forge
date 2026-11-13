@@ -24,10 +24,11 @@ Refused, with the reason on stderr and exit code 2 so Claude Code blocks the cal
   stops before the merge: the guard is the net, the rule avoids the refusal.
 
 The command is parsed, not grepped: a commit message that says "push --force" is data. Heredoc
-bodies are dropped first, then the command is split on shell operators with `shlex`. This is
-protection against an accident, not against intent: the human can always run the command, and
-a wrapper (`env git`, `command git`, `/usr/bin/git`, `git.exe`) is intent, so it is left alone
-on purpose.
+bodies are dropped first, then the command is split on shell operators with `shlex`. A wrapper
+hides no refusal: assignments, `env`, `sudo`, `command`, `timeout`, `nice`, `nohup`, `xargs` and
+the others `guard_infra` takes off are taken off, a path or `.exe` is read as its program
+(`/usr/bin/gh`, `git.exe`), and the script of `sh -c` or of a shell reading a heredoc is judged
+like the command itself. The human can always run the command himself.
 
 The branch that matters is the one of the directory git acts on: `cd <dir> &&` and `git -C
 <dir>` move it, so each command is judged against the branch checked out there.
@@ -1030,7 +1031,9 @@ INFRA_GUARD_FILES = frozenset(
     }
 )
 INFRA_GUARD_REFUSAL = "this PR changes the infra guard: only the owner merges it, by hand"
-MERGE_ENDPOINT = re.compile(r"^repos/([^/]+/[^/]+)/pulls/([^/]+)/merge$")
+MERGE_ENDPOINT = re.compile(
+    r"^(?:https?://api\.github\.com/)?repos/([^/]+/[^/]+)/pulls/([^/]+)/merge$", re.IGNORECASE
+)
 MERGE_MUTATION = re.compile(r"\b(?:mergePullRequest|enablePullRequestAutoMerge)\b", re.IGNORECASE)
 # The files of a PR by its number and its repository (None: the current branch, the current
 # repository), or None when they cannot be read.
@@ -1142,8 +1145,23 @@ def refusal(
         words = item
         if gesture := runner_registration_gesture(words):
             return _owner_refusal(gesture)  # before the assignments are set aside
-        while words and "=" in words[0] and not words[0].startswith("-"):
-            words = words[1:]
+        words, script = looked_through(words, bodies)
+        if script is not None:
+            if reason := refusal(
+                script,
+                branch,
+                checks_green,
+                here,
+                read_text,
+                description,
+                owner_gestures,
+                budget,
+                protected_paths,
+                changed_files,
+                pr_files,
+            ):
+                return reason
+            continue
         if not words:
             continue
         if words[0] == "cd":
@@ -1183,6 +1201,40 @@ def refusal(
             if not checks_green(number):
                 return "merge with checks not green: wait for every check, `gh pr checks`"
     return None
+
+
+def looked_through(words: list[str], bodies: str) -> tuple[list[str], str | None]:
+    """The words that run behind assignments and wrappers, or the script a shell runs instead.
+
+    `gh` and `git` are named as such whatever their path or `.exe`. A shell's script is that of
+    `-c`, or the heredoc bodies when it reads its standard input. Words the infra guard cannot
+    read are kept as they are: that guard holds them.
+    """
+    # Imported here: guard_infra imports this module.
+    from guard_infra import (  # noqa: PLC0415
+        SHELLS,
+        UnclearError,
+        _shell_script,
+        program_name,
+        strip_redirections,
+        unwrap,
+    )
+
+    try:
+        inner = unwrap(words)
+        name = program_name(inner[0]) if inner else ""
+    except UnclearError:
+        return words, None
+    if name in SHELLS:
+        bare, redirections = strip_redirections(inner)
+        dash_c, operands = _shell_script(bare[1:])
+        if dash_c and operands:
+            return [], operands[0]
+        if not operands and bodies and any(op.startswith("<<") for op, _ in redirections):
+            return [], bodies
+    if name in ("gh", "git"):
+        return [name, *inner[1:]], None
+    return inner, None
 
 
 def _run(argv: list[str], cwd: str | None) -> subprocess.CompletedProcess[str] | None:

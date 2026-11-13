@@ -20,7 +20,7 @@ from unittest import mock
 import support
 from guard_git import guarded_main as git_guarded_main
 from guard_git import pr_files_via_gh, refusal
-from guard_infra import guarded_main, verdict
+from guard_infra import docker_context_via_docker, guarded_main, verdict
 
 ADDRESS = "203.0.113.7"
 DECLARED = [ADDRESS, "meridianre-ci"]
@@ -44,7 +44,21 @@ def fake_ssh_config(args: list[str]) -> Mapping[str, str] | None:
 def fake_dns(name: str) -> frozenset[str] | None:
     if name == "slow.example":
         return None
-    return {"ci.example": frozenset({ADDRESS})}.get(name, frozenset())
+    found = {"ci.example": ADDRESS, "mapped.example": f"::ffff:{ADDRESS}"}.get(name)
+    return frozenset({found}) if found else frozenset()
+
+
+# `docker context inspect` as the fake answers it, by context name (None: the current one).
+CONTEXTS: dict[str | None, str] = {
+    None: "unix:///var/run/docker.sock",
+    "local": "unix:///var/run/docker.sock",
+    "prod": "ssh://root@vps",
+    "tcpctx": f"tcp://{ADDRESS}:2376",
+}
+
+
+def fake_docker_context(name: str | None) -> str | None:
+    return CONTEXTS.get(name)
 
 
 def judged(
@@ -52,12 +66,16 @@ def judged(
     declared: list[str] | None = None,
     agent: bool = False,
     verify: list[str] | None = None,
+    docker_context: Callable[[str | None], str | None] = fake_docker_context,
+    tool: str = "Bash",
 ) -> str | None:
-    event: dict[str, object] = {"tool_input": {"command": command}}
+    event: dict[str, object] = {"tool_input": {"command": command}, "tool_name": tool}
     if agent:
         event["agent_id"] = "a1"
     hosts = DECLARED if declared is None else declared
-    found = verdict(event, hosts, fake_ssh_config, fake_dns, verify=verify or [])
+    found = verdict(
+        event, hosts, fake_ssh_config, fake_dns, verify=verify or [], docker_context=docker_context
+    )
     return None if found is None else found[1]
 
 
@@ -137,6 +155,17 @@ class DenyList(Case):
         self.guarded(
             "systemctl try-restart x", "systemctl reboot", "reboot", "shutdown -h now", declared=[]
         )
+
+    def test_lxc_verbs_beyond_the_spec(self) -> None:
+        for command, named in (
+            ("lxc config edit ci", "`lxc config edit`"),
+            ("lxc config device remove ci eth0", "`lxc config device remove`"),
+            ("lxc restore ci snap0", "`lxc restore`"),
+            ("lxc pause ci", "`lxc pause`"),
+        ):
+            with self.subTest(command=command):
+                self.assertIn(named, judged(command, declared=[]) or "")
+        self.admitted("lxc config device show ci", "lxc config show ci", declared=[])
 
     def test_lxc_verbs(self) -> None:
         for command in ("lxc config set ci limits.memory 4GB", "lxc config unset ci limits.memory"):
@@ -240,6 +269,179 @@ class Wrappers(Case):
                 found = judged(command, declared=[])
                 assert found is not None, command
                 self.assertIn("cannot read", found)
+
+
+class ParsedTriggers(Case):
+    """The guarded programs are found in the parsed words, not in the raw text."""
+
+    def test_a_program_spelled_through_quotes_or_escapes_is_found(self) -> None:
+        for command in (
+            "dock''er rm -f x",
+            "d\\ocker rm -f x",
+            '"dock"er rm -f x',
+            "sys'temctl' restart docker",
+        ):
+            with self.subTest(command=command):
+                self.assertIsNotNone(judged(command, declared=[]), command)
+
+    def test_a_program_named_by_a_variable_is_guarded(self) -> None:
+        for command in ("D=dock; ${D}er rm x", "$CMD rm web", '"$TOOL" run x'):
+            with self.subTest(command=command):
+                self.assertIn("cannot read", judged(command, declared=[]) or "")
+
+    def test_ordinary_commands_pass(self) -> None:
+        self.admitted(
+            "echo hello",
+            "uv run pytest -q",
+            "git commit -m \"$(cat <<'EOF'\nfix: don't stop the runner\nEOF\n)\"",
+            "python3 - <<'EOF'\nprint(\"it's\")\nEOF",
+            "for f in a b; do echo $f; done",
+            "VAR=$(git rev-parse HEAD) && echo $VAR",
+            "cat <<'EOF'\nliteral $(docker rm x) don't\nEOF",
+            declared=[],
+        )
+
+    def test_a_heredoc_hides_nothing(self) -> None:
+        self.guarded(
+            "cat <<EOF\n$(docker rm -f x)\nEOF",
+            "cat <<EOF\nit's `docker rm -f x`\nEOF",
+            declared=[],
+        )
+        found = judged("echo \"$(sh <<'EOF'\ndocker rm -f x\nEOF\n)\"", declared=[])
+        self.assertIn("`docker rm`", found or "")  # read in the body, not held as unreadable
+        self.assertIsNone(judged("cat <<EOF\nsee <(x for $5\nEOF", declared=[]))
+
+    def test_a_command_the_lexer_cannot_split_is_held_only_when_it_may_hide_one(self) -> None:
+        self.admitted("echo \"it's", declared=[])
+        for command in (
+            'docker rm x; echo "',
+            "dock''er rm x; echo \"",
+            'D=dock; ${D}er rm x\necho "',
+        ):
+            with self.subTest(command=command):
+                self.assertIn("cannot read", judged(command, declared=[]) or "")
+
+    def test_a_powershell_assignment_is_no_program(self) -> None:
+        for command in ("$x = Get-Item foo", "$x=Get-Item foo", "$n += 1"):
+            with self.subTest(command=command):
+                self.assertIsNone(judged(command, declared=[], tool="PowerShell"))
+        for command in ("$x = docker rm web", "$x=docker rm web"):
+            with self.subTest(command=command):
+                self.assertIn("`docker rm`", judged(command, declared=[], tool="PowerShell") or "")
+
+
+class HostReachedOtherwise(Case):
+    """A declared host reached by Docker's endpoint, `lxc` verbs, `sftp`, `sshpass`, IPv6."""
+
+    def test_a_docker_endpoint_on_a_declared_host_admits_only_reads(self) -> None:
+        self.guarded(
+            "docker -H ssh://root@vps run x",
+            "docker --host ssh://vps exec web sh",
+            "docker -Hssh://vps run x",
+            "docker --host=ssh://vps run x",
+            f"docker -H tcp://{ADDRESS}:2376 run x",
+            "DOCKER_HOST=ssh://vps docker run x",
+            "env DOCKER_HOST=ssh://vps docker run x",
+            "export DOCKER_HOST=ssh://vps; docker run x",
+            "docker --context prod run x",
+            "docker -c prod run x",
+            "docker --context=tcpctx run x",
+            "DOCKER_CONTEXT=prod docker run x",
+            "docker --context broken ps",
+            "docker --context $CTX ps",
+        )
+        self.admitted(
+            "docker -H ssh://vps ps",
+            "docker --context prod logs web",
+            "docker -H ssh://elsewhere run x",
+            "docker run x",
+            "docker --context local run x",
+            "docker -H unix://vps run x",
+        )
+        self.assertIsNone(judged("docker ps", docker_context=lambda _name: None))
+
+    def test_the_current_docker_context_counts(self) -> None:
+        def current_on_the_host(name: str | None) -> str | None:
+            return "ssh://vps" if name is None else fake_docker_context(name)
+
+        self.assertIsNotNone(judged("docker run x", docker_context=current_on_the_host))
+        self.assertIsNotNone(judged("docker run x", docker_context=lambda _name: None))
+
+    def test_without_the_key_no_docker_context_is_read(self) -> None:
+        def never(_name: str | None) -> str | None:
+            raise AssertionError("read without the key")
+
+        self.assertIsNone(judged("docker -H ssh://vps run x", declared=[], docker_context=never))
+
+    def test_lxc_verbs_that_reach_a_declared_instance(self) -> None:
+        self.guarded(
+            "lxc shell meridianre-ci",
+            "lxc console meridianre-ci",
+            "lxc file push build.tar meridianre-ci/root/build.tar",
+            "lxc file push -p --mode 0644 x local:meridianre-ci/etc/x",
+            "lxc file edit meridianre-ci/etc/hosts",
+            "lxc file delete meridianre-ci/tmp/x",
+        )
+        self.admitted(
+            "lxc file pull meridianre-ci/etc/hosts .",
+            "lxc shell other",
+            "lxc file push x other/root/x",
+            "lxc file push --mode 0644 --uid 0 x other/root/x",
+        )
+        self.admitted("lxc shell meridianre-ci", declared=[])
+
+    def test_sftp_is_scp(self) -> None:
+        self.guarded(
+            "sftp vps",
+            f"sftp root@{ADDRESS}:/srv",
+            "sftp sftp://root@vps:22/srv",
+            "sftp -P 22 -o ConnectTimeout=5 vps",
+            "sftp -F ./cfg elsewhere",
+            "sftp $HOST",
+        )
+        self.admitted("sftp elsewhere", "sftp -b batch.txt elsewhere")
+
+    def test_sshpass_is_a_wrapper(self) -> None:
+        self.guarded(
+            "sshpass -p secret ssh vps touch /x",
+            "sshpass -psecret ssh vps touch /x",
+            "sshpass -f pass.txt scp x vps:/srv",
+            "sshpass -e ssh vps",
+            "sshpass -p secret docker rm web",
+        )
+        self.admitted("sshpass -p secret ssh vps uptime")
+
+    def test_an_ipv4_mapped_address_is_its_ipv4(self) -> None:
+        self.guarded(
+            f"ssh ::ffff:{ADDRESS} touch /x",
+            f"ssh root@::ffff:{ADDRESS} touch /x",
+            f"sftp ::ffff:{ADDRESS}",
+            "ssh mapped.example touch /x",
+        )
+        self.admitted(f"ssh ::ffff:{ADDRESS} uptime", "sftp ::ffff:198.51.100.9")
+
+
+class Services(Case):
+    def test_service_and_invoke_rc_d_stop_and_restart(self) -> None:
+        for command in (
+            "service docker stop",
+            "service docker restart",
+            "sudo service nginx stop",
+            "invoke-rc.d docker stop",
+            "invoke-rc.d --quiet docker restart",
+        ):
+            with self.subTest(command=command):
+                self.assertIn(
+                    "docker" if "nginx" not in command else "nginx",
+                    judged(command, declared=[]) or "",
+                )
+        self.guarded("service docker $ACTION", declared=[])
+        self.admitted(
+            "service docker status",
+            "service --status-all",
+            "invoke-rc.d docker status",
+            declared=[],
+        )
 
 
 class RealCommands(Case):
@@ -391,8 +593,51 @@ class TheHook(unittest.TestCase):
             mock.patch("sys.stderr", err),
             mock.patch("guard_infra.ssh_config_via_ssh", lambda: fake_ssh_config),
             mock.patch("guard_infra.addresses_via_dns", fake_dns),
+            mock.patch("guard_infra.docker_context_via_docker", lambda: fake_docker_context),
         ):
             return guarded_main(), out.getvalue(), err.getvalue()
+
+    def test_the_docker_contexts_are_read_by_the_hook(self) -> None:
+        (self.root / "docs" / "agents" / "usine.md").write_text(
+            f"- `infra-hosts` : `{ADDRESS}`\n", encoding="utf-8"
+        )
+        event = {"tool_input": {"command": "docker --context prod run x"}, "agent_id": "a1"}
+        self.assertEqual(self.run_hook(event)[0], 2)
+        event = {"tool_input": {"command": "docker --context local run x"}, "agent_id": "a1"}
+        self.assertEqual(self.run_hook(event)[0], 0)
+
+    def test_a_docker_context_is_read_by_docker_context_inspect(self) -> None:
+        calls: list[list[str]] = []
+
+        def run(argv: list[str], _cwd: str | None) -> subprocess.CompletedProcess[str] | None:
+            calls.append(argv)
+            out = {"prod": "ssh://root@vps\n", "gone": ""}.get(argv[-1], "unix:///x.sock\n")
+            return subprocess.CompletedProcess(argv, 0 if out else 1, out, "")
+
+        endpoint = docker_context_via_docker()
+        with (
+            mock.patch("guard_infra.shutil.which", lambda _name: "/usr/bin/docker"),
+            mock.patch("guard_infra._run", run),
+        ):
+            self.assertEqual(endpoint("prod"), "ssh://root@vps")
+            self.assertEqual(endpoint(None), "unix:///x.sock")
+            self.assertIsNone(endpoint("gone"))
+        self.assertEqual(
+            calls[0],
+            ["/usr/bin/docker", "context", "inspect", "--format", "{{.Endpoints.docker.Host}}"]
+            + ["--", "prod"],
+        )
+        self.assertEqual(calls[1][-1], "{{.Endpoints.docker.Host}}")
+        with (
+            mock.patch("guard_infra.shutil.which", lambda _name: None),
+            mock.patch("guard_infra._run", lambda *_args: self.fail("ran without docker")),
+        ):
+            self.assertIsNone(endpoint("prod"))
+        with (
+            mock.patch("guard_infra.shutil.which", lambda _name: "/usr/bin/docker"),
+            mock.patch("guard_infra._run", lambda *_args: None),
+        ):
+            self.assertIsNone(endpoint("prod"))  # timed out
 
     def test_a_subagent_is_refused_with_exit_2(self) -> None:
         code, out, err = self.run_hook(
@@ -549,6 +794,38 @@ class MergeOfTheGuard(unittest.TestCase):
         self.assertIsNone(
             merge("gh api repos/ikoro-labs/forge/pulls/5/merge", unreadable)
         )  # a GET reads
+
+    def test_a_merge_by_the_full_url_of_the_api_is_judged_too(self) -> None:
+        asked: list[tuple[str | None, str | None]] = []
+
+        def reading(pr: str | None, repository: str | None) -> list[str] | None:
+            asked.append((pr, repository))
+            return ["plugins/forge/hooks/guard_infra.py"]
+
+        command = "gh api -X PUT https://api.github.com/repos/o/r/pulls/5/merge"
+        self.assertIsNotNone(merge(command, reading))
+        self.assertEqual(asked, [("5", "o/r")])
+
+    def test_a_wrapped_merge_is_refused(self) -> None:
+        for command in (
+            "env gh pr merge 5",
+            "env GH_TOKEN=x gh pr merge 5",
+            "command gh pr merge 5",
+            "/usr/bin/gh pr merge 5",
+            "gh.exe pr merge 5",
+            "sudo gh pr merge 5",
+            "timeout 60 gh pr merge 5",
+            "bash -c 'gh pr merge 5'",
+            "sh -c 'cd /x && gh pr merge 5'",
+            "echo 5 | xargs gh pr merge",
+            "nohup gh pr merge 5",
+            "sh <<'EOF'\ngh pr merge 5\nEOF",
+            "sudo env timeout 60 gh api -X PUT repos/o/r/pulls/5/merge",
+        ):
+            with self.subTest(command=command):
+                found = merge(command, files("plugins/forge/hooks/guard_infra.py"))
+                self.assertIn("only the owner merges it, by hand", found or "")
+        self.assertIsNone(merge("env gh pr merge 5", files("README.md")))
 
     def test_a_merge_by_graphql_is_refused(self) -> None:
         command = "gh api graphql -f query='mutation { mergePullRequest(input: {pullRequestId: \"PR_x\"}) { clientMutationId } }'"

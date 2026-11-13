@@ -77,12 +77,15 @@ ne fusionne une PR rouge, ou ne sort de son rôle.
 ## The infrastructure guard
 
 `guard_infra` holds the commands that change the infrastructure: Docker deletions and prunes,
-`docker compose down -v`, `systemctl restart`, `stop`, `disable`, `mask` and `kill`, `lxc config
-set`, `delete`, `stop` and `restart`, `networkctl` (but `status`, `list`, `lldp`), a runner's `svc.sh
-stop` and `uninstall`. On a host of the project's `infra-hosts` key, reached by `ssh`, `scp`, `rsync`
-or `lxc exec`, everything off a short read list is held (`docker ps`, `df`, `systemctl status`,
-`journalctl`...), but the project's own check commands of its `infra-verify` key. Wrappers (`sudo`, `env`, `timeout`...) and `sh -c`, `$(...)`, `;`, `&&`, `|` are
-looked through; what the guard cannot read is held. A subagent is refused; the main session asks
+`docker compose down -v`, `systemctl` (or `service`) `restart`, `stop`, `disable`, `mask` and
+`kill`, `lxc config set`, `delete`, `stop`, `restart`, `restore` and `pause`, `networkctl` (but
+`status`, `list`, `lldp`), a runner's `svc.sh stop` and `uninstall`. On a host of the project's
+`infra-hosts` key, reached by `ssh`, `scp`, `sftp`, `rsync`, `lxc exec`, `lxc shell` or `lxc file`,
+or by Docker's endpoint (`-H`, `--context`, `DOCKER_HOST`), everything off a short read list is held
+(`docker ps`, `df`, `systemctl status`, `journalctl`...), but the project's own check commands of
+its `infra-verify` key. Every command is parsed, so quotes hide no program; wrappers (`sudo`, `env`,
+`timeout`, `sshpass`...) and `sh -c`, `$(...)`, `;`, `&&`, `|` are looked through; what the guard
+cannot read is held. A subagent is refused; the main session asks
 the human, who answers the prompt or types the command himself with `! <command>`. A PR of forge
 that changes the guard, its tests, `guard_git.py` or `hooks.json` is merged by the owner only, in GitHub's web interface. What
 passes, what is out of reach and what was tried:

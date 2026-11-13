@@ -133,6 +133,51 @@ class DangerousForms(unittest.TestCase):
                 self.assertIsNone(merge_refused(command, {"m.md": "Closes #206\n"}))
 
 
+class WrappersAreLookedThrough(unittest.TestCase):
+    """A wrapper (`env`, `sudo`, `command`, a path, `timeout`, `xargs`, `sh -c`) hides no refusal."""
+
+    def test_a_merge_with_red_checks_is_refused_behind_a_wrapper(self) -> None:
+        for command in (
+            "env gh pr merge 5",
+            "command gh pr merge 5",
+            "/usr/bin/gh pr merge 5",
+            "sudo gh pr merge 5",
+            "timeout 60 gh pr merge 5",
+            "bash -c 'gh pr merge 5'",
+            "echo 5 | xargs gh pr merge",
+        ):
+            with self.subTest(command=command):
+                self.assertIn("checks not green", refused(command) or "")
+
+    def test_a_push_to_main_is_refused_behind_a_wrapper(self) -> None:
+        for command in (
+            "env git push origin HEAD:main",
+            "command git push origin main",
+            "/usr/bin/git push origin main",
+            "sudo git push --force origin feat/x",
+            "timeout 60 git reset --hard",
+            "sh -c 'git push origin HEAD:main'",
+            "nice git commit -m x",
+        ):
+            with self.subTest(command=command):
+                branch = "main" if "commit" in command else "feat/x"
+                self.assertIsNotNone(refused(command, branch=branch), command)
+
+    def test_words_the_infra_guard_cannot_read_are_kept(self) -> None:
+        found = refusal(
+            "sudo $WHO make deploy",
+            "feat/x",
+            lambda _pr: True,
+            owner_gestures=["sudo | only the owner"],
+        )
+        self.assertIn("only the owner", found or "")
+
+    def test_a_lookup_and_a_wrapped_reading_pass(self) -> None:
+        for command in ("command -v gh", "env gh pr view 5", "sudo git status"):
+            with self.subTest(command=command):
+                self.assertIsNone(refused(command), command)
+
+
 class WhereGitActs(unittest.TestCase):
     def test_the_branch_is_the_one_where_git_acts_not_where_the_agent_stands(self) -> None:
         mapping = {"../wt-main": "main", "wt-main": "main"}
