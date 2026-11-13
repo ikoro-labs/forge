@@ -77,15 +77,13 @@ import usine  # noqa: E402
 
 Runner = Callable[[list[str], Path], str]
 
-REWORK = "agent-rework"
 ESCAPED = "escaped-defect"
 READY = "ready-for-agent"
 ATTENTION = "needs-your-attention"
 SEVERITY = re.compile(r"^(?:gravite|gravité|severity):(.+)$")
 VERDICT = re.compile(r"^VERDICT:[ \t]*(ACCEPT|REJECT)[ \t]*$", re.MULTILINE)
-ROUND = re.compile(r"^ROUND:[ \t]*([12])[ \t]*$", re.MULTILINE)
+ROUND = re.compile(r"^ROUND:[ \t]*([1-9]\d*)[ \t]*$", re.MULTILINE)
 ESCAPED_FROM = re.compile(r"Échappé de #(\d+)")
-TICKET_REF = re.compile(r"\b(?:Closes|Refs)\s+#(\d+)")
 REVERTS = re.compile(r"This reverts commit ([0-9a-f]{7,40})")
 ATTENTION_LINE = re.compile(r"\*\*Attention\s*:\*\*\s*(.*)")
 FAILING = {"failure", "cancelled", "timed_out", "action_required", "startup_failure"}
@@ -280,25 +278,21 @@ def accept_round_1(f: Factory) -> Sli:
     return ratio("accept-round-1", accepted, judged, "aucune PR jugée au tour 1 dans la fenêtre", illisibles=unreadable)
 
 
-def tickets_of(item: dict) -> set[int]:
-    cited = {int(ref["number"]) for ref in item.get("closingIssuesReferences") or []}
-    return cited | {int(n) for n in TICKET_REF.findall(str(item.get("body") or ""))}
-
-
 def closed_tickets_of(item: dict) -> set[int]:
     """Les tickets que la PR ferme (`Closes`), sans ceux qu'elle ne fait que citer par `Refs`."""
     return {int(ref["number"]) for ref in item.get("closingIssuesReferences") or []}
 
 
+def rejected(item: dict) -> bool:
+    """Whether a comment of the PR carries a `VERDICT: REJECT`, whatever its round."""
+    return any("REJECT" in VERDICT.findall(str(comment.get("body") or "")) for comment in item.get("comments") or [])
+
+
 def rework_rate(f: Factory) -> Sli:
-    entrusted: set[int] = set()
-    reworked: set[int] = set()
-    for item in f.created:
-        tickets = tickets_of(item)
-        entrusted |= tickets
-        if REWORK in label_names(item):
-            reworked |= tickets
-    return ratio("rework-rate", len(reworked), len(entrusted), "aucun ticket confié à un coder dans la fenêtre")
+    """The share of the PRs merged in the window that went through at least one `VERDICT: REJECT`."""
+    merged = f.merged
+    reworked = sum(rejected(item) for item in merged)
+    return ratio("rework-rate", reworked, len(merged), "aucune PR fusionnée dans la fenêtre")
 
 
 def escaped_defects(f: Factory) -> Sli:
