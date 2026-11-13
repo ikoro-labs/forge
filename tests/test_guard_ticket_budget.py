@@ -527,6 +527,66 @@ class Detours(unittest.TestCase):
         self.assertIsNone(project.tool("mcp__github__get_issue", {"issue_number": 3}, full(9)))
 
 
+class Removals(unittest.TestCase):
+    """A ticket that holds a place in a budget is neither deleted nor transferred."""
+
+    def test_a_counted_ticket_is_neither_deleted_nor_transferred(self) -> None:
+        project = Project(self, design("accepte", 5))
+        for body in (
+            ticket("to-tickets F-0001"),
+            ticket("fusion-bloquee #12", "F-0001"),
+            "Old ticket.\n\nFeature: F-0001\n",
+            ticket("feature-new F-0001"),
+        ):
+            for command in (
+                "gh issue delete 7 --yes",
+                "gh issue delete https://github.com/o/r/issues/7 --yes",
+                "gh issue transfer 7 o/other",
+                "gh -R o/r issue transfer 7 o/other",
+                "bash -c 'gh issue delete 7 --yes'",
+            ):
+                with self.subTest(body=body, command=command):
+                    reason = project.bash(command, FakeGh([], body))
+                    self.assertIn("holds a place in the budget of F-0001", reason or "")
+
+    def test_an_out_of_budget_ticket_may_go(self) -> None:
+        project = Project(self, design("accepte", 5))
+        gh = FakeGh([], ticket("securite"))
+        self.assertIsNone(project.bash("gh issue delete 7 --yes", gh))
+        self.assertIsNone(project.bash("gh issue transfer 7 o/other", gh))
+        self.assertIn(["issue", "view", "7", "--json", "body"], gh.calls)
+
+    def test_an_unknown_or_unreadable_ticket_is_refused(self) -> None:
+        project = Project(self, design("accepte", 5))
+        self.assertIn(
+            "cannot be read", project.bash("gh issue delete 7 --yes", FakeGh([], None)) or ""
+        )
+        self.assertIn(
+            "cannot be read", project.bash('gh issue delete "$N" --yes', FakeGh([], "")) or ""
+        )
+        self.assertIn("cannot be read", project.bash("gh issue delete --yes", FakeGh([], "")) or "")
+
+    def test_the_mutations_and_the_mcp_tools_are_held_too(self) -> None:
+        project = Project(self, design("accepte", 5))
+        for mutation in ("deleteIssue", "transferIssue"):
+            command = f"gh api graphql -f query='mutation {{ {mutation}(input: {{issueId: \"I\"}}) {{ clientMutationId }} }}'"
+            with self.subTest(mutation=mutation):
+                self.assertIn("refused", project.bash(command, FakeGh([], "")) or "")
+        counted = FakeGh([], ticket("to-tickets F-0001"))
+        target = {"owner": "o", "repo": "r", "issue_number": 7}
+        for tool, extra in (
+            ("mcp__github__delete_issue", {}),
+            ("mcp__github__transfer_issue", {}),
+            ("mcp__claude_ai_GitHub__issue_write", {"method": "delete"}),
+        ):
+            with self.subTest(tool=tool):
+                reason = project.tool(tool, {**target, **extra}, counted)
+                self.assertIn("budget of F-0001", reason or "")
+        self.assertIsNone(
+            project.tool("mcp__github__delete_issue", target, FakeGh([], "Motif : securite"))
+        )
+
+
 class CeilingEverywhere(unittest.TestCase):
     """2026-11-13 finding 3: the ceiling and the published tickets bound every write of the budget."""
 

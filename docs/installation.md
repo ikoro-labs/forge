@@ -313,7 +313,7 @@ le refus. Essayé sur Linux seulement, par les tests ; pas encore sur un vrai po
 ## The ticket budget of a feature
 
 The design of a feature declares `feature-tickets: N` in its header; the ceiling is 15, a constant of
-the plugin and not a key of `usine.md`. `guard_ticket_budget` holds it at three moments:
+the plugin and not a key of `usine.md`. `guard_ticket_budget` holds it at four moments:
 
 - **At each write of a design.** An Edit, Write or MultiEdit of a `design.md` is refused when it
   leaves `feature-tickets` above 15, below 1 once accepted, below the tickets the feature already
@@ -340,6 +340,10 @@ the plugin and not a key of `usine.md`. `guard_ticket_budget` holds it at three 
   and the update tools of a GitHub MCP server may not add, remove or change a `Motif :` or `Feature:`
   line of the body (the hook reads the current body with `gh issue view`). A body set by an
   `updateIssue` mutation is refused.
+- **At each removal of a ticket.** `gh issue delete`, `gh issue transfer` and the delete or transfer
+  tools of a GitHub MCP server are refused on a ticket that holds a place in a budget (a feature
+  ticket, or the tracking ticket of a feature) and on one whose body gh cannot give: close it
+  instead. `deleteIssue` and `transferIssue` mutations are refused.
 
 The hook refuses what it cannot read: a body passed by a variable (`--body "$BODY"`), a command
 substitution other than `$(cat <<'EOF' ... EOF)`, a heredoc with an unquoted delimiter whose body
@@ -362,8 +366,7 @@ Limits, tried on Linux only, by the tests with a simulated gh, not yet in a real
 - a shell fed by a pipe (`... | bash`), a script file run by a shell or an interpreter, and a design
   renamed into place by `mv` are not read;
 - a GraphQL body variable fed by a JSON `--input` is refused as a precaution, and so is a backtick in
-  a double-quoted body under PowerShell, where it is an escape;
-- `gh issue delete` and `gh issue transfer` are not held: they free a slot of the budget.
+  a double-quoted body under PowerShell, where it is an escape.
 
 ## Compléter ou remplacer, sans éditer le plugin
 

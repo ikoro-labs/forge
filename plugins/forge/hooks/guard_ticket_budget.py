@@ -1,6 +1,6 @@
 """PreToolUse hook: the ticket budget of a feature, a standard common to every forge project.
 
-The design of a feature declares `feature-tickets: N` in its header, and the hook holds it at two
+The design of a feature declares `feature-tickets: N` in its header, and the hook holds it at these
 moments:
 
 - **Writing a design.** An Edit, Write or MultiEdit of a `design.md` that leaves `feature-tickets: N`
@@ -28,6 +28,10 @@ moments:
 - **Editing a ticket.** `gh issue edit`, a PATCH by `gh api` on `repos/<owner>/<repo>/issues/<n>`
   and the update tool of a GitHub MCP server may not add, remove or change a `Motif :` or
   `Feature:` line of the ticket's body. A body set by an `updateIssue` mutation is refused.
+- **Removing a ticket.** `gh issue delete`, `gh issue transfer` and the delete or transfer tool of a
+  GitHub MCP server are refused on a ticket that holds a place in a budget (a feature ticket, or the
+  tracking ticket of a feature), and on one whose body gh cannot give; `deleteIssue` and
+  `transferIssue` mutations are refused.
 
 A body the hook cannot read is refused: a variable (`"$BODY"`), a command substitution other than
 `$(cat <<'EOF' ... EOF)`, a heredoc whose unquoted delimiter lets the shell expand it, an editor or
@@ -98,6 +102,7 @@ NAMED_FEATURE = re.compile(r"^(?:to-tickets|feature-new)\s+(F-\d{4})\b")
 ISSUES_ENDPOINT = re.compile(r"^/?repos/([^/]+)/([^/]+)/issues/?(?:\?.*)?$")
 ISSUE_ENDPOINT = re.compile(r"^/?repos/([^/]+)/([^/]+)/issues/(\d+)/?(?:\?.*)?$")
 ISSUE_URL = re.compile(r"^https?://[^/]+/([^/]+)/([^/]+)/issues/(\d+)/?$")
+GRAPHQL_REMOVAL = re.compile(r"\b(?:deleteIssue|transferIssue)\b")
 GRAPHQL_BODY = re.compile(r'\bbody\s*:\s*(?:"((?:[^"\\]|\\.)*)"|\$(\w+))')
 SHELL_ACCEPTANCE = re.compile(r"statut\W{0,3}accepte\b|en-revue\W{1,3}accepte\b")
 API_GITHUB = re.compile(r"api\.github\.com/+(?:repos/[^/\s'\"]+/[^/\s'\"]+/issues\b|graphql\b)")
@@ -150,12 +155,21 @@ class Edit(NamedTuple):
     repo: str | None
 
 
+class Removal(NamedTuple):
+    """A ticket a command deletes or transfers out of the repository (`verb`), and its repo."""
+
+    number: str
+    verb: str
+    repo: str | None
+
+
 class Gestures(NamedTuple):
-    """What a command does to tickets: creations, edits, and refusals found on the way."""
+    """What a command does to tickets: creations, edits, removals, and refusals found on the way."""
 
     creations: list[Creation]
     edits: list[Edit]
     refusals: list[str]
+    removals: list[Removal]
 
 
 class Heredoc(NamedTuple):
@@ -702,9 +716,14 @@ def _graphql_gestures(
         elif value.partition("=")[2].startswith("@"):
             parts.append(_read(cwd, value.partition("=")[2][1:]) or "")
     text = "\n".join(parts)
-    found = Gestures([], [], [])
+    found = Gestures([], [], [], [])
     if "updateIssue" in text and GRAPHQL_BODY.search(text):
         found.refusals.append("a ticket's body is edited with `gh issue edit`, not `updateIssue`")
+    if GRAPHQL_REMOVAL.search(text):
+        found.refusals.append(
+            "a ticket is deleted or transferred with `gh issue delete` or `gh issue transfer`,"
+            " where the hook reads whether it counts in a budget: the mutation is refused"
+        )
     if "createIssue" not in text:
         return found
     match = GRAPHQL_BODY.search(text)
@@ -726,7 +745,7 @@ def _graphql_gestures(
 
 def api_gestures(args: list[str], cwd: str | None, docs: list[Heredoc]) -> Gestures:
     """What a `gh api` call does to tickets, over every reading of its words."""
-    found = Gestures([], [], [])
+    found = Gestures([], [], [], [])
     readings = api_readings(args)
     if readings is None:
         if any("/issues" in word or word == "graphql" for word in args):
@@ -796,6 +815,7 @@ def _merge(into: Gestures, other: Gestures) -> None:
     into.creations.extend(other.creations)
     into.edits.extend(other.edits)
     into.refusals.extend(other.refusals)
+    into.removals.extend(other.removals)
 
 
 SUBSTITUTIONS = re.compile(DOLLAR + r"\((.*)\)|" + TICK + "(.*?)" + TICK, re.DOTALL)
@@ -812,7 +832,7 @@ def _substitutions(word: str) -> list[str]:
 
 def gestures(command: str, cwd: str | None, depth: int = 0) -> Gestures:
     """What `command` does to tickets, by gh, a nested shell, an alias or another HTTP client."""
-    found = Gestures([], [], [])
+    found = Gestures([], [], [], [])
     if API_GITHUB.search(command):
         found.refusals.append(
             "a call to api.github.com that names issues or GraphQL goes through gh, so that the"
@@ -867,9 +887,30 @@ def gestures(command: str, cwd: str | None, depth: int = 0) -> Gestures:
             given, body, positional = _issue_body(rest, call, cwd, docs, EDIT_VALUE_OPTIONS)
             if given:
                 found.edits.extend(_issue_edits(positional, body, _repo_of(call)))
+        elif group == "issue" and verb in ("delete", "transfer"):
+            _issue_removals(verb, rest, _repo_of(call), found)
         elif group == "api":
             _merge(found, api_gestures((gh_command(call) or [])[1:], cwd, docs))
     return found
+
+
+def _issue_removals(verb: str, rest: list[str], repo: str | None, found: Gestures) -> None:
+    """The tickets `gh issue delete` (every positional word) or `gh issue transfer` (the first) names."""
+    positional: list[str] = []
+    skip = False
+    for word in rest:
+        if skip:
+            skip = False
+        elif word in ("-R", "--repo"):
+            skip = True
+        elif not word.startswith("-"):
+            positional.append(word)
+    named = positional[:1] if verb == "transfer" else positional
+    if not named or not all(_readable(word) for word in named) or (repo and not _readable(repo)):
+        found.refusals.append(f"the ticket `gh issue {verb}` names cannot be read")
+        return
+    for edit in _issue_edits(named, None, repo):
+        found.removals.append(Removal(edit.number, verb, edit.repo))
 
 
 def _issue_edits(positional: list[str], body: str | None, repo: str | None) -> list[Edit]:
@@ -1067,6 +1108,27 @@ def edit_refusal(edit: Edit, cwd: str | None, run: Runner) -> str | None:
     return None
 
 
+def removal_refusal(removal: Removal, cwd: str | None, run: Runner) -> str | None:
+    """Why a ticket may not be deleted or transferred: it holds a place in a budget, or is unknown."""
+    body = current_body(removal.number, removal.repo, cwd, run)
+    if body is None:
+        return (
+            f"the body of ticket #{removal.number or '?'} cannot be read (gh absent, the network, or"
+            f" a gh error), so whether `gh issue {removal.verb}` frees a place in a budget cannot be"
+            " checked"
+        )
+    feature = counts_for(body)
+    tracking = placement(body)
+    if feature is None and tracking.kind == "tracking":
+        feature = tracking.detail
+    if feature is not None:
+        return (
+            f"ticket #{removal.number} holds a place in the budget of {feature}: `gh issue"
+            f" {removal.verb}` would free it, so the ticket stays; close it instead"
+        )
+    return None
+
+
 def mcp_gestures(tool: str, tool_input: Mapping[str, object]) -> Gestures | None:
     """The ticket gestures of a GitHub MCP tool; None when the tool is no issue tool of one."""
     if not tool.startswith("mcp__") or "github" not in tool.lower():
@@ -1078,11 +1140,17 @@ def mcp_gestures(tool: str, tool_input: Mapping[str, object]) -> Gestures | None
     raw = tool_input.get("body", "")
     body = raw if isinstance(raw, str) else None
     if action == "create_issue" or (action == "issue_write" and method == "create"):
-        return Gestures([Creation(body, repo)], [], [])
+        return Gestures([Creation(body, repo)], [], [], [])
+    if action in ("delete_issue", "transfer_issue") or (
+        action == "issue_write" and method in ("delete", "transfer")
+    ):
+        verb = "transfer" if "transfer" in (action, method) else "delete"
+        number = str(tool_input.get("issue_number", ""))
+        return Gestures([], [], [], [Removal(number, verb, repo)])
     if action == "update_issue" or (action == "issue_write" and method == "update"):
         if "body" not in tool_input:
-            return Gestures([], [], [])
-        return Gestures([], [Edit(str(tool_input.get("issue_number", "")), body, repo)], [])
+            return Gestures([], [], [], [])
+        return Gestures([], [Edit(str(tool_input.get("issue_number", "")), body, repo)], [], [])
     return None
 
 
@@ -1115,6 +1183,9 @@ def refusal(event: Mapping[str, object], run: Runner = run_gh) -> str | None:
         return found.refusals[0]
     for edit in found.edits:
         if reason := edit_refusal(edit, cwd, run):
+            return reason
+    for removal in found.removals:
+        if reason := removal_refusal(removal, cwd, run):
             return reason
     if not found.creations:
         return None
