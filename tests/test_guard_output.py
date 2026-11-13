@@ -197,8 +197,6 @@ class GhBodies(unittest.TestCase):
     def test_what_the_guard_cannot_read_or_does_not_cover_passes(self) -> None:
         with isolated():
             for command in [
-                'gh issue create --title t --body "$BODY"',
-                "gh pr create --body-file missing.md",
                 "gh pr review 3 --approve",
                 "gh pr edit 3 --add-label x",
                 "gh pr merge 3 --body 'x'",
@@ -208,6 +206,94 @@ class GhBodies(unittest.TestCase):
             ]:
                 with self.subTest(command=command):
                     self.assertEqual(run(bash(command)), (0, "", ""))
+
+
+LONG = "\n\n".join([" ".join(["word"] * 40)] * 5)
+
+
+class MeridianReview(unittest.TestCase):
+    """The review of the MeridianRE session, 2026-11-13: fail closed on gh, every channel covered."""
+
+    def assertRefused(self, command: str, cwd: str = ".") -> str:
+        code, err, _ = run(bash(command, cwd))
+        self.assertEqual(code, REFUSED, command)
+        return err
+
+    def test_a_body_the_guard_cannot_read_is_refused(self) -> None:
+        with isolated() as project:
+            for command in [
+                'gh issue create --title t --body "$BODY"',
+                'gh pr create --body-file "$FILE"',
+                "gh pr create --body-file missing.md",
+                "gh api repos/o/r/issues/3/comments -F body=@$FILE",
+                "cat body.md | gh issue comment 3 --body-file -",
+                "gh pr comment 3 --body-file /dev/stdin",
+            ]:
+                with self.subTest(command=command):
+                    err = self.assertRefused(command, str(project))
+                    self.assertIn("cannot be read", err)
+
+    def test_stop_stays_open_on_what_it_cannot_read(self) -> None:
+        with isolated():
+            self.assertEqual(run({"hook_event_name": "Stop", "transcript_path": "/nowhere"})[0], 0)
+
+    def test_close_and_merge_texts_are_checked(self) -> None:
+        with isolated() as project:
+            (project / "m.md").write_text(LONG, encoding="utf-8")
+            for command in [
+                f"gh issue close 3 -c '{LONG}'",
+                f"gh issue close 3 --comment='{LONG}'",
+                f"gh pr close 3 --comment '{LONG}'",
+                f"gh pr merge 3 --merge --body '{LONG}'",
+                "gh pr merge 3 -F m.md",
+            ]:
+                with self.subTest(command=command):
+                    self.assertRefused(command, str(project))
+            self.assertEqual(run(bash("gh pr close 3 -c 'Superseded by #4.'"))[0], 0)
+
+    def test_gh_api_input_is_checked(self) -> None:
+        with isolated() as project:
+            (project / "c.json").write_text(json.dumps({"body": LONG}), encoding="utf-8")
+            (project / "ok.json").write_text(json.dumps({"body": "Merged."}), encoding="utf-8")
+            self.assertRefused("gh api repos/o/r/issues/3/comments --input c.json", str(project))
+            self.assertRefused("gh api repos/o/r/issues/3/comments --input -", str(project))
+            heredoc = f"gh api repos/o/r/issues/3/comments --input - <<'EOF'\n{json.dumps({'body': LONG})}\nEOF"
+            self.assertRefused(heredoc, str(project))
+            command = "gh api repos/o/r/issues/3/comments --input ok.json"
+            self.assertEqual(run(bash(command, str(project)))[0], 0)
+
+    def test_graphql_comment_and_issue_mutations_are_checked(self) -> None:
+        literal = json.dumps(LONG)
+        with isolated():
+            for command in [
+                f"gh api graphql -f query='mutation {{ addComment(input: {{subjectId: \"I_1\", body: {literal}}}) {{ clientMutationId }} }}'",
+                f"gh api graphql -f query='mutation($b: String!) {{ addComment(input: {{subjectId: \"I_1\", body: $b}}) {{ clientMutationId }} }}' -f b='{LONG}'",
+                "gh api graphql -f query='mutation { createIssue(input: {repositoryId: \"R\", title: \"t\", body: \"No motif.\"}) { issue { number } } }'",
+                'gh api graphql -f query="$Q"',
+            ]:
+                with self.subTest(command=command[:60]):
+                    self.assertRefused(command)
+            read = "gh api graphql -f query='query { viewer { login } }'"
+            self.assertEqual(run(bash(read))[0], 0)
+
+    def test_curl_to_the_github_api_is_refused(self) -> None:
+        with isolated():
+            err = self.assertRefused("curl -s -X POST https://api.github.com/repos/o/r/issues -d @b.json")
+            self.assertIn("gh", err)
+            self.assertEqual(run(bash("curl -s https://example.org/x"))[0], 0)
+
+    def test_every_reading_of_a_gh_api_call_is_judged(self) -> None:
+        # `>` is the template's value in the first reading, whose endpoint is the labels; in the
+        # second it redirects to `repos/o/r/labels`, and the endpoint is the comments.
+        command = f"gh api -t '>' repos/o/r/labels '{{{{.}}}}' repos/o/r/issues/3/comments -f body='{LONG}'"
+        with isolated():
+            self.assertRefused(command)
+
+    def test_an_agent_without_the_forge_prefix_is_held_to_its_format(self) -> None:
+        with isolated():
+            code, err, _ = run(subagent_stop("qc-conf", VERDICT_ACCEPT_WITH_BLOCKER))
+        self.assertEqual(code, REFUSED)
+        self.assertIn("`verdict` format", err)
 
 
 class Stop(unittest.TestCase):
