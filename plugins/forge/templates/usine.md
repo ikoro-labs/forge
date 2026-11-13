@@ -469,6 +469,13 @@ deny list (`docker rm`, `systemctl restart`...) still holds.
 - `infra-hosts` : `<203.0.113.7>`
 - `infra-hosts` : `<ci-runner>`
 
+The project's own check commands, admitted on those hosts besides the read list, one per line and
+word for word: `bash <command>` and `sh <command>` count as `<command>`, any other argument or form
+is held. Without the key, no such command is admitted.
+
+- `infra-verify` : `<infra/runner/check.sh verify>`
+- `infra-verify` : `</opt/ci/host-check.sh status>`
+
 Les gestes du propriétaire du dépôt propres au projet, que `guard_git` refuse à tout agent en plus
 de sa liste intégrée (écritures de `gh api` sur les collaborateurs, protections de branche,
 rulesets, runners, secrets, variables, clés, webhooks et dépôt ; `gh secret`, `gh variable`,

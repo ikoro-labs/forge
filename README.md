@@ -81,10 +81,10 @@ ne fusionne une PR rouge, ou ne sort de son rôle.
 set`, `delete`, `stop` and `restart`, `networkctl` (but `status`, `list`, `lldp`), a runner's `svc.sh
 stop` and `uninstall`. On a host of the project's `infra-hosts` key, reached by `ssh`, `scp`, `rsync`
 or `lxc exec`, everything off a short read list is held (`docker ps`, `df`, `systemctl status`,
-`journalctl`...). Wrappers (`sudo`, `env`, `timeout`...) and `sh -c`, `$(...)`, `;`, `&&`, `|` are
+`journalctl`...), but the project's own check commands of its `infra-verify` key. Wrappers (`sudo`, `env`, `timeout`...) and `sh -c`, `$(...)`, `;`, `&&`, `|` are
 looked through; what the guard cannot read is held. A subagent is refused; the main session asks
 the human, who answers the prompt or types the command himself with `! <command>`. A PR of forge
-that changes the guard or its tests is merged by the owner only, in GitHub's web interface. What
+that changes the guard, its tests, `guard_git.py` or `hooks.json` is merged by the owner only, in GitHub's web interface. What
 passes, what is out of reach and what was tried:
 [`docs/installation.md`](docs/installation.md#the-infrastructure-guard).
 

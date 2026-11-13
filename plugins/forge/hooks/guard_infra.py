@@ -19,7 +19,9 @@ On a host of the project's `infra-hosts` key, reached by `ssh`, `scp`, `rsync` o
 --`, every command off the read list is guarded (an allow list, not a detection of writes): `docker
 ps`, `logs`, `inspect`, `images` and `stats --no-stream`; `df`, `free`, `uptime`, `pgrep`, `ps`,
 `true`; `systemctl status`, `show` and `is-active`; `journalctl` without its writing options; `cat`
-of `/proc` files; `lxc list`, `info` and `config show`; the two `verify` scripts of `READ_SCRIPTS`.
+of `/proc` files; `lxc list`, `info` and `config show`; and the project's own commands of its
+`infra-verify` key, word for word (`bash <command>` and `sh <command>` count as `<command>`). Without
+that key, no project command is admitted: the plugin names none.
 An output redirection to anything but `/dev/null` is not a read; `scp` and `rsync` to such a host
 are never one. A destination is matched by `ssh -G` (aliases, `-o HostName=`, `-J`, `ProxyJump`)
 and by its addresses. Without the key no remote host is guarded; the deny list still holds, also
@@ -53,6 +55,7 @@ from guard_git import _MASK, _UNMASK, TIMEOUT_SECONDS, _run, split_heredocs
 from usine import load, project_root
 
 HOSTS_KEY = "infra-hosts"
+VERIFY_KEY = "infra-verify"
 
 # A command without any of these words holds nothing the guard judges: it is not parsed.
 TRIGGERS = (
@@ -559,14 +562,6 @@ def deny_list_refusal(name: str, args: list[str]) -> str | None:
 
 # The read list, the only commands admitted on a declared host.
 
-# The two `verify` scripts of the consumer projects' runner hosts, as they are typed.
-READ_SCRIPTS = frozenset(
-    {
-        "/root/infra/runner/provision-local.sh",
-        "infra/runner/host/lxd-container.sh",
-        "./infra/runner/host/lxd-container.sh",
-    }
-)
 READ_PROGRAMS = frozenset({"df", "free", "uptime", "pgrep", "ps", "true", ":"})
 DOCKER_READS = frozenset({"ps", "logs", "inspect", "images"})
 SYSTEMCTL_READS = frozenset({"status", "show", "is-active"})
@@ -582,11 +577,27 @@ JOURNALCTL_WRITES = (
 )
 
 
-def reads(words: list[str]) -> bool:
-    """Whether a command (wrappers off) is on the read list."""
-    if words[0] in READ_SCRIPTS:
-        return words[1:] == ["verify"]
+def verify_commands(values: Iterable[str]) -> frozenset[tuple[str, ...]]:
+    """The commands of the `infra-verify` key, as words; a value shlex cannot split adds none."""
+    commands = set()
+    for value in values:
+        try:
+            words = shlex.split(value)
+        except ValueError:
+            continue
+        if words:
+            commands.add(tuple(words))
+    return frozenset(commands)
+
+
+def reads(words: list[str], verify: frozenset[tuple[str, ...]] = frozenset()) -> bool:
+    """Whether a command (wrappers off) is on the read list or a declared verify command.
+
+    A declared command that meets the deny list is no read: the key does not lift it.
+    """
     name, args = program_name(words[0]), words[1:]
+    if tuple(words) in verify:
+        return deny_list_refusal(name, args) is None
     if name in READ_PROGRAMS:
         return True
     if name == "docker":
@@ -759,8 +770,14 @@ class Hosts:
 class Judge:
     """Walks a command and says why it is guarded, or None."""
 
-    def __init__(self, hosts: Hosts, powershell: bool = False) -> None:
+    def __init__(
+        self,
+        hosts: Hosts,
+        verify: frozenset[tuple[str, ...]] = frozenset(),
+        powershell: bool = False,
+    ) -> None:
         self.hosts = hosts
+        self.verify = verify
         self.powershell = powershell
 
     def text(self, text: str, remote: str | None, depth: int) -> str | None:
@@ -799,7 +816,7 @@ class Judge:
         if name == "eval":
             return self.text(" ".join(args), remote, depth + 1)
         if remote is not None:
-            if reads(words):
+            if reads(words, self.verify):
                 return None
             return f"`{' '.join(words)[:120]}`, off the read list, on the declared host `{remote}`"
         if reason := deny_list_refusal(name, args):
@@ -855,14 +872,20 @@ def verdict(
     declared: Iterable[str],
     ssh_config: SshConfig,
     addresses_of: AddressLookup,
+    verify: Iterable[str] = (),
 ) -> tuple[Literal["deny", "ask"], str] | None:
-    """`("deny" | "ask", reason)` for a shell call the guard holds, or None."""
+    """`("deny" | "ask", reason)` for a shell call the guard holds, or None.
+
+    `declared` holds the values of the `infra-hosts` key, `verify` those of `infra-verify`.
+    """
     tool_input = event.get("tool_input")
     command = str(tool_input.get("command", "")) if isinstance(tool_input, Mapping) else ""
     if not any(trigger in command.lower() for trigger in TRIGGERS):
         return None
     judge = Judge(
-        Hosts(declared, ssh_config, addresses_of), powershell=event.get("tool_name") == "PowerShell"
+        Hosts(declared, ssh_config, addresses_of),
+        verify_commands(verify),
+        powershell=event.get("tool_name") == "PowerShell",
     )
     try:
         found = judge.text(command, None, 0)
@@ -918,8 +941,14 @@ def main() -> int:
     if not isinstance(event, dict) or not isinstance(event.get("tool_input"), dict):
         found = ("deny", "the guard could not read the call")
     else:
-        declared = load(project_root(event)).get(HOSTS_KEY, [])
-        found = verdict(event, declared, ssh_config_via_ssh(), addresses_via_dns)
+        config = load(project_root(event))
+        found = verdict(
+            event,
+            config.get(HOSTS_KEY, []),
+            ssh_config_via_ssh(),
+            addresses_via_dns,
+            verify=config.get(VERIFY_KEY, []),
+        )
     if found is None:
         return 0
     if found[0] == "deny":

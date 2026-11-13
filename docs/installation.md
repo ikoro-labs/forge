@@ -334,8 +334,10 @@ guard refuses the command (`|| exit 2` and `"onFailure": "block"` in `hooks.json
 every command off the read list is held: it is a list of admission, not a detection of writes. The
 read list: `docker ps`, `logs`, `inspect`, `images`, `stats --no-stream`; `df`; `free`; `uptime`;
 `systemctl status`, `show`, `is-active`; `journalctl` (but `--vacuum-*`, `--rotate`, `--flush`...);
-`pgrep`; `ps`; `true`; `cat` of `/proc` files; `lxc list`, `info`, `config show`;
-`bash /root/infra/runner/provision-local.sh verify` and `infra/runner/host/lxd-container.sh verify`.
+`pgrep`; `ps`; `true`; `cat` of `/proc` files; `lxc list`, `info`, `config show`; and the
+project's own check commands, one per line of its `infra-verify` key, matched word for word
+(`bash <command>` and `sh <command>` count as `<command>`; another argument is held). The plugin
+names no command of a project: without the key, none is admitted.
 `sh -c '<read> || true'` is a read. An output redirection to anything but `/dev/null`, an
 interactive `ssh`, and any `scp` or `rsync` to or from such a host are not. A destination is matched
 through `ssh -G` (aliases, `-o HostName=`, `-J`, `ProxyJump`) and the addresses it resolves to; an
@@ -364,8 +366,9 @@ not against intent.
 prefix", only says the command runs "without going through Claude".
 
 **Final by construction**: `guard_git` refuses to every agent the merge of a PR whose diff touches
-`plugins/forge/hooks/guard_infra.py` (which holds the read list) or `tests/test_guard_infra.py`:
-"this PR changes the infra guard: only the owner merges it, by hand". It reads the files by
+`plugins/forge/hooks/guard_infra.py` (which holds the read list), `tests/test_guard_infra.py`,
+`plugins/forge/hooks/guard_git.py` (which holds this refusal) or `plugins/forge/hooks/hooks.json`
+(which runs the guard): "this PR changes the infra guard: only the owner merges it, by hand". It reads the files by
 `gh pr view <n> -R <repo> --json files`, and a reading that fails refuses too. A REST merge by
 `gh api` is judged on the same files; a GraphQL merge mutation is refused, since it names the PR by
 a node id the guard does not look up. The tests of this refusal live in `tests/test_guard_infra.py`:

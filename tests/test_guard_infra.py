@@ -24,6 +24,8 @@ from guard_infra import guarded_main, verdict
 
 ADDRESS = "203.0.113.7"
 DECLARED = [ADDRESS, "meridianre-ci"]
+# The `infra-verify` key of a project: its own verify commands, admitted on its hosts.
+VERIFY = ["/srv/runner/provision.sh verify", "infra/host/container.sh verify"]
 # `ssh -G` as the fake prints it: aliases, a host behind a jump, a host it cannot print.
 ALIASES = {"vps": ADDRESS, "elsewhere": "198.51.100.1", "box": "box.internal"}
 
@@ -45,24 +47,34 @@ def fake_dns(name: str) -> frozenset[str] | None:
     return {"ci.example": frozenset({ADDRESS})}.get(name, frozenset())
 
 
-def judged(command: str, declared: list[str] | None = None, agent: bool = False) -> str | None:
+def judged(
+    command: str,
+    declared: list[str] | None = None,
+    agent: bool = False,
+    verify: list[str] | None = None,
+) -> str | None:
     event: dict[str, object] = {"tool_input": {"command": command}}
     if agent:
         event["agent_id"] = "a1"
-    found = verdict(event, DECLARED if declared is None else declared, fake_ssh_config, fake_dns)
+    hosts = DECLARED if declared is None else declared
+    found = verdict(event, hosts, fake_ssh_config, fake_dns, verify=verify or [])
     return None if found is None else found[1]
 
 
 class Case(unittest.TestCase):
-    def guarded(self, *commands: str, declared: list[str] | None = None) -> None:
+    def guarded(
+        self, *commands: str, declared: list[str] | None = None, verify: list[str] | None = None
+    ) -> None:
         for command in commands:
             with self.subTest(command=command):
-                self.assertIsNotNone(judged(command, declared), command)
+                self.assertIsNotNone(judged(command, declared, verify=verify), command)
 
-    def admitted(self, *commands: str, declared: list[str] | None = None) -> None:
+    def admitted(
+        self, *commands: str, declared: list[str] | None = None, verify: list[str] | None = None
+    ) -> None:
         for command in commands:
             with self.subTest(command=command):
-                self.assertIsNone(judged(command, declared), command)
+                self.assertIsNone(judged(command, declared, verify=verify), command)
 
 
 class DenyList(Case):
@@ -239,12 +251,42 @@ class RealCommands(Case):
         self.admitted(*commands)
         self.admitted(*commands, declared=[])
 
-    def test_the_verify_scripts_are_admitted(self) -> None:
-        self.admitted(
+    def test_the_declared_verify_commands_are_admitted(self) -> None:
+        commands = (
+            "ssh vps bash /srv/runner/provision.sh verify",
+            "ssh vps /srv/runner/provision.sh verify",
+            "lxc exec meridianre-ci -- infra/host/container.sh verify",
+        )
+        self.admitted(*commands, verify=VERIFY)
+        self.guarded(
+            "ssh vps bash /srv/runner/provision.sh apply",
+            "ssh vps bash /srv/runner/provision.sh verify --fix",
+            "ssh vps bash /srv/runner/provision.sh",
+            "ssh vps bash ./infra/host/container.sh verify",
+            verify=VERIFY,
+        )
+
+    def test_without_the_infra_verify_key_no_verify_command_is_admitted(self) -> None:
+        self.guarded(
+            "ssh vps bash /srv/runner/provision.sh verify",
             "ssh vps bash /root/infra/runner/provision-local.sh verify",
             "lxc exec meridianre-ci -- infra/runner/host/lxd-container.sh verify",
         )
-        self.guarded("ssh vps bash /root/infra/runner/provision-local.sh apply")
+
+    def test_a_declared_verify_command_is_no_read_on_its_own(self) -> None:
+        # The key admits a command on a declared host; it does not lift the deny list, there or here.
+        self.guarded(
+            "docker rm web",
+            "ssh vps docker rm web",
+            "lxc exec meridianre-ci -- systemctl restart docker",
+            verify=["docker rm web", "systemctl restart docker"],
+        )
+
+    def test_the_plugin_cites_no_path_of_a_project(self) -> None:
+        source = (support.PLUGIN / "hooks" / "guard_infra.py").read_text(encoding="utf-8")
+        for path in ("/root/infra", "provision-local.sh", "lxd-container.sh"):
+            with self.subTest(path=path):
+                self.assertNotIn(path, source)
 
 
 class DeclaredHost(Case):
@@ -382,6 +424,19 @@ class TheHook(unittest.TestCase):
         )
         self.assertEqual(self.run_hook(event)[0], 2)
 
+    def test_the_verify_commands_come_from_the_infra_verify_key(self) -> None:
+        command = "ssh vps bash /srv/runner/provision.sh verify"
+        event = {"tool_input": {"command": command}, "agent_id": "a1"}
+        usine = self.root / "docs" / "agents" / "usine.md"
+        usine.write_text(f"- `infra-hosts` : `{ADDRESS}`\n", encoding="utf-8")
+        self.assertEqual(self.run_hook(event)[0], 2)
+        usine.write_text(
+            f"- `infra-hosts` : `{ADDRESS}`\n"
+            "- `infra-verify` : `/srv/runner/provision.sh verify`\n",
+            encoding="utf-8",
+        )
+        self.assertEqual(self.run_hook(event)[0], 0)
+
     def test_an_unreadable_event_is_refused(self) -> None:
         self.assertEqual(self.run_hook(["not", "an", "event"])[0], 2)
         self.assertEqual(self.run_hook({"tool_input": "docker rm web"})[0], 2)
@@ -449,6 +504,9 @@ class MergeOfTheGuard(unittest.TestCase):
             "plugins/forge/hooks/guard_infra.py",
             "tests/test_guard_infra.py",
             "./tests\\test_guard_infra.py",
+            # The refusal itself, and the registration that runs the guard.
+            "plugins/forge/hooks/guard_git.py",
+            "plugins/forge/hooks/hooks.json",
         ):
             with self.subTest(path=path):
                 found = merge("gh pr merge 5 --merge", files("README.md", path))
@@ -459,7 +517,7 @@ class MergeOfTheGuard(unittest.TestCase):
 
     def test_another_pr_goes_through(self) -> None:
         self.assertIsNone(
-            merge("gh pr merge 5 --merge", files("README.md", "plugins/forge/hooks/guard_git.py"))
+            merge("gh pr merge 5 --merge", files("README.md", "plugins/forge/hooks/guard_coder.py"))
         )
 
     def test_an_unreadable_list_is_refused(self) -> None:

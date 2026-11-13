@@ -49,8 +49,8 @@ adds its own with the `owner-gesture` key of `docs/agents/usine.md`, one `<comma
 every owner gesture to the project's own hooks.
 
 Also refused, to every agent, is the merge of a PR whose diff touches the infra guard
-(`plugins/forge/hooks/guard_infra.py` or its tests): `gh pr merge`, a REST merge by `gh api` (its
-files read by `gh pr view <n> -R <repo> --json files`, a reading that fails refusing too) and any
+(`plugins/forge/hooks/guard_infra.py`, its tests, this file or `hooks.json`, which runs the guard):
+`gh pr merge`, a REST merge by `gh api` (its files read by `gh pr view <n> -R <repo> --json files`, a reading that fails refusing too) and any
 GraphQL merge mutation, whose node id the guard does not look up. Only the owner merges it, by hand.
 """
 
@@ -1017,10 +1017,18 @@ def protected_refusal(
     return None
 
 
-# The files of the infra guard (`guard_infra.py`, which holds its read list, and its tests, which
-# also prove this refusal): a PR whose diff touches one is merged by the owner, by hand. Compared
-# with the POSIX path of each file of the diff, so it holds in forge and in any copy of it.
-INFRA_GUARD_FILES = frozenset({"plugins/forge/hooks/guard_infra.py", "tests/test_guard_infra.py"})
+# The files of the infra guard: `guard_infra.py`, its tests (which also prove this refusal), this
+# file, which holds the refusal, and `hooks.json`, which runs the guard. A PR whose diff touches one
+# is merged by the owner, by hand. Compared with the POSIX path of each file of the diff, so it
+# holds in forge and in any copy of it.
+INFRA_GUARD_FILES = frozenset(
+    {
+        "plugins/forge/hooks/guard_infra.py",
+        "tests/test_guard_infra.py",
+        "plugins/forge/hooks/guard_git.py",
+        "plugins/forge/hooks/hooks.json",
+    }
+)
 INFRA_GUARD_REFUSAL = "this PR changes the infra guard: only the owner merges it, by hand"
 MERGE_ENDPOINT = re.compile(r"^repos/([^/]+/[^/]+)/pulls/([^/]+)/merge$")
 MERGE_MUTATION = re.compile(r"\b(?:mergePullRequest|enablePullRequestAutoMerge)\b", re.IGNORECASE)
