@@ -1,21 +1,28 @@
 """The bodies a shell command publishes on GitHub through gh, read before gh runs.
 
 One reader for every hook that judges a body: `gh issue|pr create|edit|comment|review|merge|close`
-with `--body`, `--body-file` (`-` and `/dev/stdin` read from the heredoc of the command) or
-`--comment`, and `gh api` with `-f/-F body=...` or `--input` on an issue, PR or comment endpoint,
-or a GraphQL mutation that carries a `body` argument. A body the reader cannot read before gh does
-(a shell variable, a pipe, a missing file, standard input without a heredoc) raises `Unreadable`:
-the caller refuses it, never lets it through unread. The standard library only.
+with `--body`, `--body-file` (`-` and `/dev/stdin` read from the command's own `<<NAME` heredoc or
+`< file`) or `--comment`, and `gh api` with `-f/-F body=...` or `--input` on an issue, PR or comment
+endpoint, or a GraphQL mutation that carries a `body` argument, a literal or a variable. A body
+option `"$(cat <<'NAME' ... NAME)"` is read from the heredoc it names. `commands` finds gh wherever
+the shell runs it: behind `env`, `command`, `sudo`, `xargs` or a path (`/usr/bin/gh`), in
+`bash -c`, `sh -c`, `eval`, a shell fed by a heredoc, or a `$(...)` substitution. A body the reader
+cannot read before gh does (a shell variable, a substitution other than a literal heredoc, a pipe,
+a missing file) raises `Unreadable`, and so does gh run through a variable: the caller refuses,
+never lets it through unread. The standard library only.
 """
 
 from __future__ import annotations
 
 import json
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from guard_git import (
+    HEREDOC,
+    _commands,
     _standard_input_text,
     api_readings,
     gh_act,
@@ -66,12 +73,65 @@ MUTATION = re.compile(r"\b(" + "|".join(GRAPHQL_BODIES) + r")\s*\(")
 BODY_ARGUMENT = re.compile(r'\bbody\s*:\s*(?:"""(.*?)"""|("(?:\\.|[^"\\])*")|\$(\w+))', re.DOTALL)
 CURL = frozenset({"curl", "wget"})
 UNREAD = "the body cannot be read before gh runs ({}): write it in a file or a heredoc"
+# A `$(cat <<'NAME' ... NAME)` substitution: the body of the heredoc NAME of the same command.
+CAT_HEREDOC = re.compile(r"\$\(\s*cat\s+<<-?\s*(['\"]?)(\w+)\1\s*\)")
+# A GraphQL query holds `$name` variables of its own: only these are the shell's (guard_git's rule).
+SHELL_QUERY = re.compile(r"\$\(|`|^\s*\$\{?\w+\}?\s*$")
+GH_WORD = re.compile(r"(?:^|[/\\])gh(?:\.exe)?$", re.IGNORECASE)
+SHELLS = frozenset({"bash", "sh", "zsh", "dash", "ksh"})
+NESTED_DEPTH = 3
 # The options of the porcelain calls read here that take the next word as their value.
 VALUE_OPTIONS = frozenset({*BODY_TEXT, *BODY_FILE, *CLOSE_TEXT, "--title", "-t", "--head", "-H", "--base", "-B"})
 
 
 class Unreadable(Exception):
     """A body the reader cannot read: the publication is refused, never let through unread."""
+
+
+@dataclass(frozen=True)
+class Heredocs:
+    """The heredocs of a command: each `(name, body, literal)`, in order."""
+
+    found: tuple[tuple[str, str, bool], ...] = ()
+
+    @property
+    def text(self) -> str:
+        return "\n".join(body for _, body, _ in self.found)
+
+    def named(self, name: str) -> str:
+        """The body of the one heredoc `name`; `Unreadable` when missing, repeated or expanded."""
+        bodies = [(body, literal) for found, body, literal in self.found if found == name]
+        if len(bodies) != 1:
+            raise Unreadable(f"the heredoc `{name}` is {'missing' if not bodies else 'repeated'}")
+        if not bodies[0][1]:
+            raise Unreadable(f"the heredoc `{name}` is expanded by the shell; quote its name, `<<'{name}'`")
+        return bodies[0][0]
+
+
+def heredocs(command: str) -> Heredocs:
+    """The heredocs of `command`, cut on the lines `guard_git.split_heredocs` cuts."""
+    found: list[tuple[str, str, bool]] = []
+    current: tuple[str, bool] | None = None
+    lines: list[str] = []
+    for line in command.splitlines():
+        if current is not None:
+            if line.strip() == current[0]:
+                body = "\n".join(lines)
+                found.append((current[0], body, current[1] or not re.search(r"[`\\]|\$[\w{(]", body)))
+                current, lines = None, []
+            else:
+                lines.append(line)
+            continue
+        if match := HEREDOC.search(line):
+            current = (match.group(2), bool(match.group(1)))
+    if current is not None:
+        found.append((current[0], "\n".join(lines), False))
+    return Heredocs(tuple(found))
+
+
+def _docs(heredoc: Heredocs | str) -> Heredocs:
+    """A plain text is the one, literal, heredoc of a caller that read no name."""
+    return heredoc if isinstance(heredoc, Heredocs) else Heredocs((("", heredoc, True),) if heredoc else ())
 
 
 @dataclass(frozen=True)
@@ -86,17 +146,68 @@ class Publication:
     repo: str | None = None  # the value of `-R` or `--repo`
 
 
-def _resolve(mode: str, value: str, heredoc: str, here: str | None) -> str:
+# The text fields a GitHub tool of an MCP server publishes.
+MCP_TEXT_FIELDS = ("body", "comment", "commit_message")
+
+
+def mcp_publications(tool_name: str, tool_input: Mapping[str, object]) -> list[Publication]:
+    """The bodies a GitHub tool of an MCP server publishes, by the words of its name.
+
+    A comment, a review or a reply is a comment, a pull request or an issue that it creates, updates
+    or writes is a PR or a ticket, a merge message is a comment. `Unreadable` when a tool outside
+    these carries a text field, or a field is no text: its body would pass unjudged.
+    """
+    name = tool_name.rsplit("__", 1)[-1].lower()
+    texts = {key: tool_input[key] for key in MCP_TEXT_FIELDS if key in tool_input}
+    if not texts:
+        return []
+    if any(word in name for word in ("comment", "review", "reply", "merge")):
+        kind = "comment"
+    elif "pull_request" in name and any(word in name for word in ("create", "update", "write")):
+        kind = "pr"
+    elif "issue" in name and any(word in name for word in ("create", "update", "write")):
+        kind = "ticket"
+    else:
+        raise Unreadable(f"the tool `{tool_name}` carries a body the hook cannot place; use gh")
+    found = []
+    for key, value in texts.items():
+        if not isinstance(value, str):
+            raise Unreadable(f"the field `{key}` of `{tool_name}` is no text")
+        found.append(Publication(kind, value, endpoint=f"mcp:{tool_name}"))
+    return found
+
+def _inline(value: str, docs: Heredocs) -> str:
+    """A typed value; each `$(cat <<'NAME' ...)` in it is the body of its heredoc."""
+    parts: list[str] = []
+    last = 0
+    for match in CAT_HEREDOC.finditer(value):
+        parts += [value[last : match.start()], docs.named(match.group(2))]
+        last = match.end()
+    if EXPANDED.search(value[last:]) or any(EXPANDED.search(part) for part in parts[::2]):
+        raise Unreadable(f"`{value[:60]}` is filled in by the shell")
+    return "".join(parts) + value[last:]
+
+
+def _redirected_input(words: list[str], docs: Heredocs, here: str | None) -> str:
+    """What the shell feeds to gh's standard input: its own last `<<NAME` or `< file`."""
+    for index in range(len(words) - 2, -1, -1):
+        if words[index] in ("<<", "<<-"):
+            return docs.named(words[index + 1])
+        if words[index] == "<":
+            return _resolve("file", words[index + 1], docs, here)
+    raise Unreadable("standard input from a pipe or without a heredoc of its own")
+
+
+def _resolve(mode: str, value: str, heredoc: Heredocs | str, here: str | None, words: list[str] | None = None) -> str:
     """The text a body option gives gh; `Unreadable` when it cannot be read before gh runs."""
+    docs = _docs(heredoc)
     if mode == "text":
-        if EXPANDED.search(value):
-            if "$(" in value and heredoc:
-                return heredoc
-            raise Unreadable(f"`{value}` is filled in by the shell")
-        return value
+        return _inline(value, docs)
     if value == "-" or is_standard_input_path(value, here):
-        if heredoc:
-            return heredoc
+        if words is not None:
+            return _redirected_input(words, docs, here)
+        if docs.found:
+            return docs.text
         raise Unreadable("standard input without a heredoc")
     if EXPANDED.search(value):
         raise Unreadable(f"the path `{value}` is filled in by the shell")
@@ -135,14 +246,17 @@ def _body_option(
     return found
 
 
-def _standard_input(redirections: list[tuple[str, str]], heredoc: str, here: str | None) -> str:
-    text = _standard_input_text(redirections, here, heredoc, read_text_or_none)
+def _standard_input(redirections: list[tuple[str, str]], heredoc: Heredocs | str, here: str | None) -> str:
+    docs = _docs(heredoc)
+    last = next((item for item in reversed(redirections) if item[0] in ("<", "<<", "<<-")), None)
+    bodies = docs.named(last[1]) if last and last[0] != "<" and isinstance(heredoc, Heredocs) else docs.text
+    text = _standard_input_text(redirections, here, bodies, read_text_or_none)
     if text is None:
         raise Unreadable("standard input from a pipe or without a heredoc")
     return text
 
 
-def _input_json(value: str, redirections: list[tuple[str, str]], heredoc: str, here: str | None) -> dict[str, object]:
+def _input_json(value: str, redirections: list[tuple[str, str]], heredoc: Heredocs | str, here: str | None) -> dict[str, object]:
     """The JSON object `gh api --input <value>` sends."""
     if value == "-" or is_standard_input_path(value, here):
         text = _standard_input(redirections, heredoc, here)
@@ -157,22 +271,46 @@ def _input_json(value: str, redirections: list[tuple[str, str]], heredoc: str, h
     return data
 
 
-def _fields(options: list[tuple[str, str]], heredoc: str, here: str | None) -> dict[str, str]:
-    """The `-f name=value` and `-F name=value` fields of a `gh api` call, files read."""
-    fields: dict[str, str] = {}
+def _query(content: str, heredoc: Heredocs | str) -> str:
+    """A GraphQL query: its `$name` are its own variables; a substitution or a whole variable is not."""
+    if CAT_HEREDOC.fullmatch(content.strip()):
+        return _docs(heredoc).named(CAT_HEREDOC.fullmatch(content.strip()).group(2))  # type: ignore[union-attr]
+    if SHELL_QUERY.search(content):
+        raise Unreadable(f"the query `{content[:40]}` is filled in by the shell; refused as a precaution, a mutation could hide in it")
+    return content
+
+
+def _fields(options: list[tuple[str, str]], heredoc: Heredocs | str, here: str | None) -> dict[str, str | Unreadable]:
+    """The `-f name=value` and `-F name=value` fields of a `gh api` call, files read.
+
+    A field the reader cannot read is kept as its `Unreadable`: it refuses only once it is used as
+    a body, so that `-F number=$N` beside a literal body stays readable.
+    """
+    fields: dict[str, str | Unreadable] = {}
     for name, value in options:
         if name not in ("raw-field", "field"):
             continue
         key, _, content = value.partition("=")
-        if name == "field" and content.startswith("@"):
-            fields[key] = _resolve("file", content[1:], heredoc, here)
-        else:
-            fields[key] = _resolve("text", content, heredoc, here)
+        try:
+            if name == "field" and content.startswith("@"):
+                fields[key] = _resolve("file", content[1:], heredoc, here)
+            elif key == "query":
+                fields[key] = _query(content, heredoc)
+            else:
+                fields[key] = _resolve("text", content, heredoc, here)
+        except Unreadable as error:
+            fields[key] = error
     return fields
 
 
+def _used(value: object) -> object:
+    if isinstance(value, Unreadable):
+        raise value
+    return value
+
+
 def _graphql_bodies(
-    options: list[tuple[str, str]], redirections: list[tuple[str, str]], heredoc: str, here: str | None
+    options: list[tuple[str, str]], redirections: list[tuple[str, str]], heredoc: Heredocs | str, here: str | None
 ) -> list[tuple[str, str]]:
     """`(kind, body)` of each body a `gh api graphql` mutation publishes."""
     variables: dict[str, object] = {}
@@ -183,11 +321,8 @@ def _graphql_bodies(
             query = str(data.get("query", "")) or query
             given = data.get("variables")
             variables.update(given if isinstance(given, dict) else {})
-    try:
-        fields = _fields(options, heredoc, here)
-    except Unreadable as error:
-        raise Unreadable(f"{error}; refused as a precaution, a mutation could hide in it") from error
-    query = fields.pop("query", query)
+    fields = _fields(options, heredoc, here)
+    query = str(_used(fields.pop("query", query)))
     variables.update(fields)
     bodies: list[tuple[str, str]] = []
     for match in MUTATION.finditer(query):
@@ -196,19 +331,19 @@ def _graphql_bodies(
         if argument is None or (following is not None and argument.start() > following.start()):
             continue
         block, literal, variable = argument.groups()
-        if block is not None:
-            body: object = block
-        elif literal is not None:
-            body = json.loads(literal)
+        if block is not None or literal is not None:
+            body: object = block if block is not None else json.loads(literal)
+            if EXPANDED.search(str(body)):
+                raise Unreadable(f"the body of `{match.group(1)}` holds `$`, which the shell may fill in")
         else:
-            body = variables.get(variable)
+            body = _used(variables.get(variable))
         if not isinstance(body, str):
             raise Unreadable(f"the `${variable}` of `{match.group(1)}` is not given")
         bodies.append((GRAPHQL_BODIES[match.group(1)], body))
     return bodies
 
 
-def _api_bodies(args: list[str], heredoc: str, here: str | None) -> list[Publication]:
+def _api_bodies(args: list[str], heredoc: Heredocs | str, here: str | None) -> list[Publication]:
     """Each body a `gh api` call publishes, judged in every reading of its words."""
     readings = api_readings(args)
     if readings is None:
@@ -238,7 +373,7 @@ def _api_bodies(args: list[str], heredoc: str, here: str | None) -> list[Publica
             if name == "input" and value:
                 body = _input_json(value, redirections, heredoc, here).get("body", body)
         if any(value.startswith("body=") for name, value in call.options if name != "input"):
-            body = _fields(call.options, heredoc, here).get("body")
+            body = _used(_fields(call.options, heredoc, here).get("body"))
         if isinstance(body, str):
             found.append(Publication(kind, body, endpoint=path))
     return found
@@ -277,7 +412,7 @@ def repo_of(words: list[str]) -> str | None:
     return None
 
 
-def publications(words: list[str], heredoc: str, here: str | None) -> list[Publication]:
+def publications(words: list[str], heredoc: Heredocs | str, here: str | None) -> list[Publication]:
     """Each body this simple command publishes on GitHub."""
     call = gh_command(words)
     if not call:
@@ -292,5 +427,79 @@ def publications(words: list[str], heredoc: str, here: str | None) -> list[Publi
     option = _body_option(act[2], text_options, file_options)
     if option is None:
         return []
-    body = _resolve(*option, heredoc, here)
+    body = _resolve(*option, heredoc, here, words=act[2])
     return [Publication(kind, body, act=(act[0], act[1]), args=act[2], repo=repo_of(words))]
+
+
+def _basename(word: str) -> str:
+    return re.split(r"[/\\]", word)[-1].lower().removesuffix(".exe")
+
+
+def _script_of(words: list[str], docs: Heredocs) -> str | None:
+    """The script a shell `-c`, `eval` or a shell fed by a heredoc runs; None when `words` runs none."""
+    for index, word in enumerate(words):
+        name = _basename(word)
+        if name == "eval":
+            return " ".join(words[index + 1 :])
+        if name not in SHELLS:
+            continue
+        position = index + 1
+        while position < len(words):
+            option = words[position]
+            if option.startswith("-") and not option.startswith("--") and "c" in option:
+                return words[position + 1] if position + 1 < len(words) else ""
+            if option in ("<<", "<<-") and position + 1 < len(words):
+                return docs.named(words[position + 1])
+            if not option.startswith(("-", "+")):
+                break
+            position += 2 if option in ("-o", "+o", "-O", "+O") else 1
+    return None
+
+
+def _substitutions(word: str) -> list[str]:
+    """The commands of each `$(...)` and backtick substitution of a word."""
+    found: list[str] = []
+    index = 0
+    while (start := word.find("$(", index)) >= 0:
+        depth, position = 1, start + 2
+        while position < len(word) and depth:
+            depth += {"(": 1, ")": -1}.get(word[position], 0)
+            position += 1
+        found.append(word[start + 2 : position - 1])
+        index = position
+    found += re.findall(r"`([^`]*)`", word)
+    return found
+
+
+def commands(command: str, docs: Heredocs, depth: int = 0) -> list[list[str] | str]:
+    """The simple commands the shell runs, gh found behind a wrapper or a path, nested shells opened.
+
+    A gh call after a wrapper (`env`, `command`, `sudo`, `xargs`, a path) is given from `gh` on.
+    `Unreadable` when gh or a script comes from a variable, or the shells nest too deep.
+    """
+    if depth > NESTED_DEPTH:
+        raise Unreadable("too many nested shells to read")
+    found: list[list[str] | str] = []
+    for item in _commands(command):
+        if isinstance(item, str):
+            found.append(item)
+            continue
+        words = item
+        script = _script_of(words, docs)
+        if script is not None:
+            if EXPANDED.match(script.strip()):
+                raise Unreadable("a script the shell gives by a variable")
+            found += commands(script, docs, depth + 1)
+            continue
+        for word in words:
+            for inner in _substitutions(word):
+                if not CAT_HEREDOC.fullmatch(f"$({inner})"):
+                    found += commands(inner, docs, depth + 1)
+        index = next((position for position, word in enumerate(words) if GH_WORD.search(word)), None)
+        if index is not None:
+            found.append(["gh", *words[index + 1 :]])
+        elif words and EXPANDED.match(words[0]) and {"issue", "pr", "api"} & set(words):
+            raise Unreadable(f"gh called through `{words[0]}`")
+        else:
+            found.append(words)
+    return found

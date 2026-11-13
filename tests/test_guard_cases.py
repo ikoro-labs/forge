@@ -307,13 +307,38 @@ class VerdictChannels(Base):
 
 
 
+class OtherChannels(Base):
+    """gh behind a wrapper or a nested shell, and the GitHub tools of an MCP server."""
+
+    def mcp(self, tool: str, **fields: object) -> tuple[int, str]:
+        return outcome({"tool_name": tool, "tool_input": fields, "cwd": str(self.root)}, self.github.run)
+
+    def test_a_pr_created_in_a_nested_shell_is_judged(self) -> None:
+        self.github.tickets[12]["body"] = CASES.replace(", qc-conf", "")
+        body = self.file("Closes #12")
+        self.assert_refused(f"bash -c 'gh pr create --title t --body-file {body}'", "qc-conf")
+        self.assert_refused(f"env /usr/bin/gh pr create --title t --body-file {body}", "qc-conf")
+
+    def test_an_mcp_tool_that_opens_a_pr_or_posts_a_verdict_is_refused(self) -> None:
+        code, message = self.mcp("mcp__github__create_pull_request", title="t", body="Closes #12", head="b", base="main")
+        self.assertEqual(code, 2, message)
+        self.assertIn("gh pr create", message)
+        code, message = self.mcp("mcp__plugin_github__add_issue_comment", issue_number=7, body="VERDICT: ACCEPT\nROUND: 1")
+        self.assertEqual(code, 2, message)
+        self.assertIn("gh pr comment", message)
+
+    def test_an_mcp_tool_that_reads_or_comments_passes(self) -> None:
+        self.assertEqual(self.mcp("mcp__github__get_issue", issue_number=12), (0, ""))
+        self.assertEqual(self.mcp("mcp__github__add_issue_comment", issue_number=7, body="Merged in abc123."), (0, ""))
+
+
 class Wiring(unittest.TestCase):
     """The hook runs on every Bash call, and the texts say round 0 and what the hook cannot hold."""
 
     def test_hooks_json_runs_the_guard_on_bash(self) -> None:
         hooks = json.loads((support.PLUGIN / "hooks" / "hooks.json").read_text(encoding="utf-8"))
         entries = [e for e in hooks["hooks"]["PreToolUse"] if "guard_cases.py" in e["hooks"][0]["command"]]
-        self.assertEqual([e["matcher"] for e in entries], ["Bash|PowerShell"])
+        self.assertEqual([e["matcher"] for e in entries], ["Bash|PowerShell|mcp__.*([Gg]it[Hh]ub|GITHUB).*"])
         self.assertTrue(entries[0]["hooks"][0]["command"].endswith("|| exit 2"))
 
     def test_round_zero_is_written_where_the_agents_read_it(self) -> None:

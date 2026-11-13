@@ -27,10 +27,21 @@ import subprocess
 import sys
 from collections.abc import Callable, Mapping
 from datetime import datetime
+from pathlib import Path
 
 import cases
-from gh_bodies import UNREAD, Publication, Unreadable, curls_github, opens_verdict, publications
-from guard_git import UNKNOWN, _commands, _moved, gh_act, split_heredocs
+from gh_bodies import (
+    UNREAD,
+    Publication,
+    Unreadable,
+    commands,
+    curls_github,
+    heredocs,
+    mcp_publications,
+    opens_verdict,
+    publications,
+)
+from guard_git import UNKNOWN, _moved, gh_act
 from usine import load, project_root
 
 REFUSED = 2
@@ -213,9 +224,28 @@ def _refused(text: str) -> tuple[int, str]:
     return REFUSED, f"Blocked by the forge plugin (guard_cases): {text}\n"
 
 
+def _mcp(tool_name: str, tool_input: Mapping[str, object], root: Path) -> tuple[int, str]:
+    """A GitHub tool of an MCP server may comment, never open a PR nor post a verdict: gh does, judged."""
+    if cases.KEY not in load(root):
+        return 0, ""
+    try:
+        found = mcp_publications(tool_name, tool_input)
+    except Unreadable as error:
+        return _refused(UNREAD.format(error))
+    for item in found:
+        if item.kind == "pr" and "create" in tool_name.lower():
+            return _refused(f"`{tool_name}` opens a PR the hook cannot check against its cases; use `gh pr create`")
+        if item.kind == "comment" and opens_verdict(item.body):
+            return _refused(f"`{tool_name}` posts a verdict the hook cannot check against the cases; use `gh pr comment`")
+    return 0, ""
+
+
 def outcome(event: Mapping[str, object], run: Runner = run_command) -> tuple[int, str]:
     """`(0, "")` to let the command run, or `(2, reason)`."""
     tool_input = event.get("tool_input")
+    tool_name = event.get("tool_name")
+    if isinstance(tool_name, str) and tool_name.startswith("mcp__"):
+        return _mcp(tool_name, tool_input if isinstance(tool_input, dict) else {}, project_root(event))
     command = tool_input.get("command") if isinstance(tool_input, dict) else None
     if not isinstance(command, str) or not ("gh" in command or "api.github.com" in command):
         return 0, ""
@@ -225,10 +255,10 @@ def outcome(event: Mapping[str, object], run: Runner = run_command) -> tuple[int
         return 0, ""
     cwd = event.get("cwd")
     here: str | None = cwd if isinstance(cwd, str) else None
-    heredoc = split_heredocs(command)[1]
+    docs = heredocs(command)
     try:
         cases.adoption(config)
-        for words in _commands(command):
+        for words in commands(command, docs):
             if isinstance(words, str):
                 continue
             if words[:1] == ["cd"] and len(words) > 1:
@@ -237,7 +267,7 @@ def outcome(event: Mapping[str, object], run: Runner = run_command) -> tuple[int
             local = None if here == UNKNOWN else here
             if curls_github(words):
                 return _refused("a call to api.github.com outside gh could publish a body unread; use gh")
-            found = publications(words, heredoc, local)
+            found = publications(words, docs, local)
             act = gh_act(words)
             if act and act[:2] == ("pr", "create") and not found:
                 raise Unreadable("`gh pr create` without `--body` or `--body-file`, its ticket unknown")

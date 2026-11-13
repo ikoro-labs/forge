@@ -69,7 +69,9 @@ line each, `A<n>.<k> | <input> | <expected result>`, and one line `AGREED: <role
 - **Held by `guard_cases`**: `gh pr create` needs the cases and a full `AGREED:` line (`test-author`,
   `coder`, `qc-conf`, each reviewer whose paths the diff touches); a verdict is refused when a
   blocker cites nothing above, a missing case or rule, a security rule without proof, or when a
-  ticket body was edited after the PR opened by a login outside `validation-owner`.
+  ticket body was edited after the PR opened by a login outside `validation-owner`. The hook reads
+  gh behind `env`, `command`, a path, `bash -c`, `eval` or `$(...)`, and refuses a body it cannot
+  read; a GitHub tool of an MCP server may comment, never open a PR nor post a verdict.
 - **Not held by a hook**: that a role read the list before its name went on `AGREED:`; that a case
   is the right one; that a `regression` test is green on the base and red on the head (`qc-gate`
   replays it); that a finding is about security when it cites no security rule; that the editor
