@@ -164,9 +164,9 @@ phrase : GitHub le lit.
    - une **vue du changement** quand le diff dépasse quelques lignes, la plus petite qui suffise
      (pseudo-code, arbre d'appels, arbre de fichiers, croquis de diff, diagramme Mermaid), placée à
      côté du texte qu'elle porte ;
-   - la **porte** : `double sens` (un retour en arrière coûte peu) ou `sens unique` (geste
+   - la **porte** : `two-way` (un retour en arrière coûte peu) ou `one-way` (geste
      destructif, publication, migration de données, décision difficile à défaire), avec la raison
-     pour un `sens unique` ;
+     pour un `one-way` ;
    - le **rayon d'impact** : un mot (aucun, local, consommateurs...) puis une phrase sur ce que la
      fusion peut toucher chez les consommateurs.
 

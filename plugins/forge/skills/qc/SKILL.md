@@ -161,9 +161,9 @@ Retire seulement une étiquette dont un agent a écrit la raison, dans la ligne 
 l'auteur de l'étiquette sur GitHub ne vous distingue pas. Une étiquette dont aucun texte d'agent ne
 donne la raison vient d'un humain : elle reste, même si un commentaire l'explique.
 
-## Porte à sens unique
+## Porte one-way
 
-Une PR dont la porte est `sens unique` (geste destructif, publication, migration de données,
+Une PR dont la porte est `one-way` (geste destructif, publication, migration de données,
 décision difficile à défaire) alerte l'humain. Lis la ligne `GATES` du verdict, entrée
 `one-way-door` : `déclarée` (la PR le dit) ou `relevée` (`forge:qc-conf` l'a trouvée dans le diff,
 la PR ne la déclarait pas). Dans les deux cas, pose `needs-your-attention` et écris la raison dans

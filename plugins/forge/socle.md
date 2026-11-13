@@ -10,8 +10,9 @@ rules (see Local rules) and does not repeat these.
   an acceptance test `tests/<path>::<name>`. A finding that cites none of them is a `NOTE` and
   never rejects; it can become a PR that adds a rule, valid for the PRs that follow.
 - A breach, in the diff, of a `security`, `code`, `test` or `architecture` rule is a `BLOCKER`.
-  Comments, docstrings, log and error messages and test names are code. A breach of a `prose` rule
-  outside code (a document, a PR body) is a `MINOR` and does not reject.
+  A breach of a `prose` rule, F-18 and F-19 included wherever the text sits, is a `MINOR` and does
+  not reject.
+- A repository may raise the severity of an `F-n` by a local rule `L-n`.
 - A defect outside the diff is a `NOTE` that starts with `out of diff`, and never rejects.
 - A rule that a required check enforces rejects through that check: the finding cites the failing
   check and the rule id.

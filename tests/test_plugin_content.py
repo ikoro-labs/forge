@@ -1089,8 +1089,8 @@ class PrShowsChangeDoorAndRadius(unittest.TestCase):
         step = text.split("## 5. Livrer", 1)[1].split("\n## ", 1)[0]
         self.assertIn("vue du changement", step)
         self.assertIn("quelques lignes", step)
-        self.assertIn("`double sens`", step)
-        self.assertIn("`sens unique`", step)
+        self.assertIn("`two-way`", step)
+        self.assertIn("`one-way`", step)
         self.assertIn("rayon d'impact", step)
         self.assertIn("même quand le gabarit", step)
         self.assertIn("fin du résumé", step)
@@ -1111,7 +1111,7 @@ class PrShowsChangeDoorAndRadius(unittest.TestCase):
     def test_the_judge_makes_an_undeclared_one_way_door_a_minor(self) -> None:
         """No F-NNNN: ticket #45, critère 3 (qc-conf : MINOR et scénario d'échec)."""
         text = self.read("agents", "qc-conf.md")
-        section = text.split("## Porte à sens unique", 1)[1].split("\n## ", 1)[0]
+        section = text.split("## Porte one-way", 1)[1].split("\n## ", 1)[0]
         self.assertIn("`MINOR`", section)
         self.assertIn("scénario d'échec", section)
         self.assertIn("geste", section)
@@ -1122,7 +1122,7 @@ class PrShowsChangeDoorAndRadius(unittest.TestCase):
     def test_qc_raises_needs_your_attention_on_a_one_way_door_without_stopping_the_merge(self) -> None:
         """No F-NNNN: ticket #45, critère 4 (qc : alerte sans arrêt de fusion)."""
         text = self.read("skills", "qc", "SKILL.md")
-        section = text.split("## Porte à sens unique", 1)[1].split("\n## ", 1)[0]
+        section = text.split("## Porte one-way", 1)[1].split("\n## ", 1)[0]
         self.assertIn("`needs-your-attention`", section)
         self.assertIn("`Attention`", section)
         self.assertIn("one-way-door", section)
