@@ -13,9 +13,10 @@ moments:
   a `createIssue` mutation by `gh api graphql` are read for the ticket's body. Its `Motif :` line
   places it: `to-tickets F-NNNN` belongs to that feature; `fusion-bloquee` belongs to the feature
   of its `Feature: F-NNNN` line, which it must carry; `main-rouge`, `securite` and a human's
-  request (`demande-<who>`) are out of every budget. Any other ticket that carries a `Feature:
-  F-NNNN` line belongs to that feature; one with neither line (a feature's tracking issue) is not
-  this hook's concern. A ticket
+  request (`demande-<who>`) are out of every budget; `feature-new F-NNNN`, the tracking ticket of
+  a feature, is out of budget too, one per feature. A ticket without an admitted reason is refused.
+  An existing ticket with a `Feature: F-NNNN` line and no admitted reason still uses its feature's
+  budget. A ticket
   of a feature is refused when its design (`<feature-dir>/NNNN-*/design.md`, header `feature:
   F-NNNN`) is missing, not accepted, has no `feature-tickets`, has one above `CEILING`, or when the
   tickets the feature already has, open or closed (`gh issue list --state all --search`), fill
@@ -60,10 +61,15 @@ SEARCH_LIMIT = "1000"
 PREFIX = "Blocked by the forge plugin (guard_ticket_budget)"
 RESPLIT = f"re-split the feature with the product-owner to at most {CEILING} tickets"
 ADD_A_PART = "add a part to an existing ticket (`Refs #n`)"
+NO_REASON = (
+    "every ticket names its reason: Motif : <one of the admitted reasons> (`to-tickets F-NNNN`,"
+    " `fusion-bloquee #<pr>` with `Feature: F-NNNN`, `main-rouge <run>`, `securite`,"
+    " `demande-<who>`, `feature-new F-NNNN`)"
+)
 
 MOTIF_LINE = re.compile(r"^[ \t]*Motif[ \t]*:[ \t]*(\S.*?)[ \t]*$", re.MULTILINE)
 FEATURE_LINE = re.compile(r"^[ \t]*Feature[ \t]*:[ \t]*(F-\d{4})\b", re.MULTILINE)
-TO_TICKETS = re.compile(r"^to-tickets\s+(F-\d{4})\b")
+NAMED_FEATURE = re.compile(r"^(?:to-tickets|feature-new)\s+(F-\d{4})\b")
 ISSUES_ENDPOINT = re.compile(r"^/?repos/([^/]+)/([^/]+)/issues/?(?:\?.*)?$")
 GRAPHQL_BODY = re.compile(r'\bbody\s*:\s*(?:"((?:[^"\\]|\\.)*)"|\$(\w+))')
 SHELL_ACCEPTANCE = re.compile(r"statut\W{0,3}accepte\b|en-revue\W{1,3}accepte\b")
@@ -80,7 +86,7 @@ Runner = Callable[[list[str], str | None], str | None]
 
 
 class Placement(NamedTuple):
-    """Where a ticket sits: `kind` is `none`, `out`, `feature` or `refused`."""
+    """Where a ticket sits: `kind` is `out`, `feature`, `tracking` or `refused`."""
 
     kind: str
     detail: str = ""
@@ -208,7 +214,7 @@ def shell_design_refusal(command: str) -> str | None:
 
 
 def placement(body: str) -> Placement:
-    """Where the ticket of `body` sits in the feature budgets."""
+    """Where the ticket of `body` sits: its `Motif :` line, one of the admitted reasons, rules."""
     text = body.replace("\r\n", "\n")
     motif_match = MOTIF_LINE.search(text)
     feature_match = FEATURE_LINE.search(text)
@@ -216,20 +222,35 @@ def placement(body: str) -> Placement:
     case = motif.split()[0] if motif else ""
     if case in OUT_OF_BUDGET or HUMAN_REQUEST.match(case):
         return Placement("out")
-    if case == "to-tickets":
-        named = TO_TICKETS.match(motif)
+    if case in ("to-tickets", "feature-new"):
+        named = NAMED_FEATURE.match(motif)
         if named is None:
             return Placement(
-                "refused", "a `Motif : to-tickets` line names its feature: `to-tickets F-NNNN`"
+                "refused", f"a `Motif : {case}` line names its feature: `{case} F-NNNN`"
             )
-        return Placement("feature", named.group(1))
-    if case == "fusion-bloquee" and feature_match is None:
-        return Placement(
-            "refused", "a `fusion-bloquee` ticket names its feature with a `Feature: F-NNNN` line"
-        )
-    if feature_match is not None:
+        return Placement("feature" if case == "to-tickets" else "tracking", named.group(1))
+    if case == "fusion-bloquee":
+        if feature_match is None:
+            return Placement(
+                "refused",
+                "a `fusion-bloquee` ticket names its feature with a `Feature: F-NNNN` line",
+            )
         return Placement("feature", feature_match.group(1))
-    return Placement("none")
+    return Placement("refused", NO_REASON)
+
+
+def counts_for(body: str) -> str | None:
+    """The feature whose budget an existing ticket uses, or None.
+
+    A ticket opened before the reason was required, with a `Feature: F-NNNN` line and no admitted
+    reason, still uses its feature's budget: the budget stays closed on the past too.
+    """
+    place = placement(body)
+    if place.kind == "feature":
+        return place.detail
+    if place.kind == "refused" and (found := FEATURE_LINE.search(body.replace("\r\n", "\n"))):
+        return found.group(1)
+    return None
 
 
 def _path_in(cwd: str | None, path: str) -> str:
@@ -445,11 +466,13 @@ def run_gh(argv: list[str], cwd: str | None) -> str | None:
     return completed.stdout
 
 
-def count_tickets(feature: str, repo: str | None, cwd: str | None, run: Runner) -> int | None:
-    """The tickets of `feature`, open or closed, by its motif or feature line; None if unknown."""
-    numbers: set[int] = set()
-    for phrase in (f'"to-tickets {feature}"', f'"Feature: {feature}"'):
-        argv = ["issue", "list", "--state", "all", "--search", f"{phrase} in:body"]
+def matching_issues(
+    phrases: tuple[str, ...], repo: str | None, cwd: str | None, run: Runner
+) -> dict[int, str] | None:
+    """The issues, open or closed, whose body holds one of `phrases`; None when gh cannot say."""
+    found: dict[int, str] = {}
+    for phrase in phrases:
+        argv = ["issue", "list", "--state", "all", "--search", f'"{phrase}" in:body']
         argv += ["--json", "number,body", "--limit", SEARCH_LIMIT]
         if repo:
             argv += ["--repo", repo]
@@ -468,9 +491,27 @@ def count_tickets(feature: str, repo: str | None, cwd: str | None, run: Runner) 
             number, body = issue.get("number"), issue.get("body")
             if not isinstance(number, int) or not isinstance(body, str):
                 return None
-            if placement(body) == Placement("feature", feature):
-                numbers.add(number)
-    return len(numbers)
+            found[number] = body
+    return found
+
+
+def count_tickets(feature: str, repo: str | None, cwd: str | None, run: Runner) -> int | None:
+    """The tickets that use the budget of `feature`; None when they cannot be counted."""
+    issues = matching_issues((f"to-tickets {feature}", f"Feature: {feature}"), repo, cwd, run)
+    if issues is None:
+        return None
+    return sum(1 for body in issues.values() if counts_for(body) == feature)
+
+
+def tracking_tickets(
+    feature: str, repo: str | None, cwd: str | None, run: Runner
+) -> list[int] | None:
+    """The tracking tickets `feature` already has; None when they cannot be read."""
+    issues = matching_issues((f"feature-new {feature}",), repo, cwd, run)
+    if issues is None:
+        return None
+    tracking = Placement("tracking", feature)
+    return sorted(number for number, body in issues.items() if placement(body) == tracking)
 
 
 def ticket_refusal(
@@ -485,6 +526,16 @@ def ticket_refusal(
     place = placement(creation.body)
     if place.kind == "refused":
         return place.detail
+    if place.kind == "tracking":
+        existing = tracking_tickets(place.detail, creation.repo, cwd, run)
+        if existing is None:
+            return (
+                f"the tracking tickets of {place.detail} cannot be read (gh absent, the network,"
+                " or a gh error): the ticket is refused as a precaution"
+            )
+        if existing:
+            return f"{place.detail} already has its tracking ticket #{existing[0]}: one per feature"
+        return None
     if place.kind != "feature":
         return None
     feature = place.detail

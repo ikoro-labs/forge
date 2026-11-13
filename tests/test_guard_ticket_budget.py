@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -11,7 +12,7 @@ from pathlib import Path
 from unittest import mock
 
 import support
-from guard_ticket_budget import CEILING, Runner, placement, refusal
+from guard_ticket_budget import CEILING, Runner, counts_for, placement, refusal
 
 DESIGN = "---\nfeature: F-0001\ndocument: design\nstatut: {statut}\n{budget}base: abc1234\n---\n\n# F-0001\n"
 
@@ -248,13 +249,61 @@ class ClosedBudget(unittest.TestCase):
         project = Project(self, design("en-revue", 5))
         self.assertIn("not accepted", project.create(ticket("to-tickets F-0001"), full(0)) or "")
 
-    def test_a_tracking_issue_without_motif_or_feature_passes(self) -> None:
+    def test_a_legacy_ticket_with_a_feature_line_still_uses_the_budget(self) -> None:
         project = Project(self, design("accepte", 1))
-        self.assertIsNone(
-            project.bash(
-                "gh issue create --label feature --title 'F-0002 : x' --body 'idea'", FakeGh(None)
-            )
+        gh = FakeGh(["Feature: F-0001\n\nOpened before the reason was required.\n"])
+        self.assertIn("add a part", project.create(ticket("to-tickets F-0001"), gh) or "")
+
+
+class Reason(unittest.TestCase):
+    MESSAGE = "every ticket names its reason: Motif : <one of the admitted reasons>"
+
+    def test_a_ticket_without_a_motif_is_refused(self) -> None:
+        project = Project(self, design("accepte", 5))
+        for body in ("idea\n", "Feature: F-0001\n", ""):
+            with self.subTest(body=body):
+                self.assertIn(self.MESSAGE, project.create(body, FakeGh(None)) or "")
+        reason = project.bash("gh api repos/o/r/issues -f title=T", FakeGh(None))
+        self.assertIn(self.MESSAGE, reason or "")
+
+    def test_an_unknown_motif_is_refused(self) -> None:
+        project = Project(self, design("accepte", 5))
+        for motif in ("amelioration", "<case allowed by the repository>", "To-tickets F-0001"):
+            with self.subTest(motif=motif):
+                reason = project.create(ticket(motif, "F-0001"), FakeGh(None))
+                self.assertIn(self.MESSAGE, reason or "")
+
+    def test_the_first_tracking_ticket_is_admitted(self) -> None:
+        project = Project(self, None)
+        gh = FakeGh([ticket("feature-new F-0002"), ticket("to-tickets F-0001")])
+        self.assertIsNone(project.create(ticket("feature-new F-0001"), gh))
+        self.assertEqual(len(gh.calls), 1)
+        self.assertIn('"feature-new F-0001" in:body', gh.calls[0])
+
+    def test_a_second_tracking_ticket_for_the_same_feature_is_refused(self) -> None:
+        project = Project(self, None)
+        reason = project.create(
+            ticket("feature-new F-0001"), FakeGh([ticket("feature-new F-0001")])
         )
+        self.assertIn("already has its tracking ticket #1", reason or "")
+
+    def test_tracking_tickets_that_cannot_be_read_refuse(self) -> None:
+        project = Project(self, None)
+        reason = project.create(ticket("feature-new F-0001"), FakeGh(None))
+        self.assertIn("cannot be read", reason or "")
+        self.assertIsNotNone(project.create("Motif : feature-new\n", FakeGh([])))
+
+    def test_the_tracking_ticket_of_the_feature_new_skill_passes(self) -> None:
+        skill = (support.PLUGIN / "skills" / "feature-new" / "SKILL.md").read_text(encoding="utf-8")
+        found = re.search(r"`(Motif : feature-new F-NNNN)`", skill)
+        self.assertIsNotNone(found)
+        line = (found.group(1) if found else "").replace("F-NNNN", "F-0003")
+        body = (
+            f"{line}\n\nThe idea, in one page.\n\nFolder: docs/features/0003-x/\n\n"
+            "Les tickets de cette feature en seront des sous-issues.\n"
+        )
+        project = Project(self, None)
+        self.assertIsNone(project.create(body, FakeGh([ticket("feature-new F-0001")])))
 
     def test_a_body_that_cannot_be_read_refuses(self) -> None:
         project = Project(self, design("accepte", 5))
@@ -315,8 +364,11 @@ class CommandForms(unittest.TestCase):
     def test_placement(self) -> None:
         self.assertEqual(placement(ticket("to-tickets F-0007")), ("feature", "F-0007"))
         self.assertEqual(placement(ticket("securite", "F-0007")).kind, "out")
-        self.assertEqual(placement("Feature: F-0003\n").detail, "F-0003")
-        self.assertEqual(placement("no motif\n").kind, "none")
+        self.assertEqual(placement(ticket("feature-new F-0007")), ("tracking", "F-0007"))
+        self.assertEqual(placement("Feature: F-0003\n").kind, "refused")
+        self.assertEqual(counts_for("Feature: F-0003\n"), "F-0003")
+        self.assertIsNone(counts_for(ticket("main-rouge 3", "F-0003")))
+        self.assertEqual(placement("no motif\n").kind, "refused")
         self.assertEqual(placement("Motif : to-tickets\n").kind, "refused")
 
 

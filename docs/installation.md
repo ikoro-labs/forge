@@ -321,10 +321,12 @@ the plugin and not a key of `usine.md`. `guard_ticket_budget` holds it twice:
   re-splits the feature. An accepted design may not raise its budget. A shell command that writes
   `statut: accepte` into a `design.md` is refused: the acceptance goes through Edit or Write.
 - **At each ticket.** `gh issue create`, a POST by `gh api` on `repos/<owner>/<repo>/issues` and a
-  `createIssue` mutation are read for the body's `Motif : <case>` line. `to-tickets F-NNNN` counts
-  for that feature, and so does `fusion-bloquee` with its required `Feature: F-NNNN` line (or any
-  other ticket carrying that line). `main-rouge`, `securite` and `demande-<who>` are out of budget;
-  a ticket with neither line (the tracking issue) is not concerned. A feature ticket is refused when
+  `createIssue` mutation are read for the body's `Motif : <reason>` line, which every ticket carries
+  with an admitted reason, or it is refused. `to-tickets F-NNNN` counts for that feature, and so
+  does `fusion-bloquee` with its required `Feature: F-NNNN` line. `main-rouge`, `securite` and
+  `demande-<who>` are out of budget, and so is `feature-new F-NNNN`, the tracking ticket that
+  `/forge:feature-new` opens: one per feature, a second one is refused. A ticket opened earlier with
+  a `Feature: F-NNNN` line and no admitted reason still counts. A feature ticket is refused when
   its design (`<feature-dir>/NNNN-*/design.md`) is missing, not accepted, has no budget or one above
   15, or when the feature's tickets, open or closed (`gh issue list --state all --search`), fill the
   budget: the refusal says to add a part to an existing ticket (`Refs #n`). An unreadable body and a
