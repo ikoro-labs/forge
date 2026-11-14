@@ -356,19 +356,20 @@ Ce qu'aucun agent ne fait à la place d'un humain :
 
 ## Output structure
 
-`guard_output` (hooks `SubagentStop`, `Stop`, and `PreToolUse` on `Bash`, `PowerShell` and
-`SubagentHandback`) checks each output with `plugins/forge/scripts/output_check.py`, which a skill
+`guard_output` (hooks `SubagentStop`, `Stop`, and `PreToolUse` on `Bash`, `PowerShell`,
+`SubagentHandback` and the GitHub tools of an MCP server) checks each output with `plugins/forge/scripts/output_check.py`, which a skill
 can also run on a body before it posts it:
 
 | Output | Checked against | Refused |
 | --- | --- | --- |
 | final text of `forge:coder`, `forge:qc-conf`, `forge:qc-gate`, `forge:staff-engineer`, `forge:product-owner`, or the same name without `forge:` | the block its `agents/<name>.md` declares, keys closed | once; a second non-conforming output passes and is logged |
 | final text of any other agent | `templates/subagent-return.md` | once, then logged |
-| body of `gh issue create\|edit\|comment\|close -c`, `gh pr create\|edit\|comment\|review\|merge\|close -c`, `gh api ... -f\|-F body=` or `--input`, `gh api graphql` mutations `addComment`, `createIssue`... | `ticket.md`, `pr.md`, `comment.md`, or `verdict.md` when it opens with `VERDICT:` | every time |
+| body of `gh issue create\|edit\|comment\|close -c`, `gh pr create\|edit\|comment\|review\|merge\|close -c`, `gh api ... -f\|-F body=` or `--input`, `gh api graphql` mutations `addComment`, `createIssue`..., read by `hooks/gh_bodies.py` (the reader `guard_cases` shares: gh behind a wrapper, in `bash -c`, `eval` or a substitution, a file after a `cd`); the text of a GitHub MCP tool, by the words of its name | `ticket.md`, `pr.md`, `comment.md`, or `verdict.md` when it opens with `VERDICT:` | every time |
 | the session's reply to the human | `templates/session-reply.md` | once per stop (`stop_hook_active`), then logged |
 
-The word caps (ticket 150, comment 150, PR 200, session reply 150, subagent return 200) and the
-60-word paragraph cap hold when the project sets no key; code blocks and table cells count in the
+The word caps (ticket 150, comment 150, PR 200, session reply 150, subagent return 200), the
+`max-lines` of each template header (ticket 25, PR 40, comment 12, session reply 15, subagent
+return 20, in written lines; a verdict has none) and the 60-word paragraph cap hold when the project sets no key; code blocks and table cells count in the
 total, HTML comments do not, and the paragraph cap skips tables and code blocks. The keys
 `output-words-<kind>`, `output-template`, `output-agent-format` and `output-extra-keys` of
 `plugins/forge/templates/usine.md` adjust them. The journal of outputs let through is
