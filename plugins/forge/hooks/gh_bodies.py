@@ -8,8 +8,9 @@ option `"$(cat <<'NAME' ... NAME)"` is read from the heredoc it names. `commands
 the shell runs it: behind `env`, `command`, `sudo`, `xargs` or a path (`/usr/bin/gh`), in
 `bash -c`, `sh -c`, `eval`, a shell fed by a heredoc, or a `$(...)` substitution. A body the reader
 cannot read before gh does (a shell variable, a substitution other than a literal heredoc, a pipe,
-a missing file) raises `Unreadable`, and so does gh run through a variable: the caller refuses,
-never lets it through unread. The standard library only.
+a missing file, a body file the same command writes by `>`, `>>` or `tee`) raises `Unreadable`, and
+so does gh run through a variable: the caller refuses, never lets it through unread. `may_publish`
+tells a command that may run gh however the shell quotes its name (`g''h`). The standard library only.
 """
 
 from __future__ import annotations
@@ -80,6 +81,10 @@ CAT_HEREDOC = re.compile(r"\$\(\s*cat\s+<<-?\s*(['\"]?)(\w+)\1\s*\)")
 SHELL_QUERY = re.compile(r"\$\(|`|^\s*\$\{?\w+\}?\s*$")
 GH_WORD = re.compile(r"(?:^|[/\\])gh(?:\.exe)?$", re.IGNORECASE)
 SHELLS = frozenset({"bash", "sh", "zsh", "dash", "ksh"})
+# A file a command line writes: the target of `>`, `>>` or `>|` (not `>&` nor `>(`), and the files of
+# `tee`. Read on the lines outside heredoc bodies; a name matched by mistake only fails closed.
+REDIRECT_OUT = re.compile(r"(?<![<>])>{1,2}\|?\s*(['\"]?)([^\s;&|<>'\"()]+)\1")
+TEE = re.compile(r"(?:^|[\s|;&(])tee\s+([^;&|<>\n]*)")
 NESTED_DEPTH = 3
 # The options of the porcelain calls read here that take the next word as their value.
 VALUE_OPTIONS = frozenset({*BODY_TEXT, *BODY_FILE, *CLOSE_TEXT, "--title", "-t", "--head", "-H", "--base", "-B"})
@@ -94,6 +99,7 @@ class Heredocs:
     """The heredocs of a command: each `(name, body, literal)`, in order."""
 
     found: tuple[tuple[str, str, bool], ...] = ()
+    written: frozenset[str] = frozenset()  # the file names the command writes by `>`, `>>` or `tee`
 
     @property
     def text(self) -> str:
@@ -112,9 +118,14 @@ class Heredocs:
 def heredocs(command: str) -> Heredocs:
     """The heredocs of `command`, cut on the lines `guard_git.split_heredocs` cuts."""
     found: list[tuple[str, str, bool]] = []
+    written: set[str] = set()
     current: tuple[str, bool] | None = None
     lines: list[str] = []
     for line in command.splitlines():
+        if current is None:
+            written.update(Path(target).name for _, target in REDIRECT_OUT.findall(line))
+            for args in TEE.findall(line):
+                written.update(Path(word).name for word in args.split() if not word.startswith("-"))
         if current is not None:
             if line.strip() == current[0]:
                 body = "\n".join(lines)
@@ -127,7 +138,13 @@ def heredocs(command: str) -> Heredocs:
             current = (match.group(2), bool(match.group(1)))
     if current is not None:
         found.append((current[0], "\n".join(lines), False))
-    return Heredocs(tuple(found))
+    return Heredocs(tuple(found), frozenset(written))
+
+
+def may_publish(command: str) -> bool:
+    """Whether `command` may run gh or reach api.github.com, however the shell quotes the name."""
+    plain = re.sub(r"['\"\\]", "", command)
+    return "gh" in plain or "api.github.com" in plain
 
 
 def _docs(heredoc: Heredocs | str) -> Heredocs:
@@ -212,6 +229,8 @@ def _resolve(mode: str, value: str, heredoc: Heredocs | str, here: str | None, w
         raise Unreadable("standard input without a heredoc")
     if EXPANDED.search(value):
         raise Unreadable(f"the path `{value}` is filled in by the shell")
+    if Path(value).name in docs.written:
+        raise Unreadable(f"the file `{value}` is written by the same command, after the hook reads it")
     path = Path(value)
     if not path.is_absolute() and here:
         path = Path(here) / path
