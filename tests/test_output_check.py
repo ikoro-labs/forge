@@ -9,14 +9,14 @@ from unittest import mock
 
 import support
 from output_check import (
-    _template_text,
-    line_cap,
     DEFAULT_PARAGRAPH_WORDS,
     DEFAULT_WORDS,
     FORGE_AGENTS,
     KINDS,
+    _template_text,
     agent_kind,
     deviations,
+    line_cap,
     main,
     required_fields,
 )

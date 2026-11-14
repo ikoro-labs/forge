@@ -7,15 +7,12 @@ One script for four declarations of `hooks.json`, told apart by `hook_event_name
   `templates/subagent-return.md`. A subagent that delivered its report by `SubagentHandback` is
   skipped here: its report was checked when it called that tool.
 - `PreToolUse` on `SubagentHandback`: the report in `tool_input.message`, by the same rule.
-- `PreToolUse` on `Bash`: every body gh publishes. `gh issue create|edit|comment` and
-  `gh pr create|edit|comment|review|merge` by `--body`, `-b`, `--body-file` or `-F`;
-  `gh issue close` and `gh pr close` by `--comment` or `-c`; `gh api` on an issue, pull request,
-  comment or review endpoint by its `body` field (`-f body=`, `-F body=`, `-F body=@file`) or the
-  `body` of its `--input` JSON, in every reading of its words; `gh api graphql` mutations that
-  publish a body (`addComment`, `createIssue`...), the body a literal or a variable. A ticket
-  follows `ticket.md`, a pull request `pr.md`, a comment `comment.md`, and a comment that opens
-  with `VERDICT:` follows `verdict.md`. A call to `api.github.com` by `curl` or `wget` is refused:
-  its body would go unread.
+- `PreToolUse` on `Bash` and on a GitHub tool of an MCP server: every body published on GitHub, read
+  by `gh_bodies.py`, the one reader `guard_cases` shares (gh porcelain and `gh api` bodies, GraphQL
+  mutations, gh behind a wrapper, in `bash -c`, `eval` or a substitution, a body file read from the
+  directory a `cd` moved to). A ticket follows `ticket.md`, a pull request `pr.md`, a comment
+  `comment.md`, and a comment that opens with `VERDICT:` follows `verdict.md`. A call to
+  `api.github.com` by `curl` or `wget` is refused: its body would go unread.
 - `Stop`: the session's reply to the human (`last_assistant_message`, else the last assistant
   entry of the transcript), checked against `templates/session-reply.md`.
 
@@ -43,17 +40,18 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
-from guard_git import (  # noqa: E402
-    _commands,
-    _standard_input_text,
-    api_readings,
-    gh_act,
-    gh_command,
-    is_standard_input_path,
-    parse_api,
-    read_text_or_none,
-    split_heredocs,
+from gh_bodies import (  # noqa: E402
+    UNREAD,
+    Publication,
+    Unreadable,
+    commands,
+    curls_github,
+    heredocs,
+    mcp_publications,
+    opens_verdict,
+    publications,
 )
+from guard_git import UNKNOWN, _moved  # noqa: E402
 from output_check import agent_kind, deviations  # noqa: E402
 from usine import load, project_root  # noqa: E402
 
@@ -164,235 +162,33 @@ def _subagent(event: Mapping[str, object], text: str) -> Outcome:
 
 # --- agent to GitHub ----------------------------------------------------------------------------
 
-BODY_TEXT = ("--body", "-b")
-BODY_FILE = ("--body-file", "-F")
-CLOSE_TEXT = ("--comment", "-c")
-# `(group, verb)` of gh: the kind of body it publishes, its text options and its file options.
-GH_BODIES: dict[tuple[str, str], tuple[str, tuple[str, ...], tuple[str, ...]]] = {
-    ("issue", "create"): ("ticket", BODY_TEXT, BODY_FILE),
-    ("issue", "edit"): ("ticket", BODY_TEXT, BODY_FILE),
-    ("issue", "comment"): ("comment", BODY_TEXT, BODY_FILE),
-    ("issue", "close"): ("comment", CLOSE_TEXT, ()),
-    ("pr", "create"): ("pr", BODY_TEXT, BODY_FILE),
-    ("pr", "edit"): ("pr", BODY_TEXT, BODY_FILE),
-    ("pr", "comment"): ("comment", BODY_TEXT, BODY_FILE),
-    ("pr", "review"): ("comment", BODY_TEXT, BODY_FILE),
-    ("pr", "merge"): ("comment", BODY_TEXT, BODY_FILE),
-    ("pr", "close"): ("comment", CLOSE_TEXT, ()),
-}
-# A value the shell fills in at run time: the guard cannot read it before gh does. A backtick is
-# not one: the quotes are gone from the words, and Markdown backticks far outnumber substitutions.
-EXPANDED = re.compile(r"\$[\w{(]")
-COMMENT_ENDPOINT = re.compile(
-    r"/issues/comments/\d+$|/issues/\d+/comments$|/pulls/comments/\d+$"
-    r"|/pulls/\d+/(?:comments|reviews)(?:/\d+)?$"
-)
-TICKET_ENDPOINT = re.compile(r"/issues(?:/\d+)?$")
-PR_ENDPOINT = re.compile(r"/pulls(?:/\d+)?$")
-# The GraphQL mutations that publish a body, and the kind of each.
-GRAPHQL_BODIES = {
-    "addComment": "comment",
-    "updateIssueComment": "comment",
-    "addPullRequestReview": "comment",
-    "addPullRequestReviewComment": "comment",
-    "addDiscussionComment": "comment",
-    "createIssue": "ticket",
-    "updateIssue": "ticket",
-    "createPullRequest": "pr",
-    "updatePullRequest": "pr",
-}
-MUTATION = re.compile(r"\b(" + "|".join(GRAPHQL_BODIES) + r")\s*\(")
-BODY_ARGUMENT = re.compile(r'\bbody\s*:\s*(?:"""(.*?)"""|("(?:\\.|[^"\\])*")|\$(\w+))', re.DOTALL)
-CURL = frozenset({"curl", "wget"})
-UNREAD = "the body cannot be read before gh runs ({}): write it in a file or a heredoc"
+
+def _judged(publications: list[Publication], root: Path, config: Mapping[str, list[str]]) -> Outcome:
+    """Refuse the first body that departs from its template; a comment that opens a verdict is one."""
+    for item in publications:
+        kind = "verdict" if item.kind == "comment" and opens_verdict(item.body) else item.kind
+        found = deviations(item.body, kind, config, root)
+        if found:
+            return Outcome(REFUSED, stderr=(
+                f"Blocked by the output guard (forge plugin): this {kind} body does not follow"
+                f" `templates/{kind}.md`. Fix each point, then run the command again:\n"
+                f"{_listing(found)}"
+            ))
+    return Outcome(0)
 
 
-class Unreadable(Exception):
-    """A body the guard cannot read: the publication is refused, never let through unread."""
+def _unread(error: Unreadable) -> Outcome:
+    return Outcome(REFUSED, stderr=f"Blocked by the output guard (forge plugin): {UNREAD.format(error)}.\n")
 
 
-def _resolve(mode: str, value: str, heredoc: str, here: str | None) -> str:
-    """The text a body option gives gh; `Unreadable` when it cannot be read before gh runs."""
-    if mode == "text":
-        if EXPANDED.search(value):
-            if "$(" in value and heredoc:
-                return heredoc
-            raise Unreadable(f"`{value}` is filled in by the shell")
-        return value
-    if value == "-" or is_standard_input_path(value, here):
-        if heredoc:
-            return heredoc
-        raise Unreadable("standard input without a heredoc")
-    if EXPANDED.search(value):
-        raise Unreadable(f"the path `{value}` is filled in by the shell")
-    path = Path(value)
-    if not path.is_absolute() and here:
-        path = Path(here) / path
-    text = read_text_or_none(str(path))
-    if text is None:
-        raise Unreadable(f"the file `{value}` cannot be read")
-    return text
-
-
-def _body_option(
-    args: list[str], text_options: tuple[str, ...], file_options: tuple[str, ...]
-) -> tuple[str, str] | None:
-    """`("text" | "file", value)` of the last body option among `args`, as gh's pflag reads it."""
-    found: tuple[str, str] | None = None
-    index = 0
-    while index < len(args):
-        word = args[index]
-        if word == "--":
-            break
-        for mode, options in (("text", text_options), ("file", file_options)):
-            if not options:
-                continue
-            long, short = options
-            if word in options:
-                found = (mode, args[index + 1] if index + 1 < len(args) else "")
-                index += 1
-            elif word.startswith(long + "="):
-                found = (mode, word[len(long) + 1 :])
-            elif word.startswith(short) and not word.startswith("--") and len(word) > 2:
-                value = word[2:]
-                found = (mode, value[1:] if value.startswith("=") else value)
-        index += 1
-    return found
-
-
-def _standard_input(redirections: list[tuple[str, str]], heredoc: str, here: str | None) -> str:
-    text = _standard_input_text(redirections, here, heredoc, read_text_or_none)
-    if text is None:
-        raise Unreadable("standard input from a pipe or without a heredoc")
-    return text
-
-
-def _input_json(value: str, redirections: list[tuple[str, str]], heredoc: str, here: str | None) -> dict[str, object]:
-    """The JSON object `gh api --input <value>` sends."""
-    if value == "-" or is_standard_input_path(value, here):
-        text = _standard_input(redirections, heredoc, here)
-    else:
-        text = _resolve("file", value, heredoc, here)
+def _mcp(event: Mapping[str, object], tool: str) -> Outcome:
+    tool_input = event.get("tool_input")
     try:
-        data = json.loads(text)
-    except json.JSONDecodeError as error:
-        raise Unreadable(f"`--input {value}` is not JSON") from error
-    if not isinstance(data, dict):
-        raise Unreadable(f"`--input {value}` is not a JSON object")
-    return data
-
-
-def _fields(options: list[tuple[str, str]], heredoc: str, here: str | None) -> dict[str, str]:
-    """The `-f name=value` and `-F name=value` fields of a `gh api` call, files read."""
-    fields: dict[str, str] = {}
-    for name, value in options:
-        if name not in ("raw-field", "field"):
-            continue
-        key, _, content = value.partition("=")
-        if name == "field" and content.startswith("@"):
-            fields[key] = _resolve("file", content[1:], heredoc, here)
-        else:
-            fields[key] = _resolve("text", content, heredoc, here)
-    return fields
-
-
-def _graphql_bodies(
-    options: list[tuple[str, str]], redirections: list[tuple[str, str]], heredoc: str, here: str | None
-) -> list[tuple[str, str]]:
-    """`(kind, body)` of each body a `gh api graphql` mutation publishes."""
-    variables: dict[str, object] = {}
-    query = ""
-    for name, value in options:
-        if name == "input" and value:
-            data = _input_json(value, redirections, heredoc, here)
-            query = str(data.get("query", "")) or query
-            given = data.get("variables")
-            variables.update(given if isinstance(given, dict) else {})
-    try:
-        fields = _fields(options, heredoc, here)
+        found = mcp_publications(tool, tool_input if isinstance(tool_input, dict) else {})
     except Unreadable as error:
-        raise Unreadable(f"{error}; refused as a precaution, a mutation could hide in it") from error
-    query = fields.pop("query", query)
-    variables.update(fields)
-    bodies: list[tuple[str, str]] = []
-    for match in MUTATION.finditer(query):
-        argument = BODY_ARGUMENT.search(query, match.end())
-        following = MUTATION.search(query, match.end())
-        if argument is None or (following is not None and argument.start() > following.start()):
-            continue
-        block, literal, variable = argument.groups()
-        if block is not None:
-            body: object = block
-        elif literal is not None:
-            body = json.loads(literal)
-        else:
-            body = variables.get(variable)
-        if not isinstance(body, str):
-            raise Unreadable(f"the `${variable}` of `{match.group(1)}` is not given")
-        bodies.append((GRAPHQL_BODIES[match.group(1)], body))
-    return bodies
-
-
-def _api_bodies(args: list[str], heredoc: str, here: str | None) -> list[tuple[str, str]]:
-    """`(kind, body)` of each body a `gh api` call publishes, judged in every reading of its words."""
-    readings = api_readings(args)
-    if readings is None:
-        raise Unreadable("too many redirections to read the call")
-    bodies: list[tuple[str, str]] = []
-    for words, redirections in readings:
-        call = parse_api(words)
-        if call.method is not None and call.method.upper() in ("GET", "HEAD"):
-            continue
-        path = call.endpoint.split("?")[0].rstrip("/")
-        if path == "graphql":
-            bodies += _graphql_bodies(call.options, redirections, heredoc, here)
-            continue
-        if COMMENT_ENDPOINT.search(path):
-            kind = "comment"
-        elif TICKET_ENDPOINT.search(path):
-            kind = "ticket"
-        elif PR_ENDPOINT.search(path):
-            kind = "pr"
-        else:
-            continue
-        body: object = None
-        for name, value in call.options:
-            if name == "input" and value:
-                body = _input_json(value, redirections, heredoc, here).get("body", body)
-        if any(value.startswith("body=") for name, value in call.options if name != "input"):
-            body = _fields(call.options, heredoc, here).get("body")
-        if isinstance(body, str):
-            bodies.append((kind, body))
-    return bodies
-
-
-def _opens_verdict(body: str) -> bool:
-    lines = [line.strip() for line in body.strip().splitlines() if line.strip()]
-    if lines and lines[0].startswith(("```", "~~~")):
-        lines = lines[1:]
-    return bool(lines) and lines[0].startswith("VERDICT:")
-
-
-def _curls_github(words: list[str]) -> bool:
-    while words and "=" in words[0] and not words[0].startswith("-"):
-        words = words[1:]
-    return bool(words) and Path(words[0]).name in CURL and any("api.github.com" in w for w in words)
-
-
-def _publications(words: list[str], heredoc: str, here: str | None) -> list[tuple[str, str]]:
-    """`(kind, body)` of each body this simple command publishes on GitHub."""
-    call = gh_command(words)
-    if not call:
-        return []
-    if call[0] == "api":
-        return _api_bodies(call[1:], heredoc, here)
-    act = gh_act(words)
-    entry = GH_BODIES.get(act[:2]) if act else None
-    if act is None or entry is None:
-        return []
-    kind, text_options, file_options = entry
-    option = _body_option(act[2], text_options, file_options)
-    return [(kind, _resolve(*option, heredoc, here))] if option else []
+        return _unread(error)
+    root = project_root(event)
+    return _judged(found, root, load(root)) if found else Outcome(0)
 
 
 def _gh(event: Mapping[str, object]) -> Outcome:
@@ -400,36 +196,31 @@ def _gh(event: Mapping[str, object]) -> Outcome:
     command = tool_input.get("command") if isinstance(tool_input, dict) else None
     if not isinstance(command, str) or not ("gh" in command or "api.github.com" in command):
         return Outcome(0)
-    here = event.get("cwd") if isinstance(event.get("cwd"), str) else None
-    heredoc = split_heredocs(command)[1]
+    cwd = event.get("cwd")
+    here: str | None = cwd if isinstance(cwd, str) else None
     root = project_root(event)
     config: dict[str, list[str]] | None = None
-    for words in _commands(command):
-        if isinstance(words, str):
-            continue
-        if _curls_github(words):
-            return Outcome(REFUSED, stderr=(
-                "Blocked by the output guard (forge plugin): a call to api.github.com outside gh"
-                " could publish a body the guard does not read. Use gh, whose bodies it checks.\n"
-            ))
-        try:
-            publications = _publications(words, heredoc, str(here) if here else None)
-        except Unreadable as error:
-            return Outcome(REFUSED, stderr=(
-                f"Blocked by the output guard (forge plugin): {UNREAD.format(error)}.\n"
-            ))
-        for kind, body in publications:
-            if kind == "comment" and _opens_verdict(body):
-                kind = "verdict"
-            config = load(root) if config is None else config
-            found = deviations(body, kind, config, root)
+    docs = heredocs(command)
+    try:
+        for words in commands(command, docs):
+            if isinstance(words, str):
+                continue
+            if words[:1] == ["cd"] and len(words) > 1:
+                here = _moved(here, words[1])
+                continue
+            if curls_github(words):
+                return Outcome(REFUSED, stderr=(
+                    "Blocked by the output guard (forge plugin): a call to api.github.com outside gh"
+                    " could publish a body the guard does not read. Use gh, whose bodies it checks.\n"
+                ))
+            found = publications(words, docs, None if here == UNKNOWN else here)
             if found:
-                reason = (
-                    f"Blocked by the output guard (forge plugin): this {kind} body does not follow"
-                    f" `templates/{kind}.md`. Fix each point, then run the command again:\n"
-                    f"{_listing(found)}"
-                )
-                return Outcome(REFUSED, stderr=reason)
+                config = load(root) if config is None else config
+                judged = _judged(found, root, config)
+                if judged.code:
+                    return judged
+    except Unreadable as error:
+        return _unread(error)
     return Outcome(0)
 
 
@@ -516,6 +307,8 @@ def outcome(raw: str) -> Outcome:
             return _subagent(event, message) if isinstance(message, str) else Outcome(0)
         if tool in ("Bash", "PowerShell"):
             return _gh(event)
+        if isinstance(tool, str) and tool.startswith("mcp__"):
+            return _mcp(event, tool)
     return Outcome(0)
 
 

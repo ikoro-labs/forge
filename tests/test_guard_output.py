@@ -272,7 +272,10 @@ class MeridianReview(unittest.TestCase):
                 'gh api graphql -f query="$Q"',
             ]:
                 with self.subTest(command=command[:60]):
-                    self.assertRefused(command)
+                    err = self.assertRefused(command)
+                    # refused by its template, not because `$b` in the query looked like a shell variable
+                    expected = "cannot be read" if "$Q" in command else "does not follow"
+                    self.assertIn(expected, err)
             read = "gh api graphql -f query='query { viewer { login } }'"
             self.assertEqual(run(bash(read))[0], 0)
 
@@ -294,6 +297,58 @@ class MeridianReview(unittest.TestCase):
             code, err, _ = run(subagent_stop("qc-conf", VERDICT_ACCEPT_WITH_BLOCKER))
         self.assertEqual(code, REFUSED)
         self.assertIn("`verdict` format", err)
+
+
+def mcp(tool: str, **fields: object) -> dict[str, object]:
+    return {"hook_event_name": "PreToolUse", "tool_name": tool, "tool_input": fields, "cwd": "."}
+
+
+class OneReaderForEveryChannel(unittest.TestCase):
+    """The bodies come from `gh_bodies`, the reader `guard_cases` shares: every channel it opens."""
+
+    def test_a_conforming_graphql_body_given_by_a_variable_passes(self) -> None:
+        command = (
+            "gh api graphql -f query='mutation($b: String!) { addComment(input: {subjectId: \"I_1\","
+            " body: $b}) { clientMutationId } }' -f b='Merged at abc1234.'"
+        )
+        with isolated():
+            self.assertEqual(run(bash(command))[0], 0)
+
+    def test_gh_in_a_nested_shell_or_behind_a_wrapper_is_judged(self) -> None:
+        with isolated():
+            for command in [
+                "bash -c \"gh issue create -t t -b 'No motif.'\"",
+                "eval gh issue create -t t -b No-motif",
+                "env GH_TOKEN=x gh issue create -t t -b 'No motif.'",
+                "/usr/bin/gh issue create -t t -b 'No motif.'",
+            ]:
+                with self.subTest(command=command):
+                    code, err, _ = run(bash(command))
+                    self.assertEqual(code, REFUSED)
+                    self.assertIn("`Motif` is missing", err)
+
+    def test_a_body_file_is_read_from_the_directory_cd_moved_to(self) -> None:
+        with isolated() as project:
+            (project / "sub").mkdir()
+            (project / "sub" / "t.md").write_text("No motif.", encoding="utf-8")
+            code, err, _ = run(bash("cd sub && gh issue create -t t -F t.md", cwd=str(project)))
+        self.assertEqual(code, REFUSED)
+        self.assertIn("`Motif` is missing", err)
+
+    def test_a_github_tool_of_an_mcp_server_is_judged_by_its_kind(self) -> None:
+        verdict = "```text\n" + VERDICT_ACCEPT_WITH_BLOCKER + "```"
+        with isolated():
+            self.assertEqual(run(mcp("mcp__github__add_issue_comment", body="Merged at abc1234."))[0], 0)
+            for tool, body, phrase in [
+                ("mcp__github__add_issue_comment", LONG, "this comment body"),
+                ("mcp__github__issue_write", "No motif.", "`Motif` is missing"),
+                ("mcp__github__add_issue_comment", verdict, "this verdict body"),
+                ("mcp__github__create_gist", "x", "cannot be read"),
+            ]:
+                with self.subTest(tool=tool, phrase=phrase):
+                    code, err, _ = run(mcp(tool, body=body))
+                    self.assertEqual(code, REFUSED)
+                    self.assertIn(phrase, err)
 
 
 class Stop(unittest.TestCase):
@@ -355,6 +410,7 @@ class HooksJson(unittest.TestCase):
         matcher = str(found["PreToolUse"][0]["matcher"]).split("|")
         self.assertIn("Bash", matcher)
         self.assertIn("SubagentHandback", matcher)
+        self.assertIn("mcp__.*([Gg]it[Hh]ub|GITHUB).*", str(found["PreToolUse"][0]["matcher"]))
         self.assertIsNone(found["SubagentStop"][0]["matcher"])
 
     @unittest.skipUnless(
