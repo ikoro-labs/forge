@@ -3,6 +3,7 @@ ground a verdict's blocker stands on besides the rules and a regression."""
 
 import json
 import os
+import shlex
 import tempfile
 import unittest
 from pathlib import Path
@@ -123,9 +124,10 @@ class Base(unittest.TestCase):
         return outcome(event, self.github.run)
 
     def file(self, text: str, name: str = "body.md") -> str:
+        """Write `name` under the root; its path spelled with forward slashes, a shell word on every system."""
         path = self.root / name
         path.write_text(text, encoding="utf-8")
-        return str(path)
+        return path.as_posix()
 
     def assert_refused(self, command: str, *reasons: str) -> None:
         code, message = self.judge(command)
@@ -325,6 +327,14 @@ class OtherChannels(Base):
         for name in ("g''h", 'g""h', "g\\h"):
             with self.subTest(name=name):
                 self.assert_refused(f"{name} pr create --title t --body-file {body}", "qc-conf")
+
+    def test_a_quoted_path_keeps_its_backslashes(self) -> None:
+        self.github.tickets[12]["body"] = CASES.replace(", qc-conf", "")
+        path = self.root / "dir\\body.md"
+        path.parent.mkdir(exist_ok=True)
+        path.write_text("Closes #12", encoding="utf-8")
+        self.assert_refused(f"gh pr create --title t --body-file {shlex.quote(str(path))}", "qc-conf")
+        self.assert_refused(f"gh pr create --title t --body-file {path}", "cannot be read")
 
     def test_an_mcp_tool_that_opens_a_pr_or_posts_a_verdict_is_refused(self) -> None:
         code, message = self.mcp("mcp__github__create_pull_request", title="t", body="Closes #12", head="b", base="main")
