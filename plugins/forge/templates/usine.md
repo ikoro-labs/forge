@@ -521,9 +521,10 @@ racine du dépôt, le chemin absolu du fichier ajouté en dernier argument ; ell
 (la coupe se fait au premier ` | `). Plusieurs motifs qui correspondent : toutes les commandes,
 dans l'ordre du fichier, avant le contrôle du tiret cadratin. Chacune a 30 s, 120 s au total.
 Chaque formateur est lancé dans son propre groupe de processus (une session neuve sous Linux, un
-job Win32 sous Windows) : au délai, tout le groupe est tué, pas seulement la commande, avec deux
-limites sous Windows : un petit-enfant lancé avant `AssignProcessToJobObject` échappe au job, et si
-le job ne peut être créé ou assigné, seul l'enfant direct est tué. Le `wait` qui suit le `kill` est
+job Win32 sous Windows) : au délai, tout le groupe est tué, pas seulement la commande, avec trois
+limites sous Windows : un petit-enfant lancé avant `AssignProcessToJobObject` échappe au job ; si
+le job ne peut être créé ou assigné, seul l'enfant direct est tué ; et si `TerminateJobObject`
+échoue (retour 0), le hook retombe sur `process.kill()` et seul l'enfant direct est tué aussi. Le `wait` qui suit le `kill` est
 borné : un processus qui ne meurt pas en temps ne bloque pas la session. Sous Windows, un formateur
 résolu en `.cmd` ou `.bat` passe par `cmd.exe` : le hook refuse de lui donner un chemin qui contient
 `&|<>^%!"` ou une parenthèse, plutôt que de le citer. Le refus ne couvre pas une commande que le

@@ -138,57 +138,80 @@ class ProcessGroupKill(unittest.TestCase):
     """#26: kill tests the return of TerminateJobObject and falls back to process.kill();
     the wait that follows is bounded, never blocking the session."""
 
+    # Longer than the 5 s bound the tests assert: an unbounded wait runs into it and fails.
+    CHILD_LIFETIME = 20
+
+    def spawn(self) -> subprocess.Popen:
+        child = subprocess.Popen([sys.executable, "-c", f"import time; time.sleep({self.CHILD_LIFETIME})"])
+        # Cleanups run in reverse: kill is registered last so it runs first, then wait reaps.
+        self.addCleanup(child.wait)
+        self.addCleanup(child.kill)
+        return child
+
     def test_a_failed_terminate_falls_back_to_process_kill(self) -> None:
         """#26: TerminateJobObject returns 0 on failure without raising; kill must
         test that return and fall back to process.kill()."""
-        sleeper = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
-        self.addCleanup(sleeper.kill)
-        self.addCleanup(sleeper.wait)
+        sleeper = self.spawn()
         group = handoff_header.ProcessGroup(sleeper)
         with (
             mock.patch.object(handoff_header, "WINDOWS", True),
             mock.patch.object(handoff_header, "LINUX", False),
             mock.patch.object(handoff_header, "_win32") as win32,
+            mock.patch.object(handoff_header, "KILL_WAIT_SECONDS", 2),
+            mock.patch.object(sleeper, "kill", wraps=sleeper.kill) as process_kill,
         ):
             kernel32 = mock.Mock()
             kernel32.TerminateJobObject.return_value = 0
             win32.return_value = (mock.Mock(), mock.Mock(), kernel32)
             group.job = mock.sentinel.job
+            start = time.monotonic()
             group.kill()
+            elapsed = time.monotonic() - start
             kernel32.TerminateJobObject.assert_called_once_with(mock.sentinel.job, 1)
+            process_kill.assert_called_once_with()
+        self.assertLess(elapsed, 5, "the child outlived the kill: the fallback did not run")
         self.assertIsNotNone(sleeper.poll(), "the process was not killed by the fallback")
 
     def test_wait_is_bounded_and_does_not_block(self) -> None:
-        """#26: the wait after kill is bounded; a process that does not die in time
+        """#26: the wait after kill is bounded; a child that survives every kill
         does not block the session."""
-        sleeper = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
-        self.addCleanup(sleeper.kill)
-        self.addCleanup(sleeper.wait)
+        sleeper = self.spawn()
         group = handoff_header.ProcessGroup(sleeper)
-        if handoff_header.WINDOWS:
+        with (
+            mock.patch.object(sleeper, "kill"),
+            mock.patch.object(handoff_header.os, "killpg"),
+            mock.patch.object(handoff_header, "KILL_WAIT_SECONDS", 0.2),
+        ):
+            kernel32 = mock.Mock()
+            kernel32.TerminateJobObject.return_value = 0
             with (
-                mock.patch.object(handoff_header, "_win32") as win32,
-                mock.patch.object(handoff_header, "KILL_WAIT_SECONDS", 0.1),
+                mock.patch.object(handoff_header, "_win32", return_value=(mock.Mock(), mock.Mock(), kernel32)),
+                mock.patch.object(handoff_header, "WINDOWS", True),
+                mock.patch.object(handoff_header, "LINUX", False),
             ):
-                kernel32 = mock.Mock()
-                kernel32.TerminateJobObject.return_value = 0
-                win32.return_value = (mock.Mock(), mock.Mock(), kernel32)
                 group.job = mock.sentinel.job
                 start = time.monotonic()
                 group.kill()
                 elapsed = time.monotonic() - start
-        else:
-            fake_os = mock.Mock(wraps=handoff_header.os)
-            fake_os.killpg = mock.Mock(side_effect=OSError("no such group"))
-            with (
-                mock.patch.object(handoff_header, "os", fake_os),
-                mock.patch.object(handoff_header, "KILL_WAIT_SECONDS", 0.1),
-            ):
-                start = time.monotonic()
-                group.kill()
-                elapsed = time.monotonic() - start
         self.assertLess(elapsed, 5, "kill blocked waiting for a process that would not die")
-        self.assertIsNotNone(sleeper.poll(), "the process was not killed by the fallback")
+        self.assertIsNone(sleeper.poll(), "the child must have survived: the test proves a bounded wait")
+
+    def test_wait_is_bounded_on_linux_too(self) -> None:
+        """#26: same bound on the process-group path (killpg without effect)."""
+        sleeper = self.spawn()
+        group = handoff_header.ProcessGroup(sleeper)
+        with (
+            mock.patch.object(sleeper, "kill"),
+            mock.patch.object(handoff_header.os, "killpg"),
+            mock.patch.object(handoff_header, "KILL_WAIT_SECONDS", 0.2),
+            mock.patch.object(handoff_header, "WINDOWS", False),
+            mock.patch.object(handoff_header, "LINUX", True),
+        ):
+            start = time.monotonic()
+            group.kill()
+            elapsed = time.monotonic() - start
+        self.assertLess(elapsed, 5, "kill blocked waiting for a process that would not die")
+        self.assertIsNone(sleeper.poll())
 
 
 class Sessions(unittest.TestCase):
