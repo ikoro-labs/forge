@@ -618,6 +618,21 @@ a file it cannot open, a pipe into standard input) is refused, and so is `curl` 
 `api.github.com`; `Stop` lets through a reply it cannot read, and a crash passes: only exit 3 blocks. Tried by
 the suite of `tests/` only, not yet in a real session.
 
+## Le mail de relevé
+
+`scripts/report_mail.py` construit le mail de relevé de l'usine (HTML) à partir des clés `report-*` de
+`docs/agents/usine.md` (section « Rapport » de `plugins/forge/templates/usine.md`) : il imprime le
+mail et sort en code 10, sans rien imprimer, quand rien n'a changé depuis le dernier envoi ; une fois
+le mail envoyé, `report_mail.py --sent` enregistre l'envoi. L'état (`state.json`, le mail en attente
+`mail.html`) vit dans `--state-dir`, sinon dans `~/.claude/hooks/state/report-mail/<dépôt>`.
+
+Le hook `guard_report_mail` (`PreToolUse` sur `Bash` et `PowerShell`) lit `mail.html` quand une
+commande lance `report_mail.py --sent`, et le compare à `templates/report-mail.md` par
+`output_check.py` : un mail sans « What changed », « Awaiting you » (ou `Ce qui a changé`, `Ce qui
+t'attend`), sans « CI and runners » ou sans tableau, ou de plus de 500 mots (clé
+`output-words-report-mail`), est refusé et l'envoi n'est pas enregistré. Essayé par la suite de
+`tests/` seulement, pas encore sur un vrai poste.
+
 ## Limites connues
 
 - **Une source par marketplace et par poste** : la marketplace `ikoro-labs` n'est connue qu'une

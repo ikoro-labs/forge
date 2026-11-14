@@ -594,6 +594,7 @@ check holds in every project. Code blocks and table cells count, HTML comments d
 - `output-words-comment` : `150`
 - `output-words-pr` : `200`
 - `output-words-session-reply` : `150`
+- `output-words-report-mail` : `500`
 - `output-words-subagent-return` : `200`
 - `output-words-paragraph` : `60`
 
