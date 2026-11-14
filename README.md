@@ -72,6 +72,7 @@ ne fusionne une PR rouge, ou ne sort de son rôle.
 | `guard_cases` | une PR de feature s'ouvre sur des cas de validation acceptés (`AGREED:`) ; un verdict ne bloque que sur ces cas gelés, une règle du socle ou une régression |
 | `guard_coder_model` | un `forge:coder` (ou `coder`) lancé par `Agent`, `Task` ou un `Workflow` tourne sur `sonnet`, sur `opus` avec la ligne `ESCALATION: #<PR> round 3`, sur `haiku` avec la ligne `MODE: sync`, jamais sur un autre modèle ; un `effort` donné vaut `high` ; des options qu'il ne lit pas sont refusées |
 | `guard_pause` | tant que `.claude/PAUSED` existe, aucun agent n'est lancé |
+| `guard_completion` | une question de l'humain sur l'avancement d'une feature ou du projet reçoit le tableau de `scripts/completion.py` : fermés sur le budget, % des tickets publiés avec son dénominateur, ouverts, hors compte, reste, date et source par ligne, sans total ; il laisse passer en cas d'erreur (transcript absent ou illisible) ([détail](docs/installation.md#le-tableau-de-complétion)) |
 | `guard_output` | every output follows its template and its word caps: a subagent's final text, the body of a gh ticket, PR or comment, the session's reply to the human ([details](docs/installation.md#output-structure)) |
 | `after_write` | formate chaque fichier écrit avec les formateurs que le projet déclare (clé `format-on-write`), puis refuse le tiret cadratin au-delà de ce que le projet admet |
 | `trim_output` | la longue sortie d'une commande de tests qui réussit est raccourcie, la sortie complète gardée dans un journal |

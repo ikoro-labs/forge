@@ -377,6 +377,45 @@ Limits, tried on Linux only, by the tests with a simulated gh, not yet in a real
 - a GraphQL body variable fed by a JSON `--input` is refused as a precaution, and so is a backtick in
   a double-quoted body under PowerShell, where it is an escape.
 
+## Le tableau de complétion
+
+`scripts/completion.py` imprime un tableau Markdown, une ligne par feature ouverte (ou par `F-NNNN`
+nommé) :
+
+    uv run --no-project --quiet python "${CLAUDE_PLUGIN_ROOT}/scripts/completion.py" [F-NNNN ...]
+
+| Colonne | Ce qu'elle porte |
+| --- | --- |
+| Feature | `F-NNNN` et le `titre` de son `idee.md` |
+| Suivi | l'`issue:` de son `idee.md` |
+| Fermés (completed) / budget | les tickets fermés que compte le budget, sur le `feature-tickets` du design (`?` sans lui) |
+| % | les fermés sur les tickets publiés (fermés et ouverts, hors compte exclus), arrondi à l'entier, le dénominateur dans la cellule (`67 % (2 / 3)`) ; `sans objet (aucun ticket publié)` sans ticket. Jamais sur le budget, qu'une feature peut ne pas remplir |
+| Ouverts | les tickets ouverts que compte le budget |
+| Hors compte (not_planned) | les tickets fermés comme non prévus, hors du budget |
+| Reste (numéros ouverts) | les numéros des tickets ouverts |
+| Relevé (date UTC) | l'heure de la lecture et sa source |
+
+Les tickets d'une feature sont les sous-issues de son issue de suivi (l'`issue:` de son `idee.md`),
+lues par `gh api .../sub_issues --paginate`. Sans `issue:`, ce sont ceux que place la recherche du
+[budget d'une feature](#the-ticket-budget-of-a-feature) (`to-tickets F-NNNN` et `Feature: F-NNNN`,
+chaque corps placé par sa ligne `Motif :`) ; la cellule `Relevé` dit la source. Un ticket fermé
+comme non prévu ne gonfle pas les fermés. Il n'y a pas
+de ligne de total : les dénominateurs des features ne s'additionnent pas. Une feature est ouverte
+tant que son dossier n'a pas de `README.md` et que son `etat` n'est pas `hors-perimetre` ou
+`abandonnee` (clé `feature-state`). La clé `completion-column` ajoute la colonne propre au projet.
+Un compte que gh ne peut pas faire arrête le script (code 2) : aucune ligne n'est devinée.
+
+Le hook `guard_completion` (Stop) lit le dernier message de l'humain dans le transcript. S'il pose
+une question (`?`) sur l'avancement (complétion, completion, avancement, progress, pourcentage, ou un
+`%` à côté de feature, projet ou `F-NNNN`), ou s'il porte l'un de ces mots à côté d'un `%` ou d'un
+`F-NNNN`, la réponse de la session depuis ce message doit contenir ce tableau, avec toutes ses
+colonnes ; sinon l'arrêt est bloqué une fois, avec la commande à lancer. La réponse suivante passe
+quoi qu'elle porte (`stop_hook_active`). Le hook laisse passer en cas d'erreur : un transcript
+absent ou illisible, un événement illisible ou sa propre panne ne bloquent jamais l'arrêt.
+Les messages de session (résultats d'outils, notifications, messages d'une autre session) ne sont
+pas l'humain. Essayé par les tests seulement, sous Linux et sous Windows ; pas encore dans une vraie
+session.
+
 ## Compléter ou remplacer, sans éditer le plugin
 
 - **Un complément** est un fichier du projet : ses skills de domaine, son arbitre du métier, ses

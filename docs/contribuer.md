@@ -63,6 +63,7 @@ plugins/forge/                    le plugin
   scripts/token_audit.py          les jetons de chaque rôle, lus dans les journaux de Claude Code
   scripts/ticket_budget.py        la somme des jetons d'agents par ticket, contre la clé `ticket-budget`
   scripts/factory_slo.py          les indicateurs de service de l'usine, calculés sans modèle
+  scripts/completion.py           le tableau de complétion des features, compté comme le budget
   socle.md                        le socle commun des critères de revue, règles F-n
   templates/                      usine.md, ticket.md, pr.md, verdict.md, adr.md, features/
 tests/                            tests des hooks, du parseur et du contenu
