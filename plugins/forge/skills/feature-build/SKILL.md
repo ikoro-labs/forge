@@ -136,9 +136,29 @@ Alors :
 
 1. `gh issue edit <n> --add-assignee @me --add-label agent-claimed` : le ticket est pris, et
    l'étiquette, qu'un humain ne pose jamais, dit que c'est par un passage et non par un humain.
-2. Lance l'agent `forge:coder` (outil Agent, `subagent_type: "forge:coder"`,
+2. **Tour 0, sans code**, quand la clé `validation-cases` est déclarée et que le ticket a été créé
+   depuis sa date (`socle.md`, Validation cases). Le corps du ticket porte ses cas
+   `A<n>.<k> | <entrée> | <résultat attendu>`. Lance une fois, au premier plan, chacun avec le seul
+   ticket : l'auteur des tests d'acceptation du projet, puis `forge:qc-conf` en mode tour 0, puis
+   chaque relecteur de la clé `validation-reviewer` dont le ticket nomme un chemin du périmètre.
+   Chacun rend les cas qu'il ajoute, ou `aucun`. Ajoute-les au corps (`gh issue edit <n>
+   --body-file`), puis écris la ligne `AGREED:` avec leurs rôles (`test-author`, `qc-conf`, le nom
+   de chaque relecteur) et `coder` : le coder signe en prenant le ticket, et c'est toi qui l'écris,
+   car `guard_coder` lui refuse `gh issue edit`. Après cette écriture, le corps ne change plus :
+   `guard_cases` refuse `gh pr create` sans cas ni `AGREED:` complet, et refuse un verdict quand le
+   corps a changé après l'ouverture de la PR. Une liste fausse se corrige par une partie suivante
+   du ticket (`Refs #n`), ouverte après la correction, ou par le login de la clé
+   `validation-owner`. Le tour 0 ne compte pas comme un REJECT. Ses jetons comptent dans le budget
+   du ticket (clé `ticket-budget`, rôles `tour-0-<agent>`), comme ceux de la PR : forge n'a pas de
+   clé de budget par PR. Coût : un appel par lecteur, sur le seul ticket et les fichiers qu'il
+   nomme, sans diff ni rejeu ; il n'est pas encore mesuré.
+3. Lance l'agent `forge:coder` (outil Agent, `subagent_type: "forge:coder"`,
    `isolation: worktree`, `run_in_background: true`) avec : le ticket, la feature, la base, et pour
-   une seconde partie les points de la première. Tous partent du même `origin/<base>`.
+   une seconde partie les points de la première. Tous partent du même `origin/<base>`. Le coder
+   lit d'abord les cas du ticket : s'il en manque un, il rend `RESULT: BLOCKED` avec ce cas, que
+   tu ajoutes au corps avant de le relancer, jamais après l'ouverture de sa PR.
+   Modèle du coder : Sonnet aux tours 1 et 2, Opus pour la correction jugée au tour 3 avec la ligne `ESCALATION: #<PR> round 3`, Haiku en mode sync sans conflit avec la ligne `MODE: sync` ; tenu par le hook `guard_coder_model`. Sans `model` ni `effort`, sa
+   frontmatter (`sonnet`, `high`) s'applique : ne passe `model` qu'avec la ligne qu'il exige.
 
 Puis passe à l'étape 3 si la file de revue n'est pas vide ; sinon attends la notification d'un
 coder. N'invente jamais la sortie d'un coder qui n'a pas rendu.
@@ -232,22 +252,25 @@ Jamais deux `/forge:qc` en même temps : la fusion est sérielle. Prends la prem
    `git merge-base --is-ancestor origin/<base> origin/<branche de la PR>`.
    - Oui : étape 3.2.
    - Non : lance un `forge:coder` en **mode sync** (au premier plan, `isolation: worktree`) avec la
-     PR, le ticket et la base. Lis sa sortie comme à l'étape 2. `RESULT: PR` : étape 3.2.
-     `RESULT: BLOCKED` ou `FAILED` : commente la PR, pose `needs-your-attention`, **arrêt sur
-     incident**.
+     PR, le ticket et la base, `model: haiku` et la ligne `MODE: sync`. Lis sa sortie comme à
+     l'étape 2. `RESULT: PR` : étape 3.2. `RESULT: BLOCKED` avec `QUESTION: conflict in ...` :
+     relance-le une fois sans `model` ni la ligne, sur Sonnet. Un autre `BLOCKED`, ou `FAILED` :
+     commente la PR, pose `needs-your-attention`, **arrêt sur incident**.
 
    Une PR se remet à jour avant sa revue, jamais après son verdict : `forge:qc-gate` doit mesurer
    la tête qui fusionnera.
 2. **Intacte ?** `gh pr view <n> --json state,reviews,comments` : la PR est ouverte, sans revue
    GitHub, et sans verdict `ROUND:` si un coder de ce passage l'a ouverte. Sinon elle a été jugée
    ou fusionnée hors de `/forge:qc` : pose `needs-your-attention`, **arrêt sur incident**.
-3. Lance le skill `forge:qc` sur la PR. Il mesure, juge, fusionne sur ACCEPT, et renvoie le ticket
-   en reprise sur un second REJECT (une seule par ticket). Sur un REJECT au tour 1, la correction
+3. Lance le skill `forge:qc` sur la PR. Il mesure, juge, fusionne sur ACCEPT, and stops the PR open with
+   `needs-your-attention` on its third REJECT. Sur un REJECT au tour 1 ou 2, la correction
    revient à un `forge:coder` en **mode correction** (au premier plan, `isolation: worktree`), avec
    la PR, le ticket, la base et le verdict ; le coder qui a ouvert la PR, repris par
-   `SendMessage`, s'il est encore joignable. Lis sa sortie comme à l'étape 2 ; `BLOCKED` ou
+   `SendMessage`, s'il est encore joignable. Après le REJECT du tour 2, la correction jugée au
+   tour 3 part sur un coder neuf, `model: opus` et la ligne `ESCALATION: #<PR> round 3`.
+   Lis sa sortie comme à l'étape 2 ; `BLOCKED` ou
    `FAILED` : **arrêt sur incident**. Tu ne corriges rien toi-même. Puis `/forge:qc` reprend au
-   tour 2.
+   tour suivant.
 
 Après `/forge:qc` :
 
@@ -255,9 +278,8 @@ Après `/forge:qc` :
 - **Fusionnée sur une autre base** : GitHub ne ferme un ticket que sur la branche par défaut.
   Ferme-le toi-même, pour débloquer la suite :
   `gh issue close <n> --comment "Fusionné dans <base> par #<pr> ; atteindra la branche par défaut avec <base>."`
-- **Renvoyé en reprise** (`agent-rework`) : `/forge:qc` l'a remis en `ready-for-agent` mais
-  assigné. Retire l'assignation et `agent-claimed` : la frontière exige un ticket sans assigné. Il
-  y revient, et un coder neuf le reprend à l'étape 2 dans ce passage, sous les mêmes plafonds.
+- **Stopped in round 3** (`needs-your-attention`, PR open): the ticket leaves the queue of this
+  pass; the human decides, and only their grant (`GRANTED:`) opens a round 4.
 - **`needs-your-attention` sans fusion**, ou fusion refusée : **arrêt sur incident**.
 
 Une fusion déplace la base : les autres PR de la file passeront par 3.1. Elle peut aussi débloquer

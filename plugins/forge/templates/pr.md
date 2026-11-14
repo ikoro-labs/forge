@@ -1,43 +1,28 @@
-## Résumé
+<!-- template: pr | max-lines: 40, this comment excluded | rules: socle.md -->
+## Summary
 
-<!-- Ce que la PR change, et pourquoi, en trois lignes au moins. Une sous-section par changement
-quand il y en a plusieurs. Cite le ticket : `Closes #n`, ou `Refs #n` avec la liste des points
-quand la PR n'en livre qu'une partie. -->
+<!-- What the PR changes and why, in five lines at most. Cite the ticket: `Closes #n`, or
+`Refs #n` with the points this PR delivers. -->
 
-### Vue du changement
+### Change view
 
-<!-- La plus petite vue qui suffise, à côté du texte qu'elle porte : pseudo-code, arbre d'appels,
-arbre de fichiers, croquis de diff ou diagramme Mermaid. Inutile quand le diff tient en quelques
-lignes. -->
+<!-- The smallest view that is enough: pseudo-code, call tree, file tree, diff sketch or Mermaid
+diagram. Leave out when the diff fits in a few lines. -->
 
-## Porte
+## Door
 
-<!-- `double sens` : un retour en arrière coûte peu.
-`sens unique` : geste destructif, publication, migration de données, décision difficile à défaire.
-Pour un sens unique, dis lequel est le geste qui ne se défait pas, et pourquoi. -->
+<!-- `two-way`: going back costs little. `one-way`: a destructive gesture, a release, a data
+migration, a decision hard to undo; name the gesture that cannot be undone. -->
 
-## Rayon d'impact
+## Blast radius
 
-<!-- Un mot (aucun, local, consommateurs...) puis une phrase : ce que la fusion peut toucher chez
-les consommateurs. -->
+<!-- One word (none, local, consumers...) and one sentence on what the merge can touch. -->
 
-## Ce qui ne change pas
+## Proofs
 
-<!-- Ce qu'un lecteur pourrait croire touché et qui ne l'est pas. -->
+<!-- Per criterion test: the red output with the reason it fails, then the green output. The
+project's check commands and their result. What was not tried says so. -->
 
-## Preuves
+## Agent report
 
-<!-- Pour chaque test de critère, la sortie rouge recopiée avec la raison de l'échec, puis la sortie
-verte. Les commandes de contrôle du projet et leur résultat. -->
-
-## Définition du Done
-
-<!-- Chaque case cochée honnêtement : une case non tenue dit pourquoi. -->
-
-## Rapport d'agent
-
-<!-- Laissé vide : `/forge:qc` l'écrit. -->
-
-## Suite
-
-<!-- Ce qui reste à faire après cette PR, avec son ticket. -->
+<!-- Left empty: `/forge:qc` writes it. -->

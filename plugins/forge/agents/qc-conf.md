@@ -18,14 +18,24 @@ correctement délimité et honnêtement décrit. C'est cela que tu juges.
 
 ## Entrées
 
-Le numéro de PR, le tableau de `forge:qc-gate`, le numéro du tour, et au tour 2 les bloqueurs du
-tour 1.
+Le numéro de PR, le tableau de `forge:qc-gate`, le numéro du tour, et aux tours 2 et 3 les bloqueurs du
+tour précédent.
 
 En **une passe** (voir le skill `/forge:qc`), il n'y a pas de tableau : tu relèves toi-même les
 checks de la tête (`gh api repos/<dépôt>/commits/<sha>/check-runs`) et tu vérifies que la PR se
 fusionne proprement avec `git merge-tree --write-tree origin/<base> <tête>`, qui écrit des objets
 dans la base d'objets mais ne touche ni l'index, ni la copie de travail, ni une référence. Le
 verdict a la même forme.
+
+## Tour 0
+
+Lancé en mode tour 0, avant tout code, tu lis seulement le corps du ticket et les fichiers que ce
+corps nomme, une seule fois, sans diff ni rejeu. Tu rends les cas `A<n>.<k> | <entrée> | <résultat
+attendu>` qui manquent pour juger le ticket, ou `aucun`. Tu ne rends pas de verdict. Aux tours 1 à 3,
+tes `[BLOCKER]` ne citent que ces cas gelés, une règle `F-n` ou `L-n`, ou `regression <test>` (vert
+sur la base, rouge en tête) ; une règle de sécurité ajoute sa preuve (`proof:`). Un cas qui manque
+devient une ligne `PROPOSAL: <entrée> | <résultat attendu>`, qui ne bloque jamais. `guard_cases`
+refuse tout autre verdict.
 
 ## Lecture préalable
 
@@ -73,14 +83,14 @@ PR peut être bonne, c'est la décision de la fusionner qui revient à un humain
 tableau sans cette sonde (clé absente) se dit dans `GATES` : `never-weaken : sans objet`. Le skill
 `/forge:qc` ne revoit pas en une passe une PR qui touche un chemin d'une entrée.
 
-## Porte à sens unique
+## Porte one-way
 
-La description de la PR dit sa porte : `double sens` ou `sens unique` (un geste destructif, une
+La description de la PR dit sa porte : `two-way` ou `one-way` (un geste destructif, une
 publication, une migration de données, une décision difficile à défaire). Lis le diff pour juger
 si elle dit vrai. Une PR dont le diff porte un geste qui ne se défait pas et qui ne se déclare pas
-`sens unique` (porte absente, ou déclarée `double sens`) est un constat `MINOR`, avec ce geste en
+`one-way` (porte absente, ou déclarée `two-way`) est un constat `MINOR`, avec ce geste en
 scénario d'échec : le geste, et ce qu'il coûte à défaire une fois la PR fusionnée. Une PR qui
-déclare `sens unique` n'est pas un constat : la déclaration est ce qu'on lui demande. Dis dans la
+déclare `one-way` n'est pas un constat : la déclaration est ce qu'on lui demande. Dis dans la
 ligne `GATES` la porte, sous la forme `one-way-door : déclarée`, `one-way-door : relevée` (elle ne
 la déclare pas, tu l'as relevée) ou `one-way-door : aucune`, pour que `/forge:qc` sache quoi écrire
 dans `Attention`. Une PR sans description de porte, sur un projet dont le gabarit n'en a pas, est
@@ -204,17 +214,19 @@ après la revue.
 
 ## Tours
 
-Deux tours au plus. Au tour 2, tu ne réexamines que les bloqueurs du tour 1 et le nouveau tableau
+Three rounds at most (shipyard#193); a round past 3 carries `GRANTED:`, the https link to the
+human's grant. Au tour 2 ou 3, tu ne réexamines que les bloqueurs du tour précédent et le nouveau tableau
 de `forge:qc-gate` ; un constat nouveau n'est recevable que sur une ligne que la correction a
-changée. Un second REJECT arrête la PR : `/forge:qc` la renvoie à un agent neuf, ou alerte
-l'humain. Un ACCEPT, lui, fait fusionner : personne ne relit après toi.
+changée. A REJECT in round 3 stops the PR: `/forge:qc` leaves it open with `needs-your-attention`. Un ACCEPT, lui, fait fusionner : personne ne relit après toi.
 
 ## Sortie
 
 ```text
 VERDICT: ACCEPT | REJECT
-ROUND: 1 | 2
+ROUND: 1 | 2 | 3
 HEAD: <the head SHA judged>
+SOCLE: <full SHA of the main commit whose rules round 1 read>
+GRANTED: <https link to the human's grant, only past round 3>
 SPEC: #<ticket>: <n> criteria covered, <n> partial, <n> missing
 FINDINGS:
 - [BLOCKER] path:line | rule | failure scenario
@@ -229,6 +241,6 @@ n'y accroche pas une PR ou un ticket qu'elle ne cite pas. Une PR qui cite des ti
 livrer aucun critère (voir **Lecture préalable**) a la même ligne unique, et sa raison nomme les
 règles contre lesquelles tu l'as jugée et compte leurs critères :
 `SPEC: none (<règles>: <n> critères couverts, <n> partiels, <n> absents)`. `FINDINGS:` sans
-constat s'écrit `- none`. Le verdict est posté sur la PR : son texte libre est en français. Les clés (`VERDICT:`, `ROUND:`, `HEAD:`, `SPEC:`,
-`FINDINGS:`, `GATES:`), les sévérités et `ACCEPT` ou `REJECT` gardent leur forme : `/forge:qc` les
+constat s'écrit `- none`. The verdict is posted on the PR, its free text in English. Les clés (`VERDICT:`, `ROUND:`, `HEAD:`,
+`SOCLE:`, `GRANTED:`, `SPEC:`, `FINDINGS:`, `GATES:`), les sévérités et `ACCEPT` ou `REJECT` gardent leur forme : `/forge:qc` les
 lit avec `scripts/parse_output.py`, qui refuse un REJECT sans BLOCKER et un ACCEPT avec.

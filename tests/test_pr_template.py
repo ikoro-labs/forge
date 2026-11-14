@@ -8,6 +8,16 @@ import support
 REPO_TEMPLATE = support.REPO_ROOT / ".github" / "pull_request_template.md"
 PLUGIN_TEMPLATE = support.PLUGIN / "templates" / "pr.md"
 HEADING = re.compile(r"^(#{2,3}) (.+)$", re.MULTILINE)
+# The plugin template is in English, this repository's own template in French: each plugin
+# heading names the repository heading that carries the same section.
+PLUGIN_TO_REPO_HEADING = {
+    "Summary": "Résumé",
+    "Change view": "Vue du changement",
+    "Door": "Porte",
+    "Blast radius": "Rayon d'impact",
+    "Proofs": "Preuves",
+    "Agent report": "Rapport d'agent",
+}
 
 
 def headings(path):
@@ -62,7 +72,7 @@ class GateAndBlastRadius(unittest.TestCase):
     def test_sections_du_gabarit_du_plugin_toutes_presentes(self):
         """Chaque section du gabarit du plugin existe dans celui du dépôt, dans le même ordre (#46)."""
         repo = headings(REPO_TEMPLATE)
-        plugin = [title for title in headings(PLUGIN_TEMPLATE)]
+        plugin = [PLUGIN_TO_REPO_HEADING[title] for title in headings(PLUGIN_TEMPLATE)]
         self.assertTrue(set(plugin) <= set(repo), set(plugin) - set(repo))
         self.assertEqual([t for t in repo if t in plugin], plugin)
 

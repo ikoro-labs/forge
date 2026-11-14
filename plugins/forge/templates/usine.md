@@ -110,7 +110,7 @@ Les règles git du projet : nommage des branches, format des commits, ligne d'at
 - `git-rules` : `<.claude/rules/git.md>`
 
 Le modèle de description de PR que `forge:coder` remplit. Le plugin en propose un,
-`templates/pr.md` (vue du changement, porte, rayon d'impact, preuves), à copier dans le dépôt : une valeur
+`templates/pr.md` (Change view, Door, Blast radius, Proofs), à copier dans le dépôt : une valeur
 possible de la clé, pas une valeur par défaut. Sans la clé, l'étape est sans objet.
 
 - `pr-template` : `<.github/pull_request_template.md>`
@@ -404,6 +404,18 @@ sans qu'on l'ait voulu.
 La grille de revue de `forge:qc-conf`, dans son ordre : un skill ou un fichier.
 
 - `review-grid` : `<.claude/skills/reviewer/SKILL.md>`
+
+Les cas de validation des tickets (`socle.md`, Validation cases). La date d'adoption : un ticket
+créé avant elle n'a pas besoin de cas, et son critère `A<n>` vaut le cas `A<n>.1`. Sans la clé,
+`guard_cases` ne lit rien et ne refuse rien. Chaque relecteur déclaré lit les cas au tour 0 quand le
+ticket nomme un chemin de son périmètre, et doit figurer dans `AGREED:` quand le diff de la PR en
+touche un. Le propriétaire est le login GitHub dont une modification du corps après l'ouverture de
+la PR reste admise. Les règles de sécurité locales s'ajoutent à la liste fermée du socle.
+
+- `validation-cases` : `<2026-11-14>`
+- `validation-reviewer` : `<securite | runner/, .github/>`
+- `validation-owner` : `<login GitHub du propriétaire>`
+- `security-rules` : `<L-3, L-4>`
 
 Les chemins qu'aucun agent ne fusionne, même sur ACCEPT : un humain le fait. Un chemin ou un préfixe
 par ligne, comparé mot à mot au chemin POSIX relatif de chaque fichier du diff. `forge:qc` s'arrête

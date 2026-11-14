@@ -34,8 +34,14 @@ RESULT_KEYS = {
     "FAILED": ("TICKET", "COMMAND", "OUTPUT", "STATE"),
 }
 VERDICT_KEYS = ("VERDICT", "ROUND", "HEAD", "SPEC", "FINDINGS", "GATES")
-VERDICT_OPTIONAL = ("BATTERY CORRECTION",)
-REPEATED = frozenset({"SPEC"})
+VERDICT_OPTIONAL = ("SOCLE", "GRANTED", "BATTERY CORRECTION", "PROPOSAL")
+# Three rounds at most (shipyard#193); a later round names the human's grant by its https link.
+MAX_ROUNDS = 3
+ROUND = re.compile(r"^[1-9]\d*$")
+GRANT = re.compile(r"^https://\S+$")
+# A case proposed for the next tickets: `<input> | <expected result>`; it never blocks.
+PROPOSAL = re.compile(r"^[^|]*\S[^|]*\|.*\S.*$")
+REPEATED = frozenset({"SPEC", "PROPOSAL"})
 # The domain arbiter's answer: the keys each `ANSWER:` takes after `QUESTION:`.
 DOMAIN_KEYS = {
     "DECIDED": ("DECISION", "SOURCE"),
@@ -108,8 +114,15 @@ def parse_verdict(text: str) -> dict[str, object]:
     verdict, round_, head = fields["VERDICT"][0], fields["ROUND"][0], fields["HEAD"][0]
     if verdict not in ("ACCEPT", "REJECT"):
         raise OutputError(f"`VERDICT: {verdict}`: the value must be ACCEPT or REJECT")
-    if round_ not in ("1", "2"):
-        raise OutputError(f"`ROUND: {round_}`: the value must be 1 or 2")
+    if not ROUND.match(round_):
+        raise OutputError(f"`ROUND: {round_}`: the value is the round number alone, 1, 2 or 3")
+    grant = fields.get("GRANTED", [""])[0]
+    if "GRANTED" in fields and not GRANT.match(grant):
+        raise OutputError(f"`GRANTED: {grant}`: it must be the https link to the human's grant")
+    if int(round_) > MAX_ROUNDS and not grant:
+        raise OutputError(
+            f"`ROUND: {round_}`: past round {MAX_ROUNDS}, the verdict needs a `GRANTED: <https link>` line"
+        )
     if not HEAD.match(head):
         raise OutputError(f"`HEAD: {head}`: it must be the hexadecimal SHA of the judged head")
     specs = fields["SPEC"]
@@ -138,6 +151,13 @@ def parse_verdict(text: str) -> dict[str, object]:
         if match is None:
             raise OutputError(f"finding `{line}`: it must read `- [BLOCKER|MINOR|NOTE] ...`")
         findings.append({"severity": match.group(1), "text": match.group(2)})
+    socle = fields.get("SOCLE", [""])[0]
+    if "SOCLE" in fields and not HEAD.match(socle):
+        raise OutputError(f"`SOCLE: {socle}`: it must be the hexadecimal SHA, 7 to 40 characters, of the socle read")
+    proposals = fields.get("PROPOSAL", [])
+    for proposal in proposals:
+        if not PROPOSAL.match(proposal):
+            raise OutputError(f"`PROPOSAL: {proposal}`: it reads `<input> | <expected result>`")
     blockers = sum(finding["severity"] == "BLOCKER" for finding in findings)
     if verdict == "REJECT" and not blockers:
         raise OutputError("`VERDICT: REJECT` with no `[BLOCKER]` finding: only a blocker rejects")
@@ -150,7 +170,10 @@ def parse_verdict(text: str) -> dict[str, object]:
         "SPEC": fields["SPEC"],
         "FINDINGS": findings,
         "GATES": fields["GATES"][0],
+        "SOCLE": socle,
+        "GRANTED": grant,
         "BATTERY CORRECTION": fields.get("BATTERY CORRECTION", [""])[0],
+        "PROPOSAL": proposals,
     }
 
 
