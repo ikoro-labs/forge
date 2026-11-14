@@ -80,7 +80,8 @@ verdict, le rapport et la suite sont les mêmes. Tout le reste passe par les deu
    consommateur, fusion à 16:15:10, PR fille fermée à 16:15:14). Si la fusion est ensuite
    refusée, remets chaque PR reportée sur sa base d'avant, `gh pr edit <m> --base <branche de
    tête>`, sans quoi son diff porterait les commits non fusionnés de la mère. Puis
-   `gh pr merge <n> --squash --delete-branch --body-file <fichier>`, puis
+   `gh pr merge <n> --squash --delete-branch --body-file <fichier>`, seule dans sa commande
+   (`guard_git` refuse une fusion accompagnée d'autre chose), puis, dans une commande à part,
    `gh pr edit <n> --add-label agent-merged` : tu agis sous le compte de l'humain, et sans
    l'étiquette la fusion paraîtrait lue par lui. Toujours avec un corps que tu écris : sans lui,
    GitHub écrit sur la base tous les messages de commit de la branche, périmés compris, et une PR

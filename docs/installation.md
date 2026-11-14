@@ -389,17 +389,35 @@ prefix", only says the command runs "without going through Claude".
 `gh pr view <n> -R <repo> --json files`, and a reading that fails refuses too. A REST merge by
 `gh api` is judged on the same files, its endpoint written `repos/...` or
 `https://api.github.com/repos/...`; a GraphQL merge mutation is refused, since it names the PR by
-a node id the guard does not look up. Like every refusal of `guard_git`, it looks through the
-wrappers `guard_infra` takes off (`env`, `sudo`, `command`, `timeout`, `xargs`...), a path or
-`.exe` (`/usr/bin/gh`), and the script of `sh -c` or of a shell reading a heredoc. The files are
-read where the merge runs, like the checks, the description and the files of the protected paths: in the directory a `cd` before it moved to, and in the repository it
-names (`-R`, `--repo`, the URL of the PR, `GH_REPO` before it; a `GH_REPO` set earlier by
-`export` or an assignment is read beside the directory's own). A `cd` or a repository the guard
-cannot read (a variable, a substitution, `cd -`, `~`) refuses the merge before any reading, and so does a merge whose
-number may come from the standard input or a variable: behind `xargs`, a number with `$`, or no
-number while the command reads a pipe or a `<` redirection. A write by `gh api` whose endpoint the
-shell may turn into a merge (a variable or a substitution in it, a brace expansion, a glob that may
-match `repos/<owner>/<repo>/pulls/<n>/merge`) is refused too. The tests of this refusal live in `tests/test_guard_infra.py`:
+a node id the guard does not look up.
+
+A merge runs alone. `guard_git` judges a `gh pr merge` or a `gh api` merge only in one form:
+`[cd <path> &&] [GH_REPO=owner/repo] gh pr merge <n> [options] [| tee <file> | cat]`. The PR
+number, `-R`, `GH_REPO` and the `cd` path are literal; the options are those of `gh pr merge`,
+written one by one (no cluster such as `-sR`), and gh keeps the last `-R`. Only `--body-file`,
+`--body`, `--subject` and `--match-head-commit` may hold a variable, in double quotes
+(`--body-file "$T/m.md"`): unquoted, word splitting may slip in a `-R`, and the refusal says
+"quote the variable or use a literal path". Anything else in the command refuses the merge with
+"run the merge alone": another command (`gh pr edit --add-label` goes in a command of its own),
+another assignment (`GIT_DIR`, `GH_HOST`), `export`, `declare`, `typeset`, `pushd`, `builtin`,
+`command`, `eval`, `source`, a subshell, `sh -c`, `xargs`, a wrapper, a redirection, a second
+`cd`. `cd <path>; gh pr merge` is refused too: if the `cd` fails, the merge runs in the first
+directory while the guard read the PR of the other. A merge the guard sees anywhere in the
+command counts: behind a wrapper, in `sh -c`, in `eval`, behind a gh alias, behind a program
+named by a variable (`$G pr merge 5`) or among another program's arguments (`find -exec gh pr
+merge`), and a gh call whose group or verb is a variable. In that one form, every reading of the
+merged PR (its checks, its description, its files for the protected paths and for the infra
+guard) reads the same PR: in the directory of the `cd`, in the repository of `-R`, of the PR's
+URL or of `GH_REPO`.
+
+A gh call that names no gh command is read through `gh alias list`, and judged as what its alias
+expands to: `gh mm 5` with `mm: pr merge` is a merge; an alias set with `!` is judged as the
+script it runs. An alias list that cannot be read refuses the call. That list holds only for a gh
+call run alone (a literal `cd` aside): beside anything else (`gh alias set`, a write to gh's
+config, a `GH_CONFIG_DIR=` or `HOME=`), the call counts as a merge, refused as not alone.
+`gh alias set`, `import` and `delete` are refused to a subagent.
+
+The tests of this refusal live in `tests/test_guard_infra.py` and `tests/test_guard_git.py`:
 removing it from `guard_git` turns them red, and changing them is itself such a PR. The owner
 merges it in GitHub's web interface (a `! gh pr merge` may still meet `guard_git`, see above).
 
@@ -408,7 +426,10 @@ Known limits of `guard_git`:
 - a `gh api` write with a variable in its endpoint escapes the owner gestures
   (`gh api --method PUT repos/$R/collaborators/x`);
 - `OWNER_ENDPOINT` does not cover the full URL `https://api.github.com/repos/...`;
-- extended globs (`extglob`) are not handled.
+- extended globs (`extglob`) are not handled;
+- a merge run by a file escapes the guard: a script (`source`, `bash x.sh`, a `!` alias that
+  calls one), a program that calls gh or the API itself (Python, `curl`), a gh extension;
+- so does a program that runs gh from one argument string (`script -c "gh pr merge 5"`).
 
 Tried under Linux only: by the tests, and by hand against the real `ssh -G` and resolver of one
 workstation (an alias, an address, a `-J` jump). Not yet in a real Claude Code session, nor under
@@ -478,6 +499,19 @@ Ce qu'aucun agent ne fait à la place d'un humain :
   une variable leur échappe (`gh api --method PUT repos/$R/collaborators/x`).
 - **`OWNER_ENDPOINT`** ne couvre pas l'URL complète `https://api.github.com/repos/...`.
 - **Globs étendus** : `guard_git` ne traite pas les globs étendus (`extglob`).
+- **Une fusion seule** : `guard_git` ne juge une fusion que sous la forme
+  `[cd <chemin> &&] [GH_REPO=owner/repo] gh pr merge <n> [options] [| tee <fichier> | cat]`, et
+  refuse toute autre (« run the merge alone ») : une autre commande, `export`, `pushd`, `eval`,
+  `sh -c`, un sous-shell, une redirection. `cd x; gh pr merge` est refusé : si le `cd` échoue, la
+  fusion part du premier dossier, et le garde aurait lu la PR de l'autre. Seules les valeurs de
+  `--body-file`, `--body`, `--subject` et `--match-head-commit` acceptent une variable, entre
+  guillemets doubles. L'étiquette `agent-merged` se pose dans une commande à part.
+- **Alias gh** : un appel gh qui ne nomme aucune commande de gh est lu par `gh alias list` ; seul
+  ou derrière un `cd`, il est jugé selon son expansion, à côté d'autre chose il compte comme une
+  fusion. `gh alias set`, `import` et `delete` sont refusés à un sous-agent.
+- **Fusion lancée par un fichier** : un script (`source`, `bash x.sh`), un programme qui appelle
+  gh ou l'API lui-même (Python, `curl`), une extension gh, ou un programme qui lance gh depuis une
+  seule chaîne (`script -c "gh pr merge 5"`) échappent au garde.
 
 ### Éprouvé sur un poste (Claude Code 2.1.303, 2026-10-19)
 

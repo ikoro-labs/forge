@@ -22,9 +22,11 @@ from guard_git import (
     checks_green_via_gh,
     description_via_gh,
     device_path_kind,
+    gh_aliases_via_gh,
     guarded_main,
     main,
     native_directory,
+    parse_gh_aliases,
     pr_files_via_gh,
     refusal,
 )
@@ -123,7 +125,8 @@ class DangerousForms(unittest.TestCase):
     def test_a_merge_passes_once_every_check_is_green(self) -> None:
         self.assertIsNone(refused("gh pr merge 61 --squash", green=True))
 
-    def test_a_repository_flag_before_the_verb_leaves_the_merge_judged(self) -> None:
+    def test_a_repository_flag_before_the_verb_is_refused(self) -> None:
+        # The guard judges a merge only as `gh pr merge <n> -R o/r`: the flag goes after the verb.
         for command in [
             "gh -R o/r pr merge 61 --squash --body-file m.md",
             "gh --repo o/r pr merge 61 --squash --body-file m.md",
@@ -131,15 +134,16 @@ class DangerousForms(unittest.TestCase):
             "gh pr -R o/r merge 61 --squash --body-file m.md",
         ]:
             with self.subTest(command=command):
-                self.assertIsNotNone(refused(command))
-                self.assertIsNotNone(merge_refused(command, {"m.md": SPLIT_TICKET_BODY}))
-                self.assertIsNone(merge_refused(command, {"m.md": "Closes #206\n"}))
+                self.assertIn("run the merge alone", refused(command, green=True) or "")
+        command = "gh pr merge 61 -R o/r --squash --body-file m.md"
+        self.assertIsNotNone(merge_refused(command, {"m.md": SPLIT_TICKET_BODY}))
+        self.assertIsNone(merge_refused(command, {"m.md": "Closes #206\n"}))
 
 
 class WrappersAreLookedThrough(unittest.TestCase):
     """A wrapper (`env`, `sudo`, `command`, a path, `timeout`, `xargs`, `sh -c`) hides no refusal."""
 
-    def test_a_merge_with_red_checks_is_refused_behind_a_wrapper(self) -> None:
+    def test_a_merge_behind_a_wrapper_is_refused(self) -> None:
         for command in (
             "env gh pr merge 5",
             "command gh pr merge 5",
@@ -150,7 +154,7 @@ class WrappersAreLookedThrough(unittest.TestCase):
             "nohup gh pr merge 5",
         ):
             with self.subTest(command=command):
-                self.assertIn("checks not green", refused(command) or "")
+                self.assertIn("run the merge alone", refused(command, green=True) or "")
 
     def test_a_push_to_main_is_refused_behind_a_wrapper(self) -> None:
         for command in (
@@ -1468,9 +1472,7 @@ class EveryReadingSeesTheMergedPr(unittest.TestCase):
     # Each merge acts on the PR of another clone or repository than the event's `/w/forge`.
     COMMANDS = (
         "cd ../clone && gh pr merge 5",
-        "cd ../clone && sh -c 'gh pr merge 5'",
         "GH_REPO=o/other gh pr merge 5",
-        "export GH_REPO=o/other; gh pr merge 5",
         "gh pr merge -R o/other 5",
         "gh pr merge --repo=o/other 5",
     )
@@ -1573,7 +1575,294 @@ class EveryReadingSeesTheMergedPr(unittest.TestCase):
                     changed_files=boom,
                     pr_files=boom,
                 )
-                self.assertIn("only the owner merges it, by hand", verdict or "")
+                self.assertIn("run the merge alone", verdict or "")
+
+
+GUARD_FILE = "plugins/forge/hooks/guard_infra.py"
+
+
+def judged(
+    command: str,
+    cwd: str = "/w/forge",
+    aliases: dict[str, str] | None = None,
+    subagent: bool = False,
+    asked: list[Target] | None = None,
+) -> str | None:
+    """The refusal of a command whose PR 5 of `o/forge` changes the infra guard, all checks green.
+
+    `aliases` are those `gh alias list` gives (None: it cannot be read); `asked` records the PRs
+    the guard reads.
+    """
+
+    def files(pr: str | None, repository: str | None = None, directory: str | None = None) -> list[str]:
+        if asked is not None:
+            asked.append((pr, repository, directory))
+        return [GUARD_FILE] if repository == "o/forge" or "forgeclone" in (directory or "") else ["a.py"]
+
+    return refusal(
+        command,
+        "feat/x",
+        always_green,
+        cwd,
+        pr_files=files,
+        gh_aliases=lambda: aliases if aliases is None else dict(aliases),
+        subagent=subagent,
+    )
+
+
+class AMergeRunsAlone(unittest.TestCase):
+    """A merge is judged only in the form `[cd <path> &&] [GH_REPO=o/r] gh pr merge <n> ...`."""
+
+    def assert_alone(self, command: str, **options: Any) -> None:
+        self.assertIn("run the merge alone", judged(command, **options) or "", command)
+
+    def test_pushd_before_a_merge_is_refused(self) -> None:
+        self.assert_alone("pushd ../forgeclone && gh pr merge 5")
+
+    def test_builtin_cd_before_a_merge_is_refused(self) -> None:
+        self.assert_alone("builtin cd ../forgeclone && gh pr merge 5")
+
+    def test_command_cd_before_a_merge_is_refused(self) -> None:
+        self.assert_alone("command cd ../forgeclone && gh pr merge 5")
+
+    def test_eval_cd_before_a_merge_is_refused(self) -> None:
+        self.assert_alone('eval "cd ../forgeclone" && gh pr merge 5')
+
+    def test_declare_x_gh_repo_before_a_merge_is_refused(self) -> None:
+        self.assert_alone("declare -x GH_REPO=o/forge; gh pr merge 5")
+
+    def test_typeset_x_gh_repo_before_a_merge_is_refused(self) -> None:
+        self.assert_alone("typeset -x GH_REPO=o/forge; gh pr merge 5")
+
+    def test_git_dir_before_a_merge_is_refused(self) -> None:
+        self.assert_alone("GIT_DIR=../forgeclone/.git gh pr merge 5")
+
+    def test_export_git_dir_before_a_merge_is_refused(self) -> None:
+        self.assert_alone("export GIT_DIR=../forgeclone/.git; gh pr merge 5")
+
+    def test_git_remote_set_url_before_a_merge_is_refused(self) -> None:
+        self.assert_alone("git remote set-url origin https://github.com/o/forge.git && gh pr merge 5")
+
+    def test_gh_alias_set_before_a_merge_by_alias_is_refused(self) -> None:
+        self.assert_alone('gh alias set mm "pr merge" && gh mm 5 -R o/forge', aliases={"mm": "pr merge"})
+
+    def test_any_other_step_beside_a_merge_is_refused(self) -> None:
+        for command in (
+            "gh pr merge 5 --squash && gh pr edit 5 --add-label agent-merged",
+            "cd ../x; gh pr merge 5",
+            "cd ../x && cd y && gh pr merge 5",
+            '"cd" ../x && gh pr merge 5',
+            "cd $X && gh pr merge 5",
+            "cd ~/x && gh pr merge 5",
+            "export GH_REPO=o/forge; gh pr merge 5",
+            "GH_REPO=o/forge GIT_DIR=x gh pr merge 5",
+            "sh -c 'gh pr merge 5'",
+            "(gh pr merge 5)",
+            "echo 5 | xargs gh pr merge",
+            "env gh pr merge 5",
+            "/usr/bin/gh pr merge 5",
+            "gh pr merge 5 > log",
+            "gh pr merge 5 | sh",
+            'eval "gh pr merge 5"',
+            "gh $X 5",
+            "gh pr $V 5",
+            "gh pr merge 5\ngit push",
+            "source env.sh && gh pr merge 5",
+            ". env.sh && gh pr merge 5",
+            "gh pr merge 5 & gh pr merge 6",
+            "G=gh; $G pr merge 5",
+            "`echo gh` pr merge 5",
+            "find . -maxdepth 0 -exec gh pr merge 5 \\;",
+            "gh pr merge 5 -sR o/forge",
+            "gh pr merge -sb 7 5",
+            "gh pr merge 5 -R=o/forge",
+            "gh pr merge 5 --squash=false",
+            "gh pr merge 5 6",
+            "gh pr merge 5 # comment",
+            "gh pr merge 5 | tee >(sh)",
+            "gh pr merge 5 | cat -v",
+            "gh pr merge 5 &",
+            "GH_HOST=x gh pr merge 5",
+            "gh pr merge 5 | tee $F",
+            "cd ../fo* && gh pr merge 5",
+            "cd -L && gh pr merge 5",
+            "gh pr merge 5 --body-file\nm.md",
+            "gh pr merge #7 -R o/forge",
+            "gh pr merge -sR o/forge",
+            "find . -exec gh $V 5 \\;",
+        ):
+            with self.subTest(command=command):
+                self.assert_alone(command)
+
+    def test_the_pr_number_the_repository_and_gh_repo_are_literal(self) -> None:
+        for command in (
+            'gh pr merge "$N"',
+            "gh pr merge 5 -R $R",
+            'gh pr merge 5 -R "$R"',
+            'GH_REPO="$R" gh pr merge 5',
+            "gh pr merge 5 --body-file \"$(cat name)\"",
+            "gh pr merge 5 --body-file \"`cat name`\"",
+        ):
+            with self.subTest(command=command):
+                self.assert_alone(command)
+
+    def test_a_variable_in_an_option_value_is_kept_in_double_quotes(self) -> None:
+        for option in ("--body-file", "--body", "--subject", "--match-head-commit"):
+            with self.subTest(option=option):
+                self.assertIsNone(judged(f'gh pr merge 5 {option} "$T/m.md"'))
+                self.assertIsNone(judged(f'gh pr merge 5 {option}="$T/m.md"'))
+                found = judged(f"gh pr merge 5 {option} $T/m.md") or ""
+                self.assertIn("quote the variable or use a literal path", found)
+                found = judged(f"gh pr merge 5 {option}=$T/m.md") or ""
+                self.assertIn("quote the variable or use a literal path", found)
+        found = judged("gh pr merge 5 --body-file ~/m.md") or ""
+        self.assertIn("quote the variable or use a literal path", found)
+        self.assertIsNone(judged('gh pr merge 5 --body-file "~/m.md"'))
+
+    def test_a_merge_alone_is_judged_on_its_pr(self) -> None:
+        cases: list[tuple[str, Target]] = [
+            ("gh pr merge 5 --squash", ("5", None, "/w/forge")),
+            ("cd ../x && gh pr merge 5", ("5", None, "/w/forge/../x")),
+            ("GH_REPO=o/local gh pr merge 5", ("5", "o/local", "/w/forge")),
+            ("gh pr merge 5 -R o/local --body-file f", ("5", "o/local", "/w/forge")),
+            (
+                "gh pr merge 5 --squash --delete-branch --match-head-commit 0a1b2c --body-file m.md",
+                ("5", None, "/w/forge"),
+            ),
+            ("gh pr merge 5 --squash | tee merge.log", ("5", None, "/w/forge")),
+            ("gh pr merge 5 | cat", ("5", None, "/w/forge")),
+            ("gh pr merge 5\n", ("5", None, "/w/forge")),
+        ]
+        for command, target in cases:
+            with self.subTest(command=command):
+                asked: list[Target] = []
+                self.assertIsNone(judged(command, asked=asked))
+                self.assertEqual(asked, [target])
+        for command in (
+            "cd ../forgeclone && gh pr merge 5",
+            "GH_REPO=o/forge gh pr merge 5",
+            "gh pr merge 5 -R o/forge",
+            "gh api -X PUT repos/o/forge/pulls/5/merge",
+            "GH_REPO=o/forge gh api -X PUT repos/{owner}/{repo}/pulls/5/merge",
+            # gh keeps the last `-R`.
+            "gh pr merge 5 -R o/local -R o/forge",
+            "gh pr merge 5 -R o/local --repo=o/forge",
+        ):
+            with self.subTest(command=command):
+                self.assertIn("only the owner merges it, by hand", judged(command) or "")
+
+    def test_commands_that_do_not_merge_are_judged_as_before(self) -> None:
+        for command in (
+            "cd ../x && uv run pytest",
+            "cd ../x && git status",
+            "pushd ../x && git log --oneline -1",
+            "gh pr create --title t --body-file - <<'EOF'\nRun gh pr merge 5 && echo\nEOF",
+            "git commit -q -F - <<'EOF'\nfix: x\n\ncd y; gh pr merge 5\nEOF",
+            "git merge origin/main && gh pr view 5",
+        ):
+            with self.subTest(command=command):
+                self.assertIsNone(judged(command))
+
+
+class GhAliases(unittest.TestCase):
+    """A gh call that names no built-in command is read through `gh alias list`."""
+
+    def test_an_alias_of_a_merge_is_judged_as_a_merge(self) -> None:
+        self.assertIn("only the owner merges it, by hand", judged("gh mm 5 -R o/forge", aliases={"mm": "pr merge"}) or "")
+        self.assertIn(
+            "only the owner merges it, by hand",
+            judged("gh mm o/forge", aliases={"mm": "pr merge 5 -R $1"}) or "",
+        )
+        self.assertIsNone(judged("gh mm 5 -R o/local", aliases={"mm": "pr merge"}))
+        # gh puts the argument in the text, then splits it: one argument may name the repository.
+        found = judged('gh mm "5 -R o/forge"', aliases={"mm": "pr merge $1"})
+        self.assertIn("only the owner merges it, by hand", found or "")
+        # With a `$` left in the text, gh drops an argument it does not use.
+        found = judged("gh mm o/forge 5", aliases={"mm": "pr merge $2"})
+        self.assertIn("only the owner merges it, by hand", judged("gh mm 5 -R o/forge", aliases={"mm": "pr merge $1"}) or "")
+        self.assertIsNone(found)
+        self.assertIsNone(judged("gh mm", aliases={"mm": "pr merge 5 -R o/forge $1"}))
+        found = judged("gh mm $X", aliases={"mm": "pr merge"})
+        self.assertIn("run the merge alone", found or "")
+
+    def test_an_alias_of_api_is_judged_as_api(self) -> None:
+        found = judged("gh ap -X PUT repos/o/forge/pulls/5/merge", aliases={"ap": "api"})
+        self.assertIn("only the owner merges it, by hand", found or "")
+
+    def test_a_shell_alias_that_merges_is_refused(self) -> None:
+        self.assert_alone_or_owner(judged("gh sm 5", aliases={"sm": "!gh pr merge $1"}))
+
+    def assert_alone_or_owner(self, found: str | None) -> None:
+        self.assertIn("run the merge alone", found or "")
+
+    def test_an_alias_beside_another_command_is_judged_as_a_merge(self) -> None:
+        # The alias table read before the command runs holds only for a gh call run alone.
+        for command in (
+            'gh alias set mm "pr merge" && gh mm 5 -R o/forge',
+            "echo 'aliases: {mm: pr merge}' >> ~/.config/gh/config.yml; gh mm 5",
+            "GH_CONFIG_DIR=/tmp/g gh mm 5",
+            "HOME=/tmp/h gh mm 5",
+            "env gh mm 5",
+            "GH_CONFIG_DIR=/tmp/g sh -c 'gh mm 5'",
+            """cd "$(gh alias set mm 'pr merge')" && gh mm 5 -R o/forge""",
+        ):
+            with self.subTest(command=command):
+                self.assertIn("run the merge alone", judged(command, aliases={}) or "")
+
+    def test_an_alias_that_cannot_be_read_is_refused(self) -> None:
+        self.assertIn("alias", judged("gh mm 5", aliases=None) or "")
+
+    def test_other_aliases_and_built_in_commands_pass(self) -> None:
+        self.assertIsNone(judged("gh co 5", aliases={"co": "pr checkout"}))
+        self.assertIsNone(judged("cd ../x && gh co 5", aliases={"co": "pr checkout"}))
+        self.assertIsNone(judged("gh pr view 5", aliases=None))
+        self.assertIsNone(judged("gh unknown 5", aliases={}))
+
+    def test_the_alias_list_is_read_from_gh(self) -> None:
+        self.assertEqual(
+            parse_gh_aliases("co: pr checkout\nmm: pr merge -R o/r\n\n"),
+            {"co": "pr checkout", "mm": "pr merge -R o/r"},
+        )
+        self.assertEqual(parse_gh_aliases(""), {})
+        self.assertIsNone(parse_gh_aliases("co: pr checkout\nnot an alias\n"))
+        with tempfile.TemporaryDirectory() as folder:
+            # gh is played by Python, which runs the script `alias` of the directory it runs in.
+            (Path(folder) / "alias").write_text("print('mm: pr merge')\n", encoding="utf-8")
+            with mock.patch("shutil.which", lambda _name: sys.executable):
+                self.assertEqual(gh_aliases_via_gh(folder)(), {"mm": "pr merge"})
+            (Path(folder) / "alias").write_text("import sys; sys.exit(1)\n", encoding="utf-8")
+            with mock.patch("shutil.which", lambda _name: sys.executable):
+                self.assertIsNone(gh_aliases_via_gh(folder)())
+        with mock.patch("shutil.which", lambda _name: None):
+            self.assertIsNone(gh_aliases_via_gh(None)())
+
+    def test_the_hook_tells_a_subagent_by_its_event(self) -> None:
+        def run_hook(event: dict[str, Any]) -> int:
+            with tempfile.TemporaryDirectory() as home:
+                environment = {
+                    key: value for key, value in os.environ.items() if not key.startswith("CLAUDE_")
+                }
+                with (
+                    mock.patch.dict(
+                        os.environ, {**environment, "HOME": home, "USERPROFILE": home}, clear=True
+                    ),
+                    mock.patch("sys.stdin", io.StringIO(json.dumps(event))),
+                    mock.patch("sys.stderr", io.StringIO()),
+                    mock.patch("guard_git.project_root", lambda _event: Path(home)),
+                    mock.patch("guard_git.current_branch", lambda _cwd: "feat/x"),
+                ):
+                    return guarded_main()
+
+        command = {"command": 'gh alias set mm "pr merge"'}
+        self.assertEqual(run_hook({"tool_input": command, "cwd": ".", "agent_id": "a1"}), 2)
+        self.assertEqual(run_hook({"tool_input": command, "cwd": "."}), 0)
+
+    def test_a_subagent_never_changes_the_aliases(self) -> None:
+        for command in ('gh alias set mm "pr merge"', "gh alias import aliases.yml", "gh alias delete mm"):
+            with self.subTest(command=command):
+                self.assertIn("alias", judged(command, subagent=True) or "")
+                self.assertIsNone(judged(command, subagent=False))
+        self.assertIsNone(judged("gh alias list", subagent=True))
 
 
 if __name__ == "__main__":

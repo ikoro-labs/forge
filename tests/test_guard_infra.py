@@ -768,6 +768,8 @@ def recorded(
 
 
 GUARD = "plugins/forge/hooks/guard_infra.py"
+# What a merge in any other form than `[cd <path> &&] [GH_REPO=o/r] gh pr merge ...` meets.
+ALONE = "run the merge alone"
 
 
 class MergeOfTheGuard(unittest.TestCase):
@@ -795,7 +797,7 @@ class MergeOfTheGuard(unittest.TestCase):
         )
 
     def test_an_unreadable_list_is_refused(self) -> None:
-        found = merge("gh -R ikoro-labs/forge pr merge 5", unreadable)
+        found = merge("gh pr merge 5 -R ikoro-labs/forge", unreadable)
         assert found is not None
         self.assertIn("only the owner merges it, by hand", found)
         self.assertIn("cannot be read", found)
@@ -809,7 +811,7 @@ class MergeOfTheGuard(unittest.TestCase):
 
         for command in (
             "gh pr merge 5 -R ikoro-labs/forge",
-            "gh --repo=o/r pr merge 6",
+            "gh pr merge 6 --repo=o/r",
             "gh pr merge",
         ):
             merge(command, recorded)
@@ -852,19 +854,22 @@ class MergeOfTheGuard(unittest.TestCase):
             "sudo env timeout 60 gh api -X PUT repos/o/r/pulls/5/merge",
         ):
             with self.subTest(command=command):
-                found = merge(command, files("plugins/forge/hooks/guard_infra.py"))
-                self.assertIn("only the owner merges it, by hand", found or "")
-        self.assertIsNone(merge("env gh pr merge 5", files("README.md")))
+                self.assertIn(ALONE, merge(command, files("README.md")) or "")
 
     def test_the_files_are_read_where_the_merge_runs(self) -> None:
         asked: list[Asked] = []
         merge("cd ../forgeclone && gh pr merge 5 --squash", recorded(asked), cwd="/w/forge")
         self.assertEqual(asked, [("5", None, "/w/forge/../forgeclone")])
         asked.clear()
-        merge("cd /w/x && sh -c 'gh pr merge 5'", recorded(asked), cwd="/w/forge")
-        merge("(cd /w/y) && gh pr merge 6", recorded(asked), cwd="/w/forge")
-        merge("cd /w/x && (cd /w/y) && gh pr merge 7", recorded(asked), cwd="/w/forge")
-        self.assertEqual(asked, [("5", None, "/w/x"), ("6", None, "/w/forge"), ("7", None, "/w/x")])
+        for command in (
+            "cd /w/x && sh -c 'gh pr merge 5'",
+            "(cd /w/y) && gh pr merge 6",
+            "cd /w/x && (cd /w/y) && gh pr merge 7",
+            "cd /w/x; gh pr merge 8",
+        ):
+            with self.subTest(command=command):
+                self.assertIn(ALONE, merge(command, recorded(asked), cwd="/w/forge") or "")
+        self.assertEqual(asked, [])
         found = merge(
             "cd ../forgeclone && gh pr merge 5", recorded([], lambda a: "clone" in (a[2] or ""))
         )
@@ -879,15 +884,11 @@ class MergeOfTheGuard(unittest.TestCase):
             "cd $CLONE && gh api -X PUT repos/{owner}/{repo}/pulls/5/merge",
         ):
             with self.subTest(command=command):
-                found = merge(command, files("README.md"), cwd="/w/forge")
-                self.assertIn("only the owner merges it, by hand", found or "")
+                self.assertIn(ALONE, merge(command, files("README.md"), cwd="/w/forge") or "")
 
     def test_the_files_are_read_in_the_repository_the_merge_names(self) -> None:
         cases: list[tuple[str, list[tuple[str | None, str | None]]]] = [
             ("GH_REPO=o/forge gh pr merge 5", [("5", "o/forge")]),
-            ("env GH_REPO=o/forge gh pr merge 5", [("5", "o/forge")]),
-            ("export GH_REPO=o/forge; gh pr merge 5", [("5", None), ("5", "o/forge")]),
-            ("export GH_REPO=o/forge && sh -c 'gh pr merge 5'", [("5", None), ("5", "o/forge")]),
             ("gh pr merge -R o/forge 5", [("5", "o/forge")]),
             ("gh pr merge --repo=o/forge --subject x 5", [("5", "o/forge")]),
             ("GH_REPO=o/other gh pr merge -R o/forge 5", [("5", "o/forge")]),
@@ -896,7 +897,7 @@ class MergeOfTheGuard(unittest.TestCase):
                 [("https://github.com/o/forge/pull/5", None)],
             ),
             (
-                "export GH_REPO=o/other; gh pr merge https://github.com/o/forge/pull/5",
+                "GH_REPO=o/other gh pr merge https://github.com/o/forge/pull/5",
                 [("https://github.com/o/forge/pull/5", None)],
             ),
             (
@@ -913,6 +914,14 @@ class MergeOfTheGuard(unittest.TestCase):
                     command, recorded([], lambda a: a[1] == "o/forge" or "forge" in (a[0] or ""))
                 )
                 self.assertIn("only the owner merges it, by hand", found or "")
+        for command in (
+            "env GH_REPO=o/forge gh pr merge 5",
+            "export GH_REPO=o/forge; gh pr merge 5",
+            "export GH_REPO=o/forge && sh -c 'gh pr merge 5'",
+            "export GH_REPO=o/other; gh pr merge https://github.com/o/forge/pull/5",
+        ):
+            with self.subTest(command=command):
+                self.assertIn(ALONE, merge(command, files("README.md")) or "")
 
     def test_a_repository_the_guard_cannot_read_is_refused(self) -> None:
         for command in (
@@ -923,8 +932,7 @@ class MergeOfTheGuard(unittest.TestCase):
             "GH_REPO=$R gh api -X PUT repos/{owner}/{repo}/pulls/5/merge",
         ):
             with self.subTest(command=command):
-                found = merge(command, files("README.md"))
-                self.assertIn("only the owner merges it, by hand", found or "")
+                self.assertIn(ALONE, merge(command, files("README.md")) or "")
 
     def test_a_number_from_the_standard_input_or_a_variable_is_refused(self) -> None:
         for command in (
@@ -934,15 +942,14 @@ class MergeOfTheGuard(unittest.TestCase):
             "gh pr merge --squash < number",
             "gh pr merge $N",
             "gh pr merge $(cat number)",
+            "echo ok | grep ok; gh pr merge 5",
         ):
             with self.subTest(command=command):
-                found = merge(command, files("README.md"))
-                self.assertIn("only the owner merges it, by hand", found or "")
+                self.assertIn(ALONE, merge(command, files("README.md")) or "")
         for command in (
             "gh pr merge 5 --squash | tee log",
             "gh pr merge --squash",
             'gh pr merge --subject "$TITLE" 5',
-            "echo ok | grep ok; gh pr merge 5",
         ):
             with self.subTest(command=command):
                 self.assertIsNone(merge(command, files("README.md")))
@@ -965,8 +972,7 @@ class MergeOfTheGuard(unittest.TestCase):
             "gh api -X PUT https://api.github.com/repos/o/f/pulls/*/merge",
         ):
             with self.subTest(command=command):
-                found = merge(command, files("README.md"))
-                self.assertIn("only the owner merges it, by hand", found or "")
+                self.assertIn(ALONE, merge(command, files("README.md")) or "")
         for command in (
             "gh api repos/$R/pulls/5",
             "gh api -X GET repos/o/f/pulls/$N/merge",
