@@ -1,7 +1,8 @@
 """Stop hook: a question on completion is answered with the completion table.
 
-When the human's last message asks how far the work is (completion, avancement, progress,
-pourcentage, or a `%` beside a feature, a project or an `F-NNNN`), the session's reply since that
+When the human's last message asks how far the work is (a question, `?`, on completion,
+avancement, progress or pourcentage, or on a `%` beside a feature, a project or an `F-NNNN`; or one
+of those words beside a `%` or an `F-NNNN`), the session's reply since that
 message must hold the Markdown table `scripts/completion.py` prints: a header row with every column
 of `HEADERS`, plus the project's own column when the key `completion-column` names one, and its
 separator row. Otherwise the stop is blocked once (`decision: block`) with the command to run;
@@ -11,7 +12,10 @@ The human's message is the transcript's last `user` entry Claude Code marks as t
 (`origin.kind: human`); without that mark, a `user` entry that is no tool result, no meta or
 compaction entry and does not open with a tag (`<task-notification>`, `<bash-input>`...).
 Subagents' entries (`isSidechain`) are left out. The transcript is read from its end, at most
-`TRANSCRIPT_LIMIT` bytes; a question further back, an unreadable transcript or event passes.
+`TRANSCRIPT_LIMIT` bytes; a question further back passes.
+
+The hook fails open: a transcript absent or unreadable, an event it cannot read, or an error of its
+own lets the session stop, never blocks it.
 """
 
 from __future__ import annotations
@@ -72,7 +76,14 @@ def headers_of(config: Mapping[str, list[str]]) -> tuple[str, ...]:
 
 
 def asks_completion(text: str) -> bool:
-    return bool(ASKS.search(text)) or ("%" in text and bool(NAMES_WORK.search(text)))
+    """A question (`?`) on progress or on a `%` of the work, or a progress word with `%` or F-NNNN.
+
+    "J'ai relu la complétion du ticket, merci" asks nothing and passes.
+    """
+    topic = bool(ASKS.search(text))
+    if "?" in text and (topic or ("%" in text and bool(NAMES_WORK.search(text)))):
+        return True
+    return topic and ("%" in text or bool(FEATURE.search(text)))
 
 
 def _cells(line: str) -> list[str] | None:

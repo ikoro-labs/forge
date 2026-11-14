@@ -3,10 +3,11 @@
     python completion.py [F-NNNN ...] [--root <project>]
 
 One Markdown row per feature, the columns of `guard_completion.HEADERS`, and no total row: the
-features' denominators do not add up. The tickets of a feature are those the ticket budget counts
-(`guard_ticket_budget`: GitHub's search on `to-tickets F-NNNN` and `Feature: F-NNNN`, each body
-placed by its `Motif :` line). A ticket closed as not planned stands apart, out of the count; the
-others are open, or closed. `%` is closed over closed plus open, rounded, its denominator in the
+features' denominators do not add up. The tickets of a feature are the sub-issues of its
+tracking issue (the `issue:` of its `idee.md`), read by `gh api .../sub_issues --paginate`. Without
+`issue:`, they are those the ticket budget's search places in it (`to-tickets F-NNNN` and
+`Feature: F-NNNN`, each body placed by its `Motif :` line). The `Relevé` cell names the source. A
+ticket closed as not planned stands apart, out of the count; the others are open, or closed. `%` is closed over closed plus open, rounded, its denominator in the
 cell, and `sans objet (aucun ticket publié)` without any; never over the budget, which a feature
 may not fill. The budget is the `feature-tickets` of the feature's `design.md`, `?`
 without one. `Suivi` is the `issue:` of its `idee.md`. Each row carries the UTC time it was read and
@@ -48,7 +49,8 @@ from usine import load, split_value  # noqa: E402
 COLUMN_TIMEOUT = 60
 CLOSED_ROLES = ("hors-perimetre", "abandonnee")
 FOLDER = re.compile(r"^(\d{4})-")
-SOURCE = "gh issue list"
+SUB_ISSUES_SOURCE = "gh api sub_issues of"
+SEARCH_SOURCE = "gh issue list --search (no issue: in idee.md)"
 NO_TICKET = "sans objet (aucun ticket publié)"
 Clock = Callable[[], datetime]
 
@@ -121,25 +123,56 @@ def percent(closed: int, still_open: int) -> str:
     return f"{rounded} % ({closed} / {published})"
 
 
+def sub_issues(tracking: str, root: Path, run: Runner) -> list[dict] | None:
+    """The sub-issues of the tracking issue, each with its number, state and reason; None if unread."""
+    query = '.[] | [.number, .state, (.state_reason // "")] | @tsv'
+    argv = ["api", f"repos/{{owner}}/{{repo}}/issues/{tracking}/sub_issues", "--paginate"]
+    output = run([*argv, "--jq", query], str(root))
+    if output is None:
+        return None
+    found: list[dict] = []
+    for line in output.splitlines():
+        if not line.strip():
+            continue
+        parts = line.split("\t")
+        if len(parts) != 3 or not parts[0].isdigit():
+            return None
+        number, state, reason = parts
+        found.append({"number": int(number), "state": state, "stateReason": reason or None})
+    return found
+
+
+def searched(feature: str, root: Path, run: Runner) -> list[dict] | None:
+    """Without a tracking issue: the tickets the ticket budget's search places in `feature`."""
+    issues = search_issues((f"to-tickets {feature}", f"Feature: {feature}"), None, str(root), run)
+    if issues is None:
+        return None
+    return [issue for issue in issues.values() if counts_for(issue["body"]) == feature]
+
+
 def row(
     feature: str, folder: Path, root: Path, directory: str, run: Runner, now: Clock
 ) -> list[str]:
     idea = _header(folder / "idee.md")
     designs = find_design(root, directory, feature)
     budget = budget_of(_header(designs[0])) if len(designs) == 1 else None
-    issues = search_issues((f"to-tickets {feature}", f"Feature: {feature}"), None, str(root), run)
-    if issues is None:
+    tracking = idea.get("issue", "")
+    if tracking.isdigit():
+        found = sub_issues(tracking, root, run)
+        source = f"{SUB_ISSUES_SOURCE} #{tracking}"
+    else:
+        found = searched(feature, root, run)
+        source = SEARCH_SOURCE
+    if found is None:
         raise CompletionError(f"gh cannot list the tickets of {feature}: no row is guessed")
     read_at = now()
-    mine = [issue for issue in issues.values() if counts_for(issue["body"]) == feature]
-    out = sorted(issue["number"] for issue in mine if released(issue))
-    counted = [issue for issue in mine if not released(issue)]
+    out = sorted(issue["number"] for issue in found if released(issue))
+    counted = [issue for issue in found if not released(issue)]
     still_open = sorted(
         issue["number"] for issue in counted if str(issue.get("state", "")).upper() == "OPEN"
     )
     closed = len(counted) - len(still_open)
     title = idea.get("titre", "")
-    tracking = idea.get("issue", "")
     return [
         _cell(f"{feature} {title}" if title and not title.startswith("<") else feature),
         f"#{tracking}" if tracking.isdigit() else "?",
@@ -148,7 +181,7 @@ def row(
         str(len(still_open)),
         str(len(out)),
         ", ".join(f"#{number}" for number in still_open) or "aucun",
-        f"{read_at.astimezone(timezone.utc):%Y-%m-%d %H:%M} UTC, {SOURCE}",
+        f"{read_at.astimezone(timezone.utc):%Y-%m-%d %H:%M} UTC, {source}",
     ]
 
 

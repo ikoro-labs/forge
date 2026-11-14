@@ -5,6 +5,7 @@ import os
 import sys
 import tempfile
 import unittest
+from collections.abc import Sequence
 from datetime import datetime, timezone
 from pathlib import Path
 from unittest import mock
@@ -32,6 +33,29 @@ OPEN = {"state": "OPEN", "stateReason": None}
 DROPPED = {"state": "CLOSED", "stateReason": "NOT_PLANNED"}
 
 
+class Gh(FakeGh):
+    """gh simulated: `issue list` from bodies, `api .../issues/<n>/sub_issues` from `subs`."""
+
+    def __init__(
+        self,
+        bodies: Sequence[str | tuple[str, dict]] | None,
+        subs: dict[int, list[tuple[int, str, str]]] | None = None,
+    ) -> None:
+        super().__init__(bodies)
+        self.subs = subs or {}
+
+    def __call__(self, argv: list[str], cwd: str | None) -> str | None:
+        if argv[:1] != ["api"]:
+            return super().__call__(argv, cwd)
+        self.calls.append(argv)
+        if self.bodies is None:
+            return None
+        tracking = int(argv[1].split("/")[-2])
+        return "".join(
+            f"{n}\t{state}\t{reason}\n" for n, state, reason in self.subs.get(tracking, [])
+        )
+
+
 class Project:
     """A project folder with its usine.md and feature folders."""
 
@@ -43,12 +67,17 @@ class Project:
         (self.root / "docs" / "agents" / "usine.md").write_text(usine, encoding="utf-8")
 
     def feature(
-        self, number: int, budget: int = 5, state: str = "actif", issue: int = 1, done: bool = False
+        self,
+        number: int,
+        budget: int = 5,
+        state: str = "actif",
+        issue: int | None = None,
+        done: bool = False,
     ) -> str:
         name = f"F-{number:04d}"
         folder = self.root / "docs" / "features" / f"{number:04d}-demo"
         folder.mkdir(parents=True)
-        idea = IDEA.format(feature=name, title="demo", state=state, issue=issue)
+        idea = IDEA.format(feature=name, title="demo", state=state, issue=issue or "")
         (folder / "idee.md").write_text(idea, encoding="utf-8")
         design = DESIGN.format(feature=name, budget=budget)
         (folder / "design.md").write_text(design, encoding="utf-8")
@@ -56,7 +85,7 @@ class Project:
             (folder / "README.md").write_text("---\ndocument: livree\n---\n", encoding="utf-8")
         return name
 
-    def table(self, gh: FakeGh, *wanted: str) -> str:
+    def table(self, gh: Gh, *wanted: str) -> str:
         return table(self.root, list(wanted), gh, lambda: NOW)
 
 
@@ -66,10 +95,10 @@ def rows(text: str) -> list[list[str]]:
 
 
 class Table(unittest.TestCase):
-    def test_a_feature_row_splits_closed_open_and_not_planned(self) -> None:
+    def test_without_a_tracking_issue_the_budget_search_places_the_tickets(self) -> None:
         project = Project(self)
-        feature = project.feature(1, budget=6, issue=40)
-        gh = FakeGh(
+        feature = project.feature(1, budget=6)
+        gh = Gh(
             [
                 (ticket("to-tickets F-0001"), {"number": 41, **CLOSED}),
                 (ticket("to-tickets F-0001"), {"number": 42, **CLOSED}),
@@ -87,26 +116,62 @@ class Table(unittest.TestCase):
             [
                 [
                     "F-0001 demo",
-                    "#40",
+                    "?",
                     "2 / 6",
                     "50 % (2 / 4)",
                     "2",
                     "1",
                     "#43, #44",
-                    "2026-11-14 09:30 UTC, gh issue list",
+                    "2026-11-14 09:30 UTC, gh issue list --search (no issue: in idee.md)",
                 ]
             ],
         )
 
+    def test_the_sub_issues_of_the_tracking_issue_are_the_tickets(self) -> None:
+        """A sub-issue without a motif counts; a ticket the search finds outside them does not."""
+        project = Project(self)
+        feature = project.feature(1, budget=6, issue=40)
+        searched = [(ticket("to-tickets F-0001"), {"number": 46, **OPEN})]
+        subs = [
+            (41, "closed", "completed"),
+            (42, "open", ""),
+            (43, "closed", "not_planned"),
+            (48, "open", ""),
+            (49, "closed", ""),
+        ]
+        gh = Gh(searched, {40: subs})
+        cells = rows(project.table(gh, feature))[0]
+        self.assertEqual(
+            cells,
+            [
+                "F-0001 demo",
+                "#40",
+                "2 / 6",
+                "50 % (2 / 4)",
+                "2",
+                "1",
+                "#42, #48",
+                "2026-11-14 09:30 UTC, gh api sub_issues of #40",
+            ],
+        )
+        self.assertEqual([argv[0] for argv in gh.calls], ["api"])
+        self.assertIn("--paginate", gh.calls[0])
+
+    def test_an_unreadable_sub_issue_list_stops_the_table(self) -> None:
+        project = Project(self)
+        feature = project.feature(1, issue=40)
+        with self.assertRaises(CompletionError):
+            project.table(Gh(None), feature)
+
     def test_every_open_feature_has_its_row_and_no_total_row(self) -> None:
         states = "- `feature-state` : `abandonnee | abandonne`\n"
         project = Project(self, USINE + states)
-        project.feature(1)
-        project.feature(2, budget=3)
+        project.feature(1, issue=10)
+        project.feature(2, budget=3, issue=20)
         project.feature(3, done=True)
         project.feature(4, state="abandonne")
         project.feature(5, state="hors-perimetre")
-        text = project.table(FakeGh([(ticket("to-tickets F-0002"), {"number": 9, **OPEN})]))
+        text = project.table(Gh([], {20: [(21, "open", "")]}))
         self.assertEqual([cells[0] for cells in rows(text)], ["F-0001 demo", "F-0002 demo"])
         self.assertEqual([cells[2] for cells in rows(text)], ["0 / 5", "0 / 3"])
         self.assertEqual(
@@ -125,7 +190,7 @@ class Table(unittest.TestCase):
         project = Project(self)
         feature = project.feature(1)
         with self.assertRaises(CompletionError):
-            project.table(FakeGh(None), feature)
+            project.table(Gh(None), feature)
 
     def test_the_command_line_refuses_a_bad_name_and_an_unknown_feature(self) -> None:
         project = Project(self)
@@ -138,7 +203,7 @@ class RepositoryColumn(unittest.TestCase):
     def test_the_key_adds_a_column_its_command_fills(self) -> None:
         project = Project(self, USINE + COLUMN)
         feature = project.feature(1)
-        text = project.table(FakeGh([]), feature)
+        text = project.table(Gh([]), feature)
         self.assertTrue(has_table(text, (*HEADERS, "Couverture")), text)
         self.assertEqual(rows(text)[0][-1], "F-0001 ok")
 
@@ -146,7 +211,7 @@ class RepositoryColumn(unittest.TestCase):
         project = Project(self, USINE + "- `completion-column` : `Couverture`\n")
         project.feature(1)
         with self.assertRaises(CompletionError):
-            project.table(FakeGh([]))
+            project.table(Gh([]))
 
 
 def human(text: str) -> dict:
@@ -191,7 +256,7 @@ class Guard(unittest.TestCase):
         patcher = mock.patch.dict(os.environ, {"CLAUDE_PROJECT_DIR": self.project.root.as_posix()})
         patcher.start()
         self.addCleanup(patcher.stop)
-        self.table = self.project.table(FakeGh([]))
+        self.table = self.project.table(Gh([]))
 
     def judge(self, *entries: dict, active: bool = False) -> dict | None:
         path = self.project.root / "transcript.jsonl"
@@ -225,6 +290,18 @@ class Guard(unittest.TestCase):
     def test_an_unrelated_question_passes(self) -> None:
         self.assertIsNone(self.judge(human("Merge the PR, please."), assistant("Merged.")))
         self.assertIsNone(self.judge(human("Le CPU est à 90 % ?"), assistant("Oui.")))
+
+    def test_a_statement_on_completion_without_a_question_passes(self) -> None:
+        said = human("J'ai relu la complétion du ticket, merci")
+        self.assertIsNone(self.judge(said, assistant("Noté.")))
+
+    def test_a_progress_word_beside_a_percent_or_a_feature_is_blocked_without_a_question(
+        self,
+    ) -> None:
+        for text in ("Donne le % de complétion.", "Avancement de F-0001, stp."):
+            with self.subTest(text=text):
+                answer = self.judge(human(text), assistant("Environ 40 %."))
+                self.assertEqual((answer or {}).get("decision"), "block")
 
     def test_the_table_the_script_prints_passes(self) -> None:
         reply = f"Voici l'avancement :\n\n{self.table}\nSource ci-dessus."
@@ -268,7 +345,7 @@ class Guard(unittest.TestCase):
         answer = self.judge(human("Avancement ?"), assistant(self.table))
         self.assertEqual((answer or {}).get("decision"), "block")
         self.assertIn("Couverture", (answer or {}).get("reason", ""))
-        wide = self.project.table(FakeGh([]))
+        wide = self.project.table(Gh([]))
         self.assertIsNone(self.judge(human("Avancement ?"), assistant(wide)))
 
     def test_an_unreadable_transcript_passes(self) -> None:
