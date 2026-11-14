@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import json
 import re
-import shlex
 import sys
 from collections.abc import Mapping
 from pathlib import Path
@@ -24,7 +23,7 @@ from report_mail import MAIL_FILE, state_dir  # noqa: E402
 from usine import load, project_root  # noqa: E402
 
 REFUSED = 3
-SEND = re.compile(r"report_mail\.py\b[^;&|\n]*--sent\b")
+SEND = re.compile(r"report_mail\.py\b(?=[^;&|\n]*--sent\b)[^;&|\n]*")
 
 
 class Outcome:
@@ -35,17 +34,16 @@ class Outcome:
         self.stderr = stderr
 
 
+STATE_OPTION = re.compile(r"""--state-dir(?:=|\s+)("[^"]*"|'[^']*'|\S+)""")
+
+
 def _state_option(segment: str) -> str | None:
-    try:
-        words = shlex.split(segment)
-    except ValueError:
-        return None
-    for index, word in enumerate(words):
-        if word == "--state-dir" and index + 1 < len(words):
-            return words[index + 1]
-        if word.startswith("--state-dir="):
-            return word.split("=", 1)[1]
-    return None
+    """The value of `--state-dir` in `segment`, read without shell unescaping.
+
+    `shlex` in POSIX mode eats the backslashes of a Windows path, so the quotes are cut by hand.
+    """
+    match = STATE_OPTION.search(segment)
+    return match.group(1).strip("\"'") if match else None
 
 
 def outcome(raw: str) -> Outcome:
