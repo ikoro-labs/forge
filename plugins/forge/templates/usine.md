@@ -150,6 +150,14 @@ fichiers qu'elle change entrent dans le commit en cours. Sans la clé, rien ne s
 
 - `feature-catalog-command` : `<uv run python -m scripts.features catalog>`
 
+La colonne propre au projet dans le tableau de complétion (`scripts/completion.py`, que le hook
+`guard_completion` exige en réponse à une question sur l'avancement) : `<en-tête> | <commande>`. La
+commande se lance depuis la racine du dépôt, `{feature}` remplacé par le `F-NNNN` de la ligne ; sa
+sortie, sur une ligne, remplit la cellule, et un code non nul y écrit l'erreur. Sans la clé, le
+tableau garde ses sept colonnes.
+
+- `completion-column` : `<Couverture | uv run python -m scripts.features status {feature}>`
+
 ## Rejeu et contrôles
 
 Les commandes qui installent une copie du dépôt, **dans l'ordre**, une par ligne. Le coder et le
