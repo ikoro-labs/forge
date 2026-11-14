@@ -37,6 +37,7 @@ from gh_bodies import (
     commands,
     curls_github,
     heredocs,
+    may_publish,
     mcp_publications,
     opens_verdict,
     publications,
@@ -247,7 +248,7 @@ def outcome(event: Mapping[str, object], run: Runner = run_command) -> tuple[int
     if isinstance(tool_name, str) and tool_name.startswith("mcp__"):
         return _mcp(tool_name, tool_input if isinstance(tool_input, dict) else {}, project_root(event))
     command = tool_input.get("command") if isinstance(tool_input, dict) else None
-    if not isinstance(command, str) or not ("gh" in command or "api.github.com" in command):
+    if not isinstance(command, str) or not may_publish(command):
         return 0, ""
     root = project_root(event)
     config = load(root)
