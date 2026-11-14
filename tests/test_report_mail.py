@@ -23,7 +23,16 @@ CONFIG = """# Usine
 - `report-repo` : `acme/widgets`
 - `report-attention-label` : `needs-human`
 - `report-main-workflow` : `ci.yml`
+- `report-host` : `pc | pc-label`
+- `report-host` : `vps | vps-label`
+- `report-host-probe` : `pc | echo mem 3/16G disk 40/200G`
 """
+RUNNERS = {"runners": [
+    {"name": "r1", "status": "online", "busy": True, "labels": [{"name": "pc-label"}]},
+    {"name": "r2", "status": "online", "busy": False, "labels": [{"name": "pc-label"}]},
+    {"name": "r3", "status": "offline", "busy": False, "labels": [{"name": "vps-label"}]},
+    {"name": "r4", "status": "online", "busy": False, "labels": [{"name": "other"}]},
+]}
 OLD_PR = {"number": 1, "title": "old change", "createdAt": "2030-01-01T10:00:00Z",
           "mergedAt": "2030-01-01T10:30:00Z", "comments": []}
 NEW_PR = {"number": 2, "title": "new change", "createdAt": "2030-01-02T08:10:00Z",
@@ -34,10 +43,10 @@ NEW_PR = {"number": 2, "title": "new change", "createdAt": "2030-01-02T08:10:00Z
 class Fake:
     """Stands for `gh`: answers by the shape of the call, records every call."""
 
-    def __init__(self, merged=(), main="success", main_sha="abc1234def",
+    def __init__(self, merged=(), main="success", main_sha="abc1234def", runners=RUNNERS,
                  verdicts=(), attention=()) -> None:
         self.merged, self.main, self.sha = list(merged), main, main_sha
-        self.verdicts, self.attention = list(verdicts), list(attention)
+        self.runners, self.verdicts, self.attention = runners, list(verdicts), list(attention)
         self.calls: list[list[str]] = []
 
     def __call__(self, args: list[str]) -> str:
@@ -51,6 +60,12 @@ class Fake:
             return json.dumps(self.attention)
         if line.startswith("run list") and "--status completed" in line:
             return json.dumps([{"headSha": self.sha, "conclusion": self.main}])
+        if line.startswith("run list") and "--status queued" in line:
+            return json.dumps([{"databaseId": 1}])
+        if line.startswith("run list"):
+            return json.dumps([{"databaseId": 2}, {"databaseId": 3}])
+        if "actions/runners" in line:
+            return json.dumps(self.runners)
         if "issues/comments" in line:
             return json.dumps(self.verdicts)
         raise AssertionError(f"unexpected gh call: {line}")
@@ -81,7 +96,7 @@ def seed(state: Path, main: str = "success abc1234") -> None:
     state.mkdir(parents=True, exist_ok=True)
     (state / "state.json").write_text(json.dumps({
         "last_sent": LAST, "digest_date": "2030-01-02",
-        "fingerprint": {"acme/widgets": {"main": main, "attention": [], "open": {}}},
+        "fingerprint": {"acme/widgets": {"main": main, "attention": [], "open": {}, "runners": {}}},
     }), encoding="utf-8")
 
 
@@ -158,6 +173,39 @@ class ReportMailTests(unittest.TestCase):
             path.write_text(json.dumps(data))
             self.assertEqual(run(root, state, Fake())[0], 0)
 
+    def test_a5_runners_are_grouped_by_host_with_the_probe_line(self) -> None:
+        with project() as (root, state):
+            seed(state)
+            _, out, _ = run(root, state, Fake(merged=[NEW_PR]))
+            self.assertIn("CI and runners", out)
+            self.assertRegex(out, r"pc.*2 online.*1 busy")
+            self.assertRegex(out, r"vps.*0 online")
+            self.assertIn("mem 3/16G disk 40/200G", out)
+            self.assertIn("no probe named for host vps", out)
+            self.assertIn("r4", out)  # a runner no host claims is listed, not dropped
+            self.assertRegex(out, r"queued.*1")
+            self.assertRegex(out, r"in progress.*2")
+            self.assertIn("abc1234", out)
+
+    def test_a5_a_failing_probe_does_not_fail_the_script(self) -> None:
+        def broken(command: str) -> str:
+            raise OSError("no route")
+
+        with project() as (root, state):
+            seed(state)
+            out, err = io.StringIO(), io.StringIO()
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                code = main(["--root", str(root), "--state-dir", str(state)],
+                                        gh=Fake(merged=[NEW_PR]), probe=broken, now=NOW)
+            self.assertEqual(code, 0)
+            self.assertIn("probe for host pc failed", out.getvalue())
+
+    def test_a5_without_a_host_key_the_part_says_so(self) -> None:
+        with project("- `report-repo` : `acme/widgets`\n") as (root, state):
+            seed(state)
+            _, out, _ = run(root, state, Fake(merged=[NEW_PR]))
+            self.assertIn("key `report-host` absent", out)
+
     def test_a7_the_mail_keeps_only_what_changed_since_the_last_send(self) -> None:
         with project() as (root, state):
             seed(state)
@@ -173,5 +221,5 @@ class TemplateTests(unittest.TestCase):
 
         documented = set(parse((support.PLUGIN / "templates" / "usine.md").read_text(encoding="utf-8")))
         read = set(re.findall(r'(?:get\(|_pairs\(config, )"(report-[a-z-]+)"', SCRIPT.read_text(encoding="utf-8")))
-        self.assertGreaterEqual(len(read), 4)
+        self.assertGreaterEqual(len(read), 6)
         self.assertEqual(sorted(read - documented), [])
