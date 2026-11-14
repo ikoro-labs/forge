@@ -60,6 +60,62 @@ SPLIT_TICKET_BODY = (
 )
 
 
+LOCATION_ENVELOPES = [
+    "{}",
+    "if true; then {}; fi",
+    "if {}; then true; fi",
+    "while {}; do break; done",
+    "time {}",
+    "time -p {}",
+    "! {}",
+    "bash -c '{}'",
+    "sh -c '{}'",
+    "bash -lc '{}'",
+    "time bash -c '{}'",
+    "bash -c \"bash -c '{}'\"",
+]
+
+
+class LocationVariables(unittest.TestCase):
+    """Refs #105: git finds the repository by these, so a suite replayed under one writes in it."""
+
+    def test_every_variable_is_refused_in_every_envelope(self) -> None:
+        for variable in (
+            "GIT_DIR",
+            "GIT_WORK_TREE",
+            "GIT_INDEX_FILE",
+            "GIT_COMMON_DIR",
+            "GIT_OBJECT_DIRECTORY",
+        ):
+            for form in (f"{variable}=/x git status", f"export {variable}=/x", f"env {variable}=/x git log"):
+                for envelope in LOCATION_ENVELOPES:
+                    command = envelope.format(form)
+                    with self.subTest(command=command):
+                        self.assertIn(variable, refused(command) or "")
+
+    def test_the_git_dir_and_work_tree_options_are_refused_in_every_envelope(self) -> None:
+        for option in ("--git-dir=/x", "--git-dir /x", "--work-tree=/x", "--work-tree /x"):
+            for envelope in LOCATION_ENVELOPES:
+                command = envelope.format(f"git {option} status")
+                with self.subTest(command=command):
+                    self.assertIn(option.split("=")[0].split(" ")[0], refused(command) or "")
+
+    def test_reading_or_unsetting_a_location_stays_allowed(self) -> None:
+        for command in [
+            "git -C copy status",
+            "unset GIT_DIR",
+            'echo "GIT_DIR=x"',
+            "echo GIT_DIR=x",
+            "git commit -m 'GIT_DIR=x is refused'",
+            "bash -c 'git -C copy status'",
+            "if true; then git status; fi",
+            "time git status",
+            "GIT_PAGER=cat git log",
+        ]:
+            with self.subTest(command=command):
+                self.assertIsNone(refused(command))
+
+
 class DangerousForms(unittest.TestCase):
     def test_the_dangerous_forms_are_refused_with_their_reason(self) -> None:
         cases = [

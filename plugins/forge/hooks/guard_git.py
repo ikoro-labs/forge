@@ -1555,6 +1555,70 @@ ALIAS_REFUSAL = (
 )
 
 
+# The reserved words after which the shell runs a command as it would run alone.
+COMMAND_KEYWORDS = frozenset(
+    {"if", "elif", "while", "until", "then", "else", "do", "time", "!", "{"}
+)
+# The variables git finds a repository by: set for a command, they send its writes (and those of a
+# suite it replays) into another repository than the one of the directory.
+LOCATION_VARIABLES = frozenset(
+    {"GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR", "GIT_OBJECT_DIRECTORY"}
+)
+LOCATION_OPTIONS = frozenset({"--git-dir", "--work-tree"})
+# The builtins that export the names they are given, with or without a value.
+EXPORTING_BUILTINS = frozenset({"export", "declare", "typeset", "readonly", "local"})
+
+
+def after_keywords(words: list[str]) -> list[str]:
+    """`words` without the reserved words that precede the command (`if`, `then`, `time -p`...)."""
+    while words[:1] and words[0] in COMMAND_KEYWORDS:
+        words = words[2:] if words[:2] == ["time", "-p"] else words[1:]
+    return words
+
+
+def location_refusal(words: list[str], bodies: str = "") -> str | None:
+    """Why a simple command is refused for aiming git elsewhere, or None.
+
+    The command is read as it would run alone: behind reserved words (`if`, `then`, `time`, `!`),
+    assignments, `env` and the builtins that export, and into the script of a shell `-c`.
+    `unset` and a word that only says the name (`echo GIT_DIR=x`) are not a setting.
+    """
+    seen = looked_through(after_keywords(words), bodies)
+    names = list(seen.env)
+    if seen.words[:1] and seen.words[0] in EXPORTING_BUILTINS:
+        names += [word.partition("=")[0] for word in seen.words[1:] if not word.startswith("-")]
+    for name in names:
+        if name in LOCATION_VARIABLES:
+            return _location_reason(name)
+    if seen.words[:1] == ["git"]:
+        rest = seen.words[1:]
+        leading = rest[: len(rest) - len(_subcommand_and_args(rest))]
+        for word in leading:
+            if word.split("=")[0] in LOCATION_OPTIONS:
+                return _location_reason(word.split("=")[0])
+    if seen.script is not None:
+        for inner in segments(seen.script):
+            if reason := location_refusal(inner):
+                return reason
+    return None
+
+
+def commands_location_refusal(command: str) -> str | None:
+    """The first `location_refusal` among the simple commands of `command`."""
+    bodies = split_heredocs(command)[1]
+    for words in segments(command):
+        if reason := location_refusal(words, bodies):
+            return reason
+    return None
+
+
+def _location_reason(name: str) -> str:
+    return (
+        f"`{name}`: git finds the repository by it, and a suite replayed under it writes in"
+        " another repository than the one of the directory; work in the copy with `git -C <copy>`"
+    )
+
+
 def refusal(
     command: str,
     branch: str | Callable[[str | None], str],
@@ -1655,7 +1719,9 @@ def refusal(
         return None, merges or _shell_named_merge(text)
 
     reason, merges = walk(command, cwd, True)
-    if reason is not None or not merges:
+    if reason is None and not merges:
+        return commands_location_refusal(command)
+    if reason is not None:
         return reason
     return merge_call_refusal(
         command,
@@ -1668,7 +1734,7 @@ def refusal(
         changed_files,
         pr_files,
         gh_aliases,
-    )
+    ) or commands_location_refusal(command)
 
 
 def merge_call_refusal(

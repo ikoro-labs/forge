@@ -10,9 +10,13 @@ agent through. For the coder, it refuses, with the reason on stderr and exit cod
 - the qc skill, under its plugin name `forge:qc` as under a bare `qc`, which the coder would
   otherwise run as the last step of opening a PR; and the end-to-end review skill
   (`forge:feature-review`, bare or prefixed), which reviews a feature the coder wrote;
-- `git push` with `-u`, `--set-upstream`, `-f` or `--force` (`--force-with-lease` stays allowed),
-  and `git config` in write mode: the first writes, and the last two rewrite, the configuration
-  shared by every worktree of the repository;
+- `git push` with `-u`, `--set-upstream`, `-f`, `--force` or `--force-with-lease`, and `git config`
+  in write mode: the first writes, and the others rewrite, the configuration or the history shared
+  by every worktree of the repository;
+- `git rebase`, `git pull --rebase` (also set by `git -c pull.rebase=true`): the coder merges the
+  base, a rebase rewrites a branch that a review and another worktree share;
+- `git add` of the whole tree (`-A`, `--all`, `.`, `:/`) and `git commit -a`: the worktree can hold
+  what the coder did not write;
 - a write (Edit, Write, MultiEdit, NotebookEdit) or a git command whose directory is not under the
   coder's own worktree, read from the event's `cwd`. A `cwd` that is not a linked worktree
   (`git rev-parse --git-dir` equal to `--git-common-dir`) is a coder launched without isolation,
@@ -21,7 +25,8 @@ agent through. For the coder, it refuses, with the reason on stderr and exit cod
 The command is parsed with `guard_git`'s splitter, which reads a backslash as an escape, as Bash
 does; from a `PowerShell` call, where it escapes nothing, the backslashes become slashes first so
 that a Windows path stays whole. A commit message that says
-`gh pr merge` is data. As there, this guards against an accident, not against intent: a wrapper
+`gh pr merge` is data, and the reserved words of the shell (`if`, `then`, `time`, `!`...) and the
+script of a `bash -c` do not hide the command they run. As there, this guards against an accident, not against intent: a wrapper
 (`env gh`, `gh.exe`) or `gh api` on the same endpoint is intent and is left alone.
 An event the hook cannot read is refused, and `hooks.json` turns any crash into a refusal.
 """
@@ -30,9 +35,11 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import sys
 from collections.abc import Callable, Mapping
+from itertools import pairwise
 
 from guard_git import (
     UNKNOWN,
@@ -42,7 +49,9 @@ from guard_git import (
     _moved,
     _run,
     _subcommand_and_args,
+    after_keywords,
     gh_act,
+    looked_through,
     native_directory,
 )
 
@@ -74,6 +83,22 @@ CONFIG_WRITES = frozenset(
     {"--add", "--unset", "--unset-all", "--replace-all", "--rename-section", "--remove-section"}
     | {"-e", "--edit", "--set"}
 )
+# What `git add` and `git commit -a` take as the whole tree: a pathspec for the root (`.`, `./`,
+# `:/`), whatever the directory.
+ROOT_PATHSPEC = re.compile(r"(?:\./*)+|:/(?:\./*)*")
+WHOLE_TREE = (
+    "stage by path: `git add -A`, `--all`, `.`, `:/` and `git commit -a` take the whole tree,"
+    " which can hold what the coder did not write"
+)
+REBASE = "`git {}`: merge the base instead, a rebase rewrites the PR's branch"
+# `git commit`'s options and short letters that take a value, which an `a` inside is not `-a`.
+COMMIT_VALUE_OPTIONS = frozenset({"--message", "--file", "--author", "--template", "--reuse-message"})
+COMMIT_VALUE_LETTERS = "mFCct"
+COMMIT_GLUED_LETTERS = "Su"
+# `git pull`'s short options that take the rest of the word as their value, and the values git
+# reads as false for `--rebase=<value>`.
+PULL_VALUE_LETTERS = "sXojS"
+PULL_FALSE = frozenset({"", "false", "no", "off", "0"})
 NO_ISOLATION = (
     "the coder was launched without isolation: its directory is not a linked worktree, so it"
     " would write in the main copy; the orchestrator launches it with `isolation: worktree`"
@@ -132,6 +157,72 @@ def _config_writes(args: list[str]) -> bool:
     return len([arg for arg in args if not arg.startswith("-")]) >= 2
 
 
+def _rebase_configured(options: list[str]) -> bool:
+    """Whether the options before the subcommand set `pull.rebase` to true with `-c`."""
+    for flag, setting in pairwise(options):
+        name, equals, value = setting.partition("=")
+        if flag == "-c" and name.lower() == "pull.rebase":
+            return not equals or value.lower() not in PULL_FALSE
+    return False
+
+
+def _pulls_rebasing(args: list[str], configured: bool = False) -> bool:
+    """Whether `git pull` rebases: `-r`, `--rebase` (or a prefix git reads as it) or `configured`.
+
+    The last of `--rebase` and `--no-rebase` on the line wins over the configuration.
+    """
+    rebasing = configured
+    for word in args:
+        if word.startswith("--"):
+            name, equals, value = word.partition("=")
+            off = equals and value.lower() in PULL_FALSE
+            if len(name) >= len("--reb") and "--rebase".startswith(name):
+                rebasing = not off
+            elif len(name) >= len("--no-reb") and "--no-rebase".startswith(name):
+                rebasing = False
+        elif word.startswith("-"):
+            for letter in word[1:]:
+                if letter == "r":
+                    rebasing = True
+                if letter == "r" or letter in PULL_VALUE_LETTERS:
+                    break
+    return rebasing
+
+
+def _adds_all(word: str) -> bool:
+    """`-A` alone or in a cluster, `--all` or a prefix git reads as it, a pathspec for the root."""
+    if word.startswith("--"):
+        name = word.partition("=")[0]
+        return len(name) > 2 and "--all".startswith(name)
+    return ("A" in word[1:] and word.startswith("-")) or bool(ROOT_PATHSPEC.fullmatch(word))
+
+
+def _commits_all(args: list[str]) -> bool:
+    """Whether `git commit` gets `-a` or `--all`, outside the values of its other options.
+
+    A short cluster ends at its first letter that takes a value, whose value is the rest of the
+    word, or the next word when the letter ends it.
+    """
+    skip = False
+    for word in args:
+        if skip:
+            skip = False
+            continue
+        if word.startswith("--"):
+            name, equals, _ = word.partition("=")
+            if name == "--all":
+                return True
+            skip = name in COMMIT_VALUE_OPTIONS and not equals
+        elif word.startswith("-"):
+            for position, letter in enumerate(word[1:], start=1):
+                if letter == "a":
+                    return True
+                if letter in COMMIT_VALUE_LETTERS + COMMIT_GLUED_LETTERS:
+                    skip = letter in COMMIT_VALUE_LETTERS and position == len(word) - 1
+                    break
+    return False
+
+
 def _act_refusal(args: list[str]) -> str | None:
     """The git acts that touch the configuration shared by every worktree, or leave the worktree."""
     sub_args = _subcommand_and_args(args)
@@ -141,6 +232,14 @@ def _act_refusal(args: list[str]) -> str | None:
     if not sub_args:
         return None
     sub, rest = sub_args[0], sub_args[1:]
+    if sub == "rebase":
+        return REBASE.format("rebase")
+    if sub == "pull" and _pulls_rebasing(rest, _rebase_configured(leading)):
+        return REBASE.format("pull --rebase")
+    if sub == "add" and any(_adds_all(word) for word in rest):
+        return WHOLE_TREE
+    if sub == "commit" and _commits_all(rest):
+        return WHOLE_TREE
     if sub == "push":
         if "--set-upstream" in rest or any(
             arg.startswith("-") and not arg.startswith("--") and "u" in arg[1:] for arg in rest
@@ -149,8 +248,8 @@ def _act_refusal(args: list[str]) -> str | None:
                 "`push -u` writes the configuration shared by every worktree:"
                 " use `push origin HEAD:<branch>`"
             )
-        if _forces(rest):
-            return "force push: the coder never rewrites a pushed branch"
+        if _forces(rest) or any(arg.split("=")[0] == "--force-with-lease" for arg in rest):
+            return "force push: the coder never rewrites a pushed branch, `--force-with-lease` included"
     if sub == "config" and _config_writes(rest):
         return "`config` in write mode changes the configuration shared by every worktree"
     return None
@@ -167,9 +266,12 @@ def _git_commands(command: str, cwd: str | None, root: str | None) -> str | None
             else:
                 here = saved.pop() if saved else cwd
             continue
-        words = item
-        while words and "=" in words[0] and not words[0].startswith("-"):
-            words = words[1:]
+        seen = looked_through(after_keywords(item), "")
+        if seen.script is not None:  # the script of a `bash -c` runs from the same directory
+            if reason := _git_commands(seen.script, here, root):
+                return reason
+            continue
+        words = seen.words
         if not words:
             continue
         if words[0] == "cd":
