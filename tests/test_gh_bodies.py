@@ -75,7 +75,7 @@ class FilesTheCommandWrites(unittest.TestCase):
                 "echo new >> b.md && gh issue comment 1 -F b.md",
                 "printf x >./b.md; gh issue comment 1 --body-file b.md",
                 "echo new | tee b.md && gh issue comment 1 --body-file b.md",
-                f"echo new > {folder}/b.md && gh issue comment 1 --body-file b.md",
+                f"echo new > {Path(folder, 'b.md').as_posix()} && gh issue comment 1 --body-file b.md",
             ):
                 with self.subTest(command=command), self.assertRaises(Unreadable):
                     bodies(command, folder)
