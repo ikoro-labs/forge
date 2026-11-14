@@ -61,6 +61,77 @@ class CoderActs(unittest.TestCase):
                 self.assertIn("review", refusal("Skill", {"skill": skill}) or "")
 
 
+REBASING = [
+    "git rebase main",
+    "git rebase -i HEAD~3",
+    "git -C work rebase origin/main",
+    "git pull --rebase",
+    "git pull --rebase=true origin main",
+    "git pull --reb",
+    "git pull -r",
+    "git pull -fr",
+    "git -c pull.rebase=true pull",
+]
+WHOLE_TREE_STAGING = [
+    "git add -A",
+    "git add --all",
+    "git add --al",
+    "git add -uA",
+    "git add .",
+    "git add ./",
+    "git add :/",
+    "git -C work add .",
+    "git commit -a -m x",
+    "git commit -am x",
+    "git commit --all -m x",
+    "git commit -qa",
+]
+LEASES = [
+    "git push --force-with-lease origin HEAD:feat/x",
+    "git push --force-with-lease=feat/x origin HEAD:feat/x",
+]
+SHELL_ENVELOPES = [
+    "if true; then {}; fi",
+    "if {}; then true; fi",
+    "time {}",
+    "time -p {}",
+    "! {}",
+    "bash -c '{}'",
+    "sh -lc '{}'",
+    "time bash -c '{}'",
+    "env {}",
+]
+
+
+class SharedBranchHistory(unittest.TestCase):
+    """The coder merges the base and stages by path: no rebase, no lease, no whole-tree staging."""
+
+    def test_the_refused_forms_are_refused_alone_and_in_every_envelope(self) -> None:
+        for base in REBASING + WHOLE_TREE_STAGING + LEASES:
+            for envelope in ["{}", *SHELL_ENVELOPES]:
+                command = envelope.format(base)
+                with self.subTest(command=command):
+                    self.assertIsNotNone(bash(command))
+
+    def test_the_plain_forms_pass(self) -> None:
+        for command in [
+            "git pull",
+            "git pull --no-rebase",
+            "git pull --rebase=false",
+            "git pull --rebase --no-rebase",
+            "git -c pull.rebase=false pull",
+            "git add src/app.py tests/test_app.py",
+            "git add -p",
+            "git commit -m 'add . and rebase are refused'",
+            "git commit -m x -- file.py",
+            "git merge --no-edit origin/main",
+            "if true; then git status; fi",
+            "bash -c 'git merge --no-edit origin/main'",
+        ]:
+            with self.subTest(command=command):
+                self.assertIsNone(bash(command))
+
+
 class SharedConfiguration(unittest.TestCase):
     """#65: the coder never writes the configuration shared by every worktree."""
 
@@ -78,11 +149,9 @@ class SharedConfiguration(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertIsNotNone(bash(command))
 
-    def test_a_plain_push_and_a_lease_push_pass(self) -> None:
+    def test_a_plain_push_passes(self) -> None:
         for command in [
             "git push origin HEAD:feat/x",
-            "git push --force-with-lease origin HEAD:feat/x",
-            "git push --force-with-lease=feat/x origin HEAD:feat/x",
             "git commit -m 'git push -u est refuse au coder'",
         ]:
             with self.subTest(command=command):
