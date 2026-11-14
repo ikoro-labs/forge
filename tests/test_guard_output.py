@@ -16,7 +16,10 @@ import support
 from guard_output import REFUSED, outcome, state_dir
 
 TICKET = "Motif: demande-kevin\nWhat is missing.\n\n## Criteria\n\n- A1: a test.\n"
-REPLY = "Done: merged #12.\n\nMeasured: CI 4 min, run 99.\n\nAwaiting your decision: nothing.\n"
+REPLY = (
+    "Done: merged #12.\n\nMeasured: CI 4 min, run 99.\n\nAwaiting your decision: nothing.\n\n"
+    "CI and runners: pc 2/2 online; main success abc1234.\n"
+)
 CODER = "RESULT: PR\nPR: #40\nTICKET: #12 closes\nCRITERIA: A1 ; not covered: none\nNOTES: none\n"
 VERDICT_ACCEPT_WITH_BLOCKER = (
     "VERDICT: ACCEPT\nROUND: 1\nHEAD: abcdef1\nSPEC: #12: 1 criteria covered, 0 partial, 0 missing\n"

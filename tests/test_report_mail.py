@@ -215,6 +215,26 @@ class ReportMailTests(unittest.TestCase):
             self.assertLess(len(out.split()), 400)
 
 
+class SessionLineTests(unittest.TestCase):
+    def test_a6_the_line_option_prints_the_ci_and_runners_part_in_one_line(self) -> None:
+        with project() as (root, state):
+            fake = Fake()
+            code, out, _ = run(root, state, fake, "--line")
+            self.assertEqual(code, 0)
+            self.assertEqual(len(out.strip().splitlines()), 1)
+            self.assertTrue(out.startswith("CI and runners:"))
+            self.assertRegex(out, r"pc 2/2 online, 1 busy")
+            self.assertIn("queued 1", out)
+            self.assertIn("main success abc1234", out)
+            self.assertFalse(state.exists())  # no state read for the mail, none written
+
+    def test_a6_without_the_repository_key_the_line_says_not_applicable(self) -> None:
+        with project("- `report-host` : `pc | pc-label`\n") as (root, state):
+            code, out, _ = run(root, state, Fake(), "--line")
+            self.assertEqual(code, 0)
+            self.assertIn("not applicable (key `report-repo` absent)", out)
+
+
 class TemplateTests(unittest.TestCase):
     def test_a1_the_usine_template_documents_every_key_the_script_reads(self) -> None:
         from usine import parse
