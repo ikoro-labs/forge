@@ -16,8 +16,8 @@ The rules, the same for every kind that has them:
 - no prose paragraph over `output-words-paragraph` words; a list item is a paragraph of its own; a
   table line or a code block is no paragraph;
 - each field the template names in the `required:` part of its header line, present and not empty;
-- at most the `max-lines:` of that header line, in written lines: blank lines and HTML comments do
-  not count.
+- at most the `max-lines:` of that header line (`0` for none), in written lines: blank lines and HTML
+  comments do not count.
   A project replaces a template with the key `output-template` (`<kind> | <path>`);
 - a structured format (`verdict`, `coder`, `decider`) takes a closed set of keys: an unknown key is
   refused, unless the project names it with `output-extra-keys` (`<kind> | KEY, KEY`). The verdict
@@ -168,9 +168,12 @@ def required_fields(template: str) -> list[list[str]]:
 
 
 def line_cap(template: str) -> int | None:
-    """The `max-lines: <n>` of the header of `template`, None when it declares none."""
+    """The `max-lines: <n>` of the header of `template`; None when it declares none or `0`.
+
+    `0` lifts the cap, as `0` does for a word cap (`output-words-<kind>`).
+    """
     match = re.match(r"\s*(\d+)", _header(template, "max-lines") or "")
-    return int(match.group(1)) if match else None
+    return int(match.group(1)) or None if match else None
 
 
 def _header(template: str, key: str) -> str | None:

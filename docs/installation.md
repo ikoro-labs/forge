@@ -605,7 +605,7 @@ can also run on a body before it posts it:
 
 The word caps (ticket 150, comment 150, PR 200, session reply 150, subagent return 200), the
 `max-lines` of each template header (ticket 25, PR 40, comment 12, session reply 15, subagent
-return 20, in written lines; a verdict has none) and the 60-word paragraph cap hold when the project sets no key; code blocks and table cells count in the
+return 20, in written lines; a verdict has none; `max-lines: 0` in a project's template lifts it, as `0` lifts a word cap) and the 60-word paragraph cap hold when the project sets no key; code blocks and table cells count in the
 total, HTML comments do not, and the paragraph cap skips tables and code blocks. The keys
 `output-words-<kind>`, `output-template`, `output-agent-format` and `output-extra-keys` of
 `plugins/forge/templates/usine.md` adjust them. The journal of outputs let through is
