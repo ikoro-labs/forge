@@ -9,6 +9,36 @@ Ce dépôt a été recréé le 2026-10-23 ; l'ancien est `ikoro-labs/forge-archi
 numéros de PR et de ticket nus (`#38`) renvoient à l'ancien dépôt ; un renvoi au nouveau dépôt
 porte son nom (`ikoro-labs/forge#7`).
 
+## [1.9.0] - 2026-11-14
+
+Le mail de relevé de l'usine vient de forge, le relais de passation ouvre sa fenêtre sans réglage,
+et les gardes git ferment les variables de localisation. Version mineure : de nouvelles clés
+facultatives (`report-*`, `output-words-report-mail`) et un nouveau hook.
+
+- Scripts : `report_mail.py` construit le mail de relevé depuis les seules clés `report-*` de
+  `usine.md`, sort en code 10 sans mail quand rien n'a changé et enregistre l'envoi par `--sent`
+  (#188) ; sa partie « CI et runners » groupe les runners par hôte (`report-host`), les runs en
+  file et en cours, le dernier run de main, et la mémoire et le disque quand `report-host-probe`
+  nomme une sonde (#189). Refs #181.
+- Hooks : `guard_report_mail.py` refuse `report_mail.py --sent` quand le mail en attente s'écarte
+  du gabarit `templates/report-mail.md` (#190) ; `output_check.py` gagne le genre `report-mail`
+  (clé `output-words-report-mail`).
+- Hooks : sans `CLAUDE_HANDOFF_TERMINAL`, le relais ouvre `claude attach <id>` dans le terminal par
+  défaut du bureau par `xdg-terminal-exec` quand il est installé ; une valeur d'arrêt (`off`, `0`,
+  `false`, `no`, vide) n'ouvre aucune fenêtre (#186, closes #185). Essayé seulement sous Linux.
+- Hooks : `guard_git` refuse `GIT_DIR`, `GIT_WORK_TREE`, `GIT_INDEX_FILE`, `GIT_COMMON_DIR`,
+  `GIT_OBJECT_DIRECTORY`, `--git-dir` et `--work-tree` ; `guard_coder` refuse `git rebase`,
+  `git pull --rebase`, `--force-with-lease`, `git add -A`, `.` ou `:/` et `git commit -a`, y compris
+  dans un `bash -c` (#187, refs #105).
+- Gabarits : le résumé de session (`session-reply.md`) exige un quatrième champ, « CI et runners »,
+  qu'imprime `report_mail.py --line` ; sans `report-repo`, il dit `not applicable` (#191).
+- Docs : le schéma d'architecture dit de nouveau l'état du plugin (#184).
+- Tests : `test_report_mail.py`, `test_guard_report_mail.py`, et les cas nouveaux de
+  `test_guard_git.py`, `test_guard_coder.py`, `test_handoff.py` et `test_output_check.py`.
+- Gestes humains : un projet qui monte l'épingle voit son résumé de session renvoyé une fois à la
+  réécriture par `guard_output` quand le champ « CI et runners » manque ; pour le mail de relevé, il déclare `report-repo` dans `usine.md` puis retire
+  son script hors dépôt (critère A4 de #181, resté dehors : il se fait après le tag).
+
 ## [1.8.0] - 2026-11-14
 
 Property-based tests enter the TDD loop and its review, and the format-on-write kill no longer
