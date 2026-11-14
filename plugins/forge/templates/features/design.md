@@ -4,6 +4,7 @@ document: design
 statut: en-revue
 destinataires: <l'agent qui implémente ; qui relit>
 adr: <ADR-NNNN, ADR-NNNN, ou « aucun »>
+feature-tickets: <N, at most 15: the most tickets this feature publishes, enforced by guard_ticket_budget>
 base: <commit>
 date: AAAA-MM-JJ
 ---

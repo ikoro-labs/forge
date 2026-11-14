@@ -1,5 +1,5 @@
 {
-  "description": "Forge factory guards: git and GitHub safety, the coder's role, the judges' read-only rule, the agreed and frozen validation cases of a ticket, the coder's model and effort, the pause switch, the structure of every output (subagent returns, gh bodies, the session's reply), the em dash check after a write, the trimmed output of a named command that passes, the drained session handoff at the context limit, and, at the start of a session, the other live sessions of its repository.",
+  "description": "Forge factory guards: git and GitHub safety, the coder's role, the judges' read-only rule, the ticket budget of a feature, the agreed and frozen validation cases of a ticket, the coder's model and effort, the pause switch, the structure of every output (subagent returns, gh bodies, the session's reply), the em dash check after a write, the trimmed output of a named command that passes, the drained session handoff at the context limit, and, at the start of a session, the other live sessions of its repository.",
   "hooks": {
     "SessionStart": [
       {
@@ -39,6 +39,17 @@
           {
             "type": "command",
             "command": "uv run --no-project --quiet python \"${CLAUDE_PLUGIN_ROOT}/hooks/guard_readonly.py\" || exit 2"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash|PowerShell|Edit|Write|MultiEdit|mcp__.*([Gg]it[Hh]ub|GITHUB).*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run --no-project --quiet python \"${CLAUDE_PLUGIN_ROOT}/hooks/guard_ticket_budget.py\" || exit 2",
+            "onFailure": "block",
+            "timeout": 60
           }
         ]
       },
