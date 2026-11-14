@@ -394,17 +394,21 @@ A merge runs alone. `guard_git` judges a `gh pr merge` or a `gh api` merge only 
 `[cd <path> &&] [GH_REPO=owner/repo] gh pr merge <n> [options] [| tee <file> | cat]`. The PR
 number, `-R`, `GH_REPO` and the `cd` path are literal; the options are those of `gh pr merge`,
 written one by one (no cluster such as `-sR`), and gh keeps the last `-R`. Only `--body-file`,
-`--body`, `--subject` and `--match-head-commit` may hold a variable, in double quotes
-(`--body-file "$T/m.md"`): unquoted, word splitting may slip in a `-R`, and the refusal says
+`--body`, `--subject` and `--match-head-commit`, and the file of `tee`, may hold a variable, in
+double quotes (`--body-file "$T/m.md"`, `| tee "$T/merge.log"`): unquoted, word splitting may slip in a `-R`, and the refusal says
 "quote the variable or use a literal path". Anything else in the command refuses the merge with
 "run the merge alone": another command (`gh pr edit --add-label` goes in a command of its own),
 another assignment (`GIT_DIR`, `GH_HOST`), `export`, `declare`, `typeset`, `pushd`, `builtin`,
 `command`, `eval`, `source`, a subshell, `sh -c`, `xargs`, a wrapper, a redirection, a second
 `cd`. `cd <path>; gh pr merge` is refused too: if the `cd` fails, the merge runs in the first
 directory while the guard read the PR of the other. A merge the guard sees anywhere in the
-command counts: behind a wrapper, in `sh -c`, in `eval`, behind a gh alias, behind a program
-named by a variable (`$G pr merge 5`) or among another program's arguments (`find -exec gh pr
-merge`), and a gh call whose group or verb is a variable. In that one form, every reading of the
+command counts: behind a wrapper, in `sh -c`, in `eval`, behind a gh alias, or among another
+program's arguments (`find -exec gh pr merge`), and a gh call whose group or verb is a variable.
+So does a program the shell names (a variable, a `$(...)` or a backtick, quoted or not, behind
+assignments and wrappers, at any depth of substitution) whenever a word of the command,
+substitutions included and quoted values split on their blanks, is `merge`, `api`, `graphql` or a
+path ending in `/merge`: `$(echo gh) pr merge 5`, `` `which gh` pr merge 5 `` and
+`G='gh pr merge'; $G 5` are refused as not run alone. In that one form, every reading of the
 merged PR (its checks, its description, its files for the protected paths and for the infra
 guard) reads the same PR: in the directory of the `cd`, in the repository of `-R`, of the PR's
 URL or of `GH_REPO`.
@@ -428,7 +432,10 @@ Known limits of `guard_git`:
 - extended globs (`extglob`) are not handled;
 - a merge run by a file escapes the guard: a script (`source`, `bash x.sh`, a `!` alias that
   calls one), a program that calls gh or the API itself (Python, `curl`), a gh extension;
-- so does a program that runs gh from one argument string (`script -c "gh pr merge 5"`).
+- so does a program that runs gh from one argument string (`script -c "gh pr merge 5"`);
+- so does a program the shell names in a command where no word names a merge
+  (`$(printf 'gh pr mer%s' ge) 5`, a `$G` set by an earlier call); `guard_infra` holds every program
+  the shell names, refused to a subagent and asked in the main session.
 
 Tried under Linux only: by the tests, and by hand against the real `ssh -G` and resolver of one
 workstation (an alias, an address, a `-J` jump). Not yet in a real Claude Code session, nor under
@@ -594,8 +601,13 @@ the suite of `tests/` only, not yet in a real session.
   refuse toute autre (« run the merge alone ») : une autre commande, `export`, `pushd`, `eval`,
   `sh -c`, un sous-shell, une redirection. `cd x; gh pr merge` est refusé : si le `cd` échoue, la
   fusion part du premier dossier, et le garde aurait lu la PR de l'autre. Seules les valeurs de
-  `--body-file`, `--body`, `--subject` et `--match-head-commit` acceptent une variable, entre
-  guillemets doubles. L'étiquette `agent-merged` se pose dans une commande à part.
+  `--body-file`, `--body`, `--subject` et `--match-head-commit`, et le fichier de `tee`, acceptent
+  une variable, entre guillemets doubles. Un programme que le shell nomme (variable, `$(...)`,
+  accent grave) compte comme une fusion dès qu'un mot de la commande, substitutions comprises, est
+  `merge`, `api`, `graphql` ou un chemin qui finit par `/merge` : `$(echo gh) pr merge 5` est
+  refusé. Sans un tel mot (`$(printf 'gh pr mer%s' ge) 5`), `guard_git` ne le voit pas ;
+  `guard_infra` retient tout programme que le shell nomme, refusé à un sous-agent et demandé en
+  session principale. L'étiquette `agent-merged` se pose dans une commande à part.
 - **Alias gh** : un appel gh qui ne nomme aucune commande de gh est lu par `gh alias list` ; seul
   ou derrière un `cd`, il est jugé selon son expansion, à côté d'autre chose il compte comme une
   fusion. `gh alias set`, `import` et `delete` sont refusés à un sous-agent.

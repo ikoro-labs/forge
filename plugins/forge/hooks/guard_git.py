@@ -58,12 +58,19 @@ does not look up. Only the owner merges it, by hand.
 A merge runs alone: `guard_git` judges it only as `[cd <path> &&] [GH_REPO=owner/repo] gh pr
 merge <n> [options] [| tee <file> | cat]` (or the same `gh api` merge), with a literal number,
 `-R`, `GH_REPO` and `cd` path, the options of `gh pr merge` one by one, and a variable only in
-double quotes in the value of `--body-file`, `--body`, `--subject` or `--match-head-commit`. Any
+double quotes in the value of `--body-file`, `--body`, `--subject` or `--match-head-commit`, or in
+a file of `tee`. Any
 other form is refused ("run the merge alone"): only there do the checks, the description and the
 files read the PR the merge acts on. `cd x; gh pr merge` is refused: if the `cd` fails, the merge
 runs in the first directory. A merge counts wherever the guard sees it: behind a wrapper, in
-`sh -c` or `eval`, behind a gh alias, behind a program named by a variable or among another
-program's arguments. A gh call that names no gh command is read through `gh alias list` when it
+`sh -c` or `eval`, behind a gh alias, or among another program's arguments. A program the shell
+names (a variable, a `$(...)` or a backtick, quoted or not, behind assignments and wrappers, at any
+depth of substitution) counts as a merge whenever a word of the command, substitutions included and
+quoted values split on their blanks, is `merge`, `api`, `graphql` or a path ending in `/merge`:
+`$(echo gh) pr merge 5` and `G='gh pr merge'; $G 5` are refused as not run alone. One that names
+none (`$(printf 'gh pr mer%s' ge) 5`, a `$G` set in an earlier call) is not seen here;
+`guard_infra` holds every program the shell names, refused to a subagent and asked in the main
+session. A gh call that names no gh command is read through `gh alias list` when it
 runs alone (a literal `cd` aside), and counts as a merge beside anything else; `gh alias set`,
 `import` and `delete` are refused to a subagent.
 
@@ -1185,6 +1192,57 @@ def _plain_cd(item: list[str] | str) -> bool:
 
 # The words after which a program that runs gh from its arguments may merge.
 MERGE_WORDS = frozenset({"merge", "api", "graphql"})
+# A REST merge endpoint, whatever comes before it: `repos/o/r/pulls/5/merge`.
+MERGE_PATH = re.compile(r"/merge(?:$|[?#/])")
+
+
+def _merge_sign(word: str) -> bool:
+    return word in MERGE_WORDS or MERGE_PATH.search(word) is not None
+
+
+def _shell_named_merge(text: str, depth: int = 0) -> bool:
+    """Whether a program the shell names may run a merge: the class `$(echo gh) pr merge 5`.
+
+    One rule: a simple command whose program, behind assignments and wrappers, is a variable or a
+    substitution (`$G`, `$(...)`, a backtick, quoted or not), in a text where a word, substitutions
+    included and each word split on its blanks, is a merge sign (`_merge_sign`). The substitutions are read as `guard_infra` reads
+    them, each replaced by one word and its commands judged in turn; heredoc bodies are data.
+    """
+    # Imported here: guard_infra imports this module.
+    from guard_infra import (  # noqa: PLC0415
+        MAX_DEPTH,
+        UnclearError,
+        UnsplitError,
+        simple_commands,
+        substitutions,
+        unwrap_with_env,
+    )
+
+    def named(words: list[str]) -> bool:
+        try:
+            unwrap_with_env(words)
+        except UnclearError:
+            return True
+        return False
+
+    found: list[list[str]] = []
+    pending = [(without_heredoc_bodies(text), depth)]
+    while pending:
+        part, level = pending.pop()
+        if level > MAX_DEPTH:
+            return True  # deeper than the guard reads: judged as a merge
+        try:
+            outer, inner = substitutions(part)
+        except UnsplitError:  # a backtick never closed: the text is read as plain words
+            outer, inner = part, []
+        try:
+            found += simple_commands(outer)
+        except UnsplitError:  # a quote never closed, as `_commands` reads it
+            found.append(outer.split())
+        pending += [(nested, level + 1) for nested in inner]
+    # A sign may sit inside one word: `G='gh pr merge'; $G 5`.
+    signs = (part for words in found for word in words for part in word.split())
+    return any(map(named, found)) and any(map(_merge_sign, signs))
 
 
 def _hidden_gh(words: list[str]) -> bool:
@@ -1195,7 +1253,7 @@ def _hidden_gh(words: list[str]) -> bool:
     may change.
     """
     def merging(rest: list[str]) -> bool:
-        return any(word in MERGE_WORDS or _unreadable(word) for word in rest)
+        return any(_merge_sign(word) or _unreadable(word) for word in rest)
 
     if words and _unreadable(words[0]) and merging(words[1:]):
         return True
@@ -1416,11 +1474,18 @@ def merge_call(command: str, cwd: str | None) -> MergeCall | str:
 
 
 def _harmless_tail(tail: list[ShellWord | str]) -> bool:
-    """`tee <file>...` or `cat`, all literal: what a merge may be piped to."""
-    words = [token for token in tail if isinstance(token, ShellWord) and token.literal]
+    """`tee <file>...` or `cat`: what a merge may be piped to.
+
+    The program is written `tee` or `cat` as such; a file of `tee` may hold a variable in double
+    quotes (`"$T/f"`), one word the shell runs nothing for, never one outside quotes or a
+    substitution.
+    """
+    words = [token for token in tail if isinstance(token, ShellWord)]
     if len(words) != len(tail) or not words:
         return False
-    return words[0].raw == "tee" or (words[0].raw == "cat" and len(words) == 1)
+    if words[0].raw == "cat":
+        return len(words) == 1
+    return words[0].raw == "tee" and all(word.one_word for word in words[1:])
 
 
 # The groups gh runs itself, which no alias overrides (gh refuses to set one).
@@ -1587,7 +1652,7 @@ def refusal(
             if subagent and act is not None and act[:2] in ALIAS_GESTURES:
                 return ALIAS_REFUSAL.format(act[1]), merges
             merges = merges or _merges(words, here, bodies, read_text) or _hidden_gh(words)
-        return None, merges
+        return None, merges or _shell_named_merge(text)
 
     reason, merges = walk(command, cwd, True)
     if reason is not None or not merges:

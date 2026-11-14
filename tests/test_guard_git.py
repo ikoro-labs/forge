@@ -1694,6 +1694,61 @@ class AMergeRunsAlone(unittest.TestCase):
             with self.subTest(command=command):
                 self.assert_alone(command)
 
+    def test_a_program_the_shell_names_counts_as_a_merge(self) -> None:
+        for command in (
+            "$(echo gh) pr merge 5 -R o/forge",
+            "$(which gh) pr merge 5 -R o/forge",
+            "$(command -v gh) pr merge 5 -R o/forge",
+            "cd ../forgeclone && $(echo gh) pr merge 5",
+            "$(printf %s gh) api -X PUT repos/o/forge/pulls/5/merge",
+            "`echo gh` pr merge 5 -R o/forge",
+            '"$(echo gh)" pr merge 5 -R o/forge',
+            '"`echo gh`" pr merge 5 -R o/forge',
+            "X=1 $(echo gh) pr merge 5 -R o/forge",
+            "env $(echo gh) pr merge 5 -R o/forge",
+            "$(echo gh api) -X PUT repos/o/forge/pulls/5/merge",
+            "$(echo gh pr merge) 5 -R o/forge",
+            "$(echo gh) $(echo pr) $(echo merge) 5 -R o/forge",
+            "echo $($(echo gh) pr merge 5 -R o/forge)",
+            "bash -c '$(echo gh) pr merge 5 -R o/forge'",
+            "G='gh pr merge'; $G 5 -R o/forge",
+            "echo " + "$(" * 9 + "true" + ")" * 9,
+            "$(cat cmd) -X PUT repos/o/forge/pulls/5/merge",
+            "$(cat cmd) -X PUT repos/o/forge/pulls/5/merge?merge_method=squash",
+            "$G $X 5",
+            "find . -exec gh m repos/o/forge/pulls/5/merge \\;",
+        ):
+            with self.subTest(command=command):
+                self.assertIn("run the merge alone", judged(command) or "", command)
+                self.assertIn("run the merge alone", judged(command, subagent=True) or "", command)
+
+    def test_a_program_the_shell_names_without_a_merge_word_is_not_a_merge(self) -> None:
+        for command in (
+            '"$PY" -m pytest',
+            "$(which python) -c 'print(1)'",
+            "echo $(date) && ls",
+            "gh pr view 5 --json title --jq \"$(cat q)\"",
+            "echo '$(echo gh) pr merge 5'",
+            '"$PY" build.py --out dist/merges',
+            "find . -exec gh m dist/merges \\;",
+            "git commit -q -F - <<'EOF'\nfix: x\n\n$(echo gh) pr merge 5\nEOF",
+        ):
+            with self.subTest(command=command):
+                self.assertIsNone(judged(command), command)
+
+    def test_the_file_of_tee_may_hold_a_variable_in_double_quotes(self) -> None:
+        asked: list[Target] = []
+        self.assertIsNone(judged('gh pr merge 5 | tee "$T/merge.log"', asked=asked))
+        self.assertEqual(asked, [("5", None, "/w/forge")])
+        for command in (
+            "gh pr merge 5 | tee $T/merge.log",
+            'gh pr merge 5 | tee "$(cat name)"',
+            'gh pr merge 5 | "$TEE" log',
+            'gh pr merge 5 | cat "$F"',
+        ):
+            with self.subTest(command=command):
+                self.assertIn("run the merge alone", judged(command) or "", command)
+
     def test_the_pr_number_the_repository_and_gh_repo_are_literal(self) -> None:
         for command in (
             'gh pr merge "$N"',
