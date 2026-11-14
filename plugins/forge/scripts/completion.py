@@ -6,7 +6,9 @@ One Markdown row per feature, the columns of `guard_completion.HEADERS`, and no 
 features' denominators do not add up. The tickets of a feature are those the ticket budget counts
 (`guard_ticket_budget`: GitHub's search on `to-tickets F-NNNN` and `Feature: F-NNNN`, each body
 placed by its `Motif :` line). A ticket closed as not planned stands apart, out of the count; the
-others are open, or closed. The budget is the `feature-tickets` of the feature's `design.md`, `?`
+others are open, or closed. `%` is closed over closed plus open, rounded, its denominator in the
+cell, and `sans objet (aucun ticket publié)` without any; never over the budget, which a feature
+may not fill. The budget is the `feature-tickets` of the feature's `design.md`, `?`
 without one. `Suivi` is the `issue:` of its `idee.md`. Each row carries the UTC time it was read and
 its source.
 
@@ -47,6 +49,7 @@ COLUMN_TIMEOUT = 60
 CLOSED_ROLES = ("hors-perimetre", "abandonnee")
 FOLDER = re.compile(r"^(\d{4})-")
 SOURCE = "gh issue list"
+NO_TICKET = "sans objet (aucun ticket publié)"
 Clock = Callable[[], datetime]
 
 
@@ -109,6 +112,15 @@ def column_cell(command: str, feature: str, root: Path) -> str:
     return _cell(done.stdout) or "vide"
 
 
+def percent(closed: int, still_open: int) -> str:
+    """Closed over published (closed plus open), not planned left out; its denominator written."""
+    published = closed + still_open
+    if published == 0:
+        return NO_TICKET
+    rounded = (200 * closed + published) // (2 * published)  # half up: 12.5 is 13, not 12
+    return f"{rounded} % ({closed} / {published})"
+
+
 def row(
     feature: str, folder: Path, root: Path, directory: str, run: Runner, now: Clock
 ) -> list[str]:
@@ -132,6 +144,7 @@ def row(
         _cell(f"{feature} {title}" if title and not title.startswith("<") else feature),
         f"#{tracking}" if tracking.isdigit() else "?",
         f"{closed} / {budget if budget is not None else '?'}",
+        percent(closed, len(still_open)),
         str(len(still_open)),
         str(len(out)),
         ", ".join(f"#{number}" for number in still_open) or "aucun",

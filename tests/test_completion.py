@@ -10,7 +10,7 @@ from pathlib import Path
 from unittest import mock
 
 import support
-from completion import CompletionError, main, table
+from completion import CompletionError, main, percent, table
 from guard_completion import HEADERS, decision, has_table
 from test_guard_ticket_budget import FakeGh, ticket
 
@@ -89,6 +89,7 @@ class Table(unittest.TestCase):
                     "F-0001 demo",
                     "#40",
                     "2 / 6",
+                    "50 % (2 / 4)",
                     "2",
                     "1",
                     "#43, #44",
@@ -108,7 +109,17 @@ class Table(unittest.TestCase):
         text = project.table(FakeGh([(ticket("to-tickets F-0002"), {"number": 9, **OPEN})]))
         self.assertEqual([cells[0] for cells in rows(text)], ["F-0001 demo", "F-0002 demo"])
         self.assertEqual([cells[2] for cells in rows(text)], ["0 / 5", "0 / 3"])
+        self.assertEqual(
+            [cells[3] for cells in rows(text)],
+            ["sans objet (aucun ticket publié)", "0 % (0 / 1)"],
+        )
         self.assertNotIn("total", text.lower())
+
+    def test_the_percent_is_closed_over_published_rounded_half_up(self) -> None:
+        self.assertEqual(percent(2, 1), "67 % (2 / 3)")
+        self.assertEqual(percent(1, 7), "13 % (1 / 8)")
+        self.assertEqual(percent(3, 0), "100 % (3 / 3)")
+        self.assertEqual(percent(0, 0), "sans objet (aucun ticket publié)")
 
     def test_a_count_gh_cannot_make_stops_the_table(self) -> None:
         project = Project(self)
@@ -232,6 +243,16 @@ class Guard(unittest.TestCase):
         partial = "| Feature | Fermés (completed) / budget |\n|---|---|\n| F-0001 | 2 / 5 |\n"
         answer = self.judge(human("Completion of F-0001?"), assistant(partial))
         self.assertEqual((answer or {}).get("decision"), "block")
+
+    def test_a_table_without_the_percent_column_is_blocked(self) -> None:
+        without = "\n".join(
+            "|".join(cell for k, cell in enumerate(line.split("|")) if k != 4)
+            for line in self.table.splitlines()
+        )
+        self.assertNotIn("| % |", without)
+        answer = self.judge(human("Quel est le % de complétion ?"), assistant(without))
+        self.assertEqual((answer or {}).get("decision"), "block")
+        self.assertIn("| % |", (answer or {}).get("reason", ""))
 
     def test_the_second_stop_passes_whatever_the_reply(self) -> None:
         self.assertIsNone(self.judge(human("Completion?"), assistant("No table."), active=True))

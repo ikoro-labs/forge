@@ -28,6 +28,7 @@ HEADERS = (
     "Feature",
     "Suivi",
     "Fermés (completed) / budget",
+    "%",
     "Ouverts",
     "Hors compte (not_planned)",
     "Reste (numéros ouverts)",

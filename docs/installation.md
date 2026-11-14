@@ -389,6 +389,7 @@ nommé) :
 | Feature | `F-NNNN` et le `titre` de son `idee.md` |
 | Suivi | l'`issue:` de son `idee.md` |
 | Fermés (completed) / budget | les tickets fermés que compte le budget, sur le `feature-tickets` du design (`?` sans lui) |
+| % | les fermés sur les tickets publiés (fermés et ouverts, hors compte exclus), arrondi à l'entier, le dénominateur dans la cellule (`67 % (2 / 3)`) ; `sans objet (aucun ticket publié)` sans ticket. Jamais sur le budget, qu'une feature peut ne pas remplir |
 | Ouverts | les tickets ouverts que compte le budget |
 | Hors compte (not_planned) | les tickets fermés comme non prévus, hors du budget |
 | Reste (numéros ouverts) | les numéros des tickets ouverts |
