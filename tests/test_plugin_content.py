@@ -36,7 +36,7 @@ AGENT_LEVELS = {
 # Thinking is billed as output: each agent thinks as long as its task needs, no longer.
 AGENT_EFFORTS = {
     "qc-gate": "low",
-    "coder": "medium",
+    "coder": "high",
     "qc-conf": "medium",
     "staff-engineer": "high",
     "product-owner": "medium",
@@ -121,6 +121,23 @@ class Frontmatter(unittest.TestCase):
             with self.subTest(agent=path.stem):
                 expected = "true" if path.stem in WITHOUT_CLAUDE_MD else None
                 self.assertEqual(frontmatter(path).get("omitClaudeMd"), expected)
+
+    def test_the_coder_runs_on_sonnet_high_and_the_rule_points_to_its_hook(self) -> None:
+        """Decision of 2026-11-14: sonnet, opus at round 3, haiku in sync mode."""
+        fields = frontmatter(support.PLUGIN / "agents" / "coder.md")
+        self.assertEqual((fields.get("model"), fields.get("effort")), ("sonnet", "high"))
+        for name in ("agents/coder.md", "skills/feature-build/SKILL.md", "skills/qc/SKILL.md"):
+            text = " ".join((support.PLUGIN / name).read_text(encoding="utf-8").split())
+            with self.subTest(name=name):
+                self.assertIn("Sonnet aux tours 1 et 2, Opus pour la correction jugée au tour 3", text)
+                self.assertIn("`ESCALATION: #<PR> round 3`", text)
+                self.assertIn("`MODE: sync`", text)
+                self.assertIn("`guard_coder_model`", text)
+                self.assertNotRegex(text, r"(?i)sonnet par défaut|opus (pour|sur) les chemins protégés")
+
+    def test_a_haiku_coder_aborts_a_conflicted_merge(self) -> None:
+        text = " ".join((support.PLUGIN / "agents" / "coder.md").read_text(encoding="utf-8").split())
+        self.assertIn("`git merge --abort`, puis `RESULT: BLOCKED` avec `QUESTION: conflict in <fichiers>`", text)
 
     def test_the_coder_cannot_launch_an_agent(self) -> None:
         tools = frontmatter(support.PLUGIN / "agents" / "coder.md")["tools"]

@@ -157,6 +157,8 @@ Alors :
    une seconde partie les points de la première. Tous partent du même `origin/<base>`. Le coder
    lit d'abord les cas du ticket : s'il en manque un, il rend `RESULT: BLOCKED` avec ce cas, que
    tu ajoutes au corps avant de le relancer, jamais après l'ouverture de sa PR.
+   Modèle du coder : Sonnet aux tours 1 et 2, Opus pour la correction jugée au tour 3 avec la ligne `ESCALATION: #<PR> round 3`, Haiku en mode sync sans conflit avec la ligne `MODE: sync` ; tenu par le hook `guard_coder_model`. Sans `model` ni `effort`, sa
+   frontmatter (`sonnet`, `high`) s'applique : ne passe `model` qu'avec la ligne qu'il exige.
 
 Puis passe à l'étape 3 si la file de revue n'est pas vide ; sinon attends la notification d'un
 coder. N'invente jamais la sortie d'un coder qui n'a pas rendu.
@@ -250,9 +252,10 @@ Jamais deux `/forge:qc` en même temps : la fusion est sérielle. Prends la prem
    `git merge-base --is-ancestor origin/<base> origin/<branche de la PR>`.
    - Oui : étape 3.2.
    - Non : lance un `forge:coder` en **mode sync** (au premier plan, `isolation: worktree`) avec la
-     PR, le ticket et la base. Lis sa sortie comme à l'étape 2. `RESULT: PR` : étape 3.2.
-     `RESULT: BLOCKED` ou `FAILED` : commente la PR, pose `needs-your-attention`, **arrêt sur
-     incident**.
+     PR, le ticket et la base, `model: haiku` et la ligne `MODE: sync`. Lis sa sortie comme à
+     l'étape 2. `RESULT: PR` : étape 3.2. `RESULT: BLOCKED` avec `QUESTION: conflict in ...` :
+     relance-le une fois sans `model` ni la ligne, sur Sonnet. Un autre `BLOCKED`, ou `FAILED` :
+     commente la PR, pose `needs-your-attention`, **arrêt sur incident**.
 
    Une PR se remet à jour avant sa revue, jamais après son verdict : `forge:qc-gate` doit mesurer
    la tête qui fusionnera.
@@ -263,7 +266,9 @@ Jamais deux `/forge:qc` en même temps : la fusion est sérielle. Prends la prem
    `needs-your-attention` on its third REJECT. Sur un REJECT au tour 1 ou 2, la correction
    revient à un `forge:coder` en **mode correction** (au premier plan, `isolation: worktree`), avec
    la PR, le ticket, la base et le verdict ; le coder qui a ouvert la PR, repris par
-   `SendMessage`, s'il est encore joignable. Lis sa sortie comme à l'étape 2 ; `BLOCKED` ou
+   `SendMessage`, s'il est encore joignable. Après le REJECT du tour 2, la correction jugée au
+   tour 3 part sur un coder neuf, `model: opus` et la ligne `ESCALATION: #<PR> round 3`.
+   Lis sa sortie comme à l'étape 2 ; `BLOCKED` ou
    `FAILED` : **arrêt sur incident**. Tu ne corriges rien toi-même. Puis `/forge:qc` reprend au
    tour suivant.
 
