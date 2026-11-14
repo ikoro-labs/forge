@@ -801,12 +801,13 @@ class AttentionLabel(unittest.TestCase):
 
 
 class MergeMethod(unittest.TestCase):
-    """The repository's allowed merge method comes from a key, squash without it."""
+    """The merge method comes from a required key; without it the agent does not merge."""
 
     def test_qc_merges_with_the_merge_method_key(self) -> None:
         skill = " ".join((support.PLUGIN / "skills" / "qc" / "SKILL.md").read_text(encoding="utf-8").split())
         self.assertIn("`gh pr merge <n> --<méthode> --delete-branch --body-file <fichier>`", skill)
-        self.assertIn("valeur de la clé `merge-method` (`squash` sans la clé)", skill)
+        self.assertIn("valeur de la clé `merge-method` (`squash` ou `merge`)", skill)
+        self.assertIn("Sans la clé `merge-method`, tu ne fusionnes pas", skill)
         self.assertNotIn("gh pr merge <n> --squash", skill)
 
     def test_template_declares_the_merge_method_key(self) -> None:

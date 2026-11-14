@@ -12,6 +12,7 @@ La configuration de l'usine qui développe le plugin `forge` dans ce dépôt. Le
 
 - `domain-rules` : `.claude/rules/forge.md`
 - `git-rules` : `.claude/rules/git.md`
+- `merge-method` : `merge`
 - `pr-template` : `.github/pull_request_template.md`
 
 ## Features

@@ -9,13 +9,23 @@ Ce dépôt a été recréé le 2026-10-23 ; l'ancien est `ikoro-labs/forge-archi
 numéros de PR et de ticket nus (`#38`) renvoient à l'ancien dépôt ; un renvoi au nouveau dépôt
 porte son nom (`ikoro-labs/forge#7`).
 
-## [1.6.1] - 2026-11-14
+## [1.7.0] - 2026-11-14
 
-- `merge-method` key: `/forge:qc` merges with `--squash`, `--merge` or `--rebase`, the method the
-  repository allows (`squash` without the key). A repository that allows only merge commits no
-  longer needs a prose override of step 8.
-- `forge:qc-gate` takes rounds 1 to 3, as the three-round rule says, not "1 or 2".
-- The three-round rule no longer cites a ticket of a consuming project.
+`/forge:qc` merges with the method the project declares, and the three-round rule stops naming a
+consuming project. Minor version: a project that upgrades without the new key no longer gets its
+PRs merged by the agent.
+
+- Skills: `/forge:qc` step 8 merges with `--squash` or `--merge`, from the new required key
+  `merge-method`; without it the PR stays open on its ACCEPT and the report says why. With `merge`,
+  the agent reads the branch's commit messages before merging, since they reach the base.
+- Agents: `forge:qc-gate` takes rounds 1 to 3, beyond only with `GRANTED:`, as `forge:qc-conf`
+  and the skill say. The three-round rule no longer cites a consuming project's ticket in
+  `qc-conf.md`, `skills/qc/SKILL.md` and `scripts/parse_output.py`.
+- Tests: `MergeMethod` checks the skill's merge line and the template key.
+- Human gestures: each project adds `merge-method` to its `docs/agents/usine.md` (`squash` keeps
+  the previous behaviour). This repository declares `merge`, as `.claude/rules/git.md` requires.
+- Left out: `rebase`, whose merge ignores the body that `guard_git` reads; a `guard_git` check of
+  the branch's commit messages under `merge`, left to the skill's reading for now.
 
 ## [1.6.0] - 2026-11-14
 

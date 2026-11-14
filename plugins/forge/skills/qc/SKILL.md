@@ -81,12 +81,18 @@ verdict, le rapport et la suite sont les mêmes. Tout le reste passe par les deu
    refusée, remets chaque PR reportée sur sa base d'avant, `gh pr edit <m> --base <branche de
    tête>`, sans quoi son diff porterait les commits non fusionnés de la mère. Puis
    `gh pr merge <n> --<méthode> --delete-branch --body-file <fichier>`, où `<méthode>` est la
-   valeur de la clé `merge-method` (`squash` sans la clé), seule dans sa commande
+   valeur de la clé `merge-method` (`squash` ou `merge`), seule dans sa commande
    (`guard_git` refuse une fusion accompagnée d'autre chose), puis, dans une commande à part,
    `gh pr edit <n> --add-label agent-merged` : tu agis sous le compte de l'humain, et sans
-   l'étiquette la fusion paraîtrait lue par lui. Toujours avec un corps que tu écris : sans lui,
-   GitHub écrit sur la base tous les messages de commit de la branche, périmés compris, et une PR
-   reprise au tour 2 ou 3 porte un message d'un tour précédent que son correctif a rendu faux. Le corps, en
+   l'étiquette la fusion paraîtrait lue par lui. Sans la clé `merge-method`, tu ne fusionnes pas :
+   la PR reste ouverte sur son ACCEPT, et le compte rendu dit « fusion sans objet (clé
+   `merge-method` absente) ». Toujours avec un corps que tu écris : en `squash`, sans lui, GitHub
+   écrit sur la base tous les messages de commit de la branche, périmés compris, et une PR reprise
+   au tour 2 ou 3 porte un message d'un tour précédent que son correctif a rendu faux. En `merge`,
+   les commits de la branche arrivent sur la base quel que soit le corps, et `guard_git` ne lit
+   que le corps et la description : avant de fusionner, relis-en les messages
+   (`gh pr view <n> --json commits`), et refuse la fusion si l'un porte un mot-clé de fermeture
+   d'un ticket que la PR ne cite qu'en `Refs #n`. Le corps, en
    français, décrit la tête fusionnée : un paragraphe par ticket cité, chacun avec son
    `Closes #n`, ou son `Refs #n` suivi des points que la PR livre, pour que le commit garde la
    trace de chacun. Un ticket en `Refs #n` n'est suivi d'aucun mot-clé de fermeture nulle part, ni

@@ -36,7 +36,7 @@ RESULT_KEYS = {
 }
 VERDICT_KEYS = ("VERDICT", "ROUND", "HEAD", "SPEC", "FINDINGS", "GATES")
 VERDICT_OPTIONAL = ("SOCLE", "GRANTED", "BATTERY CORRECTION", "PROPOSAL")
-# Three rounds at most (shipyard#193); a later round names the human's grant by its https link.
+# Three rounds at most; a later round names the human's grant by its https link.
 MAX_ROUNDS = 3
 ROUND = re.compile(r"^[1-9]\d*$")
 GRANT = re.compile(r"^https://\S+$")

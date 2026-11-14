@@ -109,8 +109,9 @@ Les règles git du projet : nommage des branches, format des commits, ligne d'at
 
 - `git-rules` : `<.claude/rules/git.md>`
 
-La méthode de fusion d'une PR par `/forge:qc` : `squash`, `merge` (commit de fusion) ou
-`rebase`, celle que le dépôt GitHub autorise. Sans la clé, `squash`.
+La méthode de fusion d'une PR par `/forge:qc` : `squash` ou `merge` (commit de fusion), celle
+que le dépôt GitHub autorise et que ses règles git demandent. Sans la clé, `/forge:qc` ne fusionne
+pas : l'étape est sans objet et la PR reste ouverte sur son ACCEPT.
 
 - `merge-method` : `<squash>`
 
