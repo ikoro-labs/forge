@@ -346,6 +346,11 @@ the plugin and not a key of `usine.md`. `guard_ticket_budget` holds it at four m
   tools of a GitHub MCP server are refused on a ticket that holds a place in a budget (a feature
   ticket, or the tracking ticket of a feature) and on one whose body gh cannot give: close it
   instead. `deleteIssue` and `transferIssue` mutations are refused.
+- **At each reopening of a ticket.** `gh issue reopen`, a `gh api` call on
+  `repos/<owner>/<repo>/issues/<n>` with `state=open` and the update tools of a GitHub MCP server
+  with `state: open` bring a ticket closed as not planned back in its feature's count: the hook
+  counts as for a new ticket and refuses past the budget. A number or a state it cannot read, or a
+  ticket gh cannot give, is refused; `reopenIssue` and an `updateIssue` that sets `state` are refused.
 
 The hook refuses what it cannot read: a body passed by a variable (`--body "$BODY"`), a command
 substitution other than `$(cat <<'EOF' ... EOF)`, a heredoc with an unquoted delimiter whose body

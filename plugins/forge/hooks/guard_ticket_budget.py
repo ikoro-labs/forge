@@ -32,6 +32,10 @@ moments:
   GitHub MCP server are refused on a ticket that holds a place in a budget (a feature ticket, or the
   tracking ticket of a feature), and on one whose body gh cannot give; `deleteIssue` and
   `transferIssue` mutations are refused.
+- **Reopening a ticket.** `gh issue reopen`, `gh api` with `state=open` on an issue and the update
+  tool of a GitHub MCP server with `state: open` bring a ticket closed as not planned back in its
+  feature's count: it is counted as a new ticket, and refused past the budget. An unreadable number
+  or state is refused, and so are `reopenIssue` and an `updateIssue` that sets `state`.
 
 A body the hook cannot read is refused: a variable (`"$BODY"`), a command substitution other than
 `$(cat <<'EOF' ... EOF)`, a heredoc whose unquoted delimiter lets the shell expand it, an editor or
@@ -103,6 +107,9 @@ ISSUES_ENDPOINT = re.compile(r"^/?repos/([^/]+)/([^/]+)/issues/?(?:\?.*)?$")
 ISSUE_ENDPOINT = re.compile(r"^/?repos/([^/]+)/([^/]+)/issues/(\d+)/?(?:\?.*)?$")
 ISSUE_URL = re.compile(r"^https?://[^/]+/([^/]+)/([^/]+)/issues/(\d+)/?$")
 GRAPHQL_REMOVAL = re.compile(r"\b(?:deleteIssue|transferIssue)\b")
+GRAPHQL_REOPEN = re.compile(r"\breopenIssue\b")
+GRAPHQL_STATE = re.compile(r"\bstate\s*:")
+UNREAD_REOPEN = "cannot be read, so whether it reopens a ticket out of its budget cannot be checked"
 GRAPHQL_BODY = re.compile(r'\bbody\s*:\s*(?:"((?:[^"\\]|\\.)*)"|\$(\w+))')
 SHELL_ACCEPTANCE = re.compile(r"statut\W{0,3}accepte\b|en-revue\W{1,3}accepte\b")
 API_GITHUB = re.compile(r"api\.github\.com/+(?:repos/[^/\s'\"]+/[^/\s'\"]+/issues\b|graphql\b)")
@@ -163,13 +170,21 @@ class Removal(NamedTuple):
     repo: str | None
 
 
+class Reopening(NamedTuple):
+    """A ticket a command reopens, and its repo: closed as not planned, it comes back in a budget."""
+
+    number: str
+    repo: str | None
+
+
 class Gestures(NamedTuple):
-    """What a command does to tickets: creations, edits, removals, and refusals found on the way."""
+    """What a command does to tickets: creations, edits, removals, reopenings, refusals on the way."""
 
     creations: list[Creation]
     edits: list[Edit]
     refusals: list[str]
     removals: list[Removal]
+    reopenings: list[Reopening]
 
 
 class Heredoc(NamedTuple):
@@ -671,8 +686,10 @@ def _api_body(
     redirections: list[tuple[str, str]],
     cwd: str | None,
     docs: list[Heredoc],
+    key_name: str = "body",
 ) -> str | None:
-    """The `body` a `gh api` call sends, `""` when it sends none; None when it cannot be read."""
+    """The field `key_name` (the `body`) a `gh api` call sends, `""` when it sends none; None when
+    it cannot be read."""
     body: str | None = ""
     for name, value in options:
         if name == "input":
@@ -684,13 +701,13 @@ def _api_body(
             if not isinstance(document, dict):
                 body = None
             else:
-                found = document.get("body", "")
+                found = document.get(key_name, "")
                 body = found if isinstance(found, str) else None
             continue
         key, _, content = value.partition("=")
-        if key != "body":
+        if key != key_name:
             if not _readable(key):
-                body = None  # a field whose name the shell gives may be the body
+                body = None  # a field whose name the shell gives may be the one read
             continue
         if name == "field" and content.startswith("@"):
             source = content[1:]
@@ -716,9 +733,14 @@ def _graphql_gestures(
         elif value.partition("=")[2].startswith("@"):
             parts.append(_read(cwd, value.partition("=")[2][1:]) or "")
     text = "\n".join(parts)
-    found = Gestures([], [], [], [])
+    found = Gestures([], [], [], [], [])
     if "updateIssue" in text and GRAPHQL_BODY.search(text):
         found.refusals.append("a ticket's body is edited with `gh issue edit`, not `updateIssue`")
+    if GRAPHQL_REOPEN.search(text) or ("updateIssue" in text and GRAPHQL_STATE.search(text)):
+        found.refusals.append(
+            "a ticket is reopened with `gh issue reopen`, where the hook reads whether it comes back"
+            " in a budget: the mutation is refused"
+        )
     if GRAPHQL_REMOVAL.search(text):
         found.refusals.append(
             "a ticket is deleted or transferred with `gh issue delete` or `gh issue transfer`,"
@@ -745,7 +767,7 @@ def _graphql_gestures(
 
 def api_gestures(args: list[str], cwd: str | None, docs: list[Heredoc]) -> Gestures:
     """What a `gh api` call does to tickets, over every reading of its words."""
-    found = Gestures([], [], [], [])
+    found = Gestures([], [], [], [], [])
     readings = api_readings(args)
     if readings is None:
         if any("/issues" in word or word == "graphql" for word in args):
@@ -771,10 +793,15 @@ def api_gestures(args: list[str], cwd: str | None, docs: list[Heredoc]) -> Gestu
             found.creations.append(Creation(body, named))
         elif item := ISSUE_ENDPOINT.match(call.endpoint):
             body = _api_body(call.options, redirections, cwd, docs)
+            owner, repo = item.group(1), item.group(2)
+            named = None if "{" in owner or "{" in repo else f"{owner}/{repo}"
             if body != "":
-                owner, repo = item.group(1), item.group(2)
-                named = None if "{" in owner or "{" in repo else f"{owner}/{repo}"
                 found.edits.append(Edit(item.group(3), body, named))
+            state = _api_body(call.options, redirections, cwd, docs, "state")
+            if state is None:
+                found.refusals.append(f"the state `gh api` gives ticket #{item.group(3)} {UNREAD_REOPEN}")
+            elif state.strip().lower() == "open":
+                found.reopenings.append(Reopening(item.group(3), named))
     return found
 
 
@@ -816,6 +843,7 @@ def _merge(into: Gestures, other: Gestures) -> None:
     into.edits.extend(other.edits)
     into.refusals.extend(other.refusals)
     into.removals.extend(other.removals)
+    into.reopenings.extend(other.reopenings)
 
 
 SUBSTITUTIONS = re.compile(DOLLAR + r"\((.*)\)|" + TICK + "(.*?)" + TICK, re.DOTALL)
@@ -832,7 +860,7 @@ def _substitutions(word: str) -> list[str]:
 
 def gestures(command: str, cwd: str | None, depth: int = 0) -> Gestures:
     """What `command` does to tickets, by gh, a nested shell, an alias or another HTTP client."""
-    found = Gestures([], [], [], [])
+    found = Gestures([], [], [], [], [])
     if API_GITHUB.search(command):
         found.refusals.append(
             "a call to api.github.com that names issues or GraphQL goes through gh, so that the"
@@ -889,6 +917,8 @@ def gestures(command: str, cwd: str | None, depth: int = 0) -> Gestures:
                 found.edits.extend(_issue_edits(positional, body, _repo_of(call)))
         elif group == "issue" and verb in ("delete", "transfer"):
             _issue_removals(verb, rest, _repo_of(call), found)
+        elif group == "issue" and verb == "reopen":
+            _issue_reopenings(rest, _repo_of(call), found)
         elif group == "api":
             _merge(found, api_gestures((gh_command(call) or [])[1:], cwd, docs))
     return found
@@ -911,6 +941,24 @@ def _issue_removals(verb: str, rest: list[str], repo: str | None, found: Gesture
         return
     for edit in _issue_edits(named, None, repo):
         found.removals.append(Removal(edit.number, verb, edit.repo))
+
+
+def _issue_reopenings(rest: list[str], repo: str | None, found: Gestures) -> None:
+    """The tickets `gh issue reopen` names: every positional word, `--comment` values aside."""
+    positional: list[str] = []
+    skip = False
+    for word in rest:
+        if skip:
+            skip = False
+        elif word in ("-R", "--repo", "-c", "--comment"):
+            skip = True
+        elif not word.startswith("-"):
+            positional.append(word)
+    if not positional or not all(_readable(word) for word in positional) or (repo and not _readable(repo)):
+        found.refusals.append(f"the ticket `gh issue reopen` names {UNREAD_REOPEN}")
+        return
+    for edit in _issue_edits(positional, None, repo):
+        found.reopenings.append(Reopening(edit.number, edit.repo))
 
 
 def _issue_edits(positional: list[str], body: str | None, repo: str | None) -> list[Edit]:
@@ -1147,6 +1195,36 @@ def removal_refusal(removal: Removal, cwd: str | None, run: Runner) -> str | Non
     return None
 
 
+def current_issue(number: str, repo: str | None, cwd: str | None, run: Runner) -> dict | None:
+    """The body, state and state reason of ticket `number` now; None when gh cannot give them."""
+    if not number.isdigit():
+        return None
+    argv = ["issue", "view", number, "--json", "body,state,stateReason"] + (["--repo", repo] if repo else [])
+    output = run(argv, cwd)
+    try:
+        document = json.loads(output) if output is not None else None
+    except ValueError:
+        return None
+    if not isinstance(document, dict) or not isinstance(document.get("body"), str):
+        return None
+    return document
+
+
+def reopening_creation(reopening: Reopening, cwd: str | None, run: Runner) -> Creation | str | None:
+    """What reopening a ticket adds to a budget: the ticket as a creation when it comes back in the
+    count (closed as not planned, placed in a feature), a refusal when unknown, else None."""
+    issue = current_issue(reopening.number, reopening.repo, cwd, run)
+    if issue is None:
+        return (
+            f"the ticket #{reopening.number or '?'} {UNREAD_REOPEN} (gh absent, the network, or a gh"
+            " error)"
+        )
+    body = str(issue["body"])
+    if not released(issue) or counts_for(body) is None:
+        return None  # it counts already, or uses no budget
+    return Creation(body, reopening.repo)
+
+
 def mcp_gestures(tool: str, tool_input: Mapping[str, object]) -> Gestures | None:
     """The ticket gestures of a GitHub MCP tool; None when the tool is no issue tool of one."""
     if not tool.startswith("mcp__") or "github" not in tool.lower():
@@ -1158,17 +1236,24 @@ def mcp_gestures(tool: str, tool_input: Mapping[str, object]) -> Gestures | None
     raw = tool_input.get("body", "")
     body = raw if isinstance(raw, str) else None
     if action == "create_issue" or (action == "issue_write" and method == "create"):
-        return Gestures([Creation(body, repo)], [], [], [])
+        return Gestures([Creation(body, repo)], [], [], [], [])
     if action in ("delete_issue", "transfer_issue") or (
         action == "issue_write" and method in ("delete", "transfer")
     ):
         verb = "transfer" if "transfer" in (action, method) else "delete"
         number = str(tool_input.get("issue_number", ""))
-        return Gestures([], [], [], [Removal(number, verb, repo)])
+        return Gestures([], [], [], [Removal(number, verb, repo)], [])
     if action == "update_issue" or (action == "issue_write" and method == "update"):
-        if "body" not in tool_input:
-            return Gestures([], [], [], [])
-        return Gestures([], [Edit(str(tool_input.get("issue_number", "")), body, repo)], [], [])
+        number = str(tool_input.get("issue_number", ""))
+        found = Gestures([], [], [], [], [])
+        if "body" in tool_input:
+            found.edits.append(Edit(number, body, repo))
+        state = tool_input.get("state")
+        if "state" in tool_input and not isinstance(state, str):
+            found.refusals.append(f"the state `{tool}` gives ticket #{number} {UNREAD_REOPEN}")
+        elif isinstance(state, str) and state.strip().lower() == "open":
+            found.reopenings.append(Reopening(number, repo))
+        return found
     return None
 
 
@@ -1205,12 +1290,19 @@ def refusal(event: Mapping[str, object], run: Runner = run_gh) -> str | None:
     for removal in found.removals:
         if reason := removal_refusal(removal, cwd, run):
             return reason
-    if not found.creations:
+    creations = list(found.creations)
+    for reopening in found.reopenings:
+        added = reopening_creation(reopening, cwd, run)
+        if isinstance(added, str):
+            return added
+        if added is not None:
+            creations.append(added)
+    if not creations:
         return None
     root = project_root(event)
     config = load(root)
     with state_file() as state:
-        for creation in found.creations:
+        for creation in creations:
             if reason := ticket_refusal(creation, cwd, root, config, run, state):
                 state.changed = False  # the call is refused: nothing it would open is reserved
                 return reason

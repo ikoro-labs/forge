@@ -33,15 +33,20 @@ def ticket(motif: str, feature: str | None = None) -> str:
 class FakeGh:
     """`gh issue list` answered from a list of bodies; None plays an unreachable gh."""
 
-    def __init__(self, bodies: Sequence[str | tuple[str, dict]] | None, viewed: str | None = None) -> None:
+    def __init__(
+        self, bodies: Sequence[str | tuple[str, dict]] | None, viewed: str | tuple[str, dict] | None = None
+    ) -> None:
         self.bodies = bodies
-        self.viewed = viewed  # the body `gh issue view` gives, None plays a gh error
+        self.viewed = viewed  # the body (and fields) `gh issue view` gives, None plays a gh error
         self.calls: list[list[str]] = []
 
     def __call__(self, argv: list[str], cwd: str | None) -> str | None:
         self.calls.append(argv)
         if argv[:2] == ["issue", "view"]:
-            return None if self.viewed is None else json.dumps({"body": self.viewed})
+            if self.viewed is None:
+                return None
+            body, fields = self.viewed if isinstance(self.viewed, tuple) else (self.viewed, {})
+            return json.dumps({"body": body, **fields})
         if self.bodies is None:
             return None
         issues = []
@@ -620,6 +625,70 @@ class ClosedReason(unittest.TestCase):
         self.assertIsNone(project.write(design("accepte", 15), FakeGh(tickets)))
         project.design.write_text(design("accepte", 15), encoding="utf-8")
         self.assertIn("already has 15 tickets", project.create(ticket("to-tickets F-0001"), FakeGh(tickets)) or "")
+
+
+REOPEN_COMMANDS = (
+    "gh issue reopen 16",
+    "gh issue reopen https://github.com/o/r/issues/16",
+    "gh -R o/r issue reopen 16 -c 'back in scope'",
+    "gh issue reopen --comment back 16",
+    "bash -c 'gh issue reopen 16'",
+    "gh api -X PATCH repos/o/r/issues/16 -f state=open",
+    "gh api --method POST repos/o/r/issues/16 -F state=open",
+    "gh api -X PATCH repos/o/r/issues/16 --input - <<'EOF'\n{\"state\": \"open\"}\nEOF",
+)
+REOPEN_TOOLS = (
+    ("mcp__github__update_issue", {"state": "open"}),
+    ("mcp__claude_ai_GitHub__issue_write", {"method": "update", "state": "open"}),
+)
+
+
+class Reopenings(unittest.TestCase):
+    """Reopening a ticket closed as not planned brings it back in the count: the budget holds it."""
+
+    def reasons(self, counted: int, viewed: object) -> list[str | None]:
+        project = Project(self, design("accepte", 15))
+        gh = FakeGh([ticket("to-tickets F-0001")] * counted, viewed)  # type: ignore[arg-type]
+        target = {"owner": "o", "repo": "r", "issue_number": 16}
+        found = [project.bash(command, gh) for command in REOPEN_COMMANDS]
+        return found + [project.tool(tool, {**target, **extra}, gh) for tool, extra in REOPEN_TOOLS]
+
+    def test_a_released_ticket_is_not_reopened_past_the_budget(self) -> None:
+        for form, reason in zip(REOPEN_COMMANDS + tuple(t for t, _ in REOPEN_TOOLS), self.reasons(15, closed("NOT_PLANNED"))):
+            with self.subTest(form=form):
+                self.assertIn("F-0001 already has 15 tickets for a budget of 15", reason or "")
+
+    def test_a_released_ticket_reopens_within_the_budget(self) -> None:
+        self.assertEqual(self.reasons(14, closed("NOT_PLANNED")), [None] * (len(REOPEN_COMMANDS) + len(REOPEN_TOOLS)))
+
+    def test_a_ticket_that_already_counts_or_sits_out_of_the_budget_reopens(self) -> None:
+        for viewed in (closed("COMPLETED"), (ticket("securite"), {"state": "CLOSED", "stateReason": "NOT_PLANNED"})):
+            with self.subTest(viewed=viewed):
+                self.assertEqual(set(self.reasons(15, viewed)), {None})
+
+    def test_an_unreadable_number_or_state_is_refused(self) -> None:
+        project = Project(self, design("accepte", 15))
+        gh = FakeGh([], closed("NOT_PLANNED"))
+        for command in ('gh issue reopen "$N"', "gh issue reopen", 'gh api -X PATCH repos/o/r/issues/16 -f state="$S"'):
+            with self.subTest(command=command):
+                self.assertIn("cannot be read", project.bash(command, gh) or "")
+        self.assertIn("cannot be read", project.bash("gh issue reopen 16", FakeGh([], None)) or "")
+        target = {"owner": "o", "repo": "r", "issue_number": 16}
+        self.assertIn("cannot be read", project.tool("mcp__github__update_issue", {**target, "state": ["open"]}, gh) or "")
+
+    def test_the_reopening_mutations_are_refused(self) -> None:
+        project = Project(self, design("accepte", 15))
+        for mutation in ('reopenIssue(input: {issueId: "I"})', 'updateIssue(input: {id: "I", state: OPEN})'):
+            command = f"gh api graphql -f query='mutation {{ {mutation} {{ clientMutationId }} }}'"
+            with self.subTest(mutation=mutation):
+                self.assertIn("gh issue reopen", project.bash(command, FakeGh([], "")) or "")
+
+    def test_closing_a_ticket_is_no_reopening(self) -> None:
+        project = Project(self, design("accepte", 15))
+        gh = FakeGh(None, None)
+        self.assertIsNone(project.bash("gh api -X PATCH repos/o/r/issues/16 -f state=closed", gh))
+        self.assertIsNone(project.bash("gh issue close 16", gh))
+        self.assertEqual(gh.calls, [])
 
 
 class CeilingEverywhere(unittest.TestCase):
