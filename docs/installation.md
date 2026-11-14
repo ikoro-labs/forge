@@ -333,9 +333,11 @@ the plugin and not a key of `usine.md`. `guard_ticket_budget` holds it at four m
   second one is refused. A ticket opened earlier with a `Feature: F-NNNN` line and no admitted reason
   still counts. A feature ticket is refused when its design (`<feature-dir>/NNNN-*/design.md`) is
   missing, not accepted, has no budget or one above 15, or when the feature's tickets fill the
-  budget: those GitHub's search finds, open or closed (`gh issue list --state all --search`), plus
-  those the hook let through in the last 10 minutes, which the search index may not show yet. The
-  refusal says to add a part to an existing ticket (`Refs #n`).
+  budget: those GitHub's search finds, open or closed (`gh issue list --state all --search`), a
+  ticket closed as not planned (`stateReason: NOT_PLANNED`, merged into another) left out, plus
+  those the hook let through in the last 10 minutes, which the search index may not show yet. An
+  open ticket, a completed one and a reason missing or unknown count. The refusal says to add a
+  part to an existing ticket (`Refs #n`).
 - **At each edit of a ticket.** `gh issue edit`, a PATCH by `gh api` on `repos/<owner>/<repo>/issues/<n>`
   and the update tools of a GitHub MCP server may not add, remove or change a `Motif :` or `Feature:`
   line of the body (the hook reads the current body with `gh issue view`). A body set by an
@@ -363,6 +365,8 @@ Limits, tried on Linux only, by the tests with a simulated gh, not yet in a real
 - the memory is per machine: two machines that publish the same feature at the same second can both
   pass at the last slot, as can a ticket created outside the hook (the GitHub web page, another tool);
 - a ticket the hook let through but that gh failed to create still counts for 10 minutes;
+- closing a ticket as not planned frees a place in the budget: a gesture GitHub shows, that no hook
+  checks;
 - a shell fed by a pipe (`... | bash`), a script file run by a shell or an interpreter, and a design
   renamed into place by `mv` are not read;
 - a GraphQL body variable fed by a JSON `--input` is refused as a precaution, and so is a backtick in

@@ -957,14 +957,27 @@ def run_gh(argv: list[str], cwd: str | None) -> str | None:
     return completed.stdout
 
 
+def released(issue: Mapping[str, object]) -> bool:
+    """A ticket closed as not planned (merged into another, dropped): it leaves the budget.
+
+    Only `state: CLOSED` with `stateReason: NOT_PLANNED` releases a place; an open ticket, a
+    completed one, and a reason missing or unknown count, on the safe side.
+    """
+    state, reason = issue.get("state"), issue.get("stateReason")
+    return isinstance(state, str) and isinstance(reason, str) and (state.upper(), reason.upper()) == ("CLOSED", "NOT_PLANNED")
+
+
 def matching_issues(
-    phrases: tuple[str, ...], repo: str | None, cwd: str | None, run: Runner
+    phrases: tuple[str, ...], repo: str | None, cwd: str | None, run: Runner, counted: bool = False
 ) -> dict[int, str] | None:
-    """The issues, open or closed, whose body holds one of `phrases`; None when gh cannot say."""
+    """The issues, open or closed, whose body holds one of `phrases`; None when gh cannot say.
+
+    `counted` leaves out the tickets closed as not planned, which use no place in a budget.
+    """
     found: dict[int, str] = {}
     for phrase in phrases:
         argv = ["issue", "list", "--state", "all", "--search", f'"{phrase}" in:body']
-        argv += ["--json", "number,body", "--limit", SEARCH_LIMIT]
+        argv += ["--json", "number,body,state,stateReason", "--limit", SEARCH_LIMIT]
         if repo:
             argv += ["--repo", repo]
         output = run(argv, cwd)
@@ -982,13 +995,18 @@ def matching_issues(
             number, body = issue.get("number"), issue.get("body")
             if not isinstance(number, int) or not isinstance(body, str):
                 return None
-            found[number] = body
+            if not (counted and released(issue)):
+                found[number] = body
     return found
 
 
 def count_tickets(feature: str, repo: str | None, cwd: str | None, run: Runner) -> int | None:
-    """The tickets GitHub's search finds that use the budget of `feature`; None when unknown."""
-    issues = matching_issues((f"to-tickets {feature}", f"Feature: {feature}"), repo, cwd, run)
+    """The tickets GitHub's search finds that use the budget of `feature`; None when unknown.
+
+    A ticket closed as not planned uses no place: closing one frees a place, a gesture GitHub shows
+    and no hook checks.
+    """
+    issues = matching_issues((f"to-tickets {feature}", f"Feature: {feature}"), repo, cwd, run, counted=True)
     if issues is None:
         return None
     return sum(1 for body in issues.values() if counts_for(body) == feature)

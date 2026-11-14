@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from collections.abc import Sequence
 from pathlib import Path
 from unittest import mock
 
@@ -32,7 +33,7 @@ def ticket(motif: str, feature: str | None = None) -> str:
 class FakeGh:
     """`gh issue list` answered from a list of bodies; None plays an unreachable gh."""
 
-    def __init__(self, bodies: list[str] | None, viewed: str | None = None) -> None:
+    def __init__(self, bodies: Sequence[str | tuple[str, dict]] | None, viewed: str | None = None) -> None:
         self.bodies = bodies
         self.viewed = viewed  # the body `gh issue view` gives, None plays a gh error
         self.calls: list[list[str]] = []
@@ -43,7 +44,10 @@ class FakeGh:
             return None if self.viewed is None else json.dumps({"body": self.viewed})
         if self.bodies is None:
             return None
-        issues = [{"number": n, "body": body} for n, body in enumerate(self.bodies, start=1)]
+        issues = []
+        for n, item in enumerate(self.bodies, start=1):
+            body, fields = item if isinstance(item, tuple) else (item, {})
+            issues.append({"number": n, "body": body, **fields})
         return json.dumps(issues)
 
 
@@ -585,6 +589,37 @@ class Removals(unittest.TestCase):
         self.assertIsNone(
             project.tool("mcp__github__delete_issue", target, FakeGh([], "Motif : securite"))
         )
+
+
+def closed(reason: object) -> tuple[str, dict]:
+    return ticket("to-tickets F-0001"), {"state": "CLOSED", "stateReason": reason}
+
+
+class ClosedReason(unittest.TestCase):
+    """A ticket closed as not planned (merged into another) leaves the budget; any other stays in it."""
+
+    def test_a_ticket_closed_as_not_planned_does_not_count(self) -> None:
+        project = Project(self, design("accepte", 1))
+        self.assertIsNone(project.create(ticket("to-tickets F-0001"), FakeGh([closed("NOT_PLANNED")])))
+
+    def test_a_completed_an_open_or_an_unknown_ticket_counts(self) -> None:
+        open_ticket = (ticket("to-tickets F-0001"), {"state": "OPEN", "stateReason": ""})
+        for item in (closed("COMPLETED"), open_ticket, closed("DUPLICATE"), closed(None), closed(7), ticket("to-tickets F-0001")):
+            with self.subTest(item=item):
+                project = Project(self, design("accepte", 1))
+                self.assertIn("already has 1 tickets", project.create(ticket("to-tickets F-0001"), FakeGh([item])) or "")
+
+    def test_the_search_asks_for_the_state_and_its_reason(self) -> None:
+        gh = FakeGh([])
+        Project(self, design("accepte", 1)).create(ticket("to-tickets F-0001"), gh)
+        self.assertTrue(all("number,body,state,stateReason" in call for call in gh.calls))
+
+    def test_a_feature_recut_by_closing_merged_tickets_keeps_its_budget(self) -> None:
+        tickets = [closed("NOT_PLANNED")] * 45 + [closed("COMPLETED")] * 10 + [ticket("to-tickets F-0001")] * 5
+        project = Project(self, design("en-revue"))
+        self.assertIsNone(project.write(design("accepte", 15), FakeGh(tickets)))
+        project.design.write_text(design("accepte", 15), encoding="utf-8")
+        self.assertIn("already has 15 tickets", project.create(ticket("to-tickets F-0001"), FakeGh(tickets)) or "")
 
 
 class CeilingEverywhere(unittest.TestCase):
