@@ -39,7 +39,9 @@ Applique `${CLAUDE_PLUGIN_ROOT}/templates/features/protocole.md`, document `desi
    d'ADR du projet s'il en a un), numéro suivant le plus haut de `docs/adr/`, statut proposé, et les
    lister dans `adr:` de l'en-tête. Un terme nouveau entre dans le glossaire du contexte.
 6. **Découper**, une fois le design accepté (ou la spec seule en taille S) : des tickets en
-   tranches verticales, sous-issues de l'issue de suivi, chacun avec ses critères `A<n>` et ses
+   tranches verticales, sous-issues de l'issue de suivi, chacun avec ses critères `A<n>`, leurs
+   cas `A<n>.<k> | <entrée> | <résultat attendu>` (gabarit `templates/ticket.md`, complétés au
+   tour 0 de `forge:feature-build`) et ses
    liens vers la spec et le design figés à un commit, étiquetés `ready-for-agent`, et leurs
    dépendances déclarées. Trois règles :
    - **Un contexte neuf.** Chaque ticket tient dans un seul contexte neuf, celui d'un

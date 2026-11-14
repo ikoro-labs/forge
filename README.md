@@ -68,6 +68,8 @@ ne fusionne une PR rouge, ou ne sort de son rôle.
 | `guard_git` | pas de commit ni de push sur `main`, pas de `--force`, pas de fusion d'une PR dont un check n'est pas vert ou dont un fichier touche la clé `protected-path`, pas de geste du propriétaire du dépôt (runners, protection, collaborateurs, secrets, visibilité) |
 | `guard_coder` | le coder ne fusionne pas, ne relit pas, ne lance ni `forge:qc` ni la revue de bout en bout, ne ferme pas de ticket, n'écrit que dans son worktree, ne pousse ni avec `-u` ni avec `-f` |
 | `guard_readonly` | les juges et les décideurs lisent, n'écrivent jamais |
+| `guard_cases` | une PR de feature s'ouvre sur des cas de validation acceptés (`AGREED:`) ; un verdict ne bloque que sur ces cas gelés, une règle du socle ou une régression |
+| `guard_coder_model` | un `forge:coder` (ou `coder`) lancé par `Agent`, `Task` ou un `Workflow` tourne sur `sonnet`, sur `opus` avec la ligne `ESCALATION: #<PR> round 3`, sur `haiku` avec la ligne `MODE: sync`, jamais sur un autre modèle ; un `effort` donné vaut `high` ; des options qu'il ne lit pas sont refusées |
 | `guard_pause` | tant que `.claude/PAUSED` existe, aucun agent n'est lancé |
 | `guard_output` | every output follows its template and its word caps: a subagent's final text, the body of a gh ticket, PR or comment, the session's reply to the human ([details](docs/installation.md#output-structure)) |
 | `after_write` | formate chaque fichier écrit avec les formateurs que le projet déclare (clé `format-on-write`), puis refuse le tiret cadratin au-delà de ce que le projet admet |

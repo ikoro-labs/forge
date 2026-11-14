@@ -64,7 +64,8 @@ verdict, le rapport et la suite sont les mêmes. Tout le reste passe par les deu
      protégés** plus bas arrêtent.
    - REJECT in round 1 or 2: corrige chaque `BLOCKER`, et seulement eux, pousse, puis reprends à
      l'étape 1. Les `MINOR` et `NOTE` restent dans le verdict. Depuis `/forge:feature-build`, la
-     correction passe par `forge:coder` en mode correction, pas par toi.
+     correction passe par `forge:coder` en mode correction, pas par toi. Modèle du coder :
+     Sonnet aux tours 1 et 2, Opus pour la correction jugée au tour 3 avec la ligne `ESCALATION: #<PR> round 3`, Haiku en mode sync sans conflit avec la ligne `MODE: sync` ; tenu par le hook `guard_coder_model`.
    - Après la fusion ou la fermeture : un `MINOR` qui change un comportement (code, porte, règle
      appliquée) est reporté en commentaire sur un ticket déjà ouvert qui touche le même code,
      sinon sur l'issue de suivi de la feature ; hors feature, il reste dans le verdict. Il n'ouvre
