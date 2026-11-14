@@ -9,6 +9,85 @@ Ce dépôt a été recréé le 2026-10-23 ; l'ancien est `ikoro-labs/forge-archi
 numéros de PR et de ticket nus (`#38`) renvoient à l'ancien dépôt ; un renvoi au nouveau dépôt
 porte son nom (`ikoro-labs/forge#7`).
 
+## [1.6.0] - 2026-11-14
+
+The factory's rules move from prose into hooks, as a standard shared by every forge project
+(decisions of the owner of 2026-11-13 and 2026-11-14, agreed between the two projects that run
+forge): agreed and frozen validation cases, the coder's model, a ticket budget per feature with an
+admitted reason, a structure for every output, the infrastructure gestures, and the completion
+table. Before them: test seams and the `forge:tdd` skill, base replay of added tests, service
+objectives, the traceability of a feature to its business source, and the end-to-end review.
+Pull request numbers below are those of `ikoro-labs/forge`.
+
+### Hooks
+
+- `guard_cases`, new (#172): with the `validation-cases` key, a PR opens only on a ticket whose
+  cases carry an `AGREED:` line for every role, and a verdict blocks only on a case, a rule or a
+  regression. Without the key it reads nothing and refuses nothing.
+- `guard_coder_model`, new (#172): `forge:coder` runs on `sonnet` with effort `high`; `opus` only
+  with a prompt line `ESCALATION: #<n> round 3`, `haiku` only with `MODE: sync`; any other model is
+  refused, on an `Agent` call and inside a `Workflow` script. Always on.
+- `guard_ticket_budget`, new (#173): a design declares `feature-tickets: N`, and a ticket opens only
+  with an admitted `Motif :` line (`to-tickets`, `fusion-bloquee`, `main-rouge`, `securite`,
+  `demande-<who>`, `feature-new`) and within its feature's budget. Always on for `gh issue create`.
+- `guard_output`, new (#174): subagent returns, GitHub bodies (ticket, PR, comment, verdict) and the
+  session's reply follow the templates of `templates/`, with word caps; the `output-*` keys replace a
+  template or a cap. An agent is refused once, then passes with a journal line; a gh body is refused
+  each time. Always on.
+- `guard_infra`, new (#176): Docker, `systemctl`, `lxc`, `service` and `networkctl` gestures that
+  stop or delete are refused to a subagent and asked to the human in the main session; on a host of
+  `infra-hosts`, everything off a read list is. The merge of a PR touching the guards is the owner's.
+- `guard_completion`, new (#175): a question on progress is answered with the table of
+  `scripts/completion.py` (completed, open, total, % with its denominator); it fails open.
+- `guard_git`: refuses an agent the owner's gestures (#14), fails closed (#22), reads them without
+  opening its standard input (#30), counts a line break as a command separator (#160), refuses any
+  agent the merge of a PR touching `protected-path` (#90); `never-weaken` decodes `rename to`
+  without a prefix (#164).
+- `guard_coder`: the coder works in its worktree and pushes without `-u` or `-f` (#86).
+
+### Agents
+
+- `forge:coder`: tests at the declared seams, one vertical slice at a time (#48); the PR body shows
+  the change, its gate and its blast radius (#52); a token budget per ticket (#161).
+- `forge:qc-gate` replays each added or changed test on the base, where it must fail (#51).
+- `forge:qc-conf` reads every added or changed test and flags the tautological, the coupled and the
+  off-seam (#47); screen labels are checked against the glossary and refused words (#104, #107).
+- `forge:product-owner` reads the business source before the agents' documents (#103).
+
+### Skills
+
+- `forge:tdd`, new (#49). `feature-design` splits into prerefactoring first, then expand and
+  contract (#50), and writes a journey file screen by screen (#110). `feature-spec` ingests the
+  business source in Markdown and reaches the grain of a target procedure (#108, #109). A
+  traceability matrix per feature (#111), a guided design with a non-developer expert (#112), front
+  verification capabilities on the command line (#113), the journey replayed in CI (#115), and an
+  end-to-end review of a feature, run in a loop on each merge (#116, #117, #120).
+- `/forge:qc` hands merges back to the human and freezes features when an error budget is spent
+  (#87), and moves stacked PRs before deleting a merged branch (#171).
+- Service objectives: indicators computed without a model, objectives and error budgets in
+  `usine.md`, their report, severity classes and SLA (#78, #79, #83, #85, #89).
+
+### Tests and CI
+
+- ruff, mypy and SHA-pinned actions in CI, with lint required (#162, #163). The suite counts 1253
+  tests on Linux, 5 skipped (Windows only); it runs in CI on Linux and Windows.
+
+### Upgrading
+
+- Bump the `ref` to `forge--v1.6.0`, then `claude plugin marketplace update ikoro-labs` and a new
+  session (`docs/installation.md`, « Monter de version »).
+- Five hooks act without a key: `guard_coder_model`, `guard_ticket_budget`, `guard_output`,
+  `guard_infra` and `guard_completion`. A project whose own rules differ (another coder model, other
+  ticket reasons, its own output formats) declares the matching `output-*` keys or changes its rule
+  before upgrading. `guard_cases` waits for `validation-cases`.
+- Not tried in a real Claude Code session before this release: the six new hooks ran in the test
+  suite and in CI only; `completion.py` was run by hand on two real projects.
+
+### Left out
+
+- #165 (bounded kill of a Windows job object) and #167 (when to write a property test): reviewed
+  REJECT on 2026-11-14, fixed on their branches after this release.
+
 ## [1.5.0] - 2026-10-23
 
 Une session apprend dès son démarrage quelles autres sessions vivent sur son dépôt (PR #38, critère
