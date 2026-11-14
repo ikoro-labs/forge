@@ -190,6 +190,25 @@ class VerdictSocle(unittest.TestCase):
                     parse_verdict(text)
 
 
+class ClosedKeys(unittest.TestCase):
+    """An unknown key is refused, never folded into the key above it."""
+
+    def test_an_unknown_key_is_refused_in_each_block(self) -> None:
+        for parser, text in [(parse_verdict, VERDICT), (parse_result, PR_RESULT)]:
+            with self.subTest(parser=parser.__name__), self.assertRaisesRegex(OutputError, "`GARBAGE:`"):
+                parser(text.replace("\n```\n", "\nGARBAGE: x\n```\n") if "```" in text else text + "GARBAGE: x\n")
+
+    def test_a_project_names_its_extra_keys(self) -> None:
+        text = VERDICT + "REGIME: strict\n"
+        with self.assertRaises(OutputError):
+            parse_verdict(text)
+        self.assertEqual(parse_verdict(text, ("REGIME",))["VERDICT"], "REJECT")
+
+    def test_an_indented_key_like_line_is_a_continuation(self) -> None:
+        parsed = parse_result(PR_RESULT.replace("  and replayed twice", "  TODO: replayed twice"))
+        self.assertIn("TODO: replayed twice", parsed["NOTES"])
+
+
 class Domain(unittest.TestCase):
     def test_open_answer_is_read_with_its_prudent_path(self) -> None:
         parsed = parse_domain(OPEN_ANSWER)
@@ -244,6 +263,38 @@ class Cli(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertTrue(out.startswith("invalid verdict: "))
         self.assertEqual(self.run_cli(["other", "-"], "")[0], 2)
+
+
+class VerdictSubLines(unittest.TestCase):
+    """`SPEC:` and `GATES:` left empty on their line, one sub-line per ticket or measure."""
+
+    TEXT = """VERDICT: ACCEPT
+ROUND: 1
+HEAD: abcdef1
+SPEC:
+  - #12: 1 criteria covered, 0 partial, 0 missing
+  - #13: 2 criteria covered, 0 partial, 0 missing
+FINDINGS:
+- none
+GATES:
+  - CI: 9 check-runs, 7 success, 2 skipped
+  - merge-tree: clean
+"""
+
+    def test_each_spec_sub_line_is_a_ticket(self) -> None:
+        verdict = parse_verdict(self.TEXT)
+        self.assertEqual(
+            verdict["SPEC"],
+            ["#12: 1 criteria covered, 0 partial, 0 missing", "#13: 2 criteria covered, 0 partial, 0 missing"],
+        )
+
+    def test_the_gates_sub_lines_are_joined(self) -> None:
+        gates = cast(str, parse_verdict(self.TEXT)["GATES"])
+        self.assertEqual(gates.splitlines(), ["- CI: 9 check-runs, 7 success, 2 skipped", "- merge-tree: clean"])
+
+    def test_a_spec_sub_line_still_names_its_ticket(self) -> None:
+        with self.assertRaises(OutputError):
+            parse_verdict(self.TEXT.replace("  - #13:", "  - ticket 13:"))
 
 
 if __name__ == "__main__":

@@ -255,9 +255,19 @@ class Guard(unittest.TestCase):
         self.assertIsNone(decision({"transcript_path": missing, "stop_hook_active": False}))
 
 
+def _unique(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    keys = [key for key, _ in pairs]
+    duplicated = sorted({key for key in keys if keys.count(key) > 1})
+    if duplicated:
+        raise ValueError(f"keys repeated in one object: {duplicated}")
+    return dict(pairs)
+
+
 class HookRegistration(unittest.TestCase):
-    def test_the_hook_runs_on_stop(self) -> None:
-        hooks = json.loads((support.PLUGIN / "hooks" / "hooks.json").read_text(encoding="utf-8"))
+    def test_the_hook_runs_on_stop_beside_the_others(self) -> None:
+        """A repeated `Stop` key would keep one array and drop the other, silently."""
+        text = (support.PLUGIN / "hooks" / "hooks.json").read_text(encoding="utf-8")
+        hooks = json.loads(text, object_pairs_hook=_unique)
         commands = [
             hook["command"] for group in hooks["hooks"].get("Stop", []) for hook in group["hooks"]
         ]

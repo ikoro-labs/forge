@@ -227,15 +227,22 @@ ROUND: 1 | 2 | 3
 HEAD: <the head SHA judged>
 SOCLE: <full SHA of the main commit whose rules round 1 read>
 GRANTED: <https link to the human's grant, only past round 3>
-SPEC: #<ticket>: <n> criteria covered, <n> partial, <n> missing
+SPEC:
+  - #<ticket>: <n> criteria covered, <n> partial, <n> missing
 FINDINGS:
 - [BLOCKER] path:line | rule | failure scenario
 - [MINOR] ...
-GATES: <one line on the qc-gate table>
+GATES:
+  - <measure>: <value>
 BATTERY CORRECTION: <only if an instruction, the ticket or this role proved wrong>
 ```
 
-Une ligne `SPEC:` par ticket. Une PR qui ne lie aucun ticket (une montée Dependabot, une montée
+`SPEC:` and `GATES:` stay empty on their line, then one sub-line per ticket and one per measure,
+each within 60 words; a finding is one line within 60 words, with no sub-line, and paths, commands,
+test ids and quotations go between backticks (a span counts as one word). The hook `guard_output`
+refuses a verdict comment past that cap (`templates/verdict.md`).
+
+Une sous-ligne `SPEC:` par ticket. Une PR qui ne lie aucun ticket (une montée Dependabot, une montée
 d'épingle) a une seule ligne `SPEC: none (<raison>)`, la raison disant contre quoi tu l'as jugée :
 n'y accroche pas une PR ou un ticket qu'elle ne cite pas. Une PR qui cite des tickets sans en
 livrer aucun critère (voir **Lecture préalable**) a la même ligne unique, et sa raison nomme les
