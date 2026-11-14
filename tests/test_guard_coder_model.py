@@ -65,6 +65,11 @@ class AgentTool(unittest.TestCase):
         self.assert_refused({"tool_name": "Task", "tool_input": {"subagent_type": "forge:coder", "model": "opus"}}, "opus")
         self.assert_refused(agent(subagent_type="coder", effort="medium"), "medium")
 
+    def test_the_coder_is_named_in_any_case(self) -> None:
+        for kind in ("Coder", "FORGE:CODER", " forge:Coder "):
+            with self.subTest(kind=kind):
+                self.assert_refused(agent(subagent_type=kind, model="opus"), "opus")
+
     def test_another_agent_keeps_its_choice(self) -> None:
         self.assertEqual(outcome(agent(subagent_type="forge:qc-gate", model="haiku", effort="low")), (0, ""))
         self.assertEqual(outcome(agent(subagent_type="forge:qc-conf", model="opus")), (0, ""))
@@ -148,6 +153,17 @@ class WorkflowTool(unittest.TestCase):
     def test_a_script_the_guard_cannot_scan_passes_only_without_a_coder(self) -> None:
         self.assert_passes(workflow(META + "const r = /it's/\nawait agent('r', {model: 'haiku'})"))
         self.assert_refused(workflow(META + "const r = /it's/\nawait agent('r', {agentType: 'forge:coder'})"), "string")
+
+    def test_agent_used_other_than_by_a_direct_call_is_refused_beside_a_coder(self) -> None:
+        for body in (
+            "await agent?.('t', {agentType: 'forge:coder', model: 'opus'})",
+            "await agent.call(null, 't', {agentType: 'forge:coder', model: 'opus'})",
+            "const a = agent\nawait a('t', {agentType: 'forge:coder', model: 'opus'})",
+            "await [agent][0]('t', {agentType: 'coder'})",
+        ):
+            with self.subTest(body=body):
+                self.assert_refused(workflow(META + body), "direct call")
+        self.assert_passes(workflow(META + "const a = agent\nawait a('r', {model: 'haiku'})"))
 
     def test_a_string_or_comment_does_not_open_a_call(self) -> None:
         self.assert_passes(workflow(META + "log('agent(x, y)')\n/* agent('t', {agentType: 'forge:coder', model: 'opus'}) */"))
