@@ -47,6 +47,7 @@ from gh_bodies import (  # noqa: E402
     commands,
     curls_github,
     heredocs,
+    may_publish,
     mcp_publications,
     opens_verdict,
     publications,
@@ -194,7 +195,7 @@ def _mcp(event: Mapping[str, object], tool: str) -> Outcome:
 def _gh(event: Mapping[str, object]) -> Outcome:
     tool_input = event.get("tool_input")
     command = tool_input.get("command") if isinstance(tool_input, dict) else None
-    if not isinstance(command, str) or not ("gh" in command or "api.github.com" in command):
+    if not isinstance(command, str) or not may_publish(command):
         return Outcome(0)
     cwd = event.get("cwd")
     here: str | None = cwd if isinstance(cwd, str) else None

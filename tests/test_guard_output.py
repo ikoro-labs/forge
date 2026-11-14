@@ -327,6 +327,14 @@ class OneReaderForEveryChannel(unittest.TestCase):
                     self.assertEqual(code, REFUSED)
                     self.assertIn("`Motif` is missing", err)
 
+    def test_gh_spelled_with_quotes_or_a_backslash_is_judged(self) -> None:
+        with isolated():
+            for name in ("g''h", 'g""h', "g\\h"):
+                with self.subTest(name=name):
+                    code, err, _ = run(bash(f"{name} issue create -t t -b 'No motif.'"))
+                    self.assertEqual(code, REFUSED)
+                    self.assertIn("`Motif` is missing", err)
+
     def test_a_body_file_is_read_from_the_directory_cd_moved_to(self) -> None:
         with isolated() as project:
             (project / "sub").mkdir()
