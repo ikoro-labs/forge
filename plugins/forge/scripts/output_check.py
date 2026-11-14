@@ -15,7 +15,9 @@ The rules, the same for every kind that has them:
   backticks counts as one word;
 - no prose paragraph over `output-words-paragraph` words; a list item is a paragraph of its own; a
   table line or a code block is no paragraph;
-- each field the template names in the `required:` part of its header line, present and not empty.
+- each field the template names in the `required:` part of its header line, present and not empty;
+- at most the `max-lines:` of that header line, in written lines: blank lines and HTML comments do
+  not count.
   A project replaces a template with the key `output-template` (`<kind> | <path>`);
 - a structured format (`verdict`, `coder`, `decider`) takes a closed set of keys: an unknown key is
   refused, unless the project names it with `output-extra-keys` (`<kind> | KEY, KEY`). The verdict
@@ -158,17 +160,27 @@ def required_fields(template: str) -> list[list[str]]:
     The header reads `required: <field>, <field>`, a field `A or B` when two labels say it (a reply
     in either language), and `required: none` when the template imposes no field.
     """
-    match = HEADER.search(template)
-    if match is None:
+    value = _header(template, "required")
+    fields = [field.strip() for field in (value or "").split(",") if field.strip()]
+    if fields in ([], ["none"]):
         return []
-    for part in match.group(1).split("|"):
+    return [[label.strip() for label in field.split(" or ")] for field in fields]
+
+
+def line_cap(template: str) -> int | None:
+    """The `max-lines: <n>` of the header of `template`, None when it declares none."""
+    match = re.match(r"\s*(\d+)", _header(template, "max-lines") or "")
+    return int(match.group(1)) if match else None
+
+
+def _header(template: str, key: str) -> str | None:
+    """The value of the part `key:` in the header line of `template`."""
+    match = HEADER.search(template)
+    for part in match.group(1).split("|") if match else []:
         name, _, value = part.partition(":")
-        if name.strip() == "required":
-            fields = [field.strip() for field in value.split(",") if field.strip()]
-            if fields == ["none"]:
-                return []
-            return [[label.strip() for label in field.split(" or ")] for field in fields]
-    return []
+        if name.strip() == key:
+            return value
+    return None
 
 
 def _template_text(kind: str, config: Mapping[str, list[str]], root: Path | None) -> str:
@@ -353,7 +365,15 @@ def deviations(
         return []
     lines, prose = _structure(_unwrap(text) if kind in KEYED else text)
     found: list[str] = []
-    for labels in required_fields(_template_text(kind, config, root)):
+    template = _template_text(kind, config, root)
+    most_lines = line_cap(template)
+    written = sum(1 for line in lines if line.strip())
+    if most_lines is not None and written > most_lines:
+        found.append(
+            f"{written} lines, at most {most_lines} (template `{kind}`): blank lines and HTML"
+            " comments do not count"
+        )
+    for labels in required_fields(template):
         index = _field_line(lines, labels)
         name = " or ".join(f"`{label}`" for label in labels)
         if index is None:

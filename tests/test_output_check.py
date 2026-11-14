@@ -9,6 +9,8 @@ from unittest import mock
 
 import support
 from output_check import (
+    _template_text,
+    line_cap,
     DEFAULT_PARAGRAPH_WORDS,
     DEFAULT_WORDS,
     FORGE_AGENTS,
@@ -412,6 +414,38 @@ class MeridianReviewChecks(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertEqual(agent_kind(name, {}), kind)
         self.assertEqual(agent_kind("other:coder", {}), "subagent-return")
+
+
+class LineCap(unittest.TestCase):
+    """The `max-lines` of a template header caps the written lines of the text it shapes."""
+
+    def test_each_capped_kind_refuses_one_line_past_its_cap(self) -> None:
+        for kind in ("comment", "subagent-return", "session-reply", "ticket", "pr"):
+            cap = line_cap(_template_text(kind, {}, None))
+            assert cap is not None, kind
+            with self.subTest(kind=kind):
+                text = "\n".join(f"- point {index}" for index in range(cap + 1))
+                found = deviations(text, kind)
+                self.assertIn(f"{cap + 1} lines, at most {cap} (template `{kind}`)", " ".join(found))
+
+    def test_blank_lines_and_html_comments_do_not_count(self) -> None:
+        text = "\n\n".join(f"- point {index}" for index in range(12)) + "\n<!-- a\nb\nc -->\n"
+        self.assertEqual([d for d in deviations(text, "comment") if "lines" in d], [])
+
+    def test_a_verdict_keeps_every_finding(self) -> None:
+        # the review never shortens its findings to fit a cap, of words or of lines
+        findings = "".join(f"- [BLOCKER] a.py:{n} | A1 | broken\n" for n in range(40))
+        verdict = VERDICT.replace("FINDINGS:\n", "FINDINGS:\n" + findings, 1)
+        self.assertEqual(deviations(verdict, "verdict"), [])
+
+    def test_a_project_template_brings_its_own_cap(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            Path(folder, "c.md").write_text("<!-- template: comment | max-lines: 2 | required: none -->\nx\n", encoding="utf-8")
+            config = {"output-template": ["comment | c.md"]}
+            self.assertTrue(any("at most 2" in d for d in deviations("a\nb\nc", "comment", config, Path(folder))))
+
+    def test_a_kind_without_a_template_has_no_line_cap(self) -> None:
+        self.assertIsNone(line_cap(_template_text("decider", {}, None)))
 
 
 if __name__ == "__main__":
