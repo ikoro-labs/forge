@@ -80,6 +80,9 @@ LINUX = sys.platform.startswith("linux")
 # The relay writes `successeur` right after `claude --bg` returns, while the new session
 # may already be reading the header: wait that long for it before giving up.
 SUCCESSOR_WAIT_SECONDS = 30
+# `kill` reaps the command after terminating it; a process that does not die on time does
+# not block the session longer than this.
+KILL_WAIT_SECONDS = 10
 
 
 class HeaderError(ValueError):
@@ -382,17 +385,26 @@ class ProcessGroup:
         ntdll.NtResumeProcess(int(self.process._handle))  # Popen's own handle
 
     def kill(self) -> None:
-        """Kill the command and its descendants, then reap the command."""
+        """Kill the command and its descendants, then reap the command.
+
+        `TerminateJobObject` returns 0 on failure without raising: kill tests that return
+        and falls back to `process.kill()`. The `wait` that follows is bounded by
+        `KILL_WAIT_SECONDS`: a process that does not die on time does not block the session.
+        """
         try:
             if WINDOWS and self.job:
-                _win32()[2].TerminateJobObject(self.job, 1)
+                if not _win32()[2].TerminateJobObject(self.job, 1):
+                    self.process.kill()
             elif LINUX:
                 os.killpg(self.process.pid, signal.SIGKILL)
             else:
                 self.process.kill()
         except (OSError, AttributeError):
             self.process.kill()
-        self.process.wait()
+        try:
+            self.process.wait(timeout=KILL_WAIT_SECONDS)
+        except subprocess.TimeoutExpired:
+            pass
 
     def close(self) -> None:
         """Release the job; what a limited job still holds dies with it."""
