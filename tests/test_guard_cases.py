@@ -319,6 +319,13 @@ class OtherChannels(Base):
         self.assert_refused(f"bash -c 'gh pr create --title t --body-file {body}'", "qc-conf")
         self.assert_refused(f"env /usr/bin/gh pr create --title t --body-file {body}", "qc-conf")
 
+    def test_gh_spelled_with_quotes_or_a_backslash_is_judged(self) -> None:
+        self.github.tickets[12]["body"] = CASES.replace(", qc-conf", "")
+        body = self.file("Closes #12")
+        for name in ("g''h", 'g""h', "g\\h"):
+            with self.subTest(name=name):
+                self.assert_refused(f"{name} pr create --title t --body-file {body}", "qc-conf")
+
     def test_an_mcp_tool_that_opens_a_pr_or_posts_a_verdict_is_refused(self) -> None:
         code, message = self.mcp("mcp__github__create_pull_request", title="t", body="Closes #12", head="b", base="main")
         self.assertEqual(code, 2, message)

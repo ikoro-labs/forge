@@ -16,7 +16,9 @@ Any other model, `fable` included, is refused with exit code 2. The rule holds o
 ...})`, child workflows (`workflow(...)`) included. In a script that names a coder (the word `coder`
 in the script or in `args`), an `agent()` call whose options the guard cannot read is refused: a
 variable, a spread, an `agentType`, `model` or `effort` that is not a string literal, a prompt that
-is not one when the model needs a line; and a `workflow()` call whose script it cannot name. A
+is not one when the model needs a line; `agent` used other than by a direct call (`agent?.(`,
+`agent.call(`, an alias); and a `workflow()` call whose script it cannot name. The agent's name is
+compared in any case (`Coder`). A
 workflow name the guard does not find (built-in, or another plugin's) passes. The standard library
 only.
 """
@@ -44,6 +46,7 @@ MODELS: dict[str, tuple[re.Pattern[str], str] | None] = {
 }
 NAMES_CODER = re.compile(r"\bcoder\b")
 CALL = re.compile(r"(?<![\w$])(agent|workflow)\s*\(")
+AGENT_NAME = re.compile(r"(?<![\w$.])agent(?![\w$])(?!\s*\()")
 LITERAL = re.compile(r"""^(?:'([^'\\]*)'|"([^"\\]*)"|`([^`\\$]*)`)$""")
 KEY = re.compile(r"""^\s*(?:([A-Za-z_$][\w$]*)|'([^']*)'|"([^"]*)")\s*:(.*)$""", re.DOTALL)
 OPEN, CLOSE = "([{", ")]}"
@@ -190,6 +193,8 @@ def script_problems(text: str, args: object, root: Path, here: Path, nested: boo
         if strict:
             raise
         return []
+    if strict and (alias := AGENT_NAME.search(code)):
+        raise Unreadable(f"`agent` is used other than by a direct call at `{text[alias.start() : alias.start() + 20]}`")
     problems: list[str] = []
     for match in CALL.finditer(code):
         arguments = _arguments(text, code, match.end() - 1)
@@ -210,7 +215,7 @@ def script_problems(text: str, args: object, root: Path, here: Path, nested: boo
             if strict:
                 raise
             continue
-        if kind in CODER:
+        if (kind or "").strip().lower() in CODER:
             where = f"`agent(..., {{agentType: '{kind}'}})`"
             prompt = partial(_prompt, arguments[0])
             problems += _values(_option(fields, "model"), _option(fields, "effort"), where, prompt)
@@ -243,7 +248,7 @@ def outcome(event: Mapping[str, object]) -> tuple[int, str]:
     here = Path(str(event.get("cwd") or root))
     try:
         if tool in ("Agent", "Task"):
-            kind = str(tool_input.get("subagent_type") or "").strip()
+            kind = str(tool_input.get("subagent_type") or "").strip().lower()
             prompt = str(tool_input.get("prompt") or "")
             where = f"`subagent_type: {kind}`"
             problems = _values(tool_input.get("model"), tool_input.get("effort"), where, lambda: prompt) if kind in CODER else []

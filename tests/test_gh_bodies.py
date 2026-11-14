@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 import support  # noqa: F401  puts the plugin on the import path
-from gh_bodies import Unreadable, commands, heredocs, mcp_publications, publications
+from gh_bodies import Unreadable, commands, heredocs, may_publish, mcp_publications, publications
 
 
 def bodies(command: str, here: str | None = None) -> list[tuple[str, str]]:
@@ -66,6 +66,22 @@ class Heredocs(unittest.TestCase):
             self.assertEqual(bodies("gh issue comment 1 --body-file - < b.md", folder), [("comment", "from file")])
 
 
+class FilesTheCommandWrites(unittest.TestCase):
+    def test_a_body_file_the_same_command_writes_is_unread(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            Path(folder, "b.md").write_text("old and fine", encoding="utf-8")
+            for command in (
+                "cat > b.md <<'EOF'\nnew text\nEOF\ngh issue comment 1 --body-file b.md",
+                "echo new >> b.md && gh issue comment 1 -F b.md",
+                "printf x >./b.md; gh issue comment 1 --body-file b.md",
+                "echo new | tee b.md && gh issue comment 1 --body-file b.md",
+                f"echo new > {folder}/b.md && gh issue comment 1 --body-file b.md",
+            ):
+                with self.subTest(command=command), self.assertRaises(Unreadable):
+                    bodies(command, folder)
+            self.assertEqual(bodies("echo x > other.md && gh issue comment 1 --body-file b.md", folder), [("comment", "old and fine")])
+
+
 class Channels(unittest.TestCase):
     def test_gh_behind_a_wrapper_or_a_path_is_read(self) -> None:
         for prefix in ("env", "env GH_TOKEN=x", "command", "/usr/bin/gh", "sudo -u me gh", "xargs gh", "nohup gh"):
@@ -90,6 +106,14 @@ class Channels(unittest.TestCase):
         self.assertEqual(bodies("cat > f <<EOF\n$(gh issue comment 1 --body hi)\nEOF"), [("comment", "hi")])
         quoted = "gh issue comment 2 --body 'run `gh pr create --body-file missing.md`'"
         self.assertEqual(bodies(quoted), [("comment", "run `gh pr create --body-file missing.md`")])
+
+    def test_a_command_may_run_gh_however_the_name_is_quoted(self) -> None:
+        for command in ("g''h issue comment 1 --body hi", 'g""h issue comment 1 --body hi', "g\\h issue comment 1 --body hi"):
+            with self.subTest(command=command):
+                self.assertTrue(may_publish(command))
+                self.assertEqual(bodies(command), [("comment", "hi")])
+        self.assertTrue(may_publish("curl https://api.git''hub.com/x"))
+        self.assertFalse(may_publish("ls -la"))
 
     def test_gh_or_a_script_given_by_a_variable_is_unread(self) -> None:
         for command in ('bash -c "$S"', "eval \"$CMD\"", "$GH issue comment 1 --body hi", '"$GH" api repos/o/r/issues -f body=x'):
