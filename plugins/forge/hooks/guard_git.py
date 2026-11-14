@@ -60,6 +60,13 @@ beside the directory's own). A `cd`, a repository or a PR number the guard canno
 merge before any reading: a variable, a substitution, `xargs`, or no number while the command reads
 a pipe or a `<` redirection. So does a write by `gh api` whose endpoint the shell may turn into a
 merge: a variable or a substitution in it, a brace expansion, or a glob that may match one.
+
+Known limits:
+
+- a `gh api` write with a variable in its endpoint escapes the owner gestures
+  (`gh api --method PUT repos/$R/collaborators/x`);
+- `OWNER_ENDPOINT` does not cover the full URL `https://api.github.com/repos/...`;
+- extended globs (`extglob`) are not handled.
 """
 
 from __future__ import annotations

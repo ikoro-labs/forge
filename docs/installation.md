@@ -403,6 +403,13 @@ match `repos/<owner>/<repo>/pulls/<n>/merge`) is refused too. The tests of this 
 removing it from `guard_git` turns them red, and changing them is itself such a PR. The owner
 merges it in GitHub's web interface (a `! gh pr merge` may still meet `guard_git`, see above).
 
+Known limits of `guard_git`:
+
+- a `gh api` write with a variable in its endpoint escapes the owner gestures
+  (`gh api --method PUT repos/$R/collaborators/x`);
+- `OWNER_ENDPOINT` does not cover the full URL `https://api.github.com/repos/...`;
+- extended globs (`extglob`) are not handled.
+
 Tried under Linux only: by the tests, and by hand against the real `ssh -G` and resolver of one
 workstation (an alias, an address, a `-J` jump). Not yet in a real Claude Code session, nor under
 Windows or PowerShell.
@@ -467,6 +474,10 @@ Ce qu'aucun agent ne fait à la place d'un humain :
   `agent_type` (`forge:coder`, `forge:qc-gate`...) ; un filtre faux ne s'appliquerait à personne,
   en silence, d'où les tests de `tests/`.
 - **Aucun `CLAUDE.md`** n'est chargé depuis un plugin : la constitution reste celle du projet.
+- **`gh api` et les gestes du propriétaire** : une écriture `gh api` dont le point d'accès contient
+  une variable leur échappe (`gh api --method PUT repos/$R/collaborators/x`).
+- **`OWNER_ENDPOINT`** ne couvre pas l'URL complète `https://api.github.com/repos/...`.
+- **Globs étendus** : `guard_git` ne traite pas les globs étendus (`extglob`).
 
 ### Éprouvé sur un poste (Claude Code 2.1.303, 2026-10-19)
 
