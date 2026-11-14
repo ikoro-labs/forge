@@ -16,19 +16,19 @@ from guard_git import changed_files_via_gh, guarded_main, parse_changed_files, r
 PROTECTED = [".github/", "plugins/forge/hooks/guard_", ".claude/settings.json"]
 
 
-def always_green(_pr: str | None) -> bool:
+def always_green(*_target: str | None) -> bool:
     return True
 
 
-def listing(*paths: str) -> Callable[[str | None], list[str] | None]:
-    return lambda _pr: list(paths)
+def listing(*paths: str) -> Callable[..., list[str] | None]:
+    return lambda *_target: list(paths)
 
 
-def unreadable(_pr: str | None) -> list[str] | None:
+def unreadable(*_target: str | None) -> list[str] | None:
     return None
 
 
-def merge(command: str, changed: Callable[[str | None], list[str] | None], protected: list[str] = PROTECTED) -> str | None:
+def merge(command: str, changed: Callable[..., list[str] | None], protected: list[str] = PROTECTED) -> str | None:
     return refusal(command, "feat/x", always_green, protected_paths=protected, changed_files=changed)
 
 
@@ -53,7 +53,7 @@ class ProtectedPaths(unittest.TestCase):
     def test_the_pr_number_is_passed_to_the_listing(self) -> None:
         seen: list[str | None] = []
 
-        def changed(pr: str | None) -> list[str]:
+        def changed(pr: str | None, *_rest: str | None) -> list[str]:
             seen.append(pr)
             return []
 
@@ -62,13 +62,13 @@ class ProtectedPaths(unittest.TestCase):
         self.assertEqual(seen, ["5", None])
 
     def test_without_the_key_nothing_is_refused_and_the_diff_is_not_read(self) -> None:
-        def boom(_pr: str | None) -> list[str]:
+        def boom(*_target: str | None) -> list[str]:
             raise AssertionError("la liste des fichiers n'est pas lue sans la clé")
 
         self.assertIsNone(merge("gh pr merge 5", boom, protected=[]))
 
     def test_other_commands_do_not_read_the_diff(self) -> None:
-        def boom(_pr: str | None) -> list[str]:
+        def boom(*_target: str | None) -> list[str]:
             raise AssertionError("seule une fusion lit la liste")
 
         self.assertIsNone(merge("gh pr view 5", boom))
@@ -94,7 +94,7 @@ class FailsClosed(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             (Path(folder) / "pr").write_text(script, encoding="utf-8")
             with mock.patch("shutil.which", lambda _name: sys.executable):
-                return changed_files_via_gh(folder)("5")
+                return changed_files_via_gh(folder)("5", None, None)
 
     def test_a_gh_that_prints_a_list_is_read(self) -> None:
         self.assertEqual(self.run_gh("print('{\"files\":[{\"path\":\"x/y.py\"}]}')"), ["x/y.py"])
@@ -111,7 +111,7 @@ class FailsClosed(unittest.TestCase):
 
     def test_without_gh_the_list_is_unreadable(self) -> None:
         with mock.patch("shutil.which", lambda _name: None):
-            self.assertIsNone(changed_files_via_gh(None)("5"))
+            self.assertIsNone(changed_files_via_gh(None)("5", None, None))
 
 
 class TheHook(unittest.TestCase):
@@ -131,7 +131,7 @@ class TheHook(unittest.TestCase):
     def configure(self, text: str) -> None:
         (self.root / "docs" / "agents" / "usine.md").write_text(text, encoding="utf-8")
 
-    def run_hook(self, command: str, agent_type: str | None, changed: Callable[[str | None], list[str] | None]) -> tuple[int, str]:
+    def run_hook(self, command: str, agent_type: str | None, changed: Callable[..., list[str] | None]) -> tuple[int, str]:
         event = {"tool_input": {"command": command}, "cwd": str(self.root)}
         if agent_type:
             event["agent_type"] = agent_type
@@ -142,7 +142,8 @@ class TheHook(unittest.TestCase):
             mock.patch("sys.stderr", err),
             mock.patch("guard_git.current_branch", lambda _cwd: "feat/x"),
             mock.patch("guard_git.checks_green_via_gh", lambda _cwd: always_green),
-            mock.patch("guard_git.description_via_gh", lambda _cwd: lambda _pr: ""),
+            mock.patch("guard_git.description_via_gh", lambda _cwd: lambda *_target: ""),
+            mock.patch("guard_git.pr_files_via_gh", lambda _cwd: lambda *_args: []),
             mock.patch("guard_git.changed_files_via_gh", lambda _cwd: changed),
         ):
             return guarded_main(), err.getvalue()

@@ -115,7 +115,7 @@ class Verdict(unittest.TestCase):
         for text, words in [
             (VERDICT.replace("- [BLOCKER]", "- [MINOR]"), "only a blocker rejects"),
             (VERDICT.replace("REJECT", "ACCEPT"), "1 `[BLOCKER]`"),
-            (VERDICT.replace("ROUND: 1", "ROUND: 3"), "1 or 2"),
+            (VERDICT.replace("ROUND: 1", "ROUND: 4"), "`GRANTED: <https link>`"),
             (VERDICT.replace("HEAD: 3f2a9c1", "HEAD: main"), "hexadecimal SHA"),
             (VERDICT.replace("SPEC: #12 A1", "SPEC: A1"), "`#<ticket>`"),
             (VERDICT.replace("- [NOTE] wording", "wording"), "`- [BLOCKER|MINOR|NOTE] ...`"),
@@ -137,6 +137,76 @@ RECOMMENDATION: 3 %
 PRUDENT_PATH: ne pas produire le chiffre, lever une erreur explicite
 ```
 """
+
+
+class VerdictRounds(unittest.TestCase):
+    """Three rounds at most (shipyard#193); a fourth needs a `GRANTED:` link to the human's grant."""
+
+    def verdict(self, round_line: str, extra: str = "") -> str:
+        return VERDICT.replace("ROUND: 1\n", f"{round_line}\n{extra}")
+
+    def test_round_three_is_read(self) -> None:
+        self.assertEqual(parse_verdict(self.verdict("ROUND: 3"))["ROUND"], 3)
+
+    def test_round_four_without_a_grant_is_refused(self) -> None:
+        with self.assertRaisesRegex(OutputError, "GRANTED"):
+            parse_verdict(self.verdict("ROUND: 4"))
+
+    def test_round_four_with_an_https_grant_is_read(self) -> None:
+        url = "https://github.com/o/r/pull/9#issuecomment-1"
+        parsed = parse_verdict(self.verdict("ROUND: 4", f"GRANTED: {url}\n"))
+        self.assertEqual((parsed["ROUND"], parsed["GRANTED"]), (4, url))
+
+    def test_a_grant_that_is_not_an_https_link_is_refused(self) -> None:
+        for grant in ("http://github.com/o/r/pull/9", "the human said yes", ""):
+            with self.subTest(grant=grant), self.assertRaisesRegex(OutputError, "GRANTED"):
+                parse_verdict(self.verdict("ROUND: 4", f"GRANTED: {grant}\n"))
+
+    def test_a_round_followed_by_text_is_refused(self) -> None:
+        for line in ("ROUND: 2 (after the sync)", "ROUND: 0", "ROUND: two"):
+            with self.subTest(line=line), self.assertRaisesRegex(OutputError, "ROUND"):
+                parse_verdict(self.verdict(line))
+
+    def test_an_accept_with_an_empty_findings_key_is_read(self) -> None:
+        text = VERDICT.replace("VERDICT: REJECT", "VERDICT: ACCEPT").replace(
+            "- [BLOCKER] src/a.py:12 rule X: an empty list crashes\n- [NOTE] wording\n", ""
+        )
+        self.assertEqual(parse_verdict(text)["FINDINGS"], [])
+
+
+class VerdictSocle(unittest.TestCase):
+    """`SOCLE:` is a key of its own, never folded into `HEAD:`."""
+
+    def test_socle_is_read_apart_from_head(self) -> None:
+        text = VERDICT.replace("HEAD: 3f2a9c1\n", "HEAD: 3f2a9c1\nSOCLE: 260522a7767bc437\n")
+        parsed = parse_verdict(text)
+        self.assertEqual((parsed["HEAD"], parsed["SOCLE"]), ("3f2a9c1", "260522a7767bc437"))
+
+    def test_a_socle_that_is_no_hexadecimal_sha_is_refused(self) -> None:
+        for value in ("banana", "260522", "260522a7767bc437" * 3, "260522A7767"):
+            with self.subTest(value=value):
+                text = VERDICT.replace("HEAD: 3f2a9c1\n", f"HEAD: 3f2a9c1\nSOCLE: {value}\n")
+                with self.assertRaisesRegex(OutputError, "SOCLE"):
+                    parse_verdict(text)
+
+
+class ClosedKeys(unittest.TestCase):
+    """An unknown key is refused, never folded into the key above it."""
+
+    def test_an_unknown_key_is_refused_in_each_block(self) -> None:
+        for parser, text in [(parse_verdict, VERDICT), (parse_result, PR_RESULT)]:
+            with self.subTest(parser=parser.__name__), self.assertRaisesRegex(OutputError, "`GARBAGE:`"):
+                parser(text.replace("\n```\n", "\nGARBAGE: x\n```\n") if "```" in text else text + "GARBAGE: x\n")
+
+    def test_a_project_names_its_extra_keys(self) -> None:
+        text = VERDICT + "REGIME: strict\n"
+        with self.assertRaises(OutputError):
+            parse_verdict(text)
+        self.assertEqual(parse_verdict(text, ("REGIME",))["VERDICT"], "REJECT")
+
+    def test_an_indented_key_like_line_is_a_continuation(self) -> None:
+        parsed = parse_result(PR_RESULT.replace("  and replayed twice", "  TODO: replayed twice"))
+        self.assertIn("TODO: replayed twice", parsed["NOTES"])
 
 
 class Domain(unittest.TestCase):
@@ -193,6 +263,38 @@ class Cli(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertTrue(out.startswith("invalid verdict: "))
         self.assertEqual(self.run_cli(["other", "-"], "")[0], 2)
+
+
+class VerdictSubLines(unittest.TestCase):
+    """`SPEC:` and `GATES:` left empty on their line, one sub-line per ticket or measure."""
+
+    TEXT = """VERDICT: ACCEPT
+ROUND: 1
+HEAD: abcdef1
+SPEC:
+  - #12: 1 criteria covered, 0 partial, 0 missing
+  - #13: 2 criteria covered, 0 partial, 0 missing
+FINDINGS:
+- none
+GATES:
+  - CI: 9 check-runs, 7 success, 2 skipped
+  - merge-tree: clean
+"""
+
+    def test_each_spec_sub_line_is_a_ticket(self) -> None:
+        verdict = parse_verdict(self.TEXT)
+        self.assertEqual(
+            verdict["SPEC"],
+            ["#12: 1 criteria covered, 0 partial, 0 missing", "#13: 2 criteria covered, 0 partial, 0 missing"],
+        )
+
+    def test_the_gates_sub_lines_are_joined(self) -> None:
+        gates = cast(str, parse_verdict(self.TEXT)["GATES"])
+        self.assertEqual(gates.splitlines(), ["- CI: 9 check-runs, 7 success, 2 skipped", "- merge-tree: clean"])
+
+    def test_a_spec_sub_line_still_names_its_ticket(self) -> None:
+        with self.assertRaises(OutputError):
+            parse_verdict(self.TEXT.replace("  - #13:", "  - ticket 13:"))
 
 
 if __name__ == "__main__":

@@ -11,7 +11,7 @@ le moins cher qui fait le travail, le plus fort là seulement où une erreur co�
 | Agent | Niveau | Pourquoi |
 | --- | --- | --- |
 | `forge:qc-gate` | `haiku` | Il rejoue des commandes et recopie leurs mesures, sans avis. |
-| `forge:coder` | `sonnet` | Le plus gros consommateur ; un modèle moyen code un ticket bien découpé. |
+| `forge:coder` | `sonnet` | Le plus gros consommateur ; un modèle moyen code un ticket bien découpé. Opus au tour 3, Haiku en mode sync : voir plus bas. |
 | `forge:qc-conf` | `opus` | Le garde-fou de la qualité ; il lit surtout le diff, sa tâche reste courte. Un autre niveau que le coder rend moins probable qu'une même erreur échappe aux deux. |
 | `forge:staff-engineer`, `forge:product-owner` | `opus` | Appelés rarement, et leur décision engage la suite. |
 | `forge:review-judge`, `forge:review-recheck` | `opus` | Ils jugent des captures contre la source, et un `tenu` publié à tort cache un écart à la clôture ; le juge réfléchit en `high`, la seconde lecture en `medium`. |
@@ -22,13 +22,44 @@ modèle choisi par `/model`, souvent le plus gros poste de consommation.
 **L'effort de réflexion.** Avant de répondre, un modèle réfléchit, et cette réflexion se paie
 comme du texte produit. Chaque agent fixe donc aussi son `effort` : `low` pour `forge:qc-gate`,
 qui n'a rien à peser, `high` pour `forge:staff-engineer`, qui tranche les questions techniques
-difficiles, `medium` pour les autres. `CLAUDE_CODE_EFFORT_LEVEL`, posé sur un poste, l'emporte sur
+difficiles, et pour `forge:coder`, `medium` pour les autres. `CLAUDE_CODE_EFFORT_LEVEL`, posé sur un poste, l'emporte sur
 ce réglage. `forge:qc-gate` démarre aussi sans `CLAUDE.md` (`omitClaudeMd`, Claude Code 2.1.271 et
 plus) : il lit ses portes dans `docs/agents/usine.md`. Le champ retire ceux du projet, mais aussi le
 `~/.claude/CLAUDE.md` du poste et le `CLAUDE.local.md` ; seuls les fichiers de politique gérée
 restent. Une consigne du poste dont `forge:qc-gate` aurait besoin (compte `gh`, proxy) ne lui
 parvient donc pas. Ces deux champs sont ceux que la documentation de Claude Code donne pour un
 agent ; leur gain n'est pas mesuré, et ils n'ont pas encore été essayés sur un vrai poste.
+
+**Le modèle du coder** (décision du 2026-11-14, commune aux projets qui adoptent forge : les jetons
+comptent autant que le temps). Sonnet aux tours 1 et 2, Opus pour la correction jugée au tour 3
+avec la ligne `ESCALATION: #<PR> round 3`, Haiku en mode sync sans conflit avec la ligne
+`MODE: sync` ; un Haiku qui rencontre un conflit annule la fusion (`git merge --abort`) et rend
+`RESULT: BLOCKED` avec `QUESTION: conflict in <fichiers>`, puis la session le relance sur Sonnet.
+
+- Le hook `guard_coder_model` tient la règle sur `Agent` (alias `Task`) et sur `Workflow`
+  (`agent()` avec `agentType`), pour `forge:coder` comme pour `coder`. Un lancement sans `model`
+  ni `effort` passe : la documentation de Claude Code dit « Claude Code resolves the subagent's
+  model in this order: 1. The per-invocation `model` parameter 2. The subagent definition's
+  `model` frontmatter [...] 4. The main conversation's model », donc la frontmatter l'emporte sur
+  le modèle de la session principale. `model: sonnet` passe ; `opus` et `haiku` passent avec leur
+  ligne ; tout autre modèle, `fable` compris, est refusé ; un `effort` donné vaut `high` ; des
+  options ou un prompt qu'il ne lit pas (une variable dans un workflow) sont refusés.
+- Benchmarks (2026-11-14, chiffres d'Anthropic repris par des blogs, non vérifiés) :
+  Terminal-Bench 4.0, Sonnet 5.5 70,6 %, Opus 5.5 66,4 %, Haiku 5.5 39,2 % ; SWE-bench Pro,
+  Opus 89,9, Sonnet 81,3. Sources : https://apidog.com/blog/claude-sonnet-5-5-benchmarks/ et
+  https://anthropic.com/news/claude-haiku-5-5.
+- Mesure : les 15 prochaines PR fusionnées de chaque dépôt, coût par PR fusionnée (jetons pondérés
+  par le prix du modèle). La règle tient si ce coût baisse sans hausse de la part de PR rejetées
+  par rapport à la base du dépôt. Les cas de validation gelés entrent en même temps : leurs effets
+  ne se séparent pas.
+- Ce que le hook ne tient pas : que le tour 3 soit vraiment le troisième (il lit la ligne, pas le
+  compte des `VERDICT: REJECT`) ; qu'un coder lancé avec `MODE: sync` soit en mode sync, et qu'un
+  Haiku en conflit annule la fusion au lieu de la résoudre (règle écrite dans `agents/coder.md`,
+  aucun hook ne voit le modèle d'un coder qui pousse) ; `CLAUDE_CODE_EFFORT_LEVEL`, qui l'emporte
+  sur l'effort de la frontmatter et du lancement ; un mod dont le hook `agent.spawn` fixe un modèle,
+  que Claude Code prend à la place du paramètre ; un workflow qui ne nomme pas le coder (le mot
+  `coder` absent du script et de `args`) et forme `agentType` par une variable ; un workflow
+  intégré ou d'un autre plugin, que le hook ne trouve pas.
 
 **Brancher un autre fournisseur.** Les quatre niveaux (`fable`, `opus`, `sonnet`, `haiku`) sont
 des alias que chaque poste fait pointer où il veut, sans toucher au plugin :

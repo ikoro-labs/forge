@@ -401,6 +401,10 @@ class RenameKeepsItsPath(unittest.TestCase):
         self.assertEqual(statuses(["x/ | removed-line"], text), [APPLIES])
         self.assertEqual(statuses(["b/y/ | removed-line"], text), [NONE])
 
+    def test_a_file_moved_unchanged_into_b_under_the_entry_applies(self) -> None:
+        text = real_diff({"y/ref.txt": self.BODY}, {"b/y/ref.txt": self.BODY})
+        self.assertEqual(statuses(["y/ | removed-line"], text), [APPLIES])
+
 
 class RenameWithEdit(unittest.TestCase):
     """Ticket #16: a file leaving or entering the path while it changes is read under the entry."""

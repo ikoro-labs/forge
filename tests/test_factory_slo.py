@@ -190,9 +190,26 @@ class Sli(unittest.TestCase):
         self.assertEqual((result["numerateur"], result["denominateur"]), (1, 3))
         self.assertEqual(result["illisibles"], 1)
 
-    def test_rework_rate_is_the_share_of_tickets_ending_in_agent_rework(self) -> None:
+    def test_accept_round_1_reads_a_third_round_verdict(self) -> None:
+        """A `ROUND: 3` verdict is a readable verdict, not an unreadable one."""
+        self.world.answers["pr list"][2]["comments"].append(verdict(3, "ACCEPT", "2026-10-06T09:00:00Z"))
+        self.assertEqual(self.sli("accept-round-1")["illisibles"], 1)
+
+    def test_rework_rate_is_the_share_of_merged_prs_with_a_reject(self) -> None:
+        """rework-rate: merged PRs in the window with at least one `VERDICT: REJECT`, over the merged PRs."""
         result = self.sli("rework-rate")
-        self.assertEqual((result["numerateur"], result["denominateur"]), (1, 4))
+        self.assertEqual((result["numerateur"], result["denominateur"]), (1, 3))
+
+    def test_rework_rate_ignores_the_agent_rework_label(self) -> None:
+        """A merged PR counts by its REJECT verdicts, a third-round one included, never by a label."""
+        self.world.answers["pr list"] += [
+            pr(17, "2026-10-22T00:00:00Z", state="MERGED", mergedAt="2026-10-23T00:00:00Z",
+               labels=[{"name": "agent-rework"}], comments=[verdict(1, "ACCEPT", "2026-10-22T12:00:00Z")]),
+            pr(18, "2026-10-22T00:00:00Z", state="MERGED", mergedAt="2026-10-24T00:00:00Z",
+               comments=[verdict(3, "REJECT", "2026-10-23T00:00:00Z"), verdict(4, "ACCEPT", "2026-10-23T12:00:00Z")]),
+        ]
+        result = self.sli("rework-rate")
+        self.assertEqual((result["numerateur"], result["denominateur"]), (2, 5))
 
     def test_escaped_defects_over_merged_prs(self) -> None:
         result = self.sli("escaped-defects")

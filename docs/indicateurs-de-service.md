@@ -19,7 +19,7 @@ il ne lit que `docs/agents/usine.md` en configuration.
 | SLI | Définition |
 | --- | --- |
 | `accept-round-1` | part des PR dont le premier verdict (`ROUND: 1`, posté dans la fenêtre) est `ACCEPT` |
-| `rework-rate` | part des tickets cités par les PR ouvertes dans la fenêtre qui finissent en `agent-rework` |
+| `rework-rate` | part des PR fusionnées dans la fenêtre qui ont reçu au moins un `VERDICT: REJECT` |
 | `escaped-defects` | tickets `escaped-defect` ouverts dans la fenêtre, rapportés aux PR fusionnées |
 | `lead-time` | médiane et p90 du délai entre la première pose de `ready-for-agent` sur le ticket et la fusion de la PR qui le ferme (`Closes`, pas `Refs`) |
 | `release-lag` | médiane et p90 du délai entre une fusion et le premier tag de version qui contient son commit |
@@ -201,31 +201,23 @@ précédente. La PR `chore(release)` la colle sous l'entrée qu'elle ouvre (`doc
 
 La revue de bout en bout (`forge:feature-review`, bouclée par `forge:feature-build`) a ses propres
 indicateurs : ceux ci-dessus ne mesurent rien de ce que voit l'utilisateur (série
-ikoro-labs/forge#91). Ils se calculent sans modèle, depuis les tickets d'écart, les `matrice.md` et
-les journaux `revue/boucle.tsv` des features du dossier de la clé `feature-dir`. Sans cette clé, chacun
-est « sans objet (clé `feature-dir` absente) ».
+ikoro-labs/forge#91). They are computed without a model, from the `matrice.md` and the
+`revue/boucle.tsv` journals of the features under the folder of the key `feature-dir`. Without that key,
+each one is « sans objet (clé `feature-dir` absente) ». A review opens no ticket (it comments its gaps on
+the existing tickets), so no indicator of the review reads tickets.
 
 | SLI | Définition |
 | --- | --- |
-| `review-gaps` | écarts des tickets d'écart ouverts dans la fenêtre, **par gravité** (un identifiant de la ligne `Couvre :` compte pour un écart), et **par passage** : pour chaque tour du journal, les identifiants non `tenu`, rangés par la gravité du ticket qui les couvre. Une gravité inconnue est « sans gravité ». Sans objectif possible : c'est un compte, il se lit |
-| `review-gap-lead-time` | médiane et p90 du délai entre l'ouverture d'un ticket d'écart et sa fermeture, pour les tickets fermés dans la fenêtre |
 | `matrix-coverage` | lignes `tenu` ou `écarté` sur toutes les lignes des matrices, à l'état actuel |
 | `review-regressions` | identifiants qui redeviennent un écart après une correction (la règle de `revue_boucle.py retours`), sur ceux qui ont été un écart dans un tour du journal |
 
-Un **ticket d'écart** est un ticket dont le corps porte une ligne `Couvre : <identifiants>` et une ligne
-`Feature: F-NNNN` (ce que la boucle écrit en publiant un écart). Sa gravité se lit sur l'étiquette
-`gravite:bloquant`, `gravite:majeur` ou `gravite:mineur`, que la boucle pose avec `ready-for-agent`. Le
-délai d'un écart est celui de son ticket : un écart est fermé quand son ticket l'est, non quand un tour
-suivant le trouve `tenu`.
+One limit, stated by the report: the journal and the matrix have no date per line, so `matrix-coverage`
+and `review-regressions` are read at the current state, over the whole history of the journal, whatever
+the window (their trend stays stable as long as the files do not change). An unreadable matrix is counted
+apart (`illisibles`); a feature without a journal has no returns to count.
 
-Deux limites, dites par le rapport : le journal et la matrice n'ont pas de date par ligne, si bien que
-`matrix-coverage` et `review-regressions` se lisent à l'état actuel, sur toute l'histoire du journal,
-quelle que soit la fenêtre (leur tendance est donc stable tant que les fichiers ne changent pas) ; et le
-numéro de passage vaut pour chaque feature, les passages de plusieurs features s'additionnent. Une matrice
-illisible est comptée à part (`illisibles`) ; une feature sans journal n'a pas de retours à compter.
-
-`report` ajoute une section « Revue de bout en bout » (fenêtre de 30 jours) avec ces quatre indicateurs,
-que la clé `slo` les déclare ou non.
+`report` adds a section « Revue de bout en bout » (30-day window) with these two indicators, whether the
+key `slo` declares them or not.
 
 **L'objectif proposé** porte sur les écarts réintroduits : un écart qui revient après sa correction dit
 que la correction n'a pas tenu, et la boucle s'arrête à deux retours du même identifiant. Dix pour cent

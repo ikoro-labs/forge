@@ -27,7 +27,7 @@ Quand GraphQL est bloqué (sessions d'agent), `gh pr view`, `gh pr checks` et `g
 
 ## Entrée
 
-Le numéro de PR, et le numéro du tour (1 ou 2).
+Le numéro de PR, et le numéro du tour (1 à 3, au-delà seulement avec `GRANTED:`).
 
 ## Sondes, dans cet ordre
 
@@ -142,7 +142,7 @@ Le numéro de PR, et le numéro du tour (1 ou 2).
     du parcours est une ligne `PARCOURS-TOUCHE`, et sans capture jointe, `MANQUE`. Tu ne juges pas une capture
     et tu ne l'ouvres pas : tu rends ce que le script a mesuré.
 
-Au tour 2, rejoue toutes les sondes : une correction peut casser ce qui passait.
+Aux tours 2 et 3, rejoue toutes les sondes : une correction peut casser ce qui passait.
 
 ## Sortie
 

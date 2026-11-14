@@ -66,12 +66,35 @@ ne fusionne une PR rouge, ou ne sort de son rôle.
 | Hook | Ce qu'il garde |
 | --- | --- |
 | `guard_git` | pas de commit ni de push sur `main`, pas de `--force`, pas de fusion d'une PR dont un check n'est pas vert ou dont un fichier touche la clé `protected-path`, pas de geste du propriétaire du dépôt (runners, protection, collaborateurs, secrets, visibilité) |
+| `guard_infra` | the infrastructure gestures (`docker rm`, `systemctl restart`, `lxc delete`..., and anything off the read list on a host of the `infra-hosts` key): refused to a subagent, asked in the main session; see [The infrastructure guard](#the-infrastructure-guard) |
 | `guard_coder` | le coder ne fusionne pas, ne relit pas, ne lance ni `forge:qc` ni la revue de bout en bout, ne ferme pas de ticket, n'écrit que dans son worktree, ne pousse ni avec `-u` ni avec `-f` |
 | `guard_readonly` | les juges et les décideurs lisent, n'écrivent jamais |
+| `guard_ticket_budget` | a design holds `feature-tickets: N`, N at most 15, never raised once accepted nor below the tickets published; every ticket names an admitted reason (`Motif :`) that no edit changes, and a feature never opens more tickets than its budget nor a second tracking ticket, by gh, a nested shell or a GitHub MCP tool ([details](docs/installation.md#the-ticket-budget-of-a-feature)) |
+| `guard_cases` | une PR de feature s'ouvre sur des cas de validation acceptés (`AGREED:`) ; un verdict ne bloque que sur ces cas gelés, une règle du socle ou une régression |
+| `guard_coder_model` | un `forge:coder` (ou `coder`) lancé par `Agent`, `Task` ou un `Workflow` tourne sur `sonnet`, sur `opus` avec la ligne `ESCALATION: #<PR> round 3`, sur `haiku` avec la ligne `MODE: sync`, jamais sur un autre modèle ; un `effort` donné vaut `high` ; des options qu'il ne lit pas sont refusées |
 | `guard_pause` | tant que `.claude/PAUSED` existe, aucun agent n'est lancé |
+| `guard_completion` | une question de l'humain sur l'avancement d'une feature ou du projet reçoit le tableau de `scripts/completion.py` : fermés sur le budget, % des tickets publiés avec son dénominateur, ouverts, hors compte, reste, date et source par ligne, sans total ; il laisse passer en cas d'erreur (transcript absent ou illisible) ([détail](docs/installation.md#le-tableau-de-complétion)) |
+| `guard_output` | every output follows its template and its word caps: a subagent's final text, the body of a gh ticket, PR or comment, the session's reply to the human ([details](docs/installation.md#output-structure)) |
 | `after_write` | formate chaque fichier écrit avec les formateurs que le projet déclare (clé `format-on-write`), puis refuse le tiret cadratin au-delà de ce que le projet admet |
 | `trim_output` | la longue sortie d'une commande de tests qui réussit est raccourcie, la sortie complète gardée dans un journal |
 | `sessions_notice`, `handoff_*` | une seule session par dépôt, et la passation à une nouvelle session quand le contexte est plein |
+
+## The infrastructure guard
+
+`guard_infra` holds the commands that change the infrastructure: Docker deletions and prunes,
+`docker compose down -v`, `systemctl` (or `service`) `restart`, `stop`, `disable`, `mask` and
+`kill`, `lxc config set`, `delete`, `stop`, `restart`, `restore` and `pause`, `networkctl` (but
+`status`, `list`, `lldp`), a runner's `svc.sh stop` and `uninstall`. On a host of the project's
+`infra-hosts` key, reached by `ssh`, `scp`, `sftp`, `rsync`, `lxc exec`, `lxc shell` or `lxc file`,
+or by Docker's endpoint (`-H`, `--context`, `DOCKER_HOST`), everything off a short read list is held
+(`docker ps`, `df`, `systemctl status`, `journalctl`...), but the project's own check commands of
+its `infra-verify` key. Every command is parsed, so quotes hide no program; wrappers (`sudo`, `env`,
+`timeout`, `sshpass`...) and `sh -c`, `$(...)`, `;`, `&&`, `|` are looked through; what the guard
+cannot read is held. A subagent is refused; the main session asks
+the human, who answers the prompt or types the command himself with `! <command>`. A PR of forge
+that changes the guard, its tests, `guard_git.py` or `hooks.json` is merged by the owner only, in GitHub's web interface. What
+passes, what is out of reach and what was tried:
+[`docs/installation.md`](docs/installation.md#the-infrastructure-guard).
 
 ## Prérequis
 
@@ -89,7 +112,7 @@ ne fusionne une PR rouge, ou ne sort de son rôle.
      "enabledPlugins": { "forge@ikoro-labs": true },
      "extraKnownMarketplaces": {
        "ikoro-labs": {
-         "source": { "source": "github", "repo": "ikoro-labs/forge", "ref": "forge--v1.5.0" }
+         "source": { "source": "github", "repo": "ikoro-labs/forge", "ref": "forge--v1.6.0" }
        }
      }
    }
@@ -99,7 +122,7 @@ ne fusionne une PR rouge, ou ne sort de son rôle.
 3. Installer, une fois par poste, depuis la racine du projet :
 
    ```sh
-   claude plugin marketplace add ikoro-labs/forge@forge--v1.5.0 --scope project
+   claude plugin marketplace add ikoro-labs/forge@forge--v1.6.0 --scope project
    claude plugin install forge@ikoro-labs --scope project
    ```
 
@@ -131,9 +154,9 @@ Quatre clés activent, une par une, les preuves d'écran d'un projet qui a une i
 écran, navigateur piloté (jamais en CI), commande de l'ordinateur (sur un poste dédié), vidéo ou GIF
 d'un parcours. Deux clés de plus rejouent le parcours voulu en CI : `journey-replay` (le contexte de CI,
 nommé parmi les contextes requis, et la commande qui joue le parcours) et `journey-paths` (les chemins
-du front et des API qu'il consomme, dont toute PR doit joindre les captures). La revue en boucle pose des étiquettes `gravite:bloquant`,
-`gravite:majeur` et `gravite:mineur` sur ses tickets d'écart : elles doivent exister sur le dépôt, l'agent
-ne les crée pas. Le détail est dans [`docs/installation.md`](docs/installation.md).
+du front et des API qu'il consomme, dont toute PR doit joindre les captures). The review loop opens no
+ticket: it comments its gaps on the existing tickets of the feature. Le détail est dans
+[`docs/installation.md`](docs/installation.md).
 
 Pour adapter forge sans toucher au plugin, le projet ajoute ses propres skills, agents et hooks
 dans son `.claude/` : ils coexistent avec ceux de forge, dont les noms sont préfixés (`forge:`).

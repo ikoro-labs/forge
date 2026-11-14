@@ -109,8 +109,14 @@ Les règles git du projet : nommage des branches, format des commits, ligne d'at
 
 - `git-rules` : `<.claude/rules/git.md>`
 
+La méthode de fusion d'une PR par `/forge:qc` : `squash` ou `merge` (commit de fusion), celle
+que le dépôt GitHub autorise et que ses règles git demandent. Sans la clé, `/forge:qc` ne fusionne
+pas : l'étape est sans objet et la PR reste ouverte sur son ACCEPT.
+
+- `merge-method` : `<squash>`
+
 Le modèle de description de PR que `forge:coder` remplit. Le plugin en propose un,
-`templates/pr.md` (vue du changement, porte, rayon d'impact, preuves), à copier dans le dépôt : une valeur
+`templates/pr.md` (Change view, Door, Blast radius, Proofs), à copier dans le dépôt : une valeur
 possible de la clé, pas une valeur par défaut. Sans la clé, l'étape est sans objet.
 
 - `pr-template` : `<.github/pull_request_template.md>`
@@ -149,6 +155,14 @@ de la clôture, avant le commit et le push. Un code non nul arrête la commande 
 fichiers qu'elle change entrent dans le commit en cours. Sans la clé, rien ne se lance.
 
 - `feature-catalog-command` : `<uv run python -m scripts.features catalog>`
+
+La colonne propre au projet dans le tableau de complétion (`scripts/completion.py`, que le hook
+`guard_completion` exige en réponse à une question sur l'avancement) : `<en-tête> | <commande>`. La
+commande se lance depuis la racine du dépôt, `{feature}` remplacé par le `F-NNNN` de la ligne ; sa
+sortie, sur une ligne, remplit la cellule, et un code non nul y écrit l'erreur. Sans la clé, le
+tableau garde ses huit colonnes.
+
+- `completion-column` : `<Couverture | uv run python -m scripts.features status {feature}>`
 
 ## Rejeu et contrôles
 
@@ -232,12 +246,11 @@ commande. Sans la clé, les objectifs sont « sans objet (clé `slo` absente) »
 - `slo` : `<accept-round-1 | >= 80 % | 30>`
 - `slo` : `<lead-time p90 | <= 24 h | 30>`
 
-Les indicateurs de la revue de bout en bout (`review-gaps`, `review-gap-lead-time`, `matrix-coverage`,
-`review-regressions`) se calculent depuis les tickets d'écart de la boucle, les `matrice.md` et les
-`revue/boucle.tsv` des features du dossier de la clé `feature-dir` ; sans elle, ils sont « sans objet
-(clé `feature-dir` absente) ». Les deux ratios (`matrix-coverage`, `review-regressions`) et la durée
-`review-gap-lead-time` se déclarent comme les autres. L'objectif proposé porte sur les écarts
-réintroduits, ceux qui reviennent après une correction (voir `docs/indicateurs-de-service.md`) :
+The indicators of the end-to-end review (`matrix-coverage`, `review-regressions`) are computed from the
+`matrice.md` and the `revue/boucle.tsv` of the features under the folder of the key `feature-dir`; without
+it, they are « sans objet (clé `feature-dir` absente) ». Both ratios are declared like the others. The
+proposed objective is on the reintroduced gaps, those that come back after a fix (see
+`docs/indicateurs-de-service.md`):
 
 - `slo` : `<review-regressions | <= 10 % | 30>`
 
@@ -405,6 +418,18 @@ La grille de revue de `forge:qc-conf`, dans son ordre : un skill ou un fichier.
 
 - `review-grid` : `<.claude/skills/reviewer/SKILL.md>`
 
+Les cas de validation des tickets (`socle.md`, Validation cases). La date d'adoption : un ticket
+créé avant elle n'a pas besoin de cas, et son critère `A<n>` vaut le cas `A<n>.1`. Sans la clé,
+`guard_cases` ne lit rien et ne refuse rien. Chaque relecteur déclaré lit les cas au tour 0 quand le
+ticket nomme un chemin de son périmètre, et doit figurer dans `AGREED:` quand le diff de la PR en
+touche un. Le propriétaire est le login GitHub dont une modification du corps après l'ouverture de
+la PR reste admise. Les règles de sécurité locales s'ajoutent à la liste fermée du socle.
+
+- `validation-cases` : `<2026-11-14>`
+- `validation-reviewer` : `<securite | runner/, .github/>`
+- `validation-owner` : `<login GitHub du propriétaire>`
+- `security-rules` : `<L-3, L-4>`
+
 Les chemins qu'aucun agent ne fusionne, même sur ACCEPT : un humain le fait. Un chemin ou un préfixe
 par ligne, comparé mot à mot au chemin POSIX relatif de chaque fichier du diff. `forge:qc` s'arrête
 avant la fusion ; `guard_git` refuse en plus `gh pr merge` à tout agent quand un fichier du diff
@@ -461,6 +486,21 @@ calculateur du projet, par exemple), chacune comme un préfixe. Une par ligne.
 
 - `readonly-command` : `<uv run python -m scripts.calcul>`
 
+The hosts of the project's infrastructure (a CI server, an LXD instance), by address, DNS name, ssh
+alias or `lxc` instance name, one per line: `guard_infra` admits only its read list on them, by
+`ssh`, `scp`, `rsync` or `lxc exec <host> --`. Without the key, no remote host is guarded; the local
+deny list (`docker rm`, `systemctl restart`...) still holds.
+
+- `infra-hosts` : `<203.0.113.7>`
+- `infra-hosts` : `<ci-runner>`
+
+The project's own check commands, admitted on those hosts besides the read list, one per line and
+word for word: `bash <command>` and `sh <command>` count as `<command>`, any other argument or form
+is held. Without the key, no such command is admitted.
+
+- `infra-verify` : `<infra/runner/check.sh verify>`
+- `infra-verify` : `</opt/ci/host-check.sh status>`
+
 Les gestes du propriétaire du dépôt propres au projet, que `guard_git` refuse à tout agent en plus
 de sa liste intégrée (écritures de `gh api` sur les collaborateurs, protections de branche,
 rulesets, runners, secrets, variables, clés, webhooks et dépôt ; `gh secret`, `gh variable`,
@@ -495,3 +535,33 @@ found`, `could not start: <cause>` ou `not run: <cause>`. Sans la clé, rien n'e
 
 - `format-on-write` : `<**/*.py | uv run ruff format>`
 - `format-on-write` : `<apps/web/**/*.{ts,tsx} | pnpm --dir apps/web exec prettier --write>`
+
+### Output structure
+
+The hook `guard_output` checks every output against its template under `templates/`: a subagent's
+final text, the body of a gh ticket, pull request or comment, and the session's reply to the human.
+These keys are the exception to the rule above: an absent key keeps the cap written here, so the
+check holds in every project. Code blocks and table cells count, HTML comments do not; `0` lifts a cap.
+
+- `output-words-ticket` : `150`
+- `output-words-comment` : `150`
+- `output-words-pr` : `200`
+- `output-words-session-reply` : `150`
+- `output-words-subagent-return` : `200`
+- `output-words-paragraph` : `60`
+
+A project template replaces the plugin's for the required fields of one kind (`ticket`, `pr`,
+`comment`, `verdict`, `session-reply`, `subagent-return`): the `required:` part of its first line
+names them, or none.
+
+- `output-template` : `<pr | .github/pull_request_template.md>`
+
+A project agent checked against a declared format rather than the generic rule: `coder`, `verdict`,
+`decider` (keys `VERDICT:` and `DECISION:`), `gate` (a table), `subagent-return`, or `exempt`.
+
+- `output-agent-format` : `<security-reviewer | exempt>`
+
+The keys a project adds to a structured format (`verdict`, `coder`, `decider`): any other key is
+refused.
+
+- `output-extra-keys` : `<verdict | REGIME, VERIFIED, REMARKS, OUT OF SCOPE>`
