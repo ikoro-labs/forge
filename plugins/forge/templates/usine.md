@@ -480,6 +480,21 @@ calculateur du projet, par exemple), chacune comme un préfixe. Une par ligne.
 
 - `readonly-command` : `<uv run python -m scripts.calcul>`
 
+The hosts of the project's infrastructure (a CI server, an LXD instance), by address, DNS name, ssh
+alias or `lxc` instance name, one per line: `guard_infra` admits only its read list on them, by
+`ssh`, `scp`, `rsync` or `lxc exec <host> --`. Without the key, no remote host is guarded; the local
+deny list (`docker rm`, `systemctl restart`...) still holds.
+
+- `infra-hosts` : `<203.0.113.7>`
+- `infra-hosts` : `<ci-runner>`
+
+The project's own check commands, admitted on those hosts besides the read list, one per line and
+word for word: `bash <command>` and `sh <command>` count as `<command>`, any other argument or form
+is held. Without the key, no such command is admitted.
+
+- `infra-verify` : `<infra/runner/check.sh verify>`
+- `infra-verify` : `</opt/ci/host-check.sh status>`
+
 Les gestes du propriétaire du dépôt propres au projet, que `guard_git` refuse à tout agent en plus
 de sa liste intégrée (écritures de `gh api` sur les collaborateurs, protections de branche,
 rulesets, runners, secrets, variables, clés, webhooks et dépôt ; `gh secret`, `gh variable`,

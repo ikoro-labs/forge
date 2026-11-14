@@ -12,7 +12,7 @@ from guard_readonly import reader_refusal
 
 
 def refused(command: str) -> str | None:
-    return refusal(command, "feat/x", lambda _pr: False)
+    return refusal(command, "feat/x", lambda *_target: False)
 
 
 class NewlineSeparatesCommands(unittest.TestCase):
@@ -27,7 +27,7 @@ class NewlineSeparatesCommands(unittest.TestCase):
                 self.assertIsNotNone(refused(command))
 
     def test_29_p1_a_commit_on_main_on_a_second_line_is_refused(self) -> None:
-        self.assertIsNotNone(refusal("echo hi\ngit commit -m x", "main", lambda _pr: False))
+        self.assertIsNotNone(refusal("echo hi\ngit commit -m x", "main", lambda *_target: False))
 
     def test_29_p1_the_other_guards_split_on_a_newline_too(self) -> None:
         self.assertEqual(_commands("echo hi\ngit status"), [["echo", "hi"], ["git", "status"]])

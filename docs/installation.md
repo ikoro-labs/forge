@@ -304,11 +304,142 @@ s'analyse pas n'a pas été essayé non plus. `guard_coder` et `guard_readonly`,
 
 `guard_git` refuse à tout agent `gh pr merge <n>` quand un fichier du diff de la PR commence par une
 ligne de la clé `protected-path` de `usine.md`. Le diff se lit par `gh pr view <n> --json files`, sous
-le délai des autres appels du garde. Le refus nomme le fichier et le préfixe, et dit que la fusion
+le délai des autres appels du garde, là où la fusion s'exécute, comme les checks et la description
+(voir la section suivante). Le refus nomme le fichier et le préfixe, et dit que la fusion
 revient à l'humain, à lister en fin de compte rendu. La clé déclarée, une liste illisible, ou un `gh`
 qui échoue ou dépasse son délai, vaut refus. Sans la clé, le garde ne refuse rien à ce titre. La
 consigne de `forge:qc` reste (s'arrêter avant la fusion) : le garde est le filet, la consigne évite
 le refus. Essayé sur Linux seulement, par les tests ; pas encore sur un vrai poste Windows.
+
+## The infrastructure guard
+
+`guard_infra` runs before every `Bash` and `PowerShell` call. A command it holds is refused to a
+subagent (exit 2: Claude Code sets `agent_id` only within a subagent) and gets
+`permissionDecision: ask` in the main session, where the human answers the prompt. A failure of the
+guard refuses the command (`|| exit 2` and `"onFailure": "block"` in `hooks.json`).
+
+**Held wherever it runs** (a deny list):
+
+- Docker: `rm`, `rmi`, `kill`, `system prune`, `container`, `volume`, `builder`, `buildx`, `image` and
+  `network` `prune`, `volume rm`, `network rm`, and their long forms (`container rm` and `kill`,
+  `image rm`, the `remove` alias), Docker's global options (`-H`, `--context`) skipped;
+  `docker compose down -v` and `--volumes` (also `docker-compose`), while `up` and `down` pass;
+- `systemctl` `restart` (and `try-restart`, `reload-or-restart`...), `stop`, `disable`, `mask`,
+  `kill`, the power verbs (`reboot`, `poweroff`, `halt`, `kexec`, `isolate`...), and the commands
+  `reboot`, `shutdown`, `poweroff` and `halt`;
+- `lxc` `config set`, `config unset`, `config edit`, `config device remove`, `delete` (alias `rm`),
+  `stop`, `restart`, `restore`, `pause`;
+- `service <unit>` and `invoke-rc.d <unit>` with `stop`, `restart` or another verb held for
+  `systemctl`;
+- `networkctl`, every verb but `status`, `list` and `lldp`; `svc.sh stop` and `svc.sh uninstall`.
+
+**On a host of the `infra-hosts` key**, reached by `ssh`, `scp`, `sftp`, `rsync`, `lxc exec <host>
+--`, `lxc shell`, `lxc console` or `lxc file push|edit|delete`, every command off the read list is
+held: it is a list of admission, not a detection of writes. The
+read list: `docker ps`, `logs`, `inspect`, `images`, `stats --no-stream`; `df`; `free`; `uptime`;
+`systemctl status`, `show`, `is-active`; `journalctl` (but `--vacuum-*`, `--rotate`, `--flush`...);
+`pgrep`; `ps`; `true`; `cat` of `/proc` files; `lxc list`, `info`, `config show`; and the
+project's own check commands, one per line of its `infra-verify` key, matched word for word
+(`bash <command>` and `sh <command>` count as `<command>`; another argument is held). The plugin
+names no command of a project: without the key, none is admitted.
+`sh -c '<read> || true'` is a read. An output redirection to anything but `/dev/null`, an
+interactive `ssh`, and any `scp` or `rsync` to or from such a host are not. A destination is matched
+through `ssh -G` (aliases, `-o HostName=`, `-J`, `ProxyJump`) and the addresses it resolves to; an
+instance by its name. A destination the guard cannot read is held: a variable, a `-F` config, an
+`ssh -G` that fails, a resolver that does not answer in time, a jump chain too deep. An IPv4-mapped
+IPv6 address (`::ffff:203.0.113.7`) is its IPv4. Without the key no remote host is held, and the
+deny list still applies to the command `ssh` runs elsewhere.
+
+**Docker's endpoint** reaches a host too: a `docker` or `docker-compose` call off the read list is
+held when its endpoint is on a declared host. Every endpoint given is judged: `-H`, `--host`,
+`--context`, `-c`, `DOCKER_HOST` and `DOCKER_CONTEXT`, set before the command, by `env` or by an
+earlier `export`. Without any, the current context counts (the one `docker context use` chose). A
+context is resolved by `docker context inspect --format '{{.Endpoints.docker.Host}}'`, which reads
+the client's configuration and connects to nothing; a context that does not resolve, or a Docker
+that cannot be run, is held. Without the key, no context is read.
+
+**Parsed, every command**: a guarded program is found in the words the shell would run, so quotes
+and escapes hide none (`dock''er rm`, `d\ocker rm`, `"dock"er rm`). **Looked through**: the prefixes
+`sudo`, `env VAR=...`, `heavy-slot [opts] --`, `systemd-run [opts] --`, `timeout N`, `nice`,
+`nohup`, `exec`, `command`, `time`, `xargs` and `sshpass`; `sh -c`, `bash -c`, `eval` and a heredoc
+fed to a shell; `;`, `&&`, `||`, `|` and a newline; `$(...)`, backticks (not under PowerShell,
+where a backtick escapes) and `<(...)`, also in the body of a heredoc whose delimiter is unquoted.
+A part the guard cannot read is held: a program or a verb named by a variable (`docker $VERB`,
+`D=dock; ${D}er rm x`, `$CMD rm web`), a shell reading a pipe (`... | bash`), `env -S`, an option
+`heavy-slot` does not take. A text the lexer cannot split (unbalanced quotes, an unclosed
+substitution) is held when, its quotes and backslashes taken off, it holds a `$` or the name of a
+guarded program; otherwise it passes, since the shell cannot run it either. Under PowerShell,
+`$name = <command>` judges the command.
+
+**Out of reach, on purpose**: the hook sees the typed command only. A script that cleans its own
+resources (`bash infra/e2e-stack.sh`) and testcontainers run what they run. Neither are
+`find -exec`, `watch` nor a PowerShell `-Command` string followed. This guards against an accident,
+not against intent.
+
+**The human's gesture**: answer the permission prompt, or type the command in the prompt with
+`! <command>`. It is not documented that `!` escapes the hooks: the page
+[Interactive mode](https://code.claude.com/docs/en/interactive-mode), section "Shell mode with `!`
+prefix", only says the command runs "without going through Claude".
+
+**Final by construction**: `guard_git` refuses to every agent the merge of a PR whose diff touches
+`plugins/forge/hooks/guard_infra.py` (which holds the read list), `tests/test_guard_infra.py`,
+`plugins/forge/hooks/guard_git.py` (which holds this refusal) or `plugins/forge/hooks/hooks.json`
+(which runs the guard): "this PR changes the infra guard: only the owner merges it, by hand". It reads the files by
+`gh pr view <n> -R <repo> --json files`, and a reading that fails refuses too. A REST merge by
+`gh api` is judged on the same files, its endpoint written `repos/...` or
+`https://api.github.com/repos/...`; a GraphQL merge mutation is refused, since it names the PR by
+a node id the guard does not look up.
+
+A merge runs alone. `guard_git` judges a `gh pr merge` or a `gh api` merge only in one form:
+`[cd <path> &&] [GH_REPO=owner/repo] gh pr merge <n> [options] [| tee <file> | cat]`. The PR
+number, `-R`, `GH_REPO` and the `cd` path are literal; the options are those of `gh pr merge`,
+written one by one (no cluster such as `-sR`), and gh keeps the last `-R`. Only `--body-file`,
+`--body`, `--subject` and `--match-head-commit`, and the file of `tee`, may hold a variable, in
+double quotes (`--body-file "$T/m.md"`, `| tee "$T/merge.log"`): unquoted, word splitting may slip in a `-R`, and the refusal says
+"quote the variable or use a literal path". Anything else in the command refuses the merge with
+"run the merge alone": another command (`gh pr edit --add-label` goes in a command of its own),
+another assignment (`GIT_DIR`, `GH_HOST`), `export`, `declare`, `typeset`, `pushd`, `builtin`,
+`command`, `eval`, `source`, a subshell, `sh -c`, `xargs`, a wrapper, a redirection, a second
+`cd`. `cd <path>; gh pr merge` is refused too: if the `cd` fails, the merge runs in the first
+directory while the guard read the PR of the other. A merge the guard sees anywhere in the
+command counts: behind a wrapper, in `sh -c`, in `eval`, behind a gh alias, or among another
+program's arguments (`find -exec gh pr merge`), and a gh call whose group or verb is a variable.
+So does a program the shell names (a variable, a `$(...)` or a backtick, quoted or not, behind
+assignments and wrappers, at any depth of substitution) whenever a word of the command,
+substitutions included and quoted values split on their blanks, is `merge`, `api`, `graphql` or a
+path ending in `/merge`: `$(echo gh) pr merge 5`, `` `which gh` pr merge 5 `` and
+`G='gh pr merge'; $G 5` are refused as not run alone. In that one form, every reading of the
+merged PR (its checks, its description, its files for the protected paths and for the infra
+guard) reads the same PR: in the directory of the `cd`, in the repository of `-R`, of the PR's
+URL or of `GH_REPO`.
+
+A gh call that names no gh command is read through `gh alias list`, and judged as what its alias
+expands to: `gh mm 5` with `mm: pr merge` is a merge; an alias set with `!` is judged as the
+script it runs. An alias list that cannot be read refuses the call. That list holds only for a gh
+call run alone (a literal `cd` aside): beside anything else (`gh alias set`, a write to gh's
+config, a `GH_CONFIG_DIR=` or `HOME=`), the call counts as a merge, refused as not alone.
+`gh alias set`, `import` and `delete` are refused to a subagent.
+
+The tests of this refusal live in `tests/test_guard_infra.py` and `tests/test_guard_git.py`:
+removing it from `guard_git` turns them red, and changing them is itself such a PR. The owner
+merges it in GitHub's web interface (a `! gh pr merge` may still meet `guard_git`, see above).
+
+Known limits of `guard_git`:
+
+- a `gh api` write with a variable in its endpoint escapes the owner gestures
+  (`gh api --method PUT repos/$R/collaborators/x`);
+- `OWNER_ENDPOINT` does not cover the full URL `https://api.github.com/repos/...`;
+- extended globs (`extglob`) are not handled;
+- a merge run by a file escapes the guard: a script (`source`, `bash x.sh`, a `!` alias that
+  calls one), a program that calls gh or the API itself (Python, `curl`), a gh extension;
+- so does a program that runs gh from one argument string (`script -c "gh pr merge 5"`);
+- so does a program the shell names in a command where no word names a merge
+  (`$(printf 'gh pr mer%s' ge) 5`, a `$G` set by an earlier call); `guard_infra` holds every program
+  the shell names, refused to a subagent and asked in the main session.
+
+Tried under Linux only: by the tests, and by hand against the real `ssh -G` and resolver of one
+workstation (an alias, an address, a `-J` jump). Not yet in a real Claude Code session, nor under
+Windows or PowerShell.
 
 ## The ticket budget of a feature
 
@@ -500,6 +631,28 @@ the suite of `tests/` only, not yet in a real session.
   `agent_type` (`forge:coder`, `forge:qc-gate`...) ; un filtre faux ne s'appliquerait à personne,
   en silence, d'où les tests de `tests/`.
 - **Aucun `CLAUDE.md`** n'est chargé depuis un plugin : la constitution reste celle du projet.
+- **`gh api` et les gestes du propriétaire** : une écriture `gh api` dont le point d'accès contient
+  une variable leur échappe (`gh api --method PUT repos/$R/collaborators/x`).
+- **`OWNER_ENDPOINT`** ne couvre pas l'URL complète `https://api.github.com/repos/...`.
+- **Globs étendus** : `guard_git` ne traite pas les globs étendus (`extglob`).
+- **Une fusion seule** : `guard_git` ne juge une fusion que sous la forme
+  `[cd <chemin> &&] [GH_REPO=owner/repo] gh pr merge <n> [options] [| tee <fichier> | cat]`, et
+  refuse toute autre (« run the merge alone ») : une autre commande, `export`, `pushd`, `eval`,
+  `sh -c`, un sous-shell, une redirection. `cd x; gh pr merge` est refusé : si le `cd` échoue, la
+  fusion part du premier dossier, et le garde aurait lu la PR de l'autre. Seules les valeurs de
+  `--body-file`, `--body`, `--subject` et `--match-head-commit`, et le fichier de `tee`, acceptent
+  une variable, entre guillemets doubles. Un programme que le shell nomme (variable, `$(...)`,
+  accent grave) compte comme une fusion dès qu'un mot de la commande, substitutions comprises, est
+  `merge`, `api`, `graphql` ou un chemin qui finit par `/merge` : `$(echo gh) pr merge 5` est
+  refusé. Sans un tel mot (`$(printf 'gh pr mer%s' ge) 5`), `guard_git` ne le voit pas ;
+  `guard_infra` retient tout programme que le shell nomme, refusé à un sous-agent et demandé en
+  session principale. L'étiquette `agent-merged` se pose dans une commande à part.
+- **Alias gh** : un appel gh qui ne nomme aucune commande de gh est lu par `gh alias list` ; seul
+  ou derrière un `cd`, il est jugé selon son expansion, à côté d'autre chose il compte comme une
+  fusion. `gh alias set`, `import` et `delete` sont refusés à un sous-agent.
+- **Fusion lancée par un fichier** : un script (`source`, `bash x.sh`), un programme qui appelle
+  gh ou l'API lui-même (Python, `curl`), une extension gh, ou un programme qui lance gh depuis une
+  seule chaîne (`script -c "gh pr merge 5"`) échappent au garde.
 
 ### Éprouvé sur un poste (Claude Code 2.1.303, 2026-10-19)
 
