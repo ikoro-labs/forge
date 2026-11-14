@@ -9,6 +9,11 @@ Feature: F-NNNN <optional; required when the motif is `fusion-bloquee`>
 - A1: <one sentence a test can prove; the test fails on the base>
 - A2: <...>
 
+## Validation cases
+
+A1.1 | <input> | <expected result>
+AGREED: test-author, coder, qc-conf <and each reviewer whose perimeter the PR touches>
+
 ## Out of scope
 
 - <what a reader could expect here and is not done>

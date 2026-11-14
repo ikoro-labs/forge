@@ -182,6 +182,13 @@ class VerdictSocle(unittest.TestCase):
         parsed = parse_verdict(text)
         self.assertEqual((parsed["HEAD"], parsed["SOCLE"]), ("3f2a9c1", "260522a7767bc437"))
 
+    def test_a_socle_that_is_no_hexadecimal_sha_is_refused(self) -> None:
+        for value in ("banana", "260522", "260522a7767bc437" * 3, "260522A7767"):
+            with self.subTest(value=value):
+                text = VERDICT.replace("HEAD: 3f2a9c1\n", f"HEAD: 3f2a9c1\nSOCLE: {value}\n")
+                with self.assertRaisesRegex(OutputError, "SOCLE"):
+                    parse_verdict(text)
+
 
 class Domain(unittest.TestCase):
     def test_open_answer_is_read_with_its_prudent_path(self) -> None:

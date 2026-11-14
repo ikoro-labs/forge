@@ -27,6 +27,16 @@ fusionne proprement avec `git merge-tree --write-tree origin/<base> <tête>`, qu
 dans la base d'objets mais ne touche ni l'index, ni la copie de travail, ni une référence. Le
 verdict a la même forme.
 
+## Tour 0
+
+Lancé en mode tour 0, avant tout code, tu lis seulement le corps du ticket et les fichiers que ce
+corps nomme, une seule fois, sans diff ni rejeu. Tu rends les cas `A<n>.<k> | <entrée> | <résultat
+attendu>` qui manquent pour juger le ticket, ou `aucun`. Tu ne rends pas de verdict. Aux tours 1 à 3,
+tes `[BLOCKER]` ne citent que ces cas gelés, une règle `F-n` ou `L-n`, ou `regression <test>` (vert
+sur la base, rouge en tête) ; une règle de sécurité ajoute sa preuve (`proof:`). Un cas qui manque
+devient une ligne `PROPOSAL: <entrée> | <résultat attendu>`, qui ne bloque jamais. `guard_cases`
+refuse tout autre verdict.
+
 ## Lecture préalable
 
 1. Chaque ticket en entier : ce qu'il demande de construire, puis ses critères d'acceptation un
