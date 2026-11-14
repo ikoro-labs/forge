@@ -409,10 +409,11 @@ class Contents(unittest.TestCase):
     def test_the_skill_says_who_publishes_the_tickets_and_under_which_label(self) -> None:
         """No F-NNNN: ticket #100, A5: qui publie les tickets et sous quelle étiquette ; le rapport enrichit la page de la feature."""
         skill = read("skills", "feature-review", "SKILL.md")
-        self.assertIn("le passage les publie lui-même, sans accord de l'humain", skill)
-        self.assertIn("ne les publie qu'après l'accord de l'humain de la clé `accepting-human`", skill)
+        self.assertIn("passage posts them itself, without the human's agreement", skill)
+        self.assertIn("posts them only after the agreement of the human of the", skill)
         self.assertIn("`ready-for-agent`", skill)
-        self.assertIn("critère de sortie", skill)
+        self.assertIn("critère de", skill)
+        self.assertIn("A review opens no ticket", skill)
         self.assertIn("sans en créer une nouvelle", skill)
         self.assertIn("`recette.md`", skill)
 

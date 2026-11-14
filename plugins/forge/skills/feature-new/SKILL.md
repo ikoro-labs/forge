@@ -29,6 +29,8 @@ condition d'entrée).
    `gh issue create --label feature --title "F-NNNN : <titre>"`, corps : l'idée, le lien vers le
    dossier, et « Les tickets de cette feature en seront des sous-issues. » Reporte le numéro dans
    `issue:` de `idee.md`.
+   The body opens with the line `Motif : feature-new F-NNNN`: `guard_ticket_budget` refuses a ticket
+   without an admitted reason, and a second tracking ticket for the same feature.
 5. **Livrer** selon l'étape 7 du protocole ; la commande suivante est
    `/forge:feature-brainstorm F-NNNN` s'il reste des questions, sinon `/forge:feature-frame F-NNNN`.
 

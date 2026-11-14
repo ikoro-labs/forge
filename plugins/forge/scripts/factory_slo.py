@@ -36,9 +36,8 @@ The data come from GitHub (`gh ... --json`, run from the project folder, so `gh`
 repository itself), from git, and from the logs `token_audit.py` reads. Prints a Markdown table, or
 JSON with `--json`. The window is [depuis, jusqua), `jusqua` defaulting to now.
 
-The end-to-end review has four indicators of its own (`review-gaps`, `review-gap-lead-time`, `matrix-coverage`,
-`review-regressions`, helpers in `revue_indicateurs.py`), read from the gap tickets, the `matrice.md` and the
-`revue/boucle.tsv` of the features under the key `feature-dir` (absent: "sans objet"); `report` prints them in
+The end-to-end review has two indicators of its own (`matrix-coverage`, `review-regressions`, helpers in
+`revue_indicateurs.py`), read from the `matrice.md` and the `revue/boucle.tsv` of the features under the key `feature-dir` (absent: "sans objet"); `report` prints them in
 a section of its own.
 
 An indicator its data cannot give (no PR in the window, a key of `docs/agents/usine.md` absent) is
@@ -71,7 +70,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "hooks"))
 
 import budget  # noqa: E402  the hooks' reader of the `budget-action` key
 import revue_boucle  # noqa: E402  the journal of the end-to-end review loop
-import revue_indicateurs  # noqa: E402  the gap tickets, matrices and journals of that loop
+import revue_indicateurs  # noqa: E402  the matrices and journals of that loop
 import sla  # noqa: E402  the hooks' reader of the `sla` key and the severity classes
 import token_audit  # noqa: E402  the sibling script, as base_replay.py imports `usine`
 import usine  # noqa: E402
@@ -220,17 +219,6 @@ class Factory:
                 if str(item.get("state")).upper() != "CLOSED" or self.inside(when(item, "createdAt")):
                     found[int(item["number"])] = item
         return [found[number] for number in sorted(found)]
-
-    @property
-    def gap_tickets(self) -> list[revue_indicateurs.GapTicket]:
-        """The tickets of the end-to-end review loop (a `Couvre :` line and a `Feature:` line), whatever their date."""
-        fields = "number,title,body,state,createdAt,closedAt,labels"
-        found = self.cached("gap-tickets", lambda: self.gh("issue", "list", "--state", "all", "--limit", "1000", "--json", fields))
-        tickets = (
-            revue_indicateurs.gap_ticket(item, when(item, "createdAt"), when(item, "closedAt"), label_names(item))
-            for item in cast("list[dict]", found)
-        )
-        return [ticket for ticket in tickets if ticket is not None]
 
     @property
     def review_features(self) -> list[revue_indicateurs.Feature] | None:
@@ -472,37 +460,6 @@ def main_green(f: Factory) -> Sli:
 ABSENT_FEATURE_DIR = f"sans objet (clé `{revue_indicateurs.FEATURE_KEY}` absente)"
 
 
-def review_gaps(f: Factory) -> Sli:
-    """Gaps of the review loop: by severity (tickets opened in the window), by round (the journals)."""
-    name = "review-gaps"
-    found = f.review_features
-    if found is None:
-        return Sli(name, reason=ABSENT_FEATURE_DIR)
-    opened = [t for t in f.gap_tickets if f.inside(t.opened)]
-    if not opened:
-        return Sli(name, reason="aucun ticket d'écart de la revue ouvert dans la fenêtre")
-    by_severity: dict[str, int] = {}
-    for ticket in opened:
-        by_severity[ticket.severity] = by_severity.get(ticket.severity, 0) + len(ticket.identifiers)
-    ordered = {k: by_severity[k] for k in (*revue_indicateurs.SEVERITIES, revue_indicateurs.NO_SEVERITY) if k in by_severity}
-    total = sum(ordered.values())
-    text = ", ".join(f"{k} {n}" for k, n in ordered.items())
-    data = {"valeur": total, "par_gravite": ordered, "par_passage": revue_indicateurs.gaps_by_round(found, f.gap_tickets)}
-    return Sli(name, data=data, text=f"{total} ({text})")
-
-
-def review_gap_lead_time(f: Factory) -> Sli:
-    """From the opening of a gap ticket to its closing, for the tickets closed in the window."""
-    if f.review_features is None:
-        return Sli("review-gap-lead-time", reason=ABSENT_FEATURE_DIR)
-    samples = [
-        (t.closed - t.opened).total_seconds()
-        for t in f.gap_tickets
-        if t.opened is not None and t.closed is not None and f.inside(t.closed)
-    ]
-    return durations("review-gap-lead-time", samples, "aucun ticket d'écart de la revue fermé dans la fenêtre")
-
-
 def matrix_coverage(f: Factory) -> Sli:
     """The rows `tenu` or `écarté` over all the rows of the matrices of the features, as they stand."""
     name = "matrix-coverage"
@@ -553,8 +510,8 @@ def compute(project: Path, since: datetime, until: datetime, run: Runner = run_c
 
 
 def review_slis(f: Factory) -> list[Sli]:
-    """The four indicators of the end-to-end review: they need the tickets and the files, nothing else."""
-    return [review_gaps(f), review_gap_lead_time(f), matrix_coverage(f), review_regressions(f)]
+    """The two indicators of the end-to-end review: they need the files, nothing else."""
+    return [matrix_coverage(f), review_regressions(f)]
 
 
 class SloError(ValueError):
@@ -566,7 +523,7 @@ KINDS = {
     "accept-round-1": RATIO, "rework-rate": RATIO, "escaped-defects": RATIO, "change-failure": RATIO,
     "human-touch": RATIO, "main-green": RATIO, "judge-recall": RATIO, "false-accept": RATIO,
     "matrix-coverage": RATIO, "review-regressions": RATIO,
-    "lead-time": DURATION, "release-lag": DURATION, "restore-time": DURATION, "review-gap-lead-time": DURATION,
+    "lead-time": DURATION, "release-lag": DURATION, "restore-time": DURATION,
     "tokens-per-merge": COUNT,
 }
 STATS = {"p90": "p90_h", "mediane": "mediane_h", "médiane": "mediane_h"}
@@ -745,7 +702,7 @@ def markdown(results: list[Sli], project: Path, since: datetime, until: datetime
         if item.reason is not None:
             lines.append(f"| `{item.name}` | sans objet | {item.reason} |")
             continue
-        extra = {k: v for k, v in item.data.items() if k not in {"numerateur", "denominateur", "valeur", "mediane_h", "p90_h", "echantillons", "par_gravite", "par_passage", "jetons"}}
+        extra = {k: v for k, v in item.data.items() if k not in {"numerateur", "denominateur", "valeur", "mediane_h", "p90_h", "echantillons", "par_gravite", "jetons"}}
         detail = ", ".join(f"{k.replace('_', ' ')} : {v}" for k, v in extra.items())
         lines.append(f"| `{item.name}` | {item.text} | {detail} |")
     return "\n".join(lines)
@@ -780,7 +737,7 @@ def report(project: Path, now: datetime, run: Runner = run_command, ref: Path | 
 
 
 REVIEW_DAYS = 30
-REVIEW_SLIS = ("review-gaps", "review-gap-lead-time", "matrix-coverage", "review-regressions")
+REVIEW_SLIS = ("matrix-coverage", "review-regressions")
 
 
 def review_check(project: Path, now: datetime, run: Runner = run_command) -> dict:
@@ -800,13 +757,6 @@ def review_markdown(document: dict) -> str:
     for item in document["indicateurs"]:
         if item["statut"] == "sans objet":
             lines.append(f"| `{item['nom']}` | sans objet : {item['raison']} |")
-        elif item["nom"] == "review-gaps":
-            by_severity = ", ".join(f"{k} {n}" for k, n in item["par_gravite"].items())
-            lines.append(f"| `review-gaps` | {item['valeur']} écarts par gravité : {by_severity} |")
-            for number, counts in item["par_passage"].items():
-                lines.append(f"| `review-gaps` passage {number} | " + ", ".join(f"{k} {n}" for k, n in counts.items()) + " |")
-        elif "mediane_h" in item:
-            lines.append(f"| `{item['nom']}` | médiane {item['mediane_h']} h, p90 {item['p90_h']} h ({item['echantillons']}) |")
         else:
             lines.append(f"| `{item['nom']}` | {round(100 * item['valeur'])} % ({item['numerateur']}/{item['denominateur']}) |")
     return "\n".join(lines)

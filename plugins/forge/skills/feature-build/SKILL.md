@@ -309,26 +309,24 @@ Ni minuterie, ni geste humain : la fusion déclenche, ou rien ne se lance.
    jour. C'est toi qui l'exécutes, jamais un coder : le skill ne se confie pas à l'agent qui a codé.
    Chaque clé qu'il lit et que le fichier ne porte pas rend son étape « sans objet », et sans
    capture il n'y a pas de revue (la revue s'arrête et tu le rapportes).
-3. **Les écarts repartent en construction.** La boucle publie elle-même les tickets du compte rendu,
-   sans accord de l'humain, sauf pour un identifiant qu'un ticket ouvert couvre déjà (un ticket en vol
-   reste ouvert jusqu'à sa fusion). Écris dans un fichier les lignes `#n<TAB>identifiants` des tickets
-   ouverts de la feature (leur ligne `Couvre :`), puis passe les lignes `TICKET` à
+3. **The gaps go to the existing tickets.** A review opens no ticket: the loop comments each gap
+   itself, without the human's agreement (sans accord de l'humain), on an existing ticket of the
+   feature. Write to a file the lines `#n<TAB>identifiants` of the feature's open tickets (their
+   `Couvre :` line), then pass the `TICKET` lines to
 
    ```
    uv run --no-project --quiet python "${CLAUDE_PLUGIN_ROOT}/scripts/revue_boucle.py" doublons <lignes TICKET> <ouverts>
    ```
 
-   Avant de publier, vérifie par `gh label list` que `ready-for-agent` et les étiquettes de gravité
-   des lignes `PUBLIER` (`gravite:bloquant`, `gravite:majeur`, `gravite:mineur`) existent
-   (`docs/installation.md`) : la boucle ne les crée pas ; s'il en manque une, elle ne publie rien,
-   s'arrête, nomme l'étiquette absente dans le compte rendu et pose `needs-your-attention` sur l'issue de
-   suivi, plutôt que de laisser `gh issue create` échouer.
-   Seules les lignes `PUBLIER` (déjà réduites aux identifiants non couverts) deviennent des tickets ;
-   `DEJA-COUVERT` et `OMIS` se rapportent, sans ticket. Un ticket par lot, étiqueté `ready-for-agent` et `gravite:<gravité>`
-   (celle de sa ligne `TICKET`), rattaché aux sous-issues de l'issue de suivi, avec `Couvre :` et `Feature: F-NNNN`. Ils entrent dans la
-   frontière de l'étape 1, puis dans le passage comme tout ticket (coder à l'étape 2, `forge:qc`
-   à l'étape 3), et leur fusion déclenche à son tour la revue de l'étape 1 de cette section, qui
-   rejoue le parcours.
+   A `DEJA-COUVERT` line names the open ticket that covers the identifier: the gap is commented
+   there, with title, severity, capture, identifiers, finding, exit criterion and `Couvre :`. A
+   `PUBLIER` line has no such ticket: its gap is commented on the feature's tracking issue
+   (`issue:` of `idee.md`), and the report names it. `OMIS` is reported, without a comment. A
+   commented ticket stays `ready-for-agent` and goes back through the passage as a part of itself
+   (`Refs #n`), like any ticket (coder at step 2, `forge:qc` at step 3), and its merge triggers again
+   the review of step 1 of this section, which replays the journey (rejoue le parcours). The only
+   exception: a defect that prevents a merge opens a ticket (`gh issue create`) whose body carries
+   `Motif : fusion-bloquee #<pr>` and `Feature: F-NNNN`.
 4. **Le journal et l'arrêt.** Le journal de la feature (`revue/boucle.tsv`, dans le dossier de la
    feature) est écrit sur la branche de la revue et livré dans sa PR, avec la matrice et le compte
    rendu. Quand un ticket qui porte une ligne `Couvre :` fusionne, avant la revue qu'il déclenche,
@@ -345,15 +343,14 @@ Ni minuterie, ni geste humain : la fusion déclenche, ou rien ne se lance.
    où il était `tenu`. Deux tours sans correction entre eux sont un seul écart vu deux fois, pas un
    retour : l'**identifiant de la source**, son état et les corrections fusionnées font foi, jamais le
    numéro d'un ticket comme clé de l'écart. Un écart revenu deux fois (code 1, ligne `ARRET`) arrête la boucle : plus aucun
-   ticket n'est publié pour cet identifiant, tu poses `needs-your-attention` sur l'issue de suivi
+   écart n'est commenté pour cet identifiant, tu poses `needs-your-attention` sur l'issue de suivi
    avec un commentaire qui nomme l'identifiant, ses constats de chaque tour et les captures, et
    c'est un **arrêt sur incident** (étape 4). L'humain tranche : la source, la spec ou le code.
-5. **Plafonds.** La boucle n'a aucun plafond de tours propre et aucun défaut nouveau : ses tickets
-   comptent dans `--max`, sa durée dans celle du passage, les jetons de `forge:review-judge` et de
-   `forge:review-recheck` dans ses jetons d'agents, et `.claude/PAUSED` l'arrête comme le reste.
-   Un plafond atteint ferme le robinet des coders (étape 4) : les tickets déjà publiés restent
-   `ready-for-agent`, le compte rendu les nomme, et le passage suivant les reprend. Le retour de
-   l'écart borne les tours sinon.
+5. **Caps.** The loop has no round cap of its own and adds no default: its duration counts in the
+   passage's, the tokens of `forge:review-judge` and `forge:review-recheck` in its agent tokens, and
+   `.claude/PAUSED` stops it like the rest. A cap reached closes the tap of coders (step 4): the
+   commented tickets stay `ready-for-agent`, the report names them, and the next passage takes them
+   back. The return of a gap bounds the rounds otherwise.
 6. **La PR de la revue.** Chaque revue ouvre une PR (matrice, rapport, captures, compte rendu,
    journal), qui ne ferme aucun ticket. Passe-la par l'étape 3 (`/forge:qc`, fusion si `ACCEPT`)
    **avant la revue suivante** : la revue d'après part ainsi d'une base qui porte la matrice et le
