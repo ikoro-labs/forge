@@ -444,6 +444,14 @@ class LineCap(unittest.TestCase):
             config = {"output-template": ["comment | c.md"]}
             self.assertTrue(any("at most 2" in d for d in deviations("a\nb\nc", "comment", config, Path(folder))))
 
+    def test_max_lines_zero_means_no_cap_as_a_zero_word_cap_does(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            Path(folder, "p.md").write_text("<!-- template: pr | max-lines: 0 | required: none -->\nx\n", encoding="utf-8")
+            config = {"output-template": ["pr | p.md"], "output-words-pr": ["0"]}
+            text = "\n".join(f"- line {index}" for index in range(80))
+            self.assertIsNone(line_cap(_template_text("pr", config, Path(folder))))
+            self.assertEqual(deviations(text, "pr", config, Path(folder)), [])
+
     def test_a_kind_without_a_template_has_no_line_cap(self) -> None:
         self.assertIsNone(line_cap(_template_text("decider", {}, None)))
 

@@ -33,7 +33,8 @@ Pull request numbers below are those of `ikoro-labs/forge`.
 - `guard_output`, new (#174): subagent returns, GitHub bodies (ticket, PR, comment, verdict) and the
   session's reply follow the templates of `templates/`, with word caps; the `output-*` keys replace a
   template or a cap. An agent is refused once, then passes with a journal line; a gh body is refused
-  each time. Always on.
+  each time. Always on. `max-lines: 0` in a project's template lifts the line cap, as `0` lifts a
+  word cap.
 - `guard_infra`, new (#176): Docker, `systemctl`, `lxc`, `service` and `networkctl` gestures that
   stop or delete are refused to a subagent and asked to the human in the main session; on a host of
   `infra-hosts`, everything off a read list is. The merge of a PR touching the guards is the owner's.
