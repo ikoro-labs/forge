@@ -13,7 +13,8 @@ script launches no command the project declares. Each `never-weaken` entry is
 `<path>` is a file, or a directory when it ends with `/`. One line per entry is printed, `<status>`,
 `<entry>` and `<detail>` separated by tabs, the status being APPLIES (the diff weakens what the
 entry guards), NONE, or INVALID (the entry is malformed). A diff that cannot be read (a binary
-patch under the path) is APPLIES, never NONE and never INVALID. A last line,
+patch) is read as a change for `raised-number` and `lowered-rank`; `removed-line` sees a binary
+file only when it is deleted or modified, not when it is created under the path. A last line,
 `docs/agents/usine.md : never-weaken`, says whether the diff removes or edits an entry (APPLIES) :
 a PR cannot lift the guard it is judged by. Exit code 0 when no entry applies, 1 when one does
 (an unreadable diff included), 2 when one is invalid or the call is wrong. Without the key, the step is "sans objet" and the exit code is 0.

@@ -30,7 +30,7 @@ fait, et les limites connues.
          "source": {
            "source": "github",
            "repo": "ikoro-labs/forge",
-           "ref": "forge--v1.5.0"
+           "ref": "forge--v1.6.0"
          }
        }
      }
@@ -47,7 +47,7 @@ fait, et les limites connues.
    l'installer. Depuis la racine du projet, redéclarer d'abord son épingle, puis installer :
 
    ```sh
-   claude plugin marketplace add ikoro-labs/forge@forge--v1.5.0 --scope project
+   claude plugin marketplace add ikoro-labs/forge@forge--v1.6.0 --scope project
    claude plugin install forge@ikoro-labs --scope project
    ```
 
@@ -99,6 +99,10 @@ une ligne retirée, un nombre relevé, un rang abaissé, mesurés sur le diff pa
 `plugins/forge/scripts/never_weaken.py`), les tolérances des hooks, les commandes dont la sortie se
 raccourcit. Le gabarit, `plugins/forge/templates/usine.md`, documente chaque clé.
 
+Depuis la 1.7.0, `/forge:qc` ne fusionne que si la clé `merge-method` dit comment : `squash` ou
+`merge` (commit de fusion), selon ce que le dépôt GitHub autorise. Un projet qui monte de version
+sans la poser voit ses PR rester ouvertes sur leur ACCEPT, avec la raison dans le compte rendu.
+
 Deux clés, `test-path` (un préfixe de chemin des fichiers de test, une ligne par préfixe) et
 `red-replay` (la commande qui lance un fichier de test, avec `{file}` ou `{name}`), ouvrent la sonde
 de rejeu de `forge:qc-gate` : `plugins/forge/scripts/base_replay.py` pose les tests que la PR ajoute
@@ -140,8 +144,10 @@ encore servi.
 
 **La revue en boucle.** `forge:feature-build` lance la revue de bout en bout après chaque fusion dont le
 diff touche un chemin de `journey-paths` (étape 3 bis), sans minuterie ni geste humain, sur les écrans
-que la matrice relie au ticket fusionné. Les tickets d'écart que la revue publie entrent dans le passage
-(`forge:coder`, puis `forge:qc`), sans accord de l'humain (jamais un second ticket pour un identifiant qu'un ticket ouvert couvre déjà), et la revue rejoue le parcours. Avant la
+que la matrice relie au ticket fusionné. A review opens no ticket: each gap is a comment on the open
+ticket of the feature that covers the identifier, or on the feature's tracking issue when none covers it;
+a commented ticket goes back through the passage (`forge:coder`, then `forge:qc`), without the human's
+agreement, and the review replays the journey. Avant la
 recette, une revue en entier doit laisser zéro `bloquant` et zéro `majeur`
 (`scripts/revue_boucle.py porte`). Les plafonds de la boucle sont ceux du passage (`--max`, durée,
 jetons, `.claude/PAUSED`) et elle n'en ajoute aucun. Un identifiant de la source de nouveau non `tenu`, après une correction fusionnée qui le couvrait,
@@ -149,15 +155,12 @@ deux fois, arrête la boucle et pose `needs-your-attention` sur l'issue de suivi
 l'humain tranche. Éprouvé sous Linux seulement, sur des fichiers écrits à la main ; aucune vraie
 application ni aucun vrai navigateur n'a servi à la boucle.
 
-Les tickets d'écart portent l'étiquette `ready-for-agent` et une étiquette de gravité, `gravite:bloquant`,
-`gravite:majeur` ou `gravite:mineur` (celle de leur lot), que les indicateurs de la revue
-(`docs/indicateurs-de-service.md`) lisent. Ces trois étiquettes doivent exister sur le dépôt ; l'agent ne
-les crée pas, c'est un geste du propriétaire du dépôt (`gh label create gravite:bloquant`, et de même pour
-les deux autres), à faire avant la première revue en boucle. La boucle les cherche avec `gh label list`
-avant de publier : si l'une manque, la boucle s'arrête sans rien publier, nomme l'étiquette absente dans
-son compte rendu et pose `needs-your-attention` sur l'issue de suivi, plutôt que de laisser `gh issue
-create` échouer ticket par ticket. Ce geste vaut pour tout projet qui fait tourner la boucle, avec ou sans
-la clé `slo`.
+The loop needs no label of its own: the severity of a gap is written in its comment, and the review
+indicators (`docs/indicateurs-de-service.md`) read the matrices and the journals, not tickets. The only
+ticket the loop may open is a defect that prevents a merge, whose body carries `Motif : fusion-bloquee
+#<pr>` and `Feature: F-NNNN` (see [the ticket budget of a feature](#the-ticket-budget-of-a-feature)).
+A gap left on a comment comes back into the feature at the next `to-tickets` publication or when the
+product-owner re-splits it.
 
 Deux clés de plus rendent le parcours voulu obligatoire. `journey-replay` s'écrit
 `<contexte de CI> | <commande>` : la commande joue le parcours de bout en bout, depuis un dépôt propre
@@ -305,11 +308,248 @@ s'analyse pas n'a pas été essayé non plus. `guard_coder` et `guard_readonly`,
 
 `guard_git` refuse à tout agent `gh pr merge <n>` quand un fichier du diff de la PR commence par une
 ligne de la clé `protected-path` de `usine.md`. Le diff se lit par `gh pr view <n> --json files`, sous
-le délai des autres appels du garde. Le refus nomme le fichier et le préfixe, et dit que la fusion
+le délai des autres appels du garde, là où la fusion s'exécute, comme les checks et la description
+(voir la section suivante). Le refus nomme le fichier et le préfixe, et dit que la fusion
 revient à l'humain, à lister en fin de compte rendu. La clé déclarée, une liste illisible, ou un `gh`
 qui échoue ou dépasse son délai, vaut refus. Sans la clé, le garde ne refuse rien à ce titre. La
 consigne de `forge:qc` reste (s'arrêter avant la fusion) : le garde est le filet, la consigne évite
 le refus. Essayé sur Linux seulement, par les tests ; pas encore sur un vrai poste Windows.
+
+## The infrastructure guard
+
+`guard_infra` runs before every `Bash` and `PowerShell` call. A command it holds is refused to a
+subagent (exit 2: Claude Code sets `agent_id` only within a subagent) and gets
+`permissionDecision: ask` in the main session, where the human answers the prompt. A failure of the
+guard refuses the command (`|| exit 2` and `"onFailure": "block"` in `hooks.json`).
+
+**Held wherever it runs** (a deny list):
+
+- Docker: `rm`, `rmi`, `kill`, `system prune`, `container`, `volume`, `builder`, `buildx`, `image` and
+  `network` `prune`, `volume rm`, `network rm`, and their long forms (`container rm` and `kill`,
+  `image rm`, the `remove` alias), Docker's global options (`-H`, `--context`) skipped;
+  `docker compose down -v` and `--volumes` (also `docker-compose`), while `up` and `down` pass;
+- `systemctl` `restart` (and `try-restart`, `reload-or-restart`...), `stop`, `disable`, `mask`,
+  `kill`, the power verbs (`reboot`, `poweroff`, `halt`, `kexec`, `isolate`...), and the commands
+  `reboot`, `shutdown`, `poweroff` and `halt`;
+- `lxc` `config set`, `config unset`, `config edit`, `config device remove`, `delete` (alias `rm`),
+  `stop`, `restart`, `restore`, `pause`;
+- `service <unit>` and `invoke-rc.d <unit>` with `stop`, `restart` or another verb held for
+  `systemctl`;
+- `networkctl`, every verb but `status`, `list` and `lldp`; `svc.sh stop` and `svc.sh uninstall`.
+
+**On a host of the `infra-hosts` key**, reached by `ssh`, `scp`, `sftp`, `rsync`, `lxc exec <host>
+--`, `lxc shell`, `lxc console` or `lxc file push|edit|delete`, every command off the read list is
+held: it is a list of admission, not a detection of writes. The
+read list: `docker ps`, `logs`, `inspect`, `images`, `stats --no-stream`; `df`; `free`; `uptime`;
+`systemctl status`, `show`, `is-active`; `journalctl` (but `--vacuum-*`, `--rotate`, `--flush`...);
+`pgrep`; `ps`; `true`; `cat` of `/proc` files; `lxc list`, `info`, `config show`; and the
+project's own check commands, one per line of its `infra-verify` key, matched word for word
+(`bash <command>` and `sh <command>` count as `<command>`; another argument is held). The plugin
+names no command of a project: without the key, none is admitted.
+`sh -c '<read> || true'` is a read. An output redirection to anything but `/dev/null`, an
+interactive `ssh`, and any `scp` or `rsync` to or from such a host are not. A destination is matched
+through `ssh -G` (aliases, `-o HostName=`, `-J`, `ProxyJump`) and the addresses it resolves to; an
+instance by its name. A destination the guard cannot read is held: a variable, a `-F` config, an
+`ssh -G` that fails, a resolver that does not answer in time, a jump chain too deep. An IPv4-mapped
+IPv6 address (`::ffff:203.0.113.7`) is its IPv4. Without the key no remote host is held, and the
+deny list still applies to the command `ssh` runs elsewhere.
+
+**Docker's endpoint** reaches a host too: a `docker` or `docker-compose` call off the read list is
+held when its endpoint is on a declared host. Every endpoint given is judged: `-H`, `--host`,
+`--context`, `-c`, `DOCKER_HOST` and `DOCKER_CONTEXT`, set before the command, by `env` or by an
+earlier `export`. Without any, the current context counts (the one `docker context use` chose). A
+context is resolved by `docker context inspect --format '{{.Endpoints.docker.Host}}'`, which reads
+the client's configuration and connects to nothing; a context that does not resolve, or a Docker
+that cannot be run, is held. Without the key, no context is read.
+
+**Parsed, every command**: a guarded program is found in the words the shell would run, so quotes
+and escapes hide none (`dock''er rm`, `d\ocker rm`, `"dock"er rm`). **Looked through**: the prefixes
+`sudo`, `env VAR=...`, `heavy-slot [opts] --`, `systemd-run [opts] --`, `timeout N`, `nice`,
+`nohup`, `exec`, `command`, `time`, `xargs` and `sshpass`; `sh -c`, `bash -c`, `eval` and a heredoc
+fed to a shell; `;`, `&&`, `||`, `|` and a newline; `$(...)`, backticks (not under PowerShell,
+where a backtick escapes) and `<(...)`, also in the body of a heredoc whose delimiter is unquoted.
+A part the guard cannot read is held: a program or a verb named by a variable (`docker $VERB`,
+`D=dock; ${D}er rm x`, `$CMD rm web`), a shell reading a pipe (`... | bash`), `env -S`, an option
+`heavy-slot` does not take. A text the lexer cannot split (unbalanced quotes, an unclosed
+substitution) is held when, its quotes and backslashes taken off, it holds a `$` or the name of a
+guarded program; otherwise it passes, since the shell cannot run it either. Under PowerShell,
+`$name = <command>` judges the command.
+
+**Out of reach, on purpose**: the hook sees the typed command only. A script that cleans its own
+resources (`bash infra/e2e-stack.sh`) and testcontainers run what they run. Neither are
+`find -exec`, `watch` nor a PowerShell `-Command` string followed. This guards against an accident,
+not against intent.
+
+**The human's gesture**: answer the permission prompt, or type the command in the prompt with
+`! <command>`. It is not documented that `!` escapes the hooks: the page
+[Interactive mode](https://code.claude.com/docs/en/interactive-mode), section "Shell mode with `!`
+prefix", only says the command runs "without going through Claude".
+
+**Final by construction**: `guard_git` refuses to every agent the merge of a PR whose diff touches
+`plugins/forge/hooks/guard_infra.py` (which holds the read list), `tests/test_guard_infra.py`,
+`plugins/forge/hooks/guard_git.py` (which holds this refusal) or `plugins/forge/hooks/hooks.json`
+(which runs the guard): "this PR changes the infra guard: only the owner merges it, by hand". It reads the files by
+`gh pr view <n> -R <repo> --json files`, and a reading that fails refuses too. A REST merge by
+`gh api` is judged on the same files, its endpoint written `repos/...` or
+`https://api.github.com/repos/...`; a GraphQL merge mutation is refused, since it names the PR by
+a node id the guard does not look up.
+
+A merge runs alone. `guard_git` judges a `gh pr merge` or a `gh api` merge only in one form:
+`[cd <path> &&] [GH_REPO=owner/repo] gh pr merge <n> [options] [| tee <file> | cat]`. The PR
+number, `-R`, `GH_REPO` and the `cd` path are literal; the options are those of `gh pr merge`,
+written one by one (no cluster such as `-sR`), and gh keeps the last `-R`. Only `--body-file`,
+`--body`, `--subject` and `--match-head-commit`, and the file of `tee`, may hold a variable, in
+double quotes (`--body-file "$T/m.md"`, `| tee "$T/merge.log"`): unquoted, word splitting may slip in a `-R`, and the refusal says
+"quote the variable or use a literal path". Anything else in the command refuses the merge with
+"run the merge alone": another command (`gh pr edit --add-label` goes in a command of its own),
+another assignment (`GIT_DIR`, `GH_HOST`), `export`, `declare`, `typeset`, `pushd`, `builtin`,
+`command`, `eval`, `source`, a subshell, `sh -c`, `xargs`, a wrapper, a redirection, a second
+`cd`. `cd <path>; gh pr merge` is refused too: if the `cd` fails, the merge runs in the first
+directory while the guard read the PR of the other. A merge the guard sees anywhere in the
+command counts: behind a wrapper, in `sh -c`, in `eval`, behind a gh alias, or among another
+program's arguments (`find -exec gh pr merge`), and a gh call whose group or verb is a variable.
+So does a program the shell names (a variable, a `$(...)` or a backtick, quoted or not, behind
+assignments and wrappers, at any depth of substitution) whenever a word of the command,
+substitutions included and quoted values split on their blanks, is `merge`, `api`, `graphql` or a
+path ending in `/merge`: `$(echo gh) pr merge 5`, `` `which gh` pr merge 5 `` and
+`G='gh pr merge'; $G 5` are refused as not run alone. In that one form, every reading of the
+merged PR (its checks, its description, its files for the protected paths and for the infra
+guard) reads the same PR: in the directory of the `cd`, in the repository of `-R`, of the PR's
+URL or of `GH_REPO`.
+
+A gh call that names no gh command is read through `gh alias list`, and judged as what its alias
+expands to: `gh mm 5` with `mm: pr merge` is a merge; an alias set with `!` is judged as the
+script it runs. An alias list that cannot be read refuses the call. That list holds only for a gh
+call run alone (a literal `cd` aside): beside anything else (`gh alias set`, a write to gh's
+config, a `GH_CONFIG_DIR=` or `HOME=`), the call counts as a merge, refused as not alone.
+`gh alias set`, `import` and `delete` are refused to a subagent.
+
+The tests of this refusal live in `tests/test_guard_infra.py` and `tests/test_guard_git.py`:
+removing it from `guard_git` turns them red, and changing them is itself such a PR. The owner
+merges it in GitHub's web interface (a `! gh pr merge` may still meet `guard_git`, see above).
+
+Known limits of `guard_git`:
+
+- a `gh api` write with a variable in its endpoint escapes the owner gestures
+  (`gh api --method PUT repos/$R/collaborators/x`);
+- `OWNER_ENDPOINT` does not cover the full URL `https://api.github.com/repos/...`;
+- extended globs (`extglob`) are not handled;
+- a merge run by a file escapes the guard: a script (`source`, `bash x.sh`, a `!` alias that
+  calls one), a program that calls gh or the API itself (Python, `curl`), a gh extension;
+- so does a program that runs gh from one argument string (`script -c "gh pr merge 5"`);
+- so does a program the shell names in a command where no word names a merge
+  (`$(printf 'gh pr mer%s' ge) 5`, a `$G` set by an earlier call); `guard_infra` holds every program
+  the shell names, refused to a subagent and asked in the main session.
+
+Tried under Linux only: by the tests, and by hand against the real `ssh -G` and resolver of one
+workstation (an alias, an address, a `-J` jump). Not yet in a real Claude Code session, nor under
+Windows or PowerShell.
+
+## The ticket budget of a feature
+
+The design of a feature declares `feature-tickets: N` in its header; the ceiling is 15, a constant of
+the plugin and not a key of `usine.md`. `guard_ticket_budget` holds it at four moments:
+
+- **At each write of a design.** An Edit, Write or MultiEdit of a `design.md` is refused when it
+  leaves `feature-tickets` above 15, below 1 once accepted, below the tickets the feature already
+  has, or above a budget the design was once accepted with: taking `statut: accepte` off and back
+  on raises nothing, since the hook reads that budget in the file, in its git history (any ref, the
+  last 30 commits of the file) and in its state file. A design is accepted only with the key, and an
+  accepted design may not remove it. A shell command that writes `statut: accepte` or
+  `feature-tickets` into a `design.md` (`sed -i`...) is refused: these go through Edit or Write.
+- **At each ticket.** `gh issue create`, a POST by `gh api` on `repos/<owner>/<repo>/issues`, a
+  `createIssue` mutation and the issue tools of a GitHub MCP server (`create_issue`, `issue_write`)
+  are read for the body's `Motif : <reason>` line, also inside `sh -c`, `bash -c`, `eval`, a shell fed
+  by a heredoc, a quoted `$(...)` and behind a wrapper (`env`, `timeout`, `xargs`...). Every ticket
+  carries an admitted reason, or it is refused; a misspelled one (`to-ticket`) is no admitted reason.
+  `to-tickets F-NNNN` counts for that feature, and so does `fusion-bloquee` with its required
+  `Feature: F-NNNN` line. `main-rouge`, `securite` and `demande-<who>` are out of budget, and so is
+  `feature-new F-NNNN`, the tracking ticket that `/forge:feature-new` opens: one per feature, a
+  second one is refused. A ticket opened earlier with a `Feature: F-NNNN` line and no admitted reason
+  still counts. A feature ticket is refused when its design (`<feature-dir>/NNNN-*/design.md`) is
+  missing, not accepted, has no budget or one above 15, or when the feature's tickets fill the
+  budget: those GitHub's search finds, open or closed (`gh issue list --state all --search`), a
+  ticket closed as not planned (`stateReason: NOT_PLANNED`, merged into another) left out, plus
+  those the hook let through in the last 10 minutes, which the search index may not show yet. An
+  open ticket, a completed one and a reason missing or unknown count. The refusal says to add a
+  part to an existing ticket (`Refs #n`).
+- **At each edit of a ticket.** `gh issue edit`, a PATCH by `gh api` on `repos/<owner>/<repo>/issues/<n>`
+  and the update tools of a GitHub MCP server may not add, remove or change a `Motif :` or `Feature:`
+  line of the body (the hook reads the current body with `gh issue view`). A body set by an
+  `updateIssue` mutation is refused.
+- **At each removal of a ticket.** `gh issue delete`, `gh issue transfer` and the delete or transfer
+  tools of a GitHub MCP server are refused on a ticket that holds a place in a budget (a feature
+  ticket, or the tracking ticket of a feature) and on one whose body gh cannot give: close it
+  instead. `deleteIssue` and `transferIssue` mutations are refused.
+- **At each reopening of a ticket.** `gh issue reopen`, a `gh api` call on
+  `repos/<owner>/<repo>/issues/<n>` with `state=open` and the update tools of a GitHub MCP server
+  with `state: open` bring a ticket closed as not planned back in its feature's count: the hook
+  counts as for a new ticket and refuses past the budget. A number or a state it cannot read, or a
+  ticket gh cannot give, is refused; `reopenIssue` and an `updateIssue` that sets `state` are refused.
+
+The hook refuses what it cannot read: a body passed by a variable (`--body "$BODY"`), a command
+substitution other than `$(cat <<'EOF' ... EOF)`, a heredoc with an unquoted delimiter whose body
+holds `$`, a backtick or a backslash, an editor or a pipe; a count gh cannot make (absent, network,
+error, timeout); an alias of gh, gh called through a variable, and any command that names
+`api.github.com` with issues or GraphQL (`curl`, `wget`, a script), refused as a precaution. Text in
+single quotes, an escaped `\$` or `` \` `` and a quoted heredoc (`<<'EOF'`) are read as written, a
+backtick included. Without the key `feature-dir`, the hook takes the value of the plugin's
+`templates/usine.md` (`docs/features`): an exception to the rule that an absent key takes no default,
+so that a project without the key is not refused every ticket.
+
+The state file is `ticket-budget.json` under `CLAUDE_PLUGIN_DATA`, the plugin's data directory, which
+Claude Code gives to hooks; an older Claude Code without it leaves the hook without memory, and the
+index lag below is then open. The file is locked on Linux and macOS, not on Windows.
+
+Limits, tried on Linux only, by the tests with a simulated gh, not yet in a real session:
+- the memory is per machine: two machines that publish the same feature at the same second can both
+  pass at the last slot, as can a ticket created outside the hook (the GitHub web page, another tool);
+- a ticket the hook let through but that gh failed to create still counts for 10 minutes;
+- closing a ticket as not planned frees a place in the budget: a gesture GitHub shows, that no hook
+  checks;
+- a shell fed by a pipe (`... | bash`), a script file run by a shell or an interpreter, and a design
+  renamed into place by `mv` are not read;
+- a GraphQL body variable fed by a JSON `--input` is refused as a precaution, and so is a backtick in
+  a double-quoted body under PowerShell, where it is an escape.
+
+## Le tableau de complétion
+
+`scripts/completion.py` imprime un tableau Markdown, une ligne par feature ouverte (ou par `F-NNNN`
+nommé) :
+
+    uv run --no-project --quiet python "${CLAUDE_PLUGIN_ROOT}/scripts/completion.py" [F-NNNN ...]
+
+| Colonne | Ce qu'elle porte |
+| --- | --- |
+| Feature | `F-NNNN` et le `titre` de son `idee.md` |
+| Suivi | l'`issue:` de son `idee.md` |
+| Fermés (completed) / budget | les tickets fermés que compte le budget, sur le `feature-tickets` du design (`?` sans lui) |
+| % | les fermés sur les tickets publiés (fermés et ouverts, hors compte exclus), arrondi à l'entier, le dénominateur dans la cellule (`67 % (2 / 3)`) ; `sans objet (aucun ticket publié)` sans ticket. Jamais sur le budget, qu'une feature peut ne pas remplir |
+| Ouverts | les tickets ouverts que compte le budget |
+| Hors compte (not_planned) | les tickets fermés comme non prévus, hors du budget |
+| Reste (numéros ouverts) | les numéros des tickets ouverts |
+| Relevé (date UTC) | l'heure de la lecture et sa source |
+
+Les tickets d'une feature sont les sous-issues de son issue de suivi (l'`issue:` de son `idee.md`),
+lues par `gh api .../sub_issues --paginate`. Sans `issue:`, ce sont ceux que place la recherche du
+[budget d'une feature](#the-ticket-budget-of-a-feature) (`to-tickets F-NNNN` et `Feature: F-NNNN`,
+chaque corps placé par sa ligne `Motif :`) ; la cellule `Relevé` dit la source. Un ticket fermé
+comme non prévu ne gonfle pas les fermés. Il n'y a pas
+de ligne de total : les dénominateurs des features ne s'additionnent pas. Une feature est ouverte
+tant que son dossier n'a pas de `README.md` et que son `etat` n'est pas `hors-perimetre` ou
+`abandonnee` (clé `feature-state`). La clé `completion-column` ajoute la colonne propre au projet.
+Un compte que gh ne peut pas faire arrête le script (code 2) : aucune ligne n'est devinée.
+
+Le hook `guard_completion` (Stop) lit le dernier message de l'humain dans le transcript. S'il pose
+une question (`?`) sur l'avancement (complétion, completion, avancement, progress, pourcentage, ou un
+`%` à côté de feature, projet ou `F-NNNN`), ou s'il porte l'un de ces mots à côté d'un `%` ou d'un
+`F-NNNN`, la réponse de la session depuis ce message doit contenir ce tableau, avec toutes ses
+colonnes ; sinon l'arrêt est bloqué une fois, avec la commande à lancer. La réponse suivante passe
+quoi qu'elle porte (`stop_hook_active`). Le hook laisse passer en cas d'erreur : un transcript
+absent ou illisible, un événement illisible ou sa propre panne ne bloquent jamais l'arrêt.
+Les messages de session (résultats d'outils, notifications, messages d'une autre session) ne sont
+pas l'humain. Essayé par les tests seulement, sous Linux et sous Windows ; pas encore dans une vraie
+session.
 
 ## Compléter ou remplacer, sans éditer le plugin
 
@@ -354,6 +594,30 @@ Ce qu'aucun agent ne fait à la place d'un humain :
    protection, seul `guard_git` retient une fusion dont un check n'est pas vert. `forge:qc-gate`
    lit la protection dans les rulesets comme dans l'ancienne protection de branche.
 
+## Output structure
+
+`guard_output` (hooks `SubagentStop`, `Stop`, and `PreToolUse` on `Bash`, `PowerShell`,
+`SubagentHandback` and the GitHub tools of an MCP server) checks each output with `plugins/forge/scripts/output_check.py`, which a skill
+can also run on a body before it posts it:
+
+| Output | Checked against | Refused |
+| --- | --- | --- |
+| final text of `forge:coder`, `forge:qc-conf`, `forge:qc-gate`, `forge:staff-engineer`, `forge:product-owner`, or the same name without `forge:` | the block its `agents/<name>.md` declares, keys closed | once; a second non-conforming output passes and is logged |
+| final text of any other agent | `templates/subagent-return.md` | once, then logged |
+| body of `gh issue create\|edit\|comment\|close -c`, `gh pr create\|edit\|comment\|review\|merge\|close -c`, `gh api ... -f\|-F body=` or `--input`, `gh api graphql` mutations `addComment`, `createIssue`..., read by `hooks/gh_bodies.py` (the reader `guard_cases` shares: gh behind a wrapper, in `bash -c`, `eval` or a substitution, a file after a `cd`); the text of a GitHub MCP tool, by the words of its name | `ticket.md`, `pr.md`, `comment.md`, or `verdict.md` when it opens with `VERDICT:` | every time |
+| the session's reply to the human | `templates/session-reply.md` | once per stop (`stop_hook_active`), then logged |
+
+The word caps (ticket 150, comment 150, PR 200, session reply 150, subagent return 200), the
+`max-lines` of each template header (ticket 25, PR 40, comment 12, session reply 15, subagent
+return 20, in written lines; a verdict has none; `max-lines: 0` in a project's template lifts it, as `0` lifts a word cap) and the 60-word paragraph cap hold when the project sets no key; code blocks and table cells count in the
+total, HTML comments do not, and the paragraph cap skips tables and code blocks. The keys
+`output-words-<kind>`, `output-template`, `output-agent-format` and `output-extra-keys` of
+`plugins/forge/templates/usine.md` adjust them. The journal of outputs let through is
+`~/.claude/hooks/state/structured-output/journal.jsonl`. A body the guard cannot read (a variable,
+a file it cannot open, a pipe into standard input) is refused, and so is `curl` or `wget` to
+`api.github.com`; `Stop` lets through a reply it cannot read, and a crash passes: only exit 3 blocks. Tried by
+the suite of `tests/` only, not yet in a real session.
+
 ## Limites connues
 
 - **Une source par marketplace et par poste** : la marketplace `ikoro-labs` n'est connue qu'une
@@ -371,6 +635,28 @@ Ce qu'aucun agent ne fait à la place d'un humain :
   `agent_type` (`forge:coder`, `forge:qc-gate`...) ; un filtre faux ne s'appliquerait à personne,
   en silence, d'où les tests de `tests/`.
 - **Aucun `CLAUDE.md`** n'est chargé depuis un plugin : la constitution reste celle du projet.
+- **`gh api` et les gestes du propriétaire** : une écriture `gh api` dont le point d'accès contient
+  une variable leur échappe (`gh api --method PUT repos/$R/collaborators/x`).
+- **`OWNER_ENDPOINT`** ne couvre pas l'URL complète `https://api.github.com/repos/...`.
+- **Globs étendus** : `guard_git` ne traite pas les globs étendus (`extglob`).
+- **Une fusion seule** : `guard_git` ne juge une fusion que sous la forme
+  `[cd <chemin> &&] [GH_REPO=owner/repo] gh pr merge <n> [options] [| tee <fichier> | cat]`, et
+  refuse toute autre (« run the merge alone ») : une autre commande, `export`, `pushd`, `eval`,
+  `sh -c`, un sous-shell, une redirection. `cd x; gh pr merge` est refusé : si le `cd` échoue, la
+  fusion part du premier dossier, et le garde aurait lu la PR de l'autre. Seules les valeurs de
+  `--body-file`, `--body`, `--subject` et `--match-head-commit`, et le fichier de `tee`, acceptent
+  une variable, entre guillemets doubles. Un programme que le shell nomme (variable, `$(...)`,
+  accent grave) compte comme une fusion dès qu'un mot de la commande, substitutions comprises, est
+  `merge`, `api`, `graphql` ou un chemin qui finit par `/merge` : `$(echo gh) pr merge 5` est
+  refusé. Sans un tel mot (`$(printf 'gh pr mer%s' ge) 5`), `guard_git` ne le voit pas ;
+  `guard_infra` retient tout programme que le shell nomme, refusé à un sous-agent et demandé en
+  session principale. L'étiquette `agent-merged` se pose dans une commande à part.
+- **Alias gh** : un appel gh qui ne nomme aucune commande de gh est lu par `gh alias list` ; seul
+  ou derrière un `cd`, il est jugé selon son expansion, à côté d'autre chose il compte comme une
+  fusion. `gh alias set`, `import` et `delete` sont refusés à un sous-agent.
+- **Fusion lancée par un fichier** : un script (`source`, `bash x.sh`), un programme qui appelle
+  gh ou l'API lui-même (Python, `curl`), une extension gh, ou un programme qui lance gh depuis une
+  seule chaîne (`script -c "gh pr merge 5"`) échappent au garde.
 
 ### Éprouvé sur un poste (Claude Code 2.1.303, 2026-10-19)
 

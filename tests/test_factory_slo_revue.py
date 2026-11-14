@@ -1,7 +1,7 @@
 """No F-NNNN: ticket #102 : les indicateurs de la revue de bout en bout, calculés sans modèle.
 
-Les écarts par gravité et par passage, le délai d'un écart à sa fermeture, la couverture de la
-matrice et les écarts réintroduits, ajoutés au rapport des SLO avec un SLO proposé.
+The coverage of the matrix and the reintroduced gaps, added to the SLO report with a proposed SLO.
+A review opens no ticket, so no indicator of the review reads tickets.
 """
 
 import io
@@ -38,30 +38,12 @@ USINE_REVUE = USINE + "- `feature-dir` : `docs/features`\n"
 NOW = datetime(2026, 11, 1, tzinfo=timezone.utc)
 
 
-def gap(number: int, created: str, closed: str | None, severity: str | None, covers: str) -> dict:
-    return {
-        "number": number, "title": f"Écart {number}", "state": "CLOSED" if closed else "OPEN",
-        "createdAt": created, "closedAt": closed,
-        "labels": [{"name": "ready-for-agent"}] + ([{"name": f"gravite:{severity}"}] if severity else []),
-        "body": f"Couvre : {covers}\nFeature: F-0007\n",
-    }
-
-
 class Revue(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.world = build(Path(self.tmp.name))
         isolate(self, self.tmp.name, CLAUDE_CONFIG_DIR=str(Path(self.tmp.name) / "claude"))
-        self.world.answers["issue list"] = []
-        self.tickets = [
-            gap(20, "2026-10-05T00:00:00Z", "2026-10-06T06:00:00Z", "bloquant", "EXI-01"),
-            gap(21, "2026-10-08T00:00:00Z", "2026-10-10T00:00:00Z", "majeur", "EXI-02, C01"),
-            gap(22, "2026-10-12T00:00:00Z", None, "mineur", "EXI-03"),
-            gap(23, "2026-09-01T00:00:00Z", "2026-09-02T00:00:00Z", "bloquant", "EXI-09"),
-            {"number": 24, "title": "Un ticket ordinaire", "state": "OPEN", "createdAt": "2026-10-09T00:00:00Z",
-             "closedAt": None, "labels": [], "body": "Feature: F-0007\n"},
-        ]
         self.usine(USINE_REVUE)
         folder = self.world.root / "docs" / "features" / "0007-demo"
         (folder / "revue").mkdir(parents=True)
@@ -72,8 +54,6 @@ class Revue(unittest.TestCase):
         (self.world.root / "docs" / "agents" / "usine.md").write_text(text, encoding="utf-8")
 
     def runner(self, cmd: list[str], cwd: Path) -> str:
-        if cmd[:3] == ["gh", "issue", "list"] and "--label" not in cmd:
-            return json.dumps(self.tickets)
         if cmd[:2] == ["gh", "api"] and cmd[2].endswith("/check-runs") and cmd[2] not in self.world.answers:
             return json.dumps({"check_runs": []})
         return self.world.runner(cmd, cwd)
@@ -87,25 +67,6 @@ class Revue(unittest.TestCase):
         with redirect_stdout(out):
             main(["report", str(self.world.root)], run=self.runner, now=NOW)
         return out.getvalue()
-
-    def test_a1_gaps_by_severity_and_by_round(self) -> None:
-        """No F-NNNN: ticket #102 A1 : les écarts par gravité (tickets de la fenêtre) et par passage (tours du journal)."""
-        result = self.sli("review-gaps")
-        self.assertEqual(result["par_gravite"], {"bloquant": 1, "majeur": 2, "mineur": 1})
-        self.assertEqual(result["valeur"], 4)
-        self.assertEqual(result["par_passage"]["1"], {"bloquant": 1, "majeur": 1, "mineur": 1})
-        self.assertEqual(result["par_passage"]["2"], {"majeur": 2, "mineur": 1})
-        self.assertEqual(result["par_passage"]["3"], {"bloquant": 1, "majeur": 1, "mineur": 1})
-
-    def test_a1_a_gap_without_a_severity_label_is_counted_apart(self) -> None:
-        """No F-NNNN: ticket #102 A1 : un ticket de la boucle sans étiquette de gravité s'appelle « sans gravité »."""
-        self.tickets.append(gap(25, "2026-10-13T00:00:00Z", None, None, "EXI-04"))
-        self.assertEqual(self.sli("review-gaps")["par_gravite"]["sans gravité"], 1)
-
-    def test_a2_delay_from_a_gap_to_its_closing(self) -> None:
-        """No F-NNNN: ticket #102 A2 : le délai de l'ouverture du ticket d'écart à sa fermeture, fermé dans la fenêtre."""
-        result = self.sli("review-gap-lead-time")
-        self.assertEqual((result["mediane_h"], result["p90_h"], result["echantillons"]), (39, 48, 2))
 
     def test_a3_matrix_coverage(self) -> None:
         """No F-NNNN: ticket #102 A3 : la couverture de la matrice, lignes tenu ou écarté sur le total."""
@@ -121,7 +82,7 @@ class Revue(unittest.TestCase):
     def test_a5_without_the_feature_dir_key_every_indicator_is_without_object(self) -> None:
         """No F-NNNN: ticket #102 A5 : sans la clé `feature-dir`, « sans objet (clé `feature-dir` absente) », jamais 0 ni 100 %."""
         self.usine(USINE)
-        for name in ("review-gaps", "review-gap-lead-time", "matrix-coverage", "review-regressions"):
+        for name in ("matrix-coverage", "review-regressions"):
             result = self.sli(name)
             self.assertEqual(result["statut"], "sans objet", name)
             self.assertIn("clé `feature-dir` absente", result["raison"])
@@ -142,7 +103,6 @@ class Revue(unittest.TestCase):
         self.usine(USINE_REVUE + f"- `slo` : `{SLO}`\n")
         text = self.report()
         self.assertIn("Revue de bout en bout", text)
-        self.assertIn("bloquant 1", text)
         self.assertIn("50 % (2/4)", text)
         self.assertIn("`review-regressions`", text)
         self.assertIn("25 % (1/4)", text)
@@ -152,8 +112,8 @@ class Revue(unittest.TestCase):
         self.usine(USINE + f"- `slo` : `{SLO}`\n")
         self.assertIn("sans objet (clé `feature-dir` absente)", self.report())
 
-    def test_a7_the_review_section_asks_for_the_issues_only(self) -> None:
-        """No F-NNNN: ticket #102 A7 : la section de la revue ne calcule que ses quatre SLI, un seul `gh issue list`, ni PR ni événements."""
+    def test_a7_the_review_section_asks_nothing_of_github(self) -> None:
+        """No F-NNNN: ticket #102 A7: the review section computes its two SLIs from the files alone, without any gh call."""
         calls: list[list[str]] = []
 
         def recording(cmd: list[str], cwd: Path) -> str:
@@ -161,8 +121,8 @@ class Revue(unittest.TestCase):
             return self.runner(cmd, cwd)
 
         document = review_check(self.world.root, NOW, recording)
-        self.assertEqual(document["indicateurs"][0]["nom"], "review-gaps")
-        self.assertEqual([cmd[:3] for cmd in calls], [["gh", "issue", "list"]])
+        self.assertEqual([item["nom"] for item in document["indicateurs"]], ["matrix-coverage", "review-regressions"])
+        self.assertEqual(calls, [])
 
 
 if __name__ == "__main__":

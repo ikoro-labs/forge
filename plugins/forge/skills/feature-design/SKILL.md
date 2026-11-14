@@ -39,7 +39,9 @@ Applique `${CLAUDE_PLUGIN_ROOT}/templates/features/protocole.md`, document `desi
    d'ADR du projet s'il en a un), numéro suivant le plus haut de `docs/adr/`, statut proposé, et les
    lister dans `adr:` de l'en-tête. Un terme nouveau entre dans le glossaire du contexte.
 6. **Découper**, une fois le design accepté (ou la spec seule en taille S) : des tickets en
-   tranches verticales, sous-issues de l'issue de suivi, chacun avec ses critères `A<n>` et ses
+   tranches verticales, sous-issues de l'issue de suivi, chacun avec ses critères `A<n>`, leurs
+   cas `A<n>.<k> | <entrée> | <résultat attendu>` (gabarit `templates/ticket.md`, complétés au
+   tour 0 de `forge:feature-build`) et ses
    liens vers la spec et le design figés à un commit, étiquetés `ready-for-agent`, et leurs
    dépendances déclarées. Trois règles :
    - **Un contexte neuf.** Chaque ticket tient dans un seul contexte neuf, celui d'un
@@ -52,6 +54,11 @@ Applique `${CLAUDE_PLUGIN_ROOT}/templates/features/protocole.md`, document `desi
      rayon couvre tout le code se fait en trois temps : expand (ajouter la nouvelle forme à côté
      de l'ancienne), migration par lots, puis contract (retirer l'ancienne). Chaque étape est un
      ticket bloqué par la précédente.
+
+   **The budget.** The `forge:product-owner` cuts the feature into at most 15 tickets, the
+   `feature-tickets` of the design header; `guard_ticket_budget` refuses the ticket beyond it.
+   Each published ticket (`gh issue create`) carries the line `Motif : to-tickets F-NNNN`; once the
+   list is published, it is closed.
 
    **La matrice.** Chaque ticket cite les identifiants de la source qu'il couvre (une ligne
    `Couvre : <identifiants>` dans son corps). Quand `matrice.md` existe dans le dossier de la
