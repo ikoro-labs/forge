@@ -10,7 +10,7 @@ from pathlib import Path
 from unittest import mock
 
 import support
-from guard_report_mail import REFUSED, outcome
+from guard_report_mail import REFUSED, _state_option, outcome
 from output_check import deviations
 from report_mail import MAIL_FILE
 
@@ -99,6 +99,13 @@ class HookTests(unittest.TestCase):
             (default / MAIL_FILE).write_text(WITHOUT_AWAITING, encoding="utf-8")
             command = "uv run python report_mail.py --sent"
             self.assertEqual(outcome(bash(command)).code, REFUSED)
+
+    def test_a3_a_windows_state_folder_keeps_its_backslashes(self) -> None:
+        folder = r"C:\Users\x\state"
+        self.assertEqual(_state_option(rf"report_mail.py --state-dir {folder} --sent"), folder)
+        self.assertEqual(_state_option(rf'report_mail.py --sent --state-dir "{folder}"'), folder)
+        self.assertEqual(_state_option(rf"report_mail.py --state-dir={folder} --sent"), folder)
+        self.assertIsNone(_state_option("report_mail.py --sent"))
 
     def test_a3_no_mail_to_read_lets_the_command_through(self) -> None:
         with project(None) as (_, state):
