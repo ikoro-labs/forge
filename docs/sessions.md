@@ -210,7 +210,7 @@ interactive ou un `CLAUDE_PID` inconnu, et (code 2) une passation qui ne nomme a
 | `CLAUDE_HANDOFF_DIR` | `~/.claude/hooks/state/handoffs` | dossier des passations, `~` et variables développés (`%LOCALAPPDATA%\forge\handoffs`) ; les marqueurs et compteurs restent dans `~/.claude/hooks/state` |
 | `CLAUDE_HANDOFF_RELAY_MAX` | 5 | relais par projet et par jour (code 3 au-delà) |
 | `CLAUDE_HANDOFF_CLOSE_DELAY` | 45 | secondes avant la fermeture de la session appelante, par le relais ou par `--yield`, 0 la garde ouverte |
-| `CLAUDE_HANDOFF_TERMINAL` | aucune | commande de terminal (`ghostty -e`, `gnome-terminal --`, `wt.exe` sous Windows) où ouvrir `claude attach <id>` ; sans elle, aucune fenêtre |
+| `CLAUDE_HANDOFF_TERMINAL` | le terminal par défaut du bureau | commande de terminal (`ghostty -e`, `gnome-terminal --`, `wt.exe` sous Windows) où ouvrir `claude attach <id>` ; sans elle, le terminal par défaut du bureau par `xdg-terminal-exec` (spécification freedesktop) quand il est installé, aucune fenêtre sinon (Windows, macOS) ; `off`, `0`, `false`, `no` ou vide : aucune fenêtre |
 | `CLAUDE_HANDOFF_CLOSE_DRY_RUN` | aucune | affiche le lancement et la fermeture sans rien lancer, compteur et passation intacts ; `0`, `false`, `no`, `off` ou vide le laissent coupé |
 
 ### Sous Windows

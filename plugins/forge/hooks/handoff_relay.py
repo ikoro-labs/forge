@@ -38,7 +38,8 @@ the successor's own `sessions` leaves out its author, alive during its closing d
 Environment: CLAUDE_HANDOFF_RELAY_MAX (default 5), CLAUDE_HANDOFF_CLOSE_DELAY seconds
 before closing the old session (default 45, 0 keeps it open), CLAUDE_HANDOFF_TERMINAL (a
 terminal command that runs the words after it, such as `ghostty -e`, `gnome-terminal --` or
-`wt.exe` on Windows: the relay opens `claude attach <id>` in it; unset, no window opens), and
+`wt.exe` on Windows: the relay opens `claude attach <id>` in it; unset, the desktop's default
+terminal through `xdg-terminal-exec` when it is installed; off, 0, false, no or empty: no window), and
 CLAUDE_HANDOFF_CLOSE_DRY_RUN (set to anything but empty, 0, false, no or off: print the relay
 and closing commands instead of running them; the counter and the handoff are left untouched).
 """
@@ -282,6 +283,15 @@ def close(delay: int, plan: Plan) -> None:
                 continue
 
 
+def viewer_terminal() -> str:
+    """CLAUDE_HANDOFF_TERMINAL, or unset, the desktop's default terminal: `xdg-terminal-exec`
+    (freedesktop's default terminal launcher) when it is installed. Empty means no window."""
+    chosen = os.environ.get("CLAUDE_HANDOFF_TERMINAL")
+    if chosen is not None:
+        return "" if chosen.strip().lower() in OFF else chosen
+    return "xdg-terminal-exec" if shutil.which("xdg-terminal-exec") else ""
+
+
 def open_viewer(terminal: str, relay_id: str) -> bool:
     """`claude attach <id>` in a new window: only a desktop session can show one."""
     if not WINDOWS and not (os.environ.get("WAYLAND_DISPLAY") or os.environ.get("DISPLAY")):
@@ -380,7 +390,7 @@ def relay(argv: list[str]) -> int:
     dry_run = os.environ.get("CLAUDE_HANDOFF_CLOSE_DRY_RUN", "").strip().lower() not in OFF
     cap = int(os.environ.get("CLAUDE_HANDOFF_RELAY_MAX", "5"))
     close_delay = int(os.environ.get("CLAUDE_HANDOFF_CLOSE_DELAY", "45"))
-    terminal = os.environ.get("CLAUDE_HANDOFF_TERMINAL", "")
+    terminal = viewer_terminal()
     state = Path.home() / ".claude" / "hooks" / "state"
     state.mkdir(parents=True, exist_ok=True)
     project = Path.cwd()
