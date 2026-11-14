@@ -84,6 +84,13 @@ class Channels(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertEqual(bodies(command), [("comment", "hi")])
 
+    def test_a_substitution_runs_where_the_shell_runs_it_not_in_single_quotes(self) -> None:
+        # unquoted, shlex also hands the words over as a subshell: the body is judged twice
+        self.assertEqual(set(bodies("echo $(gh issue comment 1 --body hi)")), {("comment", "hi")})
+        self.assertEqual(bodies("cat > f <<EOF\n$(gh issue comment 1 --body hi)\nEOF"), [("comment", "hi")])
+        quoted = "gh issue comment 2 --body 'run `gh pr create --body-file missing.md`'"
+        self.assertEqual(bodies(quoted), [("comment", "run `gh pr create --body-file missing.md`")])
+
     def test_gh_or_a_script_given_by_a_variable_is_unread(self) -> None:
         for command in ('bash -c "$S"', "eval \"$CMD\"", "$GH issue comment 1 --body hi", '"$GH" api repos/o/r/issues -f body=x'):
             with self.subTest(command=command), self.assertRaises(Unreadable):

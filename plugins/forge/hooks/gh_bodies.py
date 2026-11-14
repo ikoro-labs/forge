@@ -30,6 +30,7 @@ from guard_git import (
     is_standard_input_path,
     parse_api,
     read_text_or_none,
+    split_heredocs,
 )
 
 BODY_TEXT = ("--body", "-b")
@@ -456,18 +457,40 @@ def _script_of(words: list[str], docs: Heredocs) -> str | None:
     return None
 
 
-def _substitutions(word: str) -> list[str]:
-    """The commands of each `$(...)` and backtick substitution of a word."""
+def _substitutions(text: str, raw: bool = False) -> list[str]:
+    """The commands of each `$(...)` and backtick substitution the shell runs in `text`.
+
+    Single quotes keep their text literal, unless `raw` (the body of an unquoted heredoc, where
+    quotes are plain characters). A `$((` is arithmetic, not a command.
+    """
     found: list[str] = []
+    quote = ""
     index = 0
-    while (start := word.find("$(", index)) >= 0:
-        depth, position = 1, start + 2
-        while position < len(word) and depth:
-            depth += {"(": 1, ")": -1}.get(word[position], 0)
-            position += 1
-        found.append(word[start + 2 : position - 1])
-        index = position
-    found += re.findall(r"`([^`]*)`", word)
+    while index < len(text):
+        char = text[index]
+        if quote == "'":
+            quote = "" if char == "'" else quote
+        elif char == "\\":
+            index += 1
+        elif char == "'" and not quote and not raw:
+            quote = "'"
+        elif char == '"' and not raw:
+            quote = "" if quote == '"' else '"'
+        elif text.startswith("$(", index) and not text.startswith("$((", index):
+            depth, position = 1, index + 2
+            while position < len(text) and depth:
+                depth += {"(": 1, ")": -1}.get(text[position], 0)
+                position += 1
+            found.append(text[index + 2 : position - 1 if not depth else position])
+            index = position
+            continue
+        elif char == "`":
+            close = text.find("`", index + 1)
+            close = len(text) if close < 0 else close
+            found.append(text[index + 1 : close])
+            index = close + 1
+            continue
+        index += 1
     return found
 
 
@@ -480,6 +503,11 @@ def commands(command: str, docs: Heredocs, depth: int = 0) -> list[list[str] | s
     if depth > NESTED_DEPTH:
         raise Unreadable("too many nested shells to read")
     found: list[list[str] | str] = []
+    inner = _substitutions(split_heredocs(command)[0])
+    inner += [part for _, body, literal in heredocs(command).found if not literal for part in _substitutions(body, raw=True)]
+    for substituted in inner:
+        if not CAT_HEREDOC.fullmatch(f"$({substituted})"):
+            found += commands(substituted, docs, depth + 1)
     for item in _commands(command):
         if isinstance(item, str):
             found.append(item)
@@ -491,10 +519,6 @@ def commands(command: str, docs: Heredocs, depth: int = 0) -> list[list[str] | s
                 raise Unreadable("a script the shell gives by a variable")
             found += commands(script, docs, depth + 1)
             continue
-        for word in words:
-            for inner in _substitutions(word):
-                if not CAT_HEREDOC.fullmatch(f"$({inner})"):
-                    found += commands(inner, docs, depth + 1)
         index = next((position for position, word in enumerate(words) if GH_WORD.search(word)), None)
         if index is not None:
             found.append(["gh", *words[index + 1 :]])
