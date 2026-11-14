@@ -179,7 +179,7 @@ class ProcessGroupKill(unittest.TestCase):
         group = handoff_header.ProcessGroup(sleeper)
         with (
             mock.patch.object(sleeper, "kill"),
-            mock.patch.object(handoff_header.os, "killpg"),
+            mock.patch.object(handoff_header.os, "killpg", create=True),  # absent from os on Windows
             mock.patch.object(handoff_header, "KILL_WAIT_SECONDS", 0.2),
         ):
             kernel32 = mock.Mock()
@@ -196,6 +196,7 @@ class ProcessGroupKill(unittest.TestCase):
         self.assertLess(elapsed, 5, "kill blocked waiting for a process that would not die")
         self.assertIsNone(sleeper.poll(), "the child must have survived: the test proves a bounded wait")
 
+    @unittest.skipUnless(hasattr(os, "killpg"), "the process-group path calls os.killpg, absent on Windows")
     def test_wait_is_bounded_on_linux_too(self) -> None:
         """#26: same bound on the process-group path (killpg without effect)."""
         sleeper = self.spawn()
