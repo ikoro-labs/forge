@@ -144,7 +144,7 @@ class WrappersAreLookedThrough(unittest.TestCase):
             "sudo gh pr merge 5",
             "timeout 60 gh pr merge 5",
             "bash -c 'gh pr merge 5'",
-            "echo 5 | xargs gh pr merge",
+            "nohup gh pr merge 5",
         ):
             with self.subTest(command=command):
                 self.assertIn("checks not green", refused(command) or "")
@@ -171,6 +171,15 @@ class WrappersAreLookedThrough(unittest.TestCase):
             owner_gestures=["sudo | only the owner"],
         )
         self.assertIn("only the owner", found or "")
+
+    def test_operators_glued_together_still_split(self) -> None:
+        for command in (
+            "(true); git push --force origin feat/x",
+            "(cd /tmp)&& git push origin HEAD:main",
+            "echo $(true);git reset --hard",
+        ):
+            with self.subTest(command=command):
+                self.assertIsNotNone(refused(command), command)
 
     def test_a_lookup_and_a_wrapped_reading_pass(self) -> None:
         for command in ("command -v gh", "env gh pr view 5", "sudo git status"):

@@ -390,7 +390,13 @@ prefix", only says the command runs "without going through Claude".
 `https://api.github.com/repos/...`; a GraphQL merge mutation is refused, since it names the PR by
 a node id the guard does not look up. Like every refusal of `guard_git`, it looks through the
 wrappers `guard_infra` takes off (`env`, `sudo`, `command`, `timeout`, `xargs`...), a path or
-`.exe` (`/usr/bin/gh`), and the script of `sh -c` or of a shell reading a heredoc. The tests of this refusal live in `tests/test_guard_infra.py`:
+`.exe` (`/usr/bin/gh`), and the script of `sh -c` or of a shell reading a heredoc. The files are
+read where the merge runs: in the directory a `cd` before it moved to, and in the repository it
+names (`-R`, `--repo`, the URL of the PR, `GH_REPO` before it; a `GH_REPO` set earlier by
+`export` or an assignment is read beside the directory's own). A `cd` or a repository the guard
+cannot read (a variable, a substitution, `cd -`, `~`) refuses the merge, and so does a merge whose
+number may come from the standard input or a variable: behind `xargs`, a number with `$`, or no
+number while the command reads a pipe or a `<` redirection. The tests of this refusal live in `tests/test_guard_infra.py`:
 removing it from `guard_git` turns them red, and changing them is itself such a PR. The owner
 merges it in GitHub's web interface (a `! gh pr merge` may still meet `guard_git`, see above).
 

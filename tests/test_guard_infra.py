@@ -285,7 +285,12 @@ class ParsedTriggers(Case):
                 self.assertIsNotNone(judged(command, declared=[]), command)
 
     def test_a_program_named_by_a_variable_is_guarded(self) -> None:
-        for command in ("D=dock; ${D}er rm x", "$CMD rm web", '"$TOOL" run x'):
+        for command in (
+            "D=dock; ${D}er rm x",
+            "$CMD rm web",
+            '"$TOOL" run x',
+            "$(which python) -m pytest",
+        ):
             with self.subTest(command=command):
                 self.assertIn("cannot read", judged(command, declared=[]) or "")
 
@@ -359,6 +364,12 @@ class HostReachedOtherwise(Case):
             "docker -H unix://vps run x",
         )
         self.assertIsNone(judged("docker ps", docker_context=lambda _name: None))
+
+    def test_a_context_chosen_earlier_in_the_command_counts(self) -> None:
+        self.guarded(
+            "docker context use prod && docker run x", "docker context use prod; docker rm -f web"
+        )
+        self.admitted("docker context use local && docker run x", "docker context use prod")
 
     def test_the_current_docker_context_counts(self) -> None:
         def current_on_the_host(name: str | None) -> str | None:
@@ -727,18 +738,36 @@ def always_green(_pr: str | None) -> bool:
     return True
 
 
-def files(*paths: str) -> Callable[[str | None, str | None], list[str] | None]:
-    return lambda _pr, _repository: list(paths)
+PrFiles = Callable[[str | None, str | None, str | None], list[str] | None]
+# A reading of the files of a PR, by number, repository and directory, as the guard asks for it.
+Asked = tuple[str | None, str | None, str | None]
 
 
-def unreadable(_pr: str | None, _repository: str | None) -> list[str] | None:
+def files(*paths: str) -> PrFiles:
+    return lambda _pr, _repository, _directory: list(paths)
+
+
+def unreadable(_pr: str | None, _repository: str | None, _directory: str | None) -> None:
     return None
 
 
-def merge(
-    command: str, pr_files: Callable[[str | None, str | None], list[str] | None]
-) -> str | None:
-    return refusal(command, "feat/x", always_green, pr_files=pr_files)
+def merge(command: str, pr_files: PrFiles, cwd: str | None = None) -> str | None:
+    return refusal(command, "feat/x", always_green, cwd, pr_files=pr_files)
+
+
+def recorded(
+    asked: list[Asked], guarded: Callable[[Asked], bool] = lambda _asked: False
+) -> PrFiles:
+    """A reading that records what it is asked, and finds the guard changed where `guarded` says."""
+
+    def reading(pr: str | None, repository: str | None, directory: str | None) -> list[str]:
+        asked.append((pr, repository, directory))
+        return [GUARD if guarded((pr, repository, directory)) else "README.md"]
+
+    return reading
+
+
+GUARD = "plugins/forge/hooks/guard_infra.py"
 
 
 class MergeOfTheGuard(unittest.TestCase):
@@ -774,7 +803,7 @@ class MergeOfTheGuard(unittest.TestCase):
     def test_the_number_and_the_repository_reach_the_reading(self) -> None:
         seen: list[tuple[str | None, str | None]] = []
 
-        def recorded(pr: str | None, repository: str | None) -> list[str]:
+        def recorded(pr: str | None, repository: str | None, _directory: str | None) -> list[str]:
             seen.append((pr, repository))
             return []
 
@@ -798,7 +827,7 @@ class MergeOfTheGuard(unittest.TestCase):
     def test_a_merge_by_the_full_url_of_the_api_is_judged_too(self) -> None:
         asked: list[tuple[str | None, str | None]] = []
 
-        def reading(pr: str | None, repository: str | None) -> list[str] | None:
+        def reading(pr: str | None, repository: str | None, _directory: str | None) -> list[str]:
             asked.append((pr, repository))
             return ["plugins/forge/hooks/guard_infra.py"]
 
@@ -827,6 +856,95 @@ class MergeOfTheGuard(unittest.TestCase):
                 self.assertIn("only the owner merges it, by hand", found or "")
         self.assertIsNone(merge("env gh pr merge 5", files("README.md")))
 
+    def test_the_files_are_read_where_the_merge_runs(self) -> None:
+        asked: list[Asked] = []
+        merge("cd ../forgeclone && gh pr merge 5 --squash", recorded(asked), cwd="/w/forge")
+        self.assertEqual(asked, [("5", None, "/w/forge/../forgeclone")])
+        asked.clear()
+        merge("cd /w/x && sh -c 'gh pr merge 5'", recorded(asked), cwd="/w/forge")
+        merge("(cd /w/y) && gh pr merge 6", recorded(asked), cwd="/w/forge")
+        merge("cd /w/x && (cd /w/y) && gh pr merge 7", recorded(asked), cwd="/w/forge")
+        self.assertEqual(asked, [("5", None, "/w/x"), ("6", None, "/w/forge"), ("7", None, "/w/x")])
+        found = merge(
+            "cd ../forgeclone && gh pr merge 5", recorded([], lambda a: "clone" in (a[2] or ""))
+        )
+        self.assertIn("only the owner merges it, by hand", found or "")
+
+    def test_a_directory_the_guard_cannot_read_is_refused(self) -> None:
+        for command in (
+            "cd $CLONE && gh pr merge 5",
+            'cd "$(git rev-parse --show-toplevel)/../x" && gh pr merge 5',
+            "cd - && gh pr merge 5",
+            "cd $CLONE && sh -c 'gh pr merge 5'",
+        ):
+            with self.subTest(command=command):
+                found = merge(command, files("README.md"), cwd="/w/forge")
+                self.assertIn("only the owner merges it, by hand", found or "")
+
+    def test_the_files_are_read_in_the_repository_the_merge_names(self) -> None:
+        cases: list[tuple[str, list[tuple[str | None, str | None]]]] = [
+            ("GH_REPO=o/forge gh pr merge 5", [("5", "o/forge")]),
+            ("env GH_REPO=o/forge gh pr merge 5", [("5", "o/forge")]),
+            ("export GH_REPO=o/forge; gh pr merge 5", [("5", None), ("5", "o/forge")]),
+            ("export GH_REPO=o/forge && sh -c 'gh pr merge 5'", [("5", None), ("5", "o/forge")]),
+            ("gh pr merge -R o/forge 5", [("5", "o/forge")]),
+            ("gh pr merge --repo=o/forge --subject x 5", [("5", "o/forge")]),
+            ("GH_REPO=o/other gh pr merge -R o/forge 5", [("5", "o/forge")]),
+            (
+                "gh pr merge https://github.com/o/forge/pull/5",
+                [("https://github.com/o/forge/pull/5", None)],
+            ),
+            (
+                "export GH_REPO=o/other; gh pr merge https://github.com/o/forge/pull/5",
+                [("https://github.com/o/forge/pull/5", None)],
+            ),
+            (
+                "GH_REPO=o/forge gh api -X PUT repos/{owner}/{repo}/pulls/5/merge",
+                [("5", "o/forge")],
+            ),
+        ]
+        for command, expected in cases:
+            with self.subTest(command=command):
+                asked: list[Asked] = []
+                merge(command, recorded(asked))
+                self.assertEqual([(pr, repository) for pr, repository, _ in asked], expected)
+                found = merge(
+                    command, recorded([], lambda a: a[1] == "o/forge" or "forge" in (a[0] or ""))
+                )
+                self.assertIn("only the owner merges it, by hand", found or "")
+
+    def test_a_repository_the_guard_cannot_read_is_refused(self) -> None:
+        for command in (
+            "GH_REPO=$R gh pr merge 5",
+            "export GH_REPO=$(cat repo); gh pr merge 5",
+            "gh pr merge -R $R 5",
+            "gh pr merge --repo=`cat repo` 5",
+        ):
+            with self.subTest(command=command):
+                found = merge(command, files("README.md"))
+                self.assertIn("only the owner merges it, by hand", found or "")
+
+    def test_a_number_from_the_standard_input_or_a_variable_is_refused(self) -> None:
+        for command in (
+            "echo 5 | xargs gh pr merge --squash",
+            "echo 5 | xargs -I{} gh pr merge {} --squash",
+            "cat number | gh pr merge --squash",
+            "gh pr merge --squash < number",
+            "gh pr merge $N",
+            "gh pr merge $(cat number)",
+        ):
+            with self.subTest(command=command):
+                found = merge(command, files("README.md"))
+                self.assertIn("only the owner merges it, by hand", found or "")
+        for command in (
+            "gh pr merge 5 --squash | tee log",
+            "gh pr merge --squash",
+            'gh pr merge --subject "$TITLE" 5',
+            "echo ok | grep ok; gh pr merge 5",
+        ):
+            with self.subTest(command=command):
+                self.assertIsNone(merge(command, files("README.md")))
+
     def test_a_merge_by_graphql_is_refused(self) -> None:
         command = "gh api graphql -f query='mutation { mergePullRequest(input: {pullRequestId: \"PR_x\"}) { clientMutationId } }'"
         found = merge(command, files("README.md"))
@@ -842,18 +960,24 @@ class MergeOfTheGuard(unittest.TestCase):
             )
             with mock.patch("shutil.which", lambda _name: sys.executable):
                 self.assertEqual(
-                    pr_files_via_gh(folder)("5", "ikoro-labs/forge"),
+                    pr_files_via_gh(folder)("5", "ikoro-labs/forge", None),
                     ["view 5 -R ikoro-labs/forge --json files"],
                 )
+                with tempfile.TemporaryDirectory() as event_folder:
+                    # gh runs in the directory of the merge, not in the event's.
+                    self.assertEqual(
+                        pr_files_via_gh(event_folder)("6", None, folder),
+                        ["view 6 --json files"],
+                    )
             (Path(folder) / "pr").write_text("import sys; sys.exit(1)\n", encoding="utf-8")
             with mock.patch("shutil.which", lambda _name: sys.executable):
-                self.assertIsNone(pr_files_via_gh(folder)("5", None))
+                self.assertIsNone(pr_files_via_gh(folder)("5", None, None))
         with mock.patch("shutil.which", lambda _name: None):
-            self.assertIsNone(pr_files_via_gh(None)("5", None))
+            self.assertIsNone(pr_files_via_gh(None)("5", None, None))
 
     def test_the_hook_reads_the_files_of_the_pr_it_merges(self) -> None:
         def run_hook(
-            pr_files: Callable[[str | None, str | None], list[str] | None],
+            pr_files: PrFiles,
         ) -> tuple[int, str]:
             event = {
                 "tool_input": {"command": "gh pr merge 5 -R ikoro-labs/forge"},

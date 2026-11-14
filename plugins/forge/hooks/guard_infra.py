@@ -38,7 +38,8 @@ Every command is parsed: a guarded program is found in its words, so quotes and 
 `timeout`, `nice`, `nohup`, `exec`, `command`, `time`, `xargs` and `sshpass` are taken off; `sh -c`,
 `bash -c`, `eval`, a shell reading a heredoc, `;`, `&&`, `||`, `|`, `$(...)`, backticks and process
 substitutions are walked, and `export VAR=...` is followed. What the guard cannot read is guarded:
-a program or a verb named by a variable (`${D}er rm`), a shell reading a pipe, a destination or a
+a program or a verb named by a variable or a substitution (`${D}er rm`, `"$PY" -m pytest`,
+`$(which python)`: name the program itself), a shell reading a pipe, a destination or a
 Docker context it cannot resolve, a `-F` ssh config. A text the lexer cannot split (unbalanced
 quotes, an unclosed substitution) is guarded when it holds a `$` or a guarded program's name once
 its quotes and backslashes are taken off.
@@ -897,6 +898,8 @@ class Judge:
                 _assign(shell_env, bare)
             if reason := self.command(words, remote, bodies, depth, shell_env):
                 return reason
+            if (context := _context_used(bare)) is not None:
+                shell_env["DOCKER_CONTEXT"] = context  # the context of the commands that follow
         return None
 
     def command(
@@ -1054,6 +1057,18 @@ class Judge:
         declared = bool(self.hosts.declared) and self.hosts.instance(instance)
         # `lxc exec` runs its words without a shell: they are one command already.
         return self.command(inner, instance if declared else None, "", depth + 1)
+
+
+def _context_used(words: list[str]) -> str | None:
+    """The context `docker context use <name>` switches to, or None."""
+    try:
+        inner = unwrap(words)
+    except UnclearError:
+        return None  # judged, and held, as the command it is
+    is_use = (
+        len(inner) > 3 and program_name(inner[0]) == "docker" and inner[1:3] == ["context", "use"]
+    )
+    return inner[3] if is_use else None
 
 
 def _powershell_value(words: list[str]) -> list[str]:

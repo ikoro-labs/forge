@@ -53,6 +53,10 @@ Also refused, to every agent, is the merge of a PR whose diff touches the infra 
 (`plugins/forge/hooks/guard_infra.py`, its tests, this file or `hooks.json`, which runs the guard):
 `gh pr merge`, a REST merge by `gh api` (its files read by `gh pr view <n> -R <repo> --json files`, a reading that fails refusing too) and any
 GraphQL merge mutation, whose node id the guard does not look up. Only the owner merges it, by hand.
+The files are read where the merge runs: the directory after a `cd`, the repository of `-R`, of the
+PR's URL, of `GH_REPO` before it, or of a `GH_REPO` set earlier (read beside the directory's own).
+A `cd`, a repository or a PR number the guard cannot read refuses the merge: a variable, a
+substitution, `xargs`, or no number while the command reads a pipe or a `<` redirection.
 """
 
 from __future__ import annotations
@@ -149,8 +153,11 @@ def _mask_quoted(text: str) -> str:
     return "".join(out)
 
 
-def _commands(command: str) -> list[list[str] | str]:
-    """Simple commands as their words, with `(` and `)` kept as markers of a subshell."""
+def _commands(command: str, pipes: bool = False) -> list[list[str] | str]:
+    """Simple commands as their words, with `(` and `)` kept as markers of a subshell.
+
+    With `pipes`, a `|` is kept too, as the marker of a command that reads the one before it.
+    """
     lexer = shlex.shlex(_mask_quoted(without_heredoc_bodies(command)), posix=True, punctuation_chars=True)
     lexer.whitespace_split = True
     lexer.whitespace = " \t\r\n"
@@ -158,13 +165,16 @@ def _commands(command: str) -> list[list[str] | str]:
     current: list[str] = []
     try:
         for token in lexer:
-            if token in OPERATORS:
-                result.append(current)
-                if token in ("(", ")"):
-                    result.append(token)
-                current = []
-            else:
-                current.append(token.translate(_UNMASK))
+            # shlex glues operators that follow each other (`);`, `)&&`): they are taken apart.
+            glued = set(token) <= set(";&|()") and token not in OPERATORS
+            for part in re.findall(r"&&|\|\||[;&|()]", token) if glued else [token]:
+                if part in OPERATORS:
+                    result.append(current)
+                    if part in ("(", ")") or (pipes and part == "|"):
+                        result.append(part)
+                    current = []
+                else:
+                    current.append(part.translate(_UNMASK))
         result.append(current)
     except ValueError:
         # Unbalanced quotes: fall back to plain words rather than let the command through.
@@ -1035,9 +1045,15 @@ MERGE_ENDPOINT = re.compile(
     r"^(?:https?://api\.github\.com/)?repos/([^/]+/[^/]+)/pulls/([^/]+)/merge$", re.IGNORECASE
 )
 MERGE_MUTATION = re.compile(r"\b(?:mergePullRequest|enablePullRequestAutoMerge)\b", re.IGNORECASE)
-# The files of a PR by its number and its repository (None: the current branch, the current
-# repository), or None when they cannot be read.
-PrFiles = Callable[[str | None, str | None], list[str] | None]
+# The files of a PR by its number, its repository and the directory gh runs in (None: the current
+# branch, the repository of that directory, the event's directory), or None when they cannot be
+# read.
+PrFiles = Callable[[str | None, str | None, str | None], list[str] | None]
+# Why a merge whose PR or repository the guard cannot tell is the owner's.
+UNREADABLE_MERGE = (
+    "the guard cannot tell which PR is merged ({}), so it may change the infra guard: only the"
+    " owner merges it, by hand"
+)
 
 
 def gh_repository(words: list[str]) -> str | None:
@@ -1052,9 +1068,30 @@ def gh_repository(words: list[str]) -> str | None:
     return None
 
 
-def infra_guard_refusal(pr: str | None, repository: str | None, pr_files: PrFiles) -> str | None:
-    """Why a merge is the owner's: the PR changes the infra guard, or its files cannot be read."""
-    paths = pr_files(pr, repository)
+def _unreadable(word: str | None) -> bool:
+    return word is not None and any(char in word for char in "$`")
+
+
+def infra_guard_refusal(
+    pr: str | None, repositories: list[str | None], directory: str | None, pr_files: PrFiles
+) -> str | None:
+    """Why a merge is the owner's: the PR changes the infra guard, or its files cannot be read.
+
+    `repositories` are those the merge may act on, each one read; `directory` is where gh runs,
+    `UNKNOWN` when a `cd` before it cannot be read.
+    """
+    for repository in dict.fromkeys(repositories):
+        if _unreadable(repository):
+            return UNREADABLE_MERGE.format(f"the repository `{repository}` cannot be read")
+        if directory == UNKNOWN and repository is None:
+            return UNREADABLE_MERGE.format("a `cd` before it cannot be read")
+        where = None if directory == UNKNOWN else directory
+        if found := _infra_guard_files(pr_files(pr, repository, where)):
+            return found
+    return None
+
+
+def _infra_guard_files(paths: list[str] | None) -> str | None:
     if paths is None:
         return (
             "the files of the PR cannot be read (`gh pr view --json files` failed, timed out or"
@@ -1071,6 +1108,7 @@ def _api_merge_refusal(
     bodies: str,
     read_text: Callable[[str], str | None],
     pr_files: PrFiles,
+    repositories: list[str | None],
 ) -> str | None:
     """The infra guard's refusal of a merge by `gh api` (the words after `api`), or None.
 
@@ -1090,8 +1128,9 @@ def _api_merge_refusal(
             continue
         merge = MERGE_ENDPOINT.match(endpoint)
         if merge is not None and not _reads(words):
-            repository = None if "{" in merge.group(1) else merge.group(1)
-            if found := infra_guard_refusal(merge.group(2), repository, pr_files):
+            # `{owner}/{repo}` is filled by gh from `GH_REPO` or from the directory.
+            named = repositories if "{" in merge.group(1) else [merge.group(1)]
+            if found := infra_guard_refusal(merge.group(2), named, here, pr_files):
                 return found
     return None
 
@@ -1107,7 +1146,10 @@ def refusal(
     budget: Callable[[], str | None] = lambda: None,
     protected_paths: Iterable[str] = (),
     changed_files: Callable[[str | None], list[str] | None] = lambda _pr: None,
-    pr_files: PrFiles = lambda _pr, _repository: [],
+    pr_files: PrFiles = lambda _pr, _repository, _directory: [],
+    *,
+    start: str | None = None,
+    exported: Iterable[str] = (),
 ) -> str | None:
     """Why the command is refused, or None when it may run.
 
@@ -1118,7 +1160,9 @@ def refusal(
     `budget` says why the error budget forbids a merge (key `budget-action`), or None.
     `protected_paths` are the values of the `protected-path` key, and `changed_files` the files
     of a PR by its number (None for the current branch's PR), or None when they cannot be read.
-    `pr_files` are the files of a PR by its number and repository, for the infra guard's refusal.
+    `pr_files` are the files of a PR by its number, repository and directory, for the infra
+    guard's refusal. `start` and `exported` are the directory and the `GH_REPO` values a shell
+    running this command inherits from the command around it (`sh -c`).
     """
     declared = list(owner_gestures)
     bodies = split_heredocs(command)[1]
@@ -1133,25 +1177,36 @@ def refusal(
         return branch_of(directory) or branch_of(cwd)
 
     switched = False
-    here = cwd
+    begin = cwd if start is None else start
+    here = begin
     saved: list[str | None] = []
-    for item in _commands(command):
+    # The values `GH_REPO` was given by an `export` or an assignment: gh may read any of them.
+    repositories_set = list(exported)
+    fed = False  # whether the command reads the one before it, through `|`
+    for item in _commands(command, pipes=True):
         if isinstance(item, str):
-            if item == "(":
+            if item == "|":
+                fed = True
+            elif item == "(":
                 saved.append(here)  # a subshell's `cd` ends with it
             else:
-                here = saved.pop() if saved else cwd
+                here = saved.pop() if saved else begin
             continue
+        reads_input, fed = fed, False
         words = item
         if gesture := runner_registration_gesture(words):
             return _owner_refusal(gesture)  # before the assignments are set aside
-        words, script = looked_through(words, bodies)
+        seen = looked_through(words, bodies)
+        words, script = seen.words, seen.script
+        if not words or words[0] == "export":
+            values = [*seen.env.items(), *(word.partition("=")[::2] for word in words[1:])]
+            repositories_set += [value for key, value in values if key == "GH_REPO"]
         if script is not None:
             if reason := refusal(
                 script,
                 branch,
                 checks_green,
-                here,
+                cwd,
                 read_text,
                 description,
                 owner_gestures,
@@ -1159,6 +1214,8 @@ def refusal(
                 protected_paths,
                 changed_files,
                 pr_files,
+                start=here,
+                exported=repositories_set,
             ):
                 return reason
             continue
@@ -1178,13 +1235,19 @@ def refusal(
         if declared_refusal := _declared_gesture(words, declared):
             return declared_refusal
         call = gh_command(words)
+        # The repositories gh acts on: `GH_REPO` before it, else the event's or one set earlier.
+        if "GH_REPO" in seen.env:
+            repositories: list[str | None] = [seen.env["GH_REPO"] or None]
+        else:
+            repositories = [None, *(value or None for value in repositories_set)]
         if call and call[0] == "api":
-            if infra := _api_merge_refusal(call[1:], here, bodies, read_text, pr_files):
-                return infra
+            api = _api_merge_refusal(call[1:], here, bodies, read_text, pr_files, repositories)
+            if api:
+                return api
         act = gh_act(words)
         if act is not None and act[:2] == ("pr", "merge"):
             rest = act[2]
-            number = next((word for word in rest if not word.startswith("-")), None)
+            number, reads_input = _merge_number(rest, reads_input)
             message = _merge_message(rest, here, read_text) + "\n" + description(number)
             if closed := closed_despite_refs(message):
                 ticket, phrase = closed
@@ -1194,7 +1257,15 @@ def refusal(
                 )
             if exhausted := budget():
                 return exhausted
-            if infra := infra_guard_refusal(number, gh_repository(words), pr_files):
+            if seen.xargs or _unreadable(number) or (number is None and reads_input):
+                return UNREADABLE_MERGE.format(
+                    "its number may come from the standard input or a variable"
+                )
+            if (named := gh_repository(words)) is not None:
+                repositories = [named]
+            elif number is not None and number.startswith(("https://", "http://")):
+                repositories = [None]  # the URL names the repository
+            if infra := infra_guard_refusal(number, repositories, here, pr_files):
                 return infra
             if protected := protected_refusal(protected_paths, changed_files, number):
                 return protected
@@ -1203,7 +1274,40 @@ def refusal(
     return None
 
 
-def looked_through(words: list[str], bodies: str) -> tuple[list[str], str | None]:
+# The options of `gh pr merge` that take the next word as their value.
+MERGE_VALUED = frozenset(
+    {"-R", "--repo", "-b", "--body", "-F", "--body-file", "-t", "--subject", "-A",
+     "--author-email", "--match-head-commit"}
+)
+
+
+def _merge_number(rest: list[str], reads_input: bool) -> tuple[str | None, bool]:
+    """The PR a `gh pr merge` names (the words after `merge`), and whether it reads an input."""
+    from guard_infra import strip_redirections  # noqa: PLC0415
+
+    words, redirections = strip_redirections(rest)
+    reads_input = reads_input or any("<" in operator for operator, _ in redirections)
+    index = 0
+    while index < len(words):
+        word = words[index]
+        if word == "--":
+            return (words[index + 1] if index + 1 < len(words) else None), reads_input
+        if not word.startswith("-") or word == "-":
+            return word, reads_input
+        index += 2 if word in MERGE_VALUED else 1
+    return None, reads_input
+
+
+class LookedThrough(NamedTuple):
+    """What a simple command runs behind its assignments and wrappers."""
+
+    words: list[str]
+    script: str | None  # the script a shell runs instead, from `-c` or a heredoc
+    env: dict[str, str]  # the variables the assignments and `env` set for it
+    xargs: bool  # whether `xargs` runs it, with words read from the standard input
+
+
+def looked_through(words: list[str], bodies: str) -> LookedThrough:
     """The words that run behind assignments and wrappers, or the script a shell runs instead.
 
     `gh` and `git` are named as such whatever their path or `.exe`. A shell's script is that of
@@ -1217,24 +1321,26 @@ def looked_through(words: list[str], bodies: str) -> tuple[list[str], str | None
         _shell_script,
         program_name,
         strip_redirections,
-        unwrap,
+        unwrap_with_env,
     )
 
     try:
-        inner = unwrap(words)
+        inner, env = unwrap_with_env(words)
         name = program_name(inner[0]) if inner else ""
     except UnclearError:
-        return words, None
+        return LookedThrough(words, None, {}, False)
+    skipped = words[: len(words) - len(inner)]
+    xargs = any(re.split(r"[/\\]", word)[-1].lower() in ("xargs", "xargs.exe") for word in skipped)
     if name in SHELLS:
         bare, redirections = strip_redirections(inner)
         dash_c, operands = _shell_script(bare[1:])
         if dash_c and operands:
-            return [], operands[0]
+            return LookedThrough([], operands[0], env, xargs)
         if not operands and bodies and any(op.startswith("<<") for op, _ in redirections):
-            return [], bodies
+            return LookedThrough([], bodies, env, xargs)
     if name in ("gh", "git"):
-        return [name, *inner[1:]], None
-    return inner, None
+        return LookedThrough([name, *inner[1:]], None, env, xargs)
+    return LookedThrough(inner, None, env, xargs)
 
 
 def _run(argv: list[str], cwd: str | None) -> subprocess.CompletedProcess[str] | None:
@@ -1312,12 +1418,18 @@ def parse_changed_files(text: str) -> list[str] | None:
 
 
 def pr_files_via_gh(cwd: str | None) -> PrFiles:
-    """`gh pr view <n> -R <repo> --json files`, for the infra guard; None when it cannot be read."""
+    """`gh pr view <n> -R <repo> --json files` in a directory (None: `cwd`), for the infra guard.
 
-    def files(pr: str | None, repository: str | None) -> list[str] | None:
+    None when it cannot be read.
+    """
+
+    def files(
+        pr: str | None, repository: str | None, directory: str | None = None
+    ) -> list[str] | None:
         gh = shutil.which("gh")
         target = [*([pr] if pr else []), *(["-R", repository] if repository else [])]
-        completed = _run([gh, "pr", "view", *target, "--json", "files"], cwd) if gh else None
+        where = cwd if directory is None else native_directory(directory)
+        completed = _run([gh, "pr", "view", *target, "--json", "files"], where) if gh else None
         if completed is None or completed.returncode != 0:
             return None
         return parse_changed_files(completed.stdout)
