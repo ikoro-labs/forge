@@ -188,7 +188,8 @@ pour que la revue mesure le head qui fusionnera.
    réécrit la branche et exige un force-push, interdit sur une branche partagée, et la branche
    d'une PR l'est (sa revue, le worktree de son coder). Lancé avec la ligne `MODE: sync` (sur
    Haiku), tu ne résous aucun conflit : au premier, `git merge --abort`, puis `RESULT: BLOCKED`
-   avec `QUESTION: conflict in <fichiers>`, sans rien résoudre ni pousser. La session te relance
+   avec `QUESTION: conflict in <fichiers>`, `RECOMMENDATION: relaunch on sonnet` et
+   `STATE: merge aborted, nothing pushed`, sans rien résoudre ni pousser. La session te relance
    alors sans cette ligne, sur Sonnet, et l'étape 3 s'applique.
 3. Un conflit se résout en gardant l'intention des deux côtés. Dans un glossaire, chaque terme des
    deux côtés survit, avec sa définition entière ; relis la section après résolution. Un conflit
