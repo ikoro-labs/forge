@@ -2,6 +2,7 @@
 
     report_mail.py [--root <dir>] [--state-dir <dir>]     print the mail (HTML) on standard output
     report_mail.py [--root <dir>] [--state-dir <dir>] --sent   record the mail printed last as sent
+    report_mail.py [--root <dir>] --line     print the "CI and runners" part in one line (no state)
 
 Exit code: 0 when a mail is due, 10 when nothing happened since the last one sent (nothing is
 printed), 2 on a missing key or a usage error, 1 when `gh` fails. A mail is due when, since the
@@ -309,6 +310,23 @@ def _figures(surveys: Mapping[str, dict]) -> str:
     )
 
 
+def session_line(config: Mapping[str, list[str]], surveys: Mapping[str, dict], probe: Probe) -> str:
+    """The "CI and runners" part of the mail in one line, for the session's reply to the human."""
+    pieces: list[str] = []
+    for repo, survey in surveys.items():
+        hosts = "; ".join(
+            f"{host or 'no host'} {sum(r[1] for r in rows)}/{len(rows)} online, {sum(r[2] for r in rows)} busy"
+            for host, rows in survey["runners"].items()
+        )
+        pieces.append(
+            f"{repo}: {hosts or 'no runner'}; queued {survey['queued']}, running {survey['running']},"
+            f" main {survey['main']}"
+        )
+    named = [h[0] for h in (split_value(v, 2) for v in config.get("report-host", [])) if h]
+    pieces += [line.rstrip(".") for line in _probe_lines(config, named, probe)]
+    return "CI and runners: " + " | ".join(pieces) + "."
+
+
 def build(
     config: Mapping[str, list[str]],
     surveys: Mapping[str, dict],
@@ -351,6 +369,7 @@ def main(
     parser.add_argument("--root")
     parser.add_argument("--state-dir")
     parser.add_argument("--sent", action="store_true")
+    parser.add_argument("--line", action="store_true")
     args = parser.parse_args(list(argv))
     root = Path(args.root) if args.root else project_root()
     config = load(root)
@@ -363,9 +382,20 @@ def main(
             return 1
         return 0
     repos = config.get("report-repo", [])
+    if args.line and not repos:
+        sys.stdout.write("CI and runners: not applicable (key `report-repo` absent).\n")
+        return 0
     if not repos:
         sys.stderr.write("the report needs the key `report-repo` in docs/agents/usine.md: none set\n")
         return 2
+    if args.line:
+        try:
+            surveys = {repo: _survey(gh, repo, config, None) for repo in repos}
+        except (OSError, subprocess.CalledProcessError, ValueError, KeyError) as error:
+            sys.stderr.write(f"gh failed: {error}\n")
+            return 1
+        sys.stdout.write(session_line(config, surveys, probe) + "\n")
+        return 0
     moment = now or datetime.now(timezone.utc)
     try:
         saved = json.loads((folder / STATE_FILE).read_text(encoding="utf-8"))

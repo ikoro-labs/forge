@@ -71,6 +71,8 @@ REPLY = """Done: merged #12 at abc1234.
 Measured: CI 4 min 10 s, run 99, 2026-11-13, 1 run of 1.
 
 Awaiting your decision: nothing.
+
+CI and runners: pc 2/2 online, 1 busy; queued 0, main success abc1234.
 """
 CODER_PR = """RESULT: PR
 PR: #40
@@ -133,7 +135,7 @@ class Conforming(unittest.TestCase):
     def test_the_reply_labels_hold_in_french_and_in_markup(self) -> None:
         reply = (
             "**Fait** : PR #12 fusionnée.\n\n## Mesure\n\nCI 4 min.\n\n"
-            "| Attend ta décision | rien |\n|---|---|\n"
+            "| Attend ta décision | rien |\n|---|---|\n\nCI et runners : poste 2/2.\n"
         )
         self.assertEqual(deviations(reply, "session-reply"), [])
 
@@ -168,6 +170,14 @@ class Refused(unittest.TestCase):
         self.assertRefused(PR.replace("## Door", "## Gate"), "pr", "`Door` is missing")
         self.assertRefused(VERDICT.replace("GATES: all probes pass\n", ""), "verdict", "`GATES:`")
         self.assertRefused(REPLY.replace("Measured:", "Numbers:"), "session-reply", "`Measured`")
+        # A6 of forge#181: the reply carries the one-line "CI and runners" part.
+        self.assertRefused(
+            REPLY.replace("CI and runners:", "Runners:"), "session-reply", "`CI and runners`"
+        )
+        self.assertRefused(
+            REPLY.replace("CI and runners: pc 2/2 online, 1 busy; queued 0, main success abc1234.", "CI and runners:"),
+            "session-reply", "`CI and runners` or `CI et runners` is empty",
+        )
 
     def test_an_empty_required_field(self) -> None:
         self.assertRefused(TICKET.replace("Motif: demande-kevin, 2026-11-13 chat", "Motif:"),
@@ -291,7 +301,7 @@ class TemplatesAndAgents(unittest.TestCase):
     def test_the_reply_template_names_the_three_fields_in_both_languages(self) -> None:
         text = (support.PLUGIN / "templates" / "session-reply.md").read_text(encoding="utf-8")
         fields = required_fields(text)
-        self.assertEqual(len(fields), 3)
+        self.assertEqual(len(fields), 4)  # the fourth, `CI and runners`, is A6 of forge#181
         for english, french in (("Done", "Fait"), ("Measured", "Mesure"),
                                 ("Awaiting your decision", "Attend ta décision")):
             self.assertTrue(any(english in f and french in f for f in fields), fields)

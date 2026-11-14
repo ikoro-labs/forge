@@ -607,6 +607,11 @@ can also run on a body before it posts it:
 | body of `gh issue create\|edit\|comment\|close -c`, `gh pr create\|edit\|comment\|review\|merge\|close -c`, `gh api ... -f\|-F body=` or `--input`, `gh api graphql` mutations `addComment`, `createIssue`..., read by `hooks/gh_bodies.py` (the reader `guard_cases` shares: gh behind a wrapper, in `bash -c`, `eval` or a substitution, a file after a `cd`); the text of a GitHub MCP tool, by the words of its name | `ticket.md`, `pr.md`, `comment.md`, or `verdict.md` when it opens with `VERDICT:` | every time |
 | the session's reply to the human | `templates/session-reply.md` | once per stop (`stop_hook_active`), then logged |
 
+The reply carries four fields: `Done`, `Measured`, `Awaiting your decision` and `CI and runners` (or
+`Fait`, `Mesure`, `Attend ta décision`, `CI et runners`). The last is one line, which
+`scripts/report_mail.py --line` prints from the `report-*` keys of `usine.md` (see
+[Le mail de relevé](#le-mail-de-relevé)); without those keys the line reads `not applicable`.
+
 The word caps (ticket 150, comment 150, PR 200, session reply 150, subagent return 200), the
 `max-lines` of each template header (ticket 25, PR 40, comment 12, session reply 15, subagent
 return 20, in written lines; a verdict has none; `max-lines: 0` in a project's template lifts it, as `0` lifts a word cap) and the 60-word paragraph cap hold when the project sets no key; code blocks and table cells count in the

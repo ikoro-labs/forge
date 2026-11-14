@@ -278,7 +278,7 @@ def _stop(event: Mapping[str, object]) -> Outcome:
         return Outcome(0, stdout=_journal(event, "session-reply", found))
     reason = (
         "Blocked by the output guard (forge plugin): your reply to the human does not follow"
-        " `templates/session-reply.md` (Done, Measured, Awaiting your decision; a table for more"
+        " `templates/session-reply.md` (Done, Measured, Awaiting your decision, CI and runners; a table for more"
         f" than two elements). Rewrite the reply, fixing each point:\n{_listing(found)}"
     )
     return Outcome(REFUSED, stderr=reason)
