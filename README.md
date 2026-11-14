@@ -75,6 +75,7 @@ ne fusionne une PR rouge, ou ne sort de son rôle.
 | `guard_pause` | tant que `.claude/PAUSED` existe, aucun agent n'est lancé |
 | `guard_completion` | une question de l'humain sur l'avancement d'une feature ou du projet reçoit le tableau de `scripts/completion.py` : fermés sur le budget, % des tickets publiés avec son dénominateur, ouverts, hors compte, reste, date et source par ligne, sans total ; il laisse passer en cas d'erreur (transcript absent ou illisible) ([détail](docs/installation.md#le-tableau-de-complétion)) |
 | `guard_output` | every output follows its template and its word caps: a subagent's final text, the body of a gh ticket, PR or comment, the session's reply to the human ([details](docs/installation.md#output-structure)) |
+| `guard_report_mail` | le mail de relevé de l'usine (`scripts/report_mail.py`) suit `templates/report-mail.md` : `report_mail.py --sent` n'enregistre l'envoi que pour un mail qui porte « What changed », « Awaiting you », « CI and runners » et un tableau ([détail](docs/installation.md#le-mail-de-relevé)) |
 | `after_write` | formate chaque fichier écrit avec les formateurs que le projet déclare (clé `format-on-write`), puis refuse le tiret cadratin au-delà de ce que le projet admet |
 | `trim_output` | la longue sortie d'une commande de tests qui réussit est raccourcie, la sortie complète gardée dans un journal |
 | `sessions_notice`, `handoff_*` | une seule session par dépôt, et la passation à une nouvelle session quand le contexte est plein |

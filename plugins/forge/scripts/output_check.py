@@ -3,7 +3,7 @@
     python output_check.py <kind> [<file> | -]
 
 Kinds: the documents under `templates/` (`ticket`, `pr`, `comment`, `verdict`, `session-reply`,
-`subagent-return`) and the declared outputs of the plugin's agents (`coder`, `decider`, `gate`).
+`subagent-return`, `report-mail`) and the declared outputs of the plugin's agents (`coder`, `decider`, `gate`).
 `exempt` checks nothing. Prints one deviation per line and exits 1 when there is one, 0 when the
 text conforms, 2 on a usage error. The hook `guard_output.py` calls `deviations` for its three
 events; a skill can run this command on a body before it posts it.
@@ -30,6 +30,7 @@ import re
 import sys
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from html.parser import HTMLParser
 from pathlib import Path
 
 from parse_output import OutputError, parse_result, parse_verdict
@@ -43,6 +44,7 @@ DEFAULT_WORDS = {
     "comment": 150,
     "pr": 200,
     "session-reply": 150,
+    "report-mail": 500,
     "subagent-return": 200,
 }
 DEFAULT_PARAGRAPH_WORDS = 60
@@ -71,6 +73,8 @@ KINDS = {
     "verdict": Kind(None, None),
     "session-reply": Kind("session-reply.md", "session-reply"),
     "subagent-return": Kind("subagent-return.md", "subagent-return"),
+    # The factory report mail is HTML: `_from_html` reads its headings, items and table rows.
+    "report-mail": Kind("report-mail.md", "report-mail"),
     "coder": Kind(None, "subagent-return"),
     "decider": Kind(None, "subagent-return"),
     # The gate's table and the verbatim elements under it have no word cap.
@@ -329,6 +333,43 @@ def _gate(lines: list[str]) -> list[str]:
     return []
 
 
+class _Flatten(HTMLParser):
+    """The HTML of a mail as the Markdown the rules read: `#` headings, `-` items, `|` table rows."""
+
+    HEADINGS = {"h1": "# ", "h2": "## ", "h3": "### ", "h4": "#### "}
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.parts: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag in self.HEADINGS:
+            self.parts.append("\n" + self.HEADINGS[tag])
+        elif tag == "li":
+            self.parts.append("\n- ")
+        elif tag == "tr":
+            self.parts.append("\n|")
+        elif tag in ("td", "th"):
+            self.parts.append(" ")
+        elif tag in ("p", "ul", "ol", "table", "div", "br"):
+            self.parts.append("\n")
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in ("td", "th"):
+            self.parts.append(" |")
+        elif tag in self.HEADINGS or tag in ("p", "ul", "ol", "table", "div"):
+            self.parts.append("\n")
+
+    def handle_data(self, data: str) -> None:
+        self.parts.append(data)
+
+
+def _from_html(text: str) -> str:
+    flat = _Flatten()
+    flat.feed(text)
+    return "".join(flat.parts)
+
+
 def _list_runs(prose: list[str]) -> list[int]:
     """The lengths of the runs of list items that sit at the left margin."""
     runs: list[int] = []
@@ -366,6 +407,8 @@ def deviations(
     config = config or {}
     if kind == "exempt":
         return []
+    if kind == "report-mail":
+        text = _from_html(text)
     lines, prose = _structure(_unwrap(text) if kind in KEYED else text)
     found: list[str] = []
     template = _template_text(kind, config, root)
@@ -397,6 +440,8 @@ def deviations(
             f"a list of {run} items: more than two elements go in a table"
             for run in _list_runs(prose) if run > 2
         ]
+    elif kind == "report-mail" and not any(line.lstrip().startswith("|") for line in lines):
+        found.append("the mail needs a table: no table row found (template `report-mail`)")
     cap = word_cap(kind, config)
     words = sum(count_words(line) for line in lines if not FENCE.match(line))
     if cap is not None and words > cap:
