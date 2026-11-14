@@ -214,7 +214,7 @@ après la revue.
 
 ## Tours
 
-Three rounds at most (shipyard#193); a round past 3 carries `GRANTED:`, the https link to the
+Three rounds at most; a round past 3 carries `GRANTED:`, the https link to the
 human's grant. Au tour 2 ou 3, tu ne réexamines que les bloqueurs du tour précédent et le nouveau tableau
 de `forge:qc-gate` ; un constat nouveau n'est recevable que sur une ligne que la correction a
 changée. A REJECT in round 3 stops the PR: `/forge:qc` leaves it open with `needs-your-attention`. Un ACCEPT, lui, fait fusionner : personne ne relit après toi.

@@ -800,6 +800,21 @@ class AttentionLabel(unittest.TestCase):
         self.assertIn("Une étiquette dont aucun texte d'agent ne donne la raison vient d'un humain : elle reste", skill)
 
 
+class MergeMethod(unittest.TestCase):
+    """The merge method comes from a required key; without it the agent does not merge."""
+
+    def test_qc_merges_with_the_merge_method_key(self) -> None:
+        skill = " ".join((support.PLUGIN / "skills" / "qc" / "SKILL.md").read_text(encoding="utf-8").split())
+        self.assertIn("`gh pr merge <n> --<méthode> --delete-branch --body-file <fichier>`", skill)
+        self.assertIn("valeur de la clé `merge-method` (`squash` ou `merge`)", skill)
+        self.assertIn("Sans la clé `merge-method`, tu ne fusionnes pas", skill)
+        self.assertNotIn("gh pr merge <n> --squash", skill)
+
+    def test_template_declares_the_merge_method_key(self) -> None:
+        template = (support.PLUGIN / "templates" / "usine.md").read_text(encoding="utf-8")
+        self.assertIn("- `merge-method` : `<squash>`", template)
+
+
 class StackedPullRequests(unittest.TestCase):
     """ikoro-labs/forge#170: merging with --delete-branch closed a PR stacked on the merged branch."""
 
@@ -808,7 +823,7 @@ class StackedPullRequests(unittest.TestCase):
         step = skill[skill.index("8. **Fusionner.**"):]
         listing = step.index("`gh pr list --base <branche de tête> --state open --json number`")
         retarget = step.index("`gh pr edit <m> --base <base de la PR>`")
-        merge = step.index("`gh pr merge <n> --squash --delete-branch")
+        merge = step.index("`gh pr merge <n> --<méthode> --delete-branch")
         self.assertLess(listing, retarget)
         self.assertLess(retarget, merge)
 

@@ -99,6 +99,10 @@ une ligne retirée, un nombre relevé, un rang abaissé, mesurés sur le diff pa
 `plugins/forge/scripts/never_weaken.py`), les tolérances des hooks, les commandes dont la sortie se
 raccourcit. Le gabarit, `plugins/forge/templates/usine.md`, documente chaque clé.
 
+Depuis la 1.7.0, `/forge:qc` ne fusionne que si la clé `merge-method` dit comment : `squash` ou
+`merge` (commit de fusion), selon ce que le dépôt GitHub autorise. Un projet qui monte de version
+sans la poser voit ses PR rester ouvertes sur leur ACCEPT, avec la raison dans le compte rendu.
+
 Deux clés, `test-path` (un préfixe de chemin des fichiers de test, une ligne par préfixe) et
 `red-replay` (la commande qui lance un fichier de test, avec `{file}` ou `{name}`), ouvrent la sonde
 de rejeu de `forge:qc-gate` : `plugins/forge/scripts/base_replay.py` pose les tests que la PR ajoute

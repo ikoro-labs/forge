@@ -34,7 +34,7 @@ verdict, le rapport et la suite sont les mêmes. Tout le reste passe par les deu
 
 1. **Identifier la PR et le tour.**
    `gh pr view <n> --json number,author,headRefName,headRefOid,baseRefName,labels,body,comments`.
-   A PR has three rounds at most (shipyard#193), counted by the verdicts posted on it: each one
+   A PR has three rounds at most, counted by the verdicts posted on it: each one
    posted adds one, so after `ROUND: 1` this is round 2. A `ROUND: 3` already
    rejected: there is no round 4 unless the human grants one, whose link the verdict carries as
    `GRANTED: <https link>`; without it, go to step 6. Chaque verdict porte la ligne
@@ -80,12 +80,19 @@ verdict, le rapport et la suite sont les mêmes. Tout le reste passe par les deu
    consommateur, fusion à 16:15:10, PR fille fermée à 16:15:14). Si la fusion est ensuite
    refusée, remets chaque PR reportée sur sa base d'avant, `gh pr edit <m> --base <branche de
    tête>`, sans quoi son diff porterait les commits non fusionnés de la mère. Puis
-   `gh pr merge <n> --squash --delete-branch --body-file <fichier>`, seule dans sa commande
+   `gh pr merge <n> --<méthode> --delete-branch --body-file <fichier>`, où `<méthode>` est la
+   valeur de la clé `merge-method` (`squash` ou `merge`), seule dans sa commande
    (`guard_git` refuse une fusion accompagnée d'autre chose), puis, dans une commande à part,
    `gh pr edit <n> --add-label agent-merged` : tu agis sous le compte de l'humain, et sans
-   l'étiquette la fusion paraîtrait lue par lui. Toujours avec un corps que tu écris : sans lui,
-   GitHub écrit sur la base tous les messages de commit de la branche, périmés compris, et une PR
-   reprise au tour 2 ou 3 porte un message d'un tour précédent que son correctif a rendu faux. Le corps, en
+   l'étiquette la fusion paraîtrait lue par lui. Sans la clé `merge-method`, tu ne fusionnes pas :
+   la PR reste ouverte sur son ACCEPT, et le compte rendu dit « fusion sans objet (clé
+   `merge-method` absente) ». Toujours avec un corps que tu écris : en `squash`, sans lui, GitHub
+   écrit sur la base tous les messages de commit de la branche, périmés compris, et une PR reprise
+   au tour 2 ou 3 porte un message d'un tour précédent que son correctif a rendu faux. En `merge`,
+   les commits de la branche arrivent sur la base quel que soit le corps, et `guard_git` ne lit
+   que le corps et la description : avant de fusionner, relis-en les messages
+   (`gh pr view <n> --json commits`), et refuse la fusion si l'un porte un mot-clé de fermeture
+   d'un ticket que la PR ne cite qu'en `Refs #n`. Le corps, en
    français, décrit la tête fusionnée : un paragraphe par ticket cité, chacun avec son
    `Closes #n`, ou son `Refs #n` suivi des points que la PR livre, pour que le commit garde la
    trace de chacun. Un ticket en `Refs #n` n'est suivi d'aucun mot-clé de fermeture nulle part, ni
@@ -93,7 +100,7 @@ verdict, le rapport et la suite sont les mêmes. Tout le reste passe par les deu
    `guard_git` du plugin refuse la fusion sinon.
 
    `--delete-branch` supprime la branche de tête sur `origin` et sa copie locale : après un
-   squash, `git branch -d` ne la voit jamais comme fusionnée, et `guard_git` refuse `-D` aux
+   squash ou un rebase, `git branch -d` ne la voit jamais comme fusionnée, et `guard_git` refuse `-D` aux
    agents. Une branche encore extraite dans le worktree d'un coder fait échouer gh après la fusion
    (`failed to delete local branch`), et il s'arrête avant `origin` : la fusion est faite, pose
    l'étiquette, puis `git push origin --delete <branche>` ; la copie locale reste, elle est à ce
