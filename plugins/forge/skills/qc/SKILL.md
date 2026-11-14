@@ -34,13 +34,15 @@ verdict, le rapport et la suite sont les mêmes. Tout le reste passe par les deu
 
 1. **Identifier la PR et le tour.**
    `gh pr view <n> --json number,author,headRefName,headRefOid,baseRefName,labels,body,comments`.
-   Un commentaire de verdict `ROUND: 1` déjà posté fait de celle-ci le tour 2. Un `ROUND: 2`
-   déjà rejeté : il n'y a pas de tour 3, passe à l'étape 6. Chaque verdict porte la ligne
+   A PR has three rounds at most (shipyard#193), counted by the verdicts posted on it: each one
+   posted adds one, so after `ROUND: 1` this is round 2. A `ROUND: 3` already
+   rejected: there is no round 4 unless the human grants one, whose link the verdict carries as
+   `GRANTED: <https link>`; without it, go to step 6. Chaque verdict porte la ligne
    `HEAD: <sha>` de la tête jugée : un verdict sur la tête actuelle n'est pas à refaire, un
    verdict sur une tête plus ancienne dit quel tour a eu lieu et ce qui a changé depuis.
 2. **Mesurer.** Lance l'agent `forge:qc-gate` avec le numéro de PR et le tour. Attends son tableau.
 3. **Juger.** Lance l'agent `forge:qc-conf` avec le numéro de PR, le tour, le tableau de
-   `forge:qc-gate` recopié tel quel, et au tour 2 les bloqueurs du tour 1. Ne lui impose pas
+   `forge:qc-gate` recopié tel quel, et aux tours 2 et 3 les bloqueurs du tour précédent. Ne lui impose pas
    d'autre format que le sien.
 4. **Lire le verdict.** Écris-le dans un fichier, puis :
 
@@ -60,19 +62,17 @@ verdict, le rapport et la suite sont les mêmes. Tout le reste passe par les deu
 7. **Suite.**
    - ACCEPT : fusionne (étape 8), sauf ce que les règles **Budget d'erreur** et **Chemins
      protégés** plus bas arrêtent.
-   - REJECT au tour 1 : corrige chaque `BLOCKER`, et seulement eux, pousse, puis reprends à
+   - REJECT in round 1 or 2: corrige chaque `BLOCKER`, et seulement eux, pousse, puis reprends à
      l'étape 1. Les `MINOR` et `NOTE` restent dans le verdict. Depuis `/forge:feature-build`, la
-     correction passe par `forge:coder` en mode correction, pas par toi.
+     correction passe par `forge:coder` en mode correction, pas par toi. Modèle du coder :
+     Sonnet aux tours 1 et 2, Opus pour la correction jugée au tour 3 avec la ligne `ESCALATION: #<PR> round 3`, Haiku en mode sync sans conflit avec la ligne `MODE: sync` ; tenu par le hook `guard_coder_model`.
    - Après la fusion ou la fermeture : un `MINOR` qui change un comportement (code, porte, règle
      appliquée) est reporté en commentaire sur un ticket déjà ouvert qui touche le même code,
      sinon sur l'issue de suivi de la feature ; hors feature, il reste dans le verdict. Il n'ouvre
      pas de ticket. Les `NOTE` et les `MINOR` de prose restent dans le verdict.
-   - REJECT au tour 2, PR liée à un ticket : ferme la PR avec l'étiquette `agent-rework`, remets
-     le ticket en `ready-for-agent` et commente-le avec le retour d'expérience et `REWORK: 1`.
-     Si le ticket porte déjà `REWORK: 1`, ne le relance pas : pose `needs-your-attention` sur la
-     PR et arrête-toi. Une seule reprise par ticket.
-   - REJECT au tour 2, PR sans ticket (Dependabot) : laisse-la ouverte, pose
-     `needs-your-attention`, arrête-toi.
+   - REJECT in round 3, with or without a ticket: `needs-your-attention` on the PR, which stays
+     open; its ticket leaves the queue, and no new PR takes up the same points. Never close it.
+     A round 4 runs only with the human's grant (`GRANTED:`).
 8. **Fusionner.** D'abord, reporte chaque PR empilée : pour chaque numéro que rend
    `gh pr list --base <branche de tête> --state open --json number`, lance
    `gh pr edit <m> --base <base de la PR>`. La suppression par `gh pr merge --delete-branch`
@@ -85,7 +85,7 @@ verdict, le rapport et la suite sont les mêmes. Tout le reste passe par les deu
    `gh pr edit <n> --add-label agent-merged` : tu agis sous le compte de l'humain, et sans
    l'étiquette la fusion paraîtrait lue par lui. Toujours avec un corps que tu écris : sans lui,
    GitHub écrit sur la base tous les messages de commit de la branche, périmés compris, et une PR
-   reprise au tour 2 porte un message du tour 1 que son correctif a rendu faux. Le corps, en
+   reprise au tour 2 ou 3 porte un message d'un tour précédent que son correctif a rendu faux. Le corps, en
    français, décrit la tête fusionnée : un paragraphe par ticket cité, chacun avec son
    `Closes #n`, ou son `Refs #n` suivi des points que la PR livre, pour que le commit garde la
    trace de chacun. Un ticket en `Refs #n` n'est suivi d'aucun mot-clé de fermeture nulle part, ni
@@ -162,9 +162,9 @@ Retire seulement une étiquette dont un agent a écrit la raison, dans la ligne 
 l'auteur de l'étiquette sur GitHub ne vous distingue pas. Une étiquette dont aucun texte d'agent ne
 donne la raison vient d'un humain : elle reste, même si un commentaire l'explique.
 
-## Porte à sens unique
+## Porte one-way
 
-Une PR dont la porte est `sens unique` (geste destructif, publication, migration de données,
+Une PR dont la porte est `one-way` (geste destructif, publication, migration de données,
 décision difficile à défaire) alerte l'humain. Lis la ligne `GATES` du verdict, entrée
 `one-way-door` : `déclarée` (la PR le dit) ou `relevée` (`forge:qc-conf` l'a trouvée dans le diff,
 la PR ne la déclarait pas). Dans les deux cas, pose `needs-your-attention` et écris la raison dans
@@ -185,7 +185,7 @@ En français, six lignes, aucune vide :
 - **Fait :** ce qui a changé, en trois lignes au plus
 - **Pourquoi :** le ticket, et la raison qui le porte
 - **REX :** ce qui a résisté, ce qui a surpris, ce que le prochain agent doit savoir
-- **Reprise :** aucune | reportée sur #<issue> | à refaire (agent-rework)
+- **Reprise :** aucune | reportée sur #<issue> | stopped in round 3 (needs-your-attention)
 - **Attention :** aucune | une raison par needs-your-attention | retirée : <raison>
 - **Verdict :** ACCEPT | REJECT au tour <n> ; fusionnée par l'agent : oui | non
 ```

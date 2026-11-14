@@ -140,8 +140,10 @@ encore servi.
 
 **La revue en boucle.** `forge:feature-build` lance la revue de bout en bout après chaque fusion dont le
 diff touche un chemin de `journey-paths` (étape 3 bis), sans minuterie ni geste humain, sur les écrans
-que la matrice relie au ticket fusionné. Les tickets d'écart que la revue publie entrent dans le passage
-(`forge:coder`, puis `forge:qc`), sans accord de l'humain (jamais un second ticket pour un identifiant qu'un ticket ouvert couvre déjà), et la revue rejoue le parcours. Avant la
+que la matrice relie au ticket fusionné. A review opens no ticket: each gap is a comment on the open
+ticket of the feature that covers the identifier, or on the feature's tracking issue when none covers it;
+a commented ticket goes back through the passage (`forge:coder`, then `forge:qc`), without the human's
+agreement, and the review replays the journey. Avant la
 recette, une revue en entier doit laisser zéro `bloquant` et zéro `majeur`
 (`scripts/revue_boucle.py porte`). Les plafonds de la boucle sont ceux du passage (`--max`, durée,
 jetons, `.claude/PAUSED`) et elle n'en ajoute aucun. Un identifiant de la source de nouveau non `tenu`, après une correction fusionnée qui le couvrait,
@@ -149,15 +151,12 @@ deux fois, arrête la boucle et pose `needs-your-attention` sur l'issue de suivi
 l'humain tranche. Éprouvé sous Linux seulement, sur des fichiers écrits à la main ; aucune vraie
 application ni aucun vrai navigateur n'a servi à la boucle.
 
-Les tickets d'écart portent l'étiquette `ready-for-agent` et une étiquette de gravité, `gravite:bloquant`,
-`gravite:majeur` ou `gravite:mineur` (celle de leur lot), que les indicateurs de la revue
-(`docs/indicateurs-de-service.md`) lisent. Ces trois étiquettes doivent exister sur le dépôt ; l'agent ne
-les crée pas, c'est un geste du propriétaire du dépôt (`gh label create gravite:bloquant`, et de même pour
-les deux autres), à faire avant la première revue en boucle. La boucle les cherche avec `gh label list`
-avant de publier : si l'une manque, la boucle s'arrête sans rien publier, nomme l'étiquette absente dans
-son compte rendu et pose `needs-your-attention` sur l'issue de suivi, plutôt que de laisser `gh issue
-create` échouer ticket par ticket. Ce geste vaut pour tout projet qui fait tourner la boucle, avec ou sans
-la clé `slo`.
+The loop needs no label of its own: the severity of a gap is written in its comment, and the review
+indicators (`docs/indicateurs-de-service.md`) read the matrices and the journals, not tickets. The only
+ticket the loop may open is a defect that prevents a merge, whose body carries `Motif : fusion-bloquee
+#<pr>` and `Feature: F-NNNN` (see [the ticket budget of a feature](#the-ticket-budget-of-a-feature)).
+A gap left on a comment comes back into the feature at the next `to-tickets` publication or when the
+product-owner re-splits it.
 
 Deux clés de plus rendent le parcours voulu obligatoire. `journey-replay` s'écrit
 `<contexte de CI> | <commande>` : la commande joue le parcours de bout en bout, depuis un dépôt propre
@@ -435,6 +434,73 @@ Tried under Linux only: by the tests, and by hand against the real `ssh -G` and 
 workstation (an alias, an address, a `-J` jump). Not yet in a real Claude Code session, nor under
 Windows or PowerShell.
 
+## The ticket budget of a feature
+
+The design of a feature declares `feature-tickets: N` in its header; the ceiling is 15, a constant of
+the plugin and not a key of `usine.md`. `guard_ticket_budget` holds it at four moments:
+
+- **At each write of a design.** An Edit, Write or MultiEdit of a `design.md` is refused when it
+  leaves `feature-tickets` above 15, below 1 once accepted, below the tickets the feature already
+  has, or above a budget the design was once accepted with: taking `statut: accepte` off and back
+  on raises nothing, since the hook reads that budget in the file, in its git history (any ref, the
+  last 30 commits of the file) and in its state file. A design is accepted only with the key, and an
+  accepted design may not remove it. A shell command that writes `statut: accepte` or
+  `feature-tickets` into a `design.md` (`sed -i`...) is refused: these go through Edit or Write.
+- **At each ticket.** `gh issue create`, a POST by `gh api` on `repos/<owner>/<repo>/issues`, a
+  `createIssue` mutation and the issue tools of a GitHub MCP server (`create_issue`, `issue_write`)
+  are read for the body's `Motif : <reason>` line, also inside `sh -c`, `bash -c`, `eval`, a shell fed
+  by a heredoc, a quoted `$(...)` and behind a wrapper (`env`, `timeout`, `xargs`...). Every ticket
+  carries an admitted reason, or it is refused; a misspelled one (`to-ticket`) is no admitted reason.
+  `to-tickets F-NNNN` counts for that feature, and so does `fusion-bloquee` with its required
+  `Feature: F-NNNN` line. `main-rouge`, `securite` and `demande-<who>` are out of budget, and so is
+  `feature-new F-NNNN`, the tracking ticket that `/forge:feature-new` opens: one per feature, a
+  second one is refused. A ticket opened earlier with a `Feature: F-NNNN` line and no admitted reason
+  still counts. A feature ticket is refused when its design (`<feature-dir>/NNNN-*/design.md`) is
+  missing, not accepted, has no budget or one above 15, or when the feature's tickets fill the
+  budget: those GitHub's search finds, open or closed (`gh issue list --state all --search`), a
+  ticket closed as not planned (`stateReason: NOT_PLANNED`, merged into another) left out, plus
+  those the hook let through in the last 10 minutes, which the search index may not show yet. An
+  open ticket, a completed one and a reason missing or unknown count. The refusal says to add a
+  part to an existing ticket (`Refs #n`).
+- **At each edit of a ticket.** `gh issue edit`, a PATCH by `gh api` on `repos/<owner>/<repo>/issues/<n>`
+  and the update tools of a GitHub MCP server may not add, remove or change a `Motif :` or `Feature:`
+  line of the body (the hook reads the current body with `gh issue view`). A body set by an
+  `updateIssue` mutation is refused.
+- **At each removal of a ticket.** `gh issue delete`, `gh issue transfer` and the delete or transfer
+  tools of a GitHub MCP server are refused on a ticket that holds a place in a budget (a feature
+  ticket, or the tracking ticket of a feature) and on one whose body gh cannot give: close it
+  instead. `deleteIssue` and `transferIssue` mutations are refused.
+- **At each reopening of a ticket.** `gh issue reopen`, a `gh api` call on
+  `repos/<owner>/<repo>/issues/<n>` with `state=open` and the update tools of a GitHub MCP server
+  with `state: open` bring a ticket closed as not planned back in its feature's count: the hook
+  counts as for a new ticket and refuses past the budget. A number or a state it cannot read, or a
+  ticket gh cannot give, is refused; `reopenIssue` and an `updateIssue` that sets `state` are refused.
+
+The hook refuses what it cannot read: a body passed by a variable (`--body "$BODY"`), a command
+substitution other than `$(cat <<'EOF' ... EOF)`, a heredoc with an unquoted delimiter whose body
+holds `$`, a backtick or a backslash, an editor or a pipe; a count gh cannot make (absent, network,
+error, timeout); an alias of gh, gh called through a variable, and any command that names
+`api.github.com` with issues or GraphQL (`curl`, `wget`, a script), refused as a precaution. Text in
+single quotes, an escaped `\$` or `` \` `` and a quoted heredoc (`<<'EOF'`) are read as written, a
+backtick included. Without the key `feature-dir`, the hook takes the value of the plugin's
+`templates/usine.md` (`docs/features`): an exception to the rule that an absent key takes no default,
+so that a project without the key is not refused every ticket.
+
+The state file is `ticket-budget.json` under `CLAUDE_PLUGIN_DATA`, the plugin's data directory, which
+Claude Code gives to hooks; an older Claude Code without it leaves the hook without memory, and the
+index lag below is then open. The file is locked on Linux and macOS, not on Windows.
+
+Limits, tried on Linux only, by the tests with a simulated gh, not yet in a real session:
+- the memory is per machine: two machines that publish the same feature at the same second can both
+  pass at the last slot, as can a ticket created outside the hook (the GitHub web page, another tool);
+- a ticket the hook let through but that gh failed to create still counts for 10 minutes;
+- closing a ticket as not planned frees a place in the budget: a gesture GitHub shows, that no hook
+  checks;
+- a shell fed by a pipe (`... | bash`), a script file run by a shell or an interpreter, and a design
+  renamed into place by `mv` are not read;
+- a GraphQL body variable fed by a JSON `--input` is refused as a precaution, and so is a backtick in
+  a double-quoted body under PowerShell, where it is an escape.
+
 ## Compléter ou remplacer, sans éditer le plugin
 
 - **Un complément** est un fichier du projet : ses skills de domaine, son arbitre du métier, ses
@@ -477,6 +543,30 @@ Ce qu'aucun agent ne fait à la place d'un humain :
    `docs/agents/usine.md` (Settings, Rules, Rulesets, ciblant la branche par défaut). Sans
    protection, seul `guard_git` retient une fusion dont un check n'est pas vert. `forge:qc-gate`
    lit la protection dans les rulesets comme dans l'ancienne protection de branche.
+
+## Output structure
+
+`guard_output` (hooks `SubagentStop`, `Stop`, and `PreToolUse` on `Bash`, `PowerShell`,
+`SubagentHandback` and the GitHub tools of an MCP server) checks each output with `plugins/forge/scripts/output_check.py`, which a skill
+can also run on a body before it posts it:
+
+| Output | Checked against | Refused |
+| --- | --- | --- |
+| final text of `forge:coder`, `forge:qc-conf`, `forge:qc-gate`, `forge:staff-engineer`, `forge:product-owner`, or the same name without `forge:` | the block its `agents/<name>.md` declares, keys closed | once; a second non-conforming output passes and is logged |
+| final text of any other agent | `templates/subagent-return.md` | once, then logged |
+| body of `gh issue create\|edit\|comment\|close -c`, `gh pr create\|edit\|comment\|review\|merge\|close -c`, `gh api ... -f\|-F body=` or `--input`, `gh api graphql` mutations `addComment`, `createIssue`..., read by `hooks/gh_bodies.py` (the reader `guard_cases` shares: gh behind a wrapper, in `bash -c`, `eval` or a substitution, a file after a `cd`); the text of a GitHub MCP tool, by the words of its name | `ticket.md`, `pr.md`, `comment.md`, or `verdict.md` when it opens with `VERDICT:` | every time |
+| the session's reply to the human | `templates/session-reply.md` | once per stop (`stop_hook_active`), then logged |
+
+The word caps (ticket 150, comment 150, PR 200, session reply 150, subagent return 200), the
+`max-lines` of each template header (ticket 25, PR 40, comment 12, session reply 15, subagent
+return 20, in written lines; a verdict has none) and the 60-word paragraph cap hold when the project sets no key; code blocks and table cells count in the
+total, HTML comments do not, and the paragraph cap skips tables and code blocks. The keys
+`output-words-<kind>`, `output-template`, `output-agent-format` and `output-extra-keys` of
+`plugins/forge/templates/usine.md` adjust them. The journal of outputs let through is
+`~/.claude/hooks/state/structured-output/journal.jsonl`. A body the guard cannot read (a variable,
+a file it cannot open, a pipe into standard input) is refused, and so is `curl` or `wget` to
+`api.github.com`; `Stop` lets through a reply it cannot read, and a crash passes: only exit 3 blocks. Tried by
+the suite of `tests/` only, not yet in a real session.
 
 ## Limites connues
 

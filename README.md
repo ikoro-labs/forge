@@ -69,7 +69,11 @@ ne fusionne une PR rouge, ou ne sort de son rôle.
 | `guard_infra` | the infrastructure gestures (`docker rm`, `systemctl restart`, `lxc delete`..., and anything off the read list on a host of the `infra-hosts` key): refused to a subagent, asked in the main session; see [The infrastructure guard](#the-infrastructure-guard) |
 | `guard_coder` | le coder ne fusionne pas, ne relit pas, ne lance ni `forge:qc` ni la revue de bout en bout, ne ferme pas de ticket, n'écrit que dans son worktree, ne pousse ni avec `-u` ni avec `-f` |
 | `guard_readonly` | les juges et les décideurs lisent, n'écrivent jamais |
+| `guard_ticket_budget` | a design holds `feature-tickets: N`, N at most 15, never raised once accepted nor below the tickets published; every ticket names an admitted reason (`Motif :`) that no edit changes, and a feature never opens more tickets than its budget nor a second tracking ticket, by gh, a nested shell or a GitHub MCP tool ([details](docs/installation.md#the-ticket-budget-of-a-feature)) |
+| `guard_cases` | une PR de feature s'ouvre sur des cas de validation acceptés (`AGREED:`) ; un verdict ne bloque que sur ces cas gelés, une règle du socle ou une régression |
+| `guard_coder_model` | un `forge:coder` (ou `coder`) lancé par `Agent`, `Task` ou un `Workflow` tourne sur `sonnet`, sur `opus` avec la ligne `ESCALATION: #<PR> round 3`, sur `haiku` avec la ligne `MODE: sync`, jamais sur un autre modèle ; un `effort` donné vaut `high` ; des options qu'il ne lit pas sont refusées |
 | `guard_pause` | tant que `.claude/PAUSED` existe, aucun agent n'est lancé |
+| `guard_output` | every output follows its template and its word caps: a subagent's final text, the body of a gh ticket, PR or comment, the session's reply to the human ([details](docs/installation.md#output-structure)) |
 | `after_write` | formate chaque fichier écrit avec les formateurs que le projet déclare (clé `format-on-write`), puis refuse le tiret cadratin au-delà de ce que le projet admet |
 | `trim_output` | la longue sortie d'une commande de tests qui réussit est raccourcie, la sortie complète gardée dans un journal |
 | `sessions_notice`, `handoff_*` | une seule session par dépôt, et la passation à une nouvelle session quand le contexte est plein |
@@ -149,9 +153,9 @@ Quatre clés activent, une par une, les preuves d'écran d'un projet qui a une i
 écran, navigateur piloté (jamais en CI), commande de l'ordinateur (sur un poste dédié), vidéo ou GIF
 d'un parcours. Deux clés de plus rejouent le parcours voulu en CI : `journey-replay` (le contexte de CI,
 nommé parmi les contextes requis, et la commande qui joue le parcours) et `journey-paths` (les chemins
-du front et des API qu'il consomme, dont toute PR doit joindre les captures). La revue en boucle pose des étiquettes `gravite:bloquant`,
-`gravite:majeur` et `gravite:mineur` sur ses tickets d'écart : elles doivent exister sur le dépôt, l'agent
-ne les crée pas. Le détail est dans [`docs/installation.md`](docs/installation.md).
+du front et des API qu'il consomme, dont toute PR doit joindre les captures). The review loop opens no
+ticket: it comments its gaps on the existing tickets of the feature. Le détail est dans
+[`docs/installation.md`](docs/installation.md).
 
 Pour adapter forge sans toucher au plugin, le projet ajoute ses propres skills, agents et hooks
 dans son `.claude/` : ils coexistent avec ceux de forge, dont les noms sont préfixés (`forge:`).

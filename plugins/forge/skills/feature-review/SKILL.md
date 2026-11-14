@@ -89,21 +89,19 @@ rend son étape « sans objet (clé `<nom>` absente) », jamais `PASS` : forge n
    - **La matrice** est mise à jour par ce script, qui ne change que l'état, la capture et la date du
      jugement d'une ligne et ne l'écrit que si `matrice.py` accepte le résultat. Un élément `écarté`
      n'est jamais jugé, et la revue n'en écrit aucun.
-   - **Les tickets.** Sa sortie `TICKET` donne un lot par gravité et par lot de la spec, du plus grave
-     au moins grave. Rédige un ticket par lot : titre, gravité, capture, identifiants de la source cités,
-     constat, et un **critère de sortie** (« chaque identifiant repasse `tenu` à la revue suivante,
-     capture à l'appui »), la ligne `Couvre : <identifiants>` que `forge:qc-conf` lit et la ligne
-     `Feature: F-NNNN`. Ils sont étiquetés `ready-for-agent` et `gravite:<gravité>` (`bloquant`,
-     `majeur` ou `mineur`, celle de leur ligne `TICKET`) : les indicateurs de la revue de
-     `factory_slo.py` les comptent par cette étiquette. Ils sont rattachés à l'issue de suivi de la
-     feature (`issue:` de `idee.md`). Avant de publier le premier, vérifie par `gh label list` que
-     `ready-for-agent` et les étiquettes de gravité des lots (`bloquant`, `majeur`, `mineur`) existent
-     (`docs/installation.md`) : le skill ne les crée pas, et s'il en manque une il ne publie rien et le
-     dit en nommant l'étiquette. Lancé par `forge:feature-build` (étape 3 bis), le passage les
-     publie lui-même, sans accord de l'humain : c'est la boucle, et un geste humain l'arrêterait.
-     Lancé à la main, hors de la boucle, la session qui l'a lancé montre les brouillons et ne les
-     publie qu'après l'accord de l'humain de la clé `accepting-human`. Le skill ne câble aucun
-     projet : le dépôt et les étiquettes sont ceux du projet.
+   - **The comments.** A review opens no ticket. Its `TICKET` output gives one batch per severity
+     and per batch of the spec, the most severe first. Write one comment per batch: title,
+     severity, capture, identifiers of the source, finding, an **exit criterion** (critère de
+     sortie: « each identifier is back to `tenu` at the next review, capture attached ») and the
+     `Couvre : <identifiants>` line that `forge:qc-conf` reads. It goes on the open ticket of the
+     feature that covers those identifiers, which stays `ready-for-agent`, else on the feature's
+     tracking issue (`issue:` of `idee.md`). Launched by `forge:feature-build` (step 3 bis), the
+     passage posts them itself, without the human's agreement (sans accord de l'humain): it is
+     the loop, and a human gesture would stop it. Launched by hand, outside the loop, the session
+     that launched it shows the drafts and posts them only after the agreement of the human of the
+     `accepting-human` key. The only exception: a defect that prevents a merge opens a ticket
+     (`gh issue create`) whose body carries `Motif : fusion-bloquee #<pr>` and `Feature: F-NNNN`.
+     The skill wires no project: the repository is the project's.
    - **Le rapport** enrichit la page de la feature, sans en créer une nouvelle : une section
      « Revue de bout en bout » ajoutée à `recette.md` (ou, si la feature est déjà close, à la section
      « Ses limites » de son `README.md`). Elle dit la date, le système et ce qui n'a pas été vu, la
@@ -112,7 +110,7 @@ rend son étape « sans objet (clé `<nom>` absente) », jamais `PASS` : forge n
 7. **Livrer** le tout dans une PR vers la base : matrice, rapport, captures citées, et le compte
    rendu ci-dessous écrit dans le dossier de la feature sous `revue/compte-rendu.txt` (c'est là que
    `forge:feature-verify` et `forge:feature-build` le lisent pour la porte de la recette). La revue ne
-   corrige jamais le code d'une feature : ce sont les tickets qui repartent en construction.
+   corrige jamais le code d'une feature : ce sont les tickets commentés qui repartent en construction.
 
 ## Gravité
 
