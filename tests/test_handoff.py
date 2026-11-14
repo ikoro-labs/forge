@@ -624,6 +624,12 @@ class Relay(unittest.TestCase):
             launcher = bin_dir / "claude"
             launcher.write_text(f'#!/bin/sh\nexec "{sys.executable}" "{fake}" "$@"\n', encoding="utf-8")
             launcher.chmod(0o755)
+        # A stand-in for the desktop's default terminal: a relay test never opens a real window.
+        self.window = self.home / "window.log"
+        if not WINDOWS:
+            terminal = bin_dir / "xdg-terminal-exec"
+            terminal.write_text(f'#!/bin/sh\necho "$@" >> "{self.window}"\n', encoding="utf-8")
+            terminal.chmod(0o755)
         self.env = {
             **isolated_home(self.home),
             "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
@@ -714,6 +720,44 @@ class Relay(unittest.TestCase):
         self.assertIn("sauvetage", result.stderr)
         rescued = handoff(self.home, en_vol="[coder #12]", sauvetage="[coder #12 agent-x]")
         self.assertEqual(self.relay(rescued, "--force").returncode, 0)
+
+    def window_command(self) -> str:
+        """What the stand-in terminal was asked to run; it is started detached, so it may lag."""
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline and not self.window.exists():
+            time.sleep(0.05)
+        return self.window.read_text(encoding="utf-8") if self.window.exists() else ""
+
+    @unittest.skipIf(WINDOWS, "xdg-terminal-exec is the freedesktop default terminal, absent from Windows")
+    def test_unset_the_relay_opens_in_the_desktop_default_terminal(self) -> None:
+        result = self.relay(handoff(self.home), CLAUDE_HANDOFF_CLOSE_DRY_RUN="", DISPLAY=":0")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("relay abcdef12 opened in a new terminal window", result.stdout)
+        self.assertRegex(self.window_command(), r"claude attach abcdef12$")
+
+    @unittest.skipIf(WINDOWS, "xdg-terminal-exec is the freedesktop default terminal, absent from Windows")
+    def test_an_off_value_opens_no_window(self) -> None:
+        for value in ("", "off", "0"):
+            with self.subTest(value=value):
+                result = self.relay(
+                    handoff(self.home), CLAUDE_HANDOFF_CLOSE_DRY_RUN="", DISPLAY=":0", CLAUDE_HANDOFF_TERMINAL=value,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn("follow the relay with: claude attach abcdef12", result.stdout)
+                self.assertFalse(self.window.exists())
+
+    @unittest.skipIf(WINDOWS, "xdg-terminal-exec is the freedesktop default terminal, absent from Windows")
+    def test_without_a_default_terminal_no_window_opens(self) -> None:
+        # Only the fake claude and git on the PATH: the machine's own xdg-terminal-exec must stay out.
+        tools = self.home / "tools"
+        tools.mkdir()
+        (tools / "git").symlink_to(shutil.which("git") or "git")
+        (self.home / "bin" / "xdg-terminal-exec").unlink()
+        path = f"{self.home / 'bin'}{os.pathsep}{tools}"
+        result = self.relay(handoff(self.home), CLAUDE_HANDOFF_CLOSE_DRY_RUN="", DISPLAY=":0", PATH=path)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("follow the relay with: claude attach abcdef12", result.stdout)
+        self.assertFalse(self.window.exists())
 
     def test_the_daily_cap_stops_the_chain_without_moving_the_counter(self) -> None:
         self.state.mkdir(parents=True)
