@@ -7,6 +7,7 @@ import unittest
 from pathlib import Path
 
 import support
+from parse_output import parse_result
 
 FRONTMATTER = re.compile(r"\A---\n(.*?)\n---\n", re.DOTALL)
 FIELD = re.compile(r"^([a-zA-Z-]+):(.*)$")
@@ -138,6 +139,13 @@ class Frontmatter(unittest.TestCase):
     def test_a_haiku_coder_aborts_a_conflicted_merge(self) -> None:
         text = " ".join((support.PLUGIN / "agents" / "coder.md").read_text(encoding="utf-8").split())
         self.assertIn("`git merge --abort`, puis `RESULT: BLOCKED` avec `QUESTION: conflict in <fichiers>`", text)
+
+    def test_the_conflict_block_the_sync_rule_names_is_a_block_the_parser_accepts(self) -> None:
+        text = " ".join((support.PLUGIN / "agents" / "coder.md").read_text(encoding="utf-8").split())
+        rule = text[text.index("`git merge --abort`, puis `RESULT: BLOCKED`") :]
+        rule = rule[: rule.index("sans rien résoudre ni pousser")]
+        lines = [span.replace("<fichiers>", "a.py") for span in re.findall(r"`([A-Z]+: [^`]+)`", rule)]
+        parse_result("\n".join([*lines, "TICKET: #12"]) + "\n")
 
     def test_the_coder_cannot_launch_an_agent(self) -> None:
         tools = frontmatter(support.PLUGIN / "agents" / "coder.md")["tools"]
