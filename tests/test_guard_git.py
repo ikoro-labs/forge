@@ -18,20 +18,23 @@ import support
 from guard_git import (
     OWNER_KEY,
     _gh_api_reads,
+    changed_files_via_gh,
+    checks_green_via_gh,
     description_via_gh,
     device_path_kind,
     guarded_main,
     main,
     native_directory,
+    pr_files_via_gh,
     refusal,
 )
 
 
-def never_green(_pr: str | None) -> bool:
+def never_green(*_target: str | None) -> bool:
     return False
 
 
-def always_green(_pr: str | None) -> bool:
+def always_green(*_target: str | None) -> bool:
     return True
 
 
@@ -167,7 +170,7 @@ class WrappersAreLookedThrough(unittest.TestCase):
         found = refusal(
             "sudo $WHO make deploy",
             "feat/x",
-            lambda _pr: True,
+            lambda *_target: True,
             owner_gestures=["sudo | only the owner"],
         )
         self.assertIn("only the owner", found or "")
@@ -290,7 +293,7 @@ class SplitTicket(unittest.TestCase):
             "feat/x",
             always_green,
             read_text=files({"m.md": body}),
-            description=lambda pr: description if pr == "506" else "",
+            description=lambda pr, *_rest: description if pr == "506" else "",
         )
         self.assertIn("closes #322", verdict or "")
         self.assertIsNone(merge_refused(command, {"m.md": body}))
@@ -1448,6 +1451,129 @@ class OnlyTheDescriptorZeroIsTheStandardInput(unittest.TestCase):
             for option in (f"--body-file {name}", f"-F {name}"):
                 with self.subTest(name=name, option=option), no_open_under_devices():
                     self.assertIsNone(refused(f"gh pr merge 5 {option}", green=True))
+
+
+# A PR as gh reads it: its number, its repository and the directory gh runs in.
+Target = tuple[str | None, str | None, str | None]
+
+
+def elsewhere(pr: str | None, repository: str | None = None, directory: str | None = None) -> bool:
+    """Whether a reading looks at the other clone or the other repository, not the event's."""
+    return repository == "o/other" or "clone" in (directory or "")
+
+
+class EveryReadingSeesTheMergedPr(unittest.TestCase):
+    """The checks, the description and the protected paths read the PR the infra guard reads."""
+
+    # Each merge acts on the PR of another clone or repository than the event's `/w/forge`.
+    COMMANDS = (
+        "cd ../clone && gh pr merge 5",
+        "cd ../clone && sh -c 'gh pr merge 5'",
+        "GH_REPO=o/other gh pr merge 5",
+        "export GH_REPO=o/other; gh pr merge 5",
+        "gh pr merge -R o/other 5",
+        "gh pr merge --repo=o/other 5",
+    )
+
+    def test_checks_red_where_the_merge_runs_refuse_it(self) -> None:
+        def green(pr: str | None, repository: str | None = None, directory: str | None = None) -> bool:
+            return not elsewhere(pr, repository, directory)
+
+        for command in self.COMMANDS:
+            with self.subTest(command=command):
+                self.assertIn("checks not green", refusal(command, "feat/x", green, "/w/forge") or "")
+        self.assertIsNone(refusal("gh pr merge 5", "feat/x", green, "/w/forge"))
+
+    def test_a_description_read_where_the_merge_runs_is_judged(self) -> None:
+        def body(pr: str | None, repository: str | None = None, directory: str | None = None) -> str:
+            return "Refs #3. This closes #3" if elsewhere(pr, repository, directory) else ""
+
+        for command in self.COMMANDS:
+            with self.subTest(command=command):
+                verdict = refusal(command, "feat/x", always_green, "/w/forge", description=body)
+                self.assertIn("closes #3", verdict or "")
+        self.assertIsNone(refusal("gh pr merge 5", "feat/x", always_green, "/w/forge", description=body))
+
+    def test_a_protected_path_touched_where_the_merge_runs_refuses_it(self) -> None:
+        def changed(
+            pr: str | None, repository: str | None = None, directory: str | None = None
+        ) -> list[str]:
+            return [".github/ci.yml"] if elsewhere(pr, repository, directory) else ["README.md"]
+
+        def judged(command: str) -> str | None:
+            return refusal(
+                command, "feat/x", always_green, "/w/forge", protected_paths=[".github/"], changed_files=changed
+            )
+
+        for command in self.COMMANDS:
+            with self.subTest(command=command):
+                self.assertIn(".github/ci.yml", judged(command) or "")
+        self.assertIsNone(judged("gh pr merge 5"))
+
+    def test_the_four_readings_ask_for_the_same_prs(self) -> None:
+        for command in (*self.COMMANDS, "gh pr merge 5", "gh pr merge"):
+            asked: dict[str, list[Target]] = {"checks": [], "description": [], "changed": [], "files": []}
+
+            def reader(name: str, answer: Any, asked: dict[str, list[Target]] = asked) -> Callable[..., Any]:
+                def read(pr: str | None, repository: str | None = None, directory: str | None = None) -> Any:
+                    asked[name].append((pr, repository, directory))
+                    return answer
+
+                return read
+
+            refusal(
+                command,
+                "feat/x",
+                reader("checks", True),
+                "/w/forge",
+                description=reader("description", ""),
+                protected_paths=[".github/"],
+                changed_files=reader("changed", []),
+                pr_files=reader("files", []),
+            )
+            with self.subTest(command=command):
+                self.assertTrue(asked["files"])
+                for name in ("checks", "description", "changed"):
+                    self.assertEqual(asked[name], asked["files"], name)
+
+    def test_each_gh_reading_names_the_pr_and_runs_where_the_merge_runs(self) -> None:
+        # gh is played by Python, which runs the script `pr` of the directory it runs in: it answers
+        # only when asked about PR 5 of `o/other`.
+        script = (
+            "import json, sys\n"
+            "args = sys.argv[1:]\n"
+            "if args[1:3] != ['5', '-R'] or args[3] != 'o/other':\n"
+            "    sys.exit(1)\n"
+            "print(json.dumps({'files': [{'path': 'a'}]}) if '--json' in args and 'files' in args else 'Refs #3')\n"
+        )
+        with tempfile.TemporaryDirectory() as folder, tempfile.TemporaryDirectory() as event:
+            (Path(folder) / "pr").write_text(script, encoding="utf-8")
+            target = ("5", "o/other", folder)
+            with mock.patch("shutil.which", lambda _name: sys.executable):
+                self.assertTrue(checks_green_via_gh(event)(*target))
+                self.assertEqual(description_via_gh(event)(*target), "Refs #3\n")
+                self.assertEqual(changed_files_via_gh(event)(*target), ["a"])
+                self.assertEqual(pr_files_via_gh(event)(*target), ["a"])
+                self.assertFalse(checks_green_via_gh(event)("5", None, folder))
+                self.assertFalse(checks_green_via_gh(event)("5", "o/other", None))
+
+    def test_a_merge_whose_target_cannot_be_read_reads_nothing(self) -> None:
+        def boom(*_args: object) -> Any:
+            raise AssertionError("an unreadable merge target is refused before any reading")
+
+        for command in ("cd $CLONE && gh pr merge 5", "GH_REPO=$R gh pr merge 5", "gh pr merge -R $R 5", "gh pr merge $N"):
+            with self.subTest(command=command):
+                verdict = refusal(
+                    command,
+                    "feat/x",
+                    boom,
+                    "/w/forge",
+                    description=boom,
+                    protected_paths=[".github/"],
+                    changed_files=boom,
+                    pr_files=boom,
+                )
+                self.assertIn("only the owner merges it, by hand", verdict or "")
 
 
 if __name__ == "__main__":

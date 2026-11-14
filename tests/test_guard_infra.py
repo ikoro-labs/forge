@@ -734,7 +734,7 @@ class TheHook(unittest.TestCase):
         self.assertEqual(hook.get("onFailure"), "block")
 
 
-def always_green(_pr: str | None) -> bool:
+def always_green(*_target: str | None) -> bool:
     return True
 
 
@@ -876,6 +876,7 @@ class MergeOfTheGuard(unittest.TestCase):
             'cd "$(git rev-parse --show-toplevel)/../x" && gh pr merge 5',
             "cd - && gh pr merge 5",
             "cd $CLONE && sh -c 'gh pr merge 5'",
+            "cd $CLONE && gh api -X PUT repos/{owner}/{repo}/pulls/5/merge",
         ):
             with self.subTest(command=command):
                 found = merge(command, files("README.md"), cwd="/w/forge")
@@ -919,6 +920,7 @@ class MergeOfTheGuard(unittest.TestCase):
             "export GH_REPO=$(cat repo); gh pr merge 5",
             "gh pr merge -R $R 5",
             "gh pr merge --repo=`cat repo` 5",
+            "GH_REPO=$R gh api -X PUT repos/{owner}/{repo}/pulls/5/merge",
         ):
             with self.subTest(command=command):
                 found = merge(command, files("README.md"))
@@ -941,6 +943,37 @@ class MergeOfTheGuard(unittest.TestCase):
             "gh pr merge --squash",
             'gh pr merge --subject "$TITLE" 5',
             "echo ok | grep ok; gh pr merge 5",
+        ):
+            with self.subTest(command=command):
+                self.assertIsNone(merge(command, files("README.md")))
+
+    def test_a_rest_merge_whose_endpoint_the_shell_may_change_is_refused(self) -> None:
+        for command in (
+            "gh api -X PUT $E",
+            "gh api -X PUT repos/$R/pulls/5/merge",
+            'gh api -X PUT "repos/$(cat r)/pulls/5/merge"',
+            "gh api -X PUT repos/o/f/pulls/5/$M",
+            "gh api -X PUT repos/o/f/`cat p`",
+            "gh api -X PUT -f merge_method=$M",
+            "gh api --method=$M repos/o/f/pulls/5/$X",
+            "gh api -X PUT repos/o/f/pulls/5/merg{e..e}",
+            "gh api -X PUT repos/o/f/pulls/5/{merge,x}",
+            "gh api -X PUT repos/o/f/pulls/5/mer?e",
+            "gh api -X PUT repos/o/f/pull*/5/merge",
+            "gh api -X PUT repos/o/f/pulls/5/[M]erge",
+            "gh api -X PUT repos/o/f/pulls/5/[^x]erge",
+            "gh api -X PUT https://api.github.com/repos/o/f/pulls/*/merge",
+        ):
+            with self.subTest(command=command):
+                found = merge(command, files("README.md"))
+                self.assertIn("only the owner merges it, by hand", found or "")
+        for command in (
+            "gh api repos/$R/pulls/5",
+            "gh api -X GET repos/o/f/pulls/$N/merge",
+            "gh api -X POST repos/o/f/issues/5/comments -f body=$BODY",
+            "gh api -X POST 'repos/o/f/issues/5/comments?x=1'",
+            "gh api -X POST repos/o/f/issues/*/comments",
+            "gh api -X PUT repos/{owner}/{repo}/pulls/5/merge",
         ):
             with self.subTest(command=command):
                 self.assertIsNone(merge(command, files("README.md")))
@@ -998,7 +1031,7 @@ class MergeOfTheGuard(unittest.TestCase):
                     mock.patch("guard_git.project_root", lambda _event: Path(home)),
                     mock.patch("guard_git.current_branch", lambda _cwd: "feat/x"),
                     mock.patch("guard_git.checks_green_via_gh", lambda _cwd: always_green),
-                    mock.patch("guard_git.description_via_gh", lambda _cwd: lambda _pr: ""),
+                    mock.patch("guard_git.description_via_gh", lambda _cwd: lambda *_target: ""),
                     mock.patch("guard_git.pr_files_via_gh", lambda _cwd: pr_files),
                 ):
                     return git_guarded_main(), err.getvalue()

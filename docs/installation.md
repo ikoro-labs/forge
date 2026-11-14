@@ -305,7 +305,8 @@ s'analyse pas n'a pas été essayé non plus. `guard_coder` et `guard_readonly`,
 
 `guard_git` refuse à tout agent `gh pr merge <n>` quand un fichier du diff de la PR commence par une
 ligne de la clé `protected-path` de `usine.md`. Le diff se lit par `gh pr view <n> --json files`, sous
-le délai des autres appels du garde. Le refus nomme le fichier et le préfixe, et dit que la fusion
+le délai des autres appels du garde, là où la fusion s'exécute, comme les checks et la description
+(voir la section suivante). Le refus nomme le fichier et le préfixe, et dit que la fusion
 revient à l'humain, à lister en fin de compte rendu. La clé déclarée, une liste illisible, ou un `gh`
 qui échoue ou dépasse son délai, vaut refus. Sans la clé, le garde ne refuse rien à ce titre. La
 consigne de `forge:qc` reste (s'arrêter avant la fusion) : le garde est le filet, la consigne évite
@@ -391,12 +392,14 @@ prefix", only says the command runs "without going through Claude".
 a node id the guard does not look up. Like every refusal of `guard_git`, it looks through the
 wrappers `guard_infra` takes off (`env`, `sudo`, `command`, `timeout`, `xargs`...), a path or
 `.exe` (`/usr/bin/gh`), and the script of `sh -c` or of a shell reading a heredoc. The files are
-read where the merge runs: in the directory a `cd` before it moved to, and in the repository it
+read where the merge runs, like the checks, the description and the files of the protected paths: in the directory a `cd` before it moved to, and in the repository it
 names (`-R`, `--repo`, the URL of the PR, `GH_REPO` before it; a `GH_REPO` set earlier by
 `export` or an assignment is read beside the directory's own). A `cd` or a repository the guard
-cannot read (a variable, a substitution, `cd -`, `~`) refuses the merge, and so does a merge whose
+cannot read (a variable, a substitution, `cd -`, `~`) refuses the merge before any reading, and so does a merge whose
 number may come from the standard input or a variable: behind `xargs`, a number with `$`, or no
-number while the command reads a pipe or a `<` redirection. The tests of this refusal live in `tests/test_guard_infra.py`:
+number while the command reads a pipe or a `<` redirection. A write by `gh api` whose endpoint the
+shell may turn into a merge (a variable or a substitution in it, a brace expansion, a glob that may
+match `repos/<owner>/<repo>/pulls/<n>/merge`) is refused too. The tests of this refusal live in `tests/test_guard_infra.py`:
 removing it from `guard_git` turns them red, and changing them is itself such a PR. The owner
 merges it in GitHub's web interface (a `! gh pr merge` may still meet `guard_git`, see above).
 
