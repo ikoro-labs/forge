@@ -1015,14 +1015,14 @@ def released(issue: Mapping[str, object]) -> bool:
     return isinstance(state, str) and isinstance(reason, str) and (state.upper(), reason.upper()) == ("CLOSED", "NOT_PLANNED")
 
 
-def matching_issues(
-    phrases: tuple[str, ...], repo: str | None, cwd: str | None, run: Runner, counted: bool = False
-) -> dict[int, str] | None:
-    """The issues, open or closed, whose body holds one of `phrases`; None when gh cannot say.
+def search_issues(
+    phrases: tuple[str, ...], repo: str | None, cwd: str | None, run: Runner
+) -> dict[int, dict] | None:
+    """The issues, open or closed, whose body holds one of `phrases`, by number; None when gh cannot say.
 
-    `counted` leaves out the tickets closed as not planned, which use no place in a budget.
+    Each issue keeps the `number`, `body`, `state` and `stateReason` gh gave.
     """
-    found: dict[int, str] = {}
+    found: dict[int, dict] = {}
     for phrase in phrases:
         argv = ["issue", "list", "--state", "all", "--search", f'"{phrase}" in:body']
         argv += ["--json", "number,body,state,stateReason", "--limit", SEARCH_LIMIT]
@@ -1043,9 +1043,25 @@ def matching_issues(
             number, body = issue.get("number"), issue.get("body")
             if not isinstance(number, int) or not isinstance(body, str):
                 return None
-            if not (counted and released(issue)):
-                found[number] = body
+            found[number] = issue
     return found
+
+
+def matching_issues(
+    phrases: tuple[str, ...], repo: str | None, cwd: str | None, run: Runner, counted: bool = False
+) -> dict[int, str] | None:
+    """The bodies of `search_issues`, by number; None when gh cannot say.
+
+    `counted` leaves out the tickets closed as not planned, which use no place in a budget.
+    """
+    issues = search_issues(phrases, repo, cwd, run)
+    if issues is None:
+        return None
+    return {
+        number: issue["body"]
+        for number, issue in issues.items()
+        if not (counted and released(issue))
+    }
 
 
 def count_tickets(feature: str, repo: str | None, cwd: str | None, run: Runner) -> int | None:
