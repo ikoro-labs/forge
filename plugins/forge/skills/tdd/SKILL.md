@@ -40,7 +40,7 @@ Ne simuler qu'aux **frontières du système** : service externe, temps, hasard, 
 
 ## Les tests par propriétés
 
-Un test par propriétés énonce une règle qui vaut pour toute entrée, et la bibliothèque du projet (clé `property-test-lib` de `docs/agents/usine.md`) cherche l'entrée qui la contredit. Il trouve seul les cas limites que quelques exemples laissent passer. **Clé absente : ce skill ne demande aucun test par propriétés**, et la PR le dit (« sans objet, clé `property-test-lib` absente »).
+Un test par propriétés énonce une règle qui vaut pour toute entrée, et la bibliothèque du projet (clé `property-test-lib` de `docs/agents/usine.md`) cherche l'entrée qui la contredit. Il trouve seul les cas limites que quelques exemples laissent passer. **Clé absente : ce skill ne demande aucun test par propriétés**, et la PR le dit (« sans objet (clé `property-test-lib` absente) »).
 
 **Quand en écrire un** (clé présente) :
 

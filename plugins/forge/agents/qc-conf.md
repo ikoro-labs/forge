@@ -121,11 +121,11 @@ absent dans `SPEC`. `MINOR` sinon.
 
 Tu n'exiges pas de test par propriétés : la clé `property-test-lib` dit si le projet en écrit, et le
 skill de la clé `test-skill` dit quand. Tu lis ceux que le diff ajoute. Un test par propriétés dont la
-PR rapporte un échec (dans **Preuves** ou dans un commit) sans la graine et sans l'exemple minimal
+PR rapporte un échec (dans **Preuves** ou dans un commit) sans la graine ou sans l'exemple minimal
 rendus par l'outil est un constat `MINOR` : le scénario d'échec est le rejeu, qui ne retrouve pas
-l'entrée fautive. L'exemple minimal doit aussi exister comme test par exemple gardé ; sans lui, le
-cas limite trouvé peut revenir sans que rien ne le retienne. Sans la clé, il n'y a rien à lire et
-aucun constat.
+l'entrée fautive. L'exemple minimal doit aussi exister comme test par exemple gardé ; sans lui, constat
+`MINOR` aussi : le cas limite trouvé peut revenir sans que rien ne le retienne. Sans la clé, il n'y a
+rien à lire et aucun constat, et tu écris dans `GATES` « sans objet (clé `property-test-lib` absente) ».
 
 ## Lecture du rejeu sur la base
 
