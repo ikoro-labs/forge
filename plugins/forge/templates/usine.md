@@ -473,7 +473,7 @@ script sort en code 10 quand rien n'a changé depuis le dernier envoi (aucun mai
 enregistre l'envoi. Sans `report-repo`, il s'arrête et nomme la clé ; sans une autre, sa partie du
 mail dit « clé `<nom>` absente » et rien n'est deviné.
 
-Les dépôts relevés (PR fusionnées, verdicts, CI de `main`), une ligne par dépôt `<propriétaire>/<nom>`.
+Les dépôts relevés (PR fusionnées, verdicts, CI de `main`, runners), une ligne par dépôt `<propriétaire>/<nom>`.
 
 - `report-repo` : `<propriétaire/dépôt>`
 
@@ -485,6 +485,20 @@ Le fichier de workflow dont le dernier run terminé sur `main` est relevé. Sans
 terminé de `main`, tout workflow confondu.
 
 - `report-main-workflow` : `<ci.yml>`
+
+Le groupement des runners (`gh api repos/<dépôt>/actions/runners`) par hôte : `<hôte> | <étiquette de
+runner>`, une ligne par hôte. Un runner qu'aucune ligne ne réclame est listé sous « no host ». Sans la
+clé, les runners sont comptés par dépôt.
+
+- `report-host` : `<poste | shipyard-ci>`
+- `report-host` : `<vps | vps-ci>`
+
+La sonde mémoire et disque d'un hôte : `<hôte> | <commande>`, lancée par le shell du poste, qui
+imprime sa mesure en une ligne (reprise telle quelle, 200 caractères au plus). Sans ligne pour un
+hôte, le mail dit qu'aucune sonde n'est nommée ; une sonde en échec se lit « probe failed », et le
+script n'échoue pas.
+
+- `report-host-probe` : `<poste | free -h | awk 'NR==2{print "mem " $3 "/" $2}'; df -h / | awk 'NR==2{print "disk " $3 "/" $2}'>`
 
 L'heure UTC après laquelle un bilan du jour part même sans événement. Sans la clé, aucun bilan : un
 jour sans événement n'envoie rien.

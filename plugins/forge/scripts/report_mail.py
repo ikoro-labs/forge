@@ -7,12 +7,13 @@ Exit code: 0 when a mail is due, 10 when nothing happened since the last one sen
 printed), 2 on a missing key or a usage error, 1 when `gh` fails. A mail is due when, since the
 last send: a PR merged, a verdict was posted, the set of items under the attention label changed, the
 last finished run of main changed or is red, an open PR changed (head, checks, mergeability), the
-or, with `report-digest-hour`, no mail went out yet this
+runners of a host changed (online count), or, with `report-digest-hour`, no mail went out yet this
 UTC day and that hour has passed. The first run has no baseline: it sends one mail without a change
-list. The mail keeps what changed since the last send.
+list. The mail keeps what changed since the last send, plus the present state of CI and runners.
 
 Keys read (no default; a key absent makes its part say so, except `report-repo`, which stops the
 script): `report-repo` (repeatable), `report-attention-label`, `report-main-workflow`,
+`report-host` (`<host> | <runner label>`), `report-host-probe` (`<host> | <command>`),
 `report-digest-hour`. The state lives in `--state-dir`, else in
 `~/.claude/hooks/state/report-mail/<repository>`.
 """
@@ -33,20 +34,28 @@ from typing import Any
 
 PLUGIN = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PLUGIN / "hooks"))
-from usine import load, project_root  # noqa: E402
+from usine import load, project_root, split_value  # noqa: E402
 
 NOTHING_CHANGED = 10
+PROBE_TIMEOUT = 20
+PROBE_MAX_CHARS = 200
 STATE_FILE = "state.json"
 PENDING_FILE = "pending.json"
 MAIL_FILE = "mail.html"
 
 Gh = Callable[[list[str]], str]
+Probe = Callable[[str], str]
 
 
 def _gh(args: list[str]) -> str:
     return subprocess.run(["gh", *args], check=True, capture_output=True, text=True).stdout
 
 
+def _probe(command: str) -> str:
+    done = subprocess.run(
+        command, shell=True, check=True, capture_output=True, text=True, timeout=PROBE_TIMEOUT
+    )
+    return done.stdout
 
 
 def state_dir(config: Mapping[str, list[str]], override: str | None = None) -> Path:
@@ -87,12 +96,36 @@ def _json(gh: Gh, args: list[str]) -> Any:
     return json.loads(gh(args))
 
 
+def _pairs(config: Mapping[str, list[str]], key: str) -> dict[str, str]:
+    """The `<a> | <b>` values of `key` as a mapping; a value short of a part is left out."""
+    parts = (split_value(value, 2) for value in config.get(key, []))
+    return {pair[0]: pair[1] for pair in parts if pair}
 
 
+def _host_of(labels: Sequence[str], hosts: Mapping[str, str]) -> str | None:
+    for host, label in hosts.items():
+        if label in labels:
+            return host
+    return None
 
 
+def _runners(gh: Gh, repo: str, hosts: Mapping[str, str]) -> dict[str, list[tuple[str, bool, bool]]]:
+    """Each host's runners as `(name, online, busy)`; the runners no host claims go under `""`."""
+    data = _json(gh, ["api", f"repos/{repo}/actions/runners?per_page=100"])
+    found: dict[str, list[tuple[str, bool, bool]]] = {}
+    items = data.get("runners", []) if isinstance(data, dict) else []
+    for item in items:
+        labels = [label["name"] for label in item.get("labels", [])]
+        host = _host_of(labels, hosts) or ""
+        found.setdefault(host, []).append(
+            (item["name"], item.get("status") == "online", bool(item.get("busy")))
+        )
+    return found
 
 
+def _count(gh: Gh, repo: str, status: str) -> int:
+    runs = _json(gh, ["run", "list", "-R", repo, "--status", status, "--limit", "100", "--json", "databaseId"])
+    return len(runs) if isinstance(runs, list) else 0
 
 
 def _survey(gh: Gh, repo: str, config: Mapping[str, list[str]], since: str | None) -> dict:
@@ -122,6 +155,7 @@ def _survey(gh: Gh, repo: str, config: Mapping[str, list[str]], since: str | Non
             if c["created_at"] >= since
             for v in _verdicts(c["body"])
         ]
+    hosts = _pairs(config, "report-host")
     return {
         "merged": [p for p in merged if since and p["mergedAt"] > since],
         "verdicts": verdicts,
@@ -132,6 +166,9 @@ def _survey(gh: Gh, repo: str, config: Mapping[str, list[str]], since: str | Non
             for p in open_prs
             if not p.get("isDraft")
         },
+        "runners": _runners(gh, repo, hosts),
+        "queued": _count(gh, repo, "queued"),
+        "running": _count(gh, repo, "in_progress"),
     }
 
 
@@ -162,9 +199,17 @@ def _changes(repo: str, now: Mapping, old: Mapping | None) -> list[str]:
             found.append(f"{repo}: open PR #{number} is {state}.")
     for number in sorted(set(old.get("open", {})) - set(now["open"])):
         found.append(f"{repo}: PR #{number} closed or merged.")
+    for host, count in _online(now).items():
+        if host in old.get("runners", {}) and old["runners"][host] != count:
+            found.append(f"{repo}: runners of {host or 'no host'} are now {count}.")
     return found
 
 
+def _online(survey: Mapping) -> dict[str, str]:
+    return {
+        host: f"{sum(r[1] for r in rows)}/{len(rows)} online"
+        for host, rows in survey["runners"].items()
+    }
 
 
 def _fingerprint(survey: Mapping) -> dict:
@@ -172,6 +217,7 @@ def _fingerprint(survey: Mapping) -> dict:
         "main": survey["main"],
         "attention": survey["attention"],
         "open": survey["open"],
+        "runners": _online(survey),
     }
 
 
@@ -184,11 +230,63 @@ def _waiting(repo: str, survey: Mapping) -> list[str]:
         for number, state in survey["open"].items()
         if " green " in f" {state} "
     ]
+    for host, rows in survey["runners"].items():
+        down = [name for name, online, _ in rows if not online]
+        if down:
+            found.append(f"{repo}: runner(s) offline on {host or 'no host'}: {', '.join(down)}.")
     return found
 
 
+def _probe_lines(config: Mapping[str, list[str]], hosts: Sequence[str], probe: Probe) -> list[str]:
+    commands = _pairs(config, "report-host-probe")
+    lines: list[str] = []
+    for host in hosts:
+        command = commands.get(host)
+        if not command:
+            lines.append(f"{host}: no probe named for host {host} (key `report-host-probe`).")
+            continue
+        try:
+            text = " ".join(probe(command).split())[:PROBE_MAX_CHARS]
+        except (OSError, subprocess.SubprocessError) as error:
+            lines.append(f"{host}: probe for host {host} failed ({type(error).__name__}).")
+            continue
+        lines.append(f"{host}: {text or 'the probe printed nothing'}.")
+    return lines
 
 
+def _ci_part(surveys: Mapping[str, dict], config: Mapping[str, list[str]], probe: Probe) -> str:
+    e = html.escape
+    out = ["<h3>CI and runners</h3>"]
+    named = [v for v in config.get("report-host", []) if split_value(v, 2)]
+    if not named:
+        out.append("<p>Runners are listed per repository: key `report-host` absent, no grouping by host.</p>")
+    rows: list[str] = []
+    hosts: list[str] = []
+    for repo, survey in surveys.items():
+        for host, runners in survey["runners"].items():
+            name = host or "no host"
+            if host and host not in hosts:
+                hosts.append(host)
+            on = sum(r[1] for r in runners)
+            busy = sum(r[2] for r in runners)
+            off = len(runners) - on
+            listed = ", ".join(r[0] for r in runners) if not host else ""
+            rows.append(
+                f"<tr><td>{e(repo)}</td><td>{e(name)}</td><td>{on} online, {busy} busy, {off} offline"
+                f"{' (' + e(listed) + ')' if listed else ''}</td></tr>"
+            )
+    out.append("<table><tr><td>Repository</td><td>Host</td><td>Runners</td></tr>" + "".join(rows) + "</table>")
+    out.append("<ul>")
+    for repo, survey in surveys.items():
+        out.append(
+            f"<li>{e(repo)}: queued runs {survey['queued']}, in progress {survey['running']},"
+            f" last run of main {e(survey['main'])}.</li>"
+        )
+    hosts_listed = [h for h in (split_value(v, 2) for v in config.get("report-host", [])) if h]
+    for line in _probe_lines(config, [h[0] for h in hosts_listed], probe):
+        out.append(f"<li>{e(line)}</li>")
+    out.append("</ul>")
+    return "".join(out)
 
 
 def _figures(surveys: Mapping[str, dict]) -> str:
@@ -216,6 +314,7 @@ def build(
     surveys: Mapping[str, dict],
     old: Mapping | None,
     stamp: str,
+    probe: Probe,
 ) -> tuple[str, bool]:
     """The mail's HTML, and whether any event makes it due."""
     e = html.escape
@@ -237,6 +336,7 @@ def build(
     out.append(
         "<ul>" + "".join(f"<li>{e(w)}</li>" for w in waiting) + "</ul>" if waiting else "<p>Nothing.</p>"
     )
+    out.append(_ci_part(surveys, config, probe))
     out.append("<h3>Figures</h3>" + _figures(surveys))
     return "\n".join(out) + "\n", bool(changes)
 
@@ -244,6 +344,7 @@ def build(
 def main(
     argv: Sequence[str],
     gh: Gh = _gh,
+    probe: Probe = _probe,
     now: datetime | None = None,
 ) -> int:
     parser = argparse.ArgumentParser(prog="report_mail.py", add_help=True)
@@ -281,7 +382,7 @@ def main(
         old = {repo: saved.get("fingerprint", {}).get(repo, {}) for repo in repos}
         old["since"] = since
     stamp = moment.strftime("%Y-%m-%dT%H:%MZ")
-    mail, due = build(config, surveys, old, stamp)
+    mail, due = build(config, surveys, old, stamp, probe)
     digest_hour = (config.get("report-digest-hour") or [""])[-1]
     today = moment.strftime("%Y-%m-%d")
     if digest_hour.isdigit() and saved.get("digest_date") != today and moment.hour >= int(digest_hour):
