@@ -69,7 +69,13 @@ class JudgeReadsPropertyTests(unittest.TestCase):
     def test_the_judge_never_requires_one_and_the_finding_does_not_block(self) -> None:
         """No F-NNNN: ticket #159, no requirement, and the only severity is MINOR."""
         s = self.section()
-        self.assertTrue(s.startswith("\nTu n'exiges pas de test par propriétés"), s[:80])
+        flat = " ".join(s.split())
+        self.assertTrue(
+            flat.startswith(
+                "Tu n'exiges pas de test par propriétés : la clé `property-test-lib` dit si le projet en écrit,"
+            ),
+            flat[:120],
+        )
         self.assertEqual(s.count("exiges"), 1)
         self.assertIn("`MINOR`", s)
         self.assertNotIn("BLOCKER", s)
