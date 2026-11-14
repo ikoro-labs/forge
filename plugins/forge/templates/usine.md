@@ -466,6 +466,31 @@ complétée. Sans la clé, la règle est sans objet.
 - `never-weaken` : `<config/tolerances.toml | raised-number | ^rel_tol = (\S+)>`
 - `never-weaken` : `<docs/fonctions/ | lowered-rank | statut | certifie > valide > brouillon>`
 
+## Rapport
+
+Le mail de relevé de l'usine, construit par `scripts/report_mail.py` à partir de ces seules clés. Le
+script sort en code 10 quand rien n'a changé depuis le dernier envoi (aucun mail), et `--sent`
+enregistre l'envoi. Sans `report-repo`, il s'arrête et nomme la clé ; sans une autre, sa partie du
+mail dit « clé `<nom>` absente » et rien n'est deviné.
+
+Les dépôts relevés (PR fusionnées, verdicts, CI de `main`), une ligne par dépôt `<propriétaire>/<nom>`.
+
+- `report-repo` : `<propriétaire/dépôt>`
+
+L'étiquette dont l'ensemble des tickets et des PR ouverts est relevé et compté parmi les événements.
+
+- `report-attention-label` : `<needs-your-attention>`
+
+Le fichier de workflow dont le dernier run terminé sur `main` est relevé. Sans la clé, le dernier run
+terminé de `main`, tout workflow confondu.
+
+- `report-main-workflow` : `<ci.yml>`
+
+L'heure UTC après laquelle un bilan du jour part même sans événement. Sans la clé, aucun bilan : un
+jour sans événement n'envoie rien.
+
+- `report-digest-hour` : `<7>`
+
 ## Hooks
 
 Le fichier des tirets cadratins tolérés, une ligne `<nombre> <chemin>` par fichier. Sans lui, aucun
