@@ -89,7 +89,7 @@ class Project:
     def create(self, body: str, gh: Runner) -> str | None:
         body_file = self.dir / "body.md"
         body_file.write_text(body, encoding="utf-8")
-        return self.bash(f"gh issue create --title T --body-file {body_file}", gh)
+        return self.bash(f"gh issue create --title T --body-file {body_file.as_posix()}", gh)
 
     def write(self, content: str, gh: Runner | None = None) -> str | None:
         event = {
@@ -183,7 +183,7 @@ class DesignAcceptance(unittest.TestCase):
 
     def test_a_shell_write_of_the_acceptance_is_refused_and_a_read_passes(self) -> None:
         project = Project(self, design())
-        path = project.design
+        path = project.design.as_posix()
         self.assertIn(
             "Edit or Write",
             project.bash(f"sed -i 's/statut: en-revue/statut: accepte/' {path}", FakeGh([])) or "",
