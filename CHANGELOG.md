@@ -9,6 +9,27 @@ Ce dépôt a été recréé le 2026-10-23 ; l'ancien est `ikoro-labs/forge-archi
 numéros de PR et de ticket nus (`#38`) renvoient à l'ancien dépôt ; un renvoi au nouveau dépôt
 porte son nom (`ikoro-labs/forge#7`).
 
+## [1.8.0] - 2026-11-14
+
+Property-based tests enter the TDD loop and its review, and the format-on-write kill no longer
+blocks a session. Minor version: a new optional key, `property-test-lib`.
+
+- Skills: `forge:tdd` gains « Les tests par propriétés » (#167): when to write one and when not,
+  the failing property first, the shrunk example kept as an example test, the seed and the minimal
+  example copied into the PR's proofs. Without `property-test-lib` it asks for none and the PR says
+  « sans objet (clé `property-test-lib` absente) ».
+- Agents: `forge:qc-conf` never requires a property test; a reported failure without its seed or
+  its minimal example, or without the kept example test, is a `MINOR` finding; without the key it
+  writes the skipped step in `GATES` (#167).
+- Hooks: `handoff_header` bounds the `wait` after a kill (`KILL_WAIT_SECONDS`), so a process that
+  survives the kill no longer blocks the session; on Windows, when `TerminateJobObject` fails it
+  falls back to `process.kill()` (#165, closes #26).
+- Templates: `usine.md` documents `property-test-lib` (no default) and the three Windows limits of
+  the format-on-write kill (#165, #167).
+- Tests: `tests/test_property_tests_content.py` (9 tests); `ProcessGroupKill` covers the bounded
+  wait on both systems and the Windows fallback.
+- Human gestures: none required; a project that writes property tests adds `property-test-lib`.
+
 ## [1.7.0] - 2026-11-14
 
 `/forge:qc` merges with the method the project declares, and the three-round rule stops naming a
