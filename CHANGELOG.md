@@ -9,6 +9,14 @@ Ce dépôt a été recréé le 2026-10-23 ; l'ancien est `ikoro-labs/forge-archi
 numéros de PR et de ticket nus (`#38`) renvoient à l'ancien dépôt ; un renvoi au nouveau dépôt
 porte son nom (`ikoro-labs/forge#7`).
 
+## [1.6.1] - 2026-11-14
+
+- `merge-method` key: `/forge:qc` merges with `--squash`, `--merge` or `--rebase`, the method the
+  repository allows (`squash` without the key). A repository that allows only merge commits no
+  longer needs a prose override of step 8.
+- `forge:qc-gate` takes rounds 1 to 3, as the three-round rule says, not "1 or 2".
+- The three-round rule no longer cites a ticket of a consuming project.
+
 ## [1.6.0] - 2026-11-14
 
 The factory's rules move from prose into hooks, as a standard shared by every forge project
