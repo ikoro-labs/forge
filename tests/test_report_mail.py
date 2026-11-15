@@ -358,14 +358,20 @@ PR_CITING = {"number": 77, "title": "t", "headRefOid": "abc1234def", "mergeState
 PR_OTHER = {**PR_CITING, "number": 78, "body": "Refs #999"}
 
 
+def features_mail(
+    test: unittest.TestCase, config: str, fake: Fake, features: dict | None = None, probe=None
+) -> tuple[int, str, str]:
+    root, state = with_features(test, config, features if features is not None else {1: 40})
+    out, err = io.StringIO(), io.StringIO()
+    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+        code = main(["--root", str(root), "--state-dir", str(state)], gh=fake,
+                    probe=probe or (lambda c: "mem-free 8 disk-free 50"), now=NOW)
+    return code, out.getvalue(), err.getvalue()
+
+
 class FeaturesTests(unittest.TestCase):
     def mail(self, config: str, fake: Fake, features: dict | None = None, probe=None) -> tuple[int, str, str]:
-        root, state = with_features(self, config, features if features is not None else {1: 40})
-        out, err = io.StringIO(), io.StringIO()
-        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
-            code = main(["--root", str(root), "--state-dir", str(state)], gh=fake,
-                        probe=probe or (lambda c: "mem-free 8 disk-free 50"), now=NOW)
-        return code, out.getvalue(), err.getvalue()
+        return features_mail(self, config, fake, features, probe)
 
     def test_a7_1_an_open_feature_shows_its_percent_its_prs_and_its_ready_tickets(self) -> None:
         fake = features_of(SUBS, open_prs=[PR_CITING, PR_OTHER])
@@ -554,7 +560,7 @@ class FeaturesBlockTests(unittest.TestCase):
         subs = {40: [(12, OPENED, READY, 0, 0), (13, OPENED, READY, 0, 0)]}
         runners = {"runners": [{"name": "r1", "status": "online", "busy": False, "labels": [{"name": "pc-label"}]}]}
         _, out, _ = self.block(FEATURES, features_of(subs, runners=runners))
-        _, mail, _ = FeaturesTests.mail(self, FEATURES, features_of(subs, runners=runners))
+        _, mail, _ = features_mail(self, FEATURES, features_of(subs, runners=runners))
         self.assertIn("#12", out.strip().splitlines()[-1])
         self.assertRegex(part(mail, "Awaiting you"), r"#12")
 
@@ -580,9 +586,13 @@ class FeaturesBlockTests(unittest.TestCase):
                 self.assertEqual((code, out), (1, ""))
                 self.assertIn("gh failed", err)
 
+    def test_a11_the_reply_template_names_the_command_that_prints_the_field(self) -> None:
+        text = (support.PLUGIN / "templates" / "session-reply.md").read_text(encoding="utf-8")
+        self.assertIn("scripts/report_mail.py --features", text)
+
     def test_a11_the_mail_html_is_unchanged_by_the_new_data(self) -> None:
         subs = {40: [(12, OPENED, READY, 0, 0), (13, OPENED, "", 0, 1)]}
-        _, mail, _ = FeaturesTests.mail(self, FEATURES, features_of(subs))
+        _, mail, _ = features_mail(self, FEATURES, features_of(subs))
         self.assertNotIn("Blocked", mail)
         self.assertNotIn("In parallel", mail)
 

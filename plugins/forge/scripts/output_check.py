@@ -33,6 +33,7 @@ from dataclasses import dataclass
 from html.parser import HTMLParser
 from pathlib import Path
 
+import features_block
 from parse_output import OutputError, parse_result, parse_verdict
 
 PLUGIN = Path(__file__).resolve().parents[1]
@@ -53,6 +54,7 @@ PARAGRAPH_KEY = "output-words-paragraph"
 TEMPLATE_KEY = "output-template"
 AGENT_FORMAT_KEY = "output-agent-format"
 EXTRA_KEYS_KEY = "output-extra-keys"
+FEATURES_LABEL = "Features"
 
 
 @dataclass(frozen=True)
@@ -265,16 +267,20 @@ def _field_line(lines: list[str], labels: list[str]) -> int | None:
     return None
 
 
+def _value(lines: list[str], index: int, labels: list[str]) -> str:
+    """What the line at `index` holds after the label of the field, markup and colon left out."""
+    text = _label(lines[index])
+    label = next(lab for lab in labels if text.lower().startswith(lab.lower()))
+    return text[len(label) :].lstrip("*_ ").lstrip(":|").strip(" |*_")
+
+
 def _empty(lines: list[str], index: int, labels: list[str]) -> bool:
     """Whether the field at `index` holds nothing.
 
     A heading holds what follows it up to the next heading. A key holds the rest of its line, or,
     when that is empty, the list, table, code block or indented lines right under it.
     """
-    text = _label(lines[index])
-    label = next(lab for lab in labels if text.lower().startswith(lab.lower()))
-    value = text[len(label) :].lstrip("*_ ").lstrip(":|").strip(" |*_")
-    if value:
+    if _value(lines, index, labels):
         return False
     heading = bool(HEADING.match(lines[index]))
     for line in lines[index + 1 :]:
@@ -287,6 +293,17 @@ def _empty(lines: list[str], index: int, labels: list[str]) -> bool:
         nested = LIST_ITEM.match(line) or line.startswith((" ", "\t")) or FENCE.match(line)
         return not (nested or line.lstrip().startswith("|"))
     return True
+
+
+def _features(lines: list[str], template: str) -> tuple[range, int] | None:
+    """The lines of the `Features` field of a session reply, and the index of its first line; None
+    when the template does not require the field or the reply has none."""
+    if not any(FEATURES_LABEL in labels for labels in required_fields(template)):
+        return None
+    index = _field_line(lines, [FEATURES_LABEL])
+    if index is None:
+        return None
+    return range(index, features_block.end(lines, index)), index
 
 
 def _keys(lines: list[str], first: str) -> dict[str, str]:
@@ -410,8 +427,15 @@ def deviations(
     if kind == "report-mail":
         text = _from_html(text)
     lines, prose = _structure(_unwrap(text) if kind in KEYED else text)
+    whole = lines
     found: list[str] = []
     template = _template_text(kind, config, root)
+    # The block of `report_mail.py --features` comes from the script, not from the session: it is
+    # checked for its shape and left out of the caps, or five features would refuse any reply.
+    features = _features(lines, template) if kind == "session-reply" else None
+    if features is not None:
+        lines = ["" if i in features[0] else line for i, line in enumerate(lines)]
+        prose = ["" if i in features[0] else line for i, line in enumerate(prose)]
     most_lines = line_cap(template)
     written = sum(1 for line in lines if line.strip())
     if most_lines is not None and written > most_lines:
@@ -420,12 +444,16 @@ def deviations(
             " comments do not count"
         )
     for labels in required_fields(template):
-        index = _field_line(lines, labels)
+        index = _field_line(whole, labels)
         name = " or ".join(f"`{label}`" for label in labels)
         if index is None:
             found.append(f"the field {name} is missing (template `{kind}`)")
-        elif _empty(lines, index, labels):
+        elif _empty(whole, index, labels):
             found.append(f"the field {name} is empty")
+        elif features is not None and index == features[1]:
+            found += features_block.deviations(
+                _value(whole, index, labels), whole[index + 1 : features[0].stop]
+            )
     extra = extra_keys(kind, config)
     if kind == "coder":
         found += _parsed(parse_result, text, extra)

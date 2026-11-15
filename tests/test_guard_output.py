@@ -16,10 +16,17 @@ import support
 from guard_output import REFUSED, outcome, state_dir
 
 TICKET = "Motif: demande-kevin\nWhat is missing.\n\n## Criteria\n\n- A1: a test.\n"
-REPLY = (
+REPLY_WITHOUT_FEATURES = (
     "Done: merged #12.\n\nMeasured: CI 4 min, run 99.\n\nAwaiting your decision: nothing.\n\n"
     "CI and runners: pc 2/2 online; main success abc1234.\n"
 )
+# What `scripts/report_mail.py --features` prints for an open feature (F-0181 A11).
+FEATURES = (
+    "Features:\n\n| Feature | Closed / total | Open PRs | Blocked | Ready |\n|---|---|---|---|---|\n"
+    "| F-0001 demo | 33 % (1 / 3) | #77 | #13 | #12 |\n\n"
+    "In parallel: free slots 1; tickets #12 (F-0001); or features F-0001.\n"
+)
+REPLY = REPLY_WITHOUT_FEATURES + "\n" + FEATURES
 CODER = "RESULT: PR\nPR: #40\nTICKET: #12 closes\nCRITERIA: A1 ; not covered: none\nNOTES: none\n"
 VERDICT_ACCEPT_WITH_BLOCKER = (
     "VERDICT: ACCEPT\nROUND: 1\nHEAD: abcdef1\nSPEC: #12: 1 criteria covered, 0 partial, 0 missing\n"
@@ -376,6 +383,43 @@ class Stop(unittest.TestCase):
         event = {"hook_event_name": "Stop", "stop_hook_active": False, "last_assistant_message": REPLY}
         with isolated():
             self.assertEqual(run(event), (0, "", ""))
+
+    def stop(self, text: str) -> tuple[int, str, str]:
+        event = {"hook_event_name": "Stop", "stop_hook_active": False, "last_assistant_message": text}
+        with isolated():
+            return run(event)
+
+    def test_a11_a_reply_without_the_features_table_is_refused(self) -> None:
+        code, err, _ = self.stop(REPLY_WITHOUT_FEATURES)
+        self.assertEqual(code, REFUSED)
+        self.assertIn("`Features` is missing", err)
+        self.assertIn("Features", err.split("Rewrite the reply")[0])  # the refusal lists the field
+
+    def test_a11_a_reply_that_carries_the_features_table_passes(self) -> None:
+        self.assertEqual(self.stop(REPLY), (0, "", ""))
+
+    def test_a11_a_features_field_written_by_hand_is_refused(self) -> None:
+        for field in ("Features: all good, nothing blocked.\n", "Features:\n\n- F-0001: 33 %\n"):
+            with self.subTest(field=field):
+                code, err, _ = self.stop(REPLY_WITHOUT_FEATURES + "\n" + field)
+                self.assertEqual(code, REFUSED)
+                self.assertIn("neither the table", err)
+
+    def test_a11_the_lines_the_script_prints_without_a_table_pass(self) -> None:
+        for line in ("Features: no open feature.\n",
+                     "Features: not applicable (key `report-repo` absent).\n"):
+            with self.subTest(line=line):
+                self.assertEqual(self.stop(REPLY_WITHOUT_FEATURES + "\n" + line), (0, "", ""))
+
+    def test_a11_the_table_does_not_count_against_the_caps_of_the_reply(self) -> None:
+        rows = "".join(
+            f"| F-{n:04d} a feature with a title of some length | 33 % (1 / 3) | #77, #78 | #13, #14 | #12, #15 |\n"
+            for n in range(1, 8)
+        )
+        long = FEATURES.replace("| F-0001 demo | 33 % (1 / 3) | #77 | #13 | #12 |\n", rows).replace(
+            "free slots 1; tickets #12 (F-0001);", "free slots 3; tickets #12 (F-0001), #15 (F-0001), #16 (F-0002);"
+        )
+        self.assertEqual(self.stop(REPLY_WITHOUT_FEATURES + "\n" + long), (0, "", ""))
 
     def test_stop_hook_active_bounds_the_refusals(self) -> None:
         event = {"hook_event_name": "Stop", "stop_hook_active": True, "last_assistant_message": "x"}
