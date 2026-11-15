@@ -533,7 +533,9 @@ aucune sortie n'est raccourcie. Une par ligne.
 - `trimmed-command` : `<uv run pytest>`
 
 Le ménage après un agent fini (`agent_cleanup.py`, au `SubagentStop` et au `SessionStart`) retire sans
-clé le worktree propre d'un agent fini (`.claude/worktrees/agent-*`) et supprime la branche
+clé le worktree propre d'un agent fini (`.claude/worktrees/agent-*` ; fini : verrou d'un détenteur mort,
+ou, sans verrou, agent noté rendu par Claude Code et sa transcription silencieuse depuis 30 minutes)
+et supprime la branche
 `worktree-agent-*` orpheline dont la tête est dans `main` ou une branche distante : ces deux étapes
 suivent la convention de Claude Code, pas une valeur du projet. Deux clés ajoutent le reste, chacune
 indépendante, et une clé absente rend son étape « sans objet (clé `<nom>` absente) » : rien n'est
