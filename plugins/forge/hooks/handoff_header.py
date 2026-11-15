@@ -430,6 +430,21 @@ def ancestors(pid: int) -> set[int]:
     return pids
 
 
+def lock_holder_alive(reason: str) -> tuple[bool, int | None]:
+    """Whether the holder a worktree lock names still runs, and its pid (None in an unknown format).
+
+    The pid is the session's, not the agent's. A pid that runs again with another start time was
+    reused: its holder is gone. Without a start time in the lock (Windows), a running pid is taken
+    for its holder. A reason in an unknown format counts as alive, the prudent side.
+    """
+    holder = LOCK.search(reason)
+    if not holder:
+        return True, None
+    pid, start = int(holder.group(1)), holder.group(2)
+    alive = process_start(pid) == start if start else process_alive(pid)
+    return alive, pid
+
+
 def live_agents(repo: Path, owners: set[int] | None = None) -> list[tuple[str, str]]:
     """Agent worktrees whose lock holder still runs, as (path, branch).
 
@@ -447,12 +462,9 @@ def live_agents(repo: Path, owners: set[int] | None = None) -> list[tuple[str, s
         path = fields.get("worktree", "")
         if "/.claude/worktrees/agent-" not in path or "locked" not in fields:
             continue
-        holder = LOCK.search(fields["locked"])
-        if holder:
-            pid, start = int(holder.group(1)), holder.group(2)
-            alive = process_start(pid) == start if start else process_alive(pid)
-            if not alive or (owners is not None and pid not in owners):
-                continue
+        alive, pid = lock_holder_alive(fields["locked"])
+        if not alive or (owners is not None and pid is not None and pid not in owners):
+            continue
         branch = fields.get("branch", "(detached)").removeprefix("refs/heads/")
         found.append((path, branch))
     return found
