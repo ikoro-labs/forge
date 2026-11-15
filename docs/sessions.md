@@ -167,6 +167,15 @@ Il commence par un front matter de onze clés (`projet`, `feature`, `passage_dep
 `contexte_passation`), que `handoff_header.py` valide ; son corps est le prompt de reprise. Le
 skill `handoff` de l'utilisateur (`~/.claude/skills/handoff/`) est suivi s'il existe.
 
+Le corps porte l'état des features, sous `Features:` : la session lance
+`report_mail.py --features` (dans `scripts/`, depuis le dossier du projet) au moment d'écrire et en
+recopie la sortie telle quelle, la même que le champ `Features` de ses réponses (tableau des features
+ouvertes, tickets bloqués, puis la ligne `In parallel:` des places libres). Le successeur part ainsi
+du même état sans le recalculer de mémoire. Si la commande échoue, la passation le dit sous
+`Features:` plutôt que de l'inventer. La consigne vient de `writing()` dans `handoff_trigger.py`, au
+seuil comme à la demande ; aucun hook ne lit le corps de la passation, c'est donc une consigne et non
+une garde.
+
 `jetons_agents` porte les jetons d'agents par ticket (ticket #72, clé `ticket-budget`) : une liste
 d'éléments `- #n <rôle> <jetons>`, que `ticket_budget.py passation` imprime et que
 `ticket_budget.py reprendre` recharge, pour que le relais reprenne les sommes au lieu de repartir de

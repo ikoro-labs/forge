@@ -5,6 +5,7 @@ import re
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Any
 from unittest import mock
 
 import support
@@ -73,7 +74,16 @@ Measured: CI 4 min 10 s, run 99, 2026-11-13, 1 run of 1.
 Awaiting your decision: nothing.
 
 CI and runners: pc 2/2 online, 1 busy; queued 0, main success abc1234.
+
+Features:
+
+| Feature | Closed / total | Open PRs | Blocked | Ready |
+|---|---|---|---|---|
+| F-0001 demo | 33 % (1 / 3) | #77 | #13 | #12 |
+
+In parallel: free slots 1; tickets #12 (F-0001); or features F-0001.
 """
+FEATURES_BLOCK = REPLY[REPLY.index("Features:") :]
 CODER_PR = """RESULT: PR
 PR: #40
 TICKET: #12 closes
@@ -135,9 +145,11 @@ class Conforming(unittest.TestCase):
     def test_the_reply_labels_hold_in_french_and_in_markup(self) -> None:
         reply = (
             "**Fait** : PR #12 fusionnée.\n\n## Mesure\n\nCI 4 min.\n\n"
-            "| Attend ta décision | rien |\n|---|---|\n\nCI et runners : poste 2/2.\n"
+            "| Attend ta décision | rien |\n|---|---|\n\nCI et runners : poste 2/2.\n\n"
+            "**Features :** \n\n" + FEATURES_BLOCK.split("\n", 2)[2]
         )
         self.assertEqual(deviations(reply, "session-reply"), [])
+        self.assertEqual(deviations(reply.replace("**Features :**", "Features :"), "session-reply"), [])
 
     def test_a_key_written_with_a_space_before_its_colon_counts(self) -> None:
         self.assertEqual(deviations(TICKET.replace("Motif:", "Motif :"), "ticket"), [])
@@ -178,6 +190,68 @@ class Refused(unittest.TestCase):
             REPLY.replace("CI and runners: pc 2/2 online, 1 busy; queued 0, main success abc1234.", "CI and runners:"),
             "session-reply", "`CI and runners` or `CI et runners` is empty",
         )
+
+    def test_a11_the_features_field_is_required_and_holds_the_script_output(self) -> None:
+        without = REPLY.replace(FEATURES_BLOCK, "")
+        self.assertRefused(without, "session-reply", "the field `Features` is missing")
+        self.assertRefused(REPLY.replace(FEATURES_BLOCK, "Features:\n"), "session-reply", "`Features` is empty")
+        by_hand = (
+            "Features: F-0001 at 33 %, one ticket ready.",
+            "Features:\n\n- F-0001: 33 %\n",
+            "Features: no open feature",  # the period of the script's line is part of it
+            "Features: not applicable (key `other` absent).",
+        )
+        for text in by_hand:
+            with self.subTest(text=text):
+                self.assertRefused(without + text + "\n", "session-reply", "neither the table")
+
+    def test_a11_the_table_needs_its_header_its_separator_its_rows_and_its_parallel_line(self) -> None:
+        header = "| Feature | Closed / total | Open PRs | Blocked | Ready |\n"
+        row = "| F-0001 demo | 33 % (1 / 3) | #77 | #13 | #12 |\n"
+        parallel = "In parallel: free slots 1; tickets #12 (F-0001); or features F-0001.\n"
+        broken = {
+            "no header": FEATURES_BLOCK.replace(header, ""),
+            "another header": FEATURES_BLOCK.replace("Blocked", "Stuck"),
+            "no separator": FEATURES_BLOCK.replace("|---|---|---|---|---|\n", ""),
+            "no row": FEATURES_BLOCK.replace(row, ""),
+            "short row": FEATURES_BLOCK.replace(row, "| F-0001 demo | 33 % |\n"),
+            "no parallel line": FEATURES_BLOCK.replace(parallel, ""),
+            "empty parallel line": FEATURES_BLOCK.replace(parallel, "In parallel:\n"),
+        }
+        for name, block in broken.items():
+            with self.subTest(name):
+                self.assertRefused(REPLY.replace(FEATURES_BLOCK, block), "session-reply", "neither the table")
+
+    def test_a11_what_the_script_renders_is_what_the_guard_accepts(self) -> None:
+        import features_block
+
+        entry: dict[str, Any] = {"feature": "F-0001", "label": "F-0001 demo", "percent": "33 % (1 / 3)", "prs": [77],
+                 "blocked": [13], "ready": [12], "error": None}
+        unread = {**entry, "feature": "F-0002", "label": "F-0002 other", "percent": None, "prs": [],
+                  "blocked": [], "ready": [], "error": "tickets not read"}
+        base: dict[str, Any] = {"note": None, "absent": None, "features": [entry, unread], "free": 1,
+                "proposal": [("F-0001", 12)], "parallel": ["F-0001"], "why": None}
+        absent = {**base, "features": [], "absent": "report-repo", "note": "x"}
+        for name, state in {
+            "proposal": base, "zero slots": {**base, "why": "free slots 0", "proposal": [], "parallel": []},
+            "no ready ticket": {**base, "proposal": [], "parallel": []},
+            "no feature": {**base, "features": [], "note": "No open feature."}, "absent key": absent,
+            "absent dir": {**absent, "absent": "feature-dir"},
+        }.items():
+            with self.subTest(name):
+                text = REPLY.replace(FEATURES_BLOCK, features_block.render(state))
+                self.assertEqual(deviations(text, "session-reply"), [])
+
+    def test_a11_the_block_is_left_out_of_the_line_and_word_caps_only(self) -> None:
+        rows = "".join(f"| F-{n:04d} a feature title of some length | 33 % (1 / 3) | #77 | #13 | #12 |\n"
+                       for n in range(2, 12))
+        long = REPLY.replace("\n\nIn parallel", "\n" + rows + "\nIn parallel")
+        self.assertEqual(deviations(long, "session-reply"), [])
+        # What follows the block is held to the caps as before.
+        self.assertRefused(long + prose(200), "session-reply", "at most 150")
+        self.assertRefused(long + "\n- a\n- b\n- c\n", "session-reply", "go in a table")
+        lines = REPLY.replace(FEATURES_BLOCK, "") + "x\n" * 12 + FEATURES_BLOCK
+        self.assertRefused(lines, "session-reply", "lines, at most 15")
 
     def test_an_empty_required_field(self) -> None:
         self.assertRefused(TICKET.replace("Motif: demande-kevin, 2026-11-13 chat", "Motif:"),
@@ -301,7 +375,8 @@ class TemplatesAndAgents(unittest.TestCase):
     def test_the_reply_template_names_the_three_fields_in_both_languages(self) -> None:
         text = (support.PLUGIN / "templates" / "session-reply.md").read_text(encoding="utf-8")
         fields = required_fields(text)
-        self.assertEqual(len(fields), 4)  # the fourth, `CI and runners`, is A6 of forge#181
+        self.assertEqual(len(fields), 5)  # `CI and runners` is A6 of forge#181, `Features` A11
+        self.assertIn(["Features"], fields)
         for english, french in (("Done", "Fait"), ("Measured", "Mesure"),
                                 ("Awaiting your decision", "Attend ta décision")):
             self.assertTrue(any(english in f and french in f for f in fields), fields)

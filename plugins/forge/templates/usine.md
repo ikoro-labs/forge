@@ -474,6 +474,8 @@ enregistre l'envoi. Sans `report-repo`, il s'arrête et nomme la clé ; sans une
 mail dit « clé `<nom>` absente » et rien n'est deviné.
 
 Les dépôts relevés (PR fusionnées, verdicts, CI de `main`, runners), une ligne par dépôt `<propriétaire>/<nom>`.
+Le premier sert aussi aux tickets et aux PR de la partie « Features », que `report_mail.py --features`
+rend en tableau pour la réponse de session et la passation.
 
 - `report-repo` : `<propriétaire/dépôt>`
 

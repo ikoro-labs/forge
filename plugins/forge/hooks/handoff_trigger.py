@@ -52,6 +52,7 @@ HOOKS = Path(__file__).resolve().parent
 MANIFEST = HOOKS.parent / ".claude-plugin" / "plugin.json"
 RELAY = HOOKS / "handoff_relay.py"
 HEADER = HOOKS / "handoff_header.py"
+REPORT_MAIL = HOOKS.parent / "scripts" / "report_mail.py"
 # The interpreter every hook of the plugin runs on; `python3` is a Microsoft Store alias on Windows.
 PYTHON = "uv run --no-project --quiet python"
 NAME = "handoff_trigger.py"
@@ -198,7 +199,11 @@ def writing(path: Path) -> str:
         "empty, never prose, successeur and seuil are left empty (the relay writes "
         "them), contexte_passation is your context in tokens when you write it, "
         f"hooks_version is `{hooks_version()}`. An agent woken again by SendMessage works in its worktree without "
-        "locking it: list it under en_vol, the relay cannot see it otherwise. The body is the resume prompt. No "
+        "locking it: list it under en_vol, the relay cannot see it otherwise. The body is the resume prompt: it "
+        f'carries the state of the features, so run `{PYTHON} "{REPORT_MAIL}" --features` from the project '
+        "directory when you write it and copy its output as printed into the body, under `Features:` (the same "
+        "block as the Features field of your replies); if the command fails, write that under `Features:` "
+        "instead of recalling the state from memory. No "
         "secret. Respect the project's own end-of-session rules too; a resume memory keeps only a pointer to this "
         "handoff."
     )
