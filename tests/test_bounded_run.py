@@ -5,6 +5,7 @@ feature. The bounds the tests set are tiny (tens of MB, a few seconds) and none 
 """
 
 import contextlib
+import importlib
 import io
 import os
 import subprocess
@@ -15,9 +16,9 @@ from pathlib import Path
 from unittest import mock
 
 import support
-import bounded_run
 
-SCRIPT = support.PLUGIN / "scripts" / "bounded_run.py"
+bounded_run = importlib.import_module("bounded_run")  # on the import path once `support` is loaded
+SCRIPT =support.PLUGIN / "scripts" / "bounded_run.py"
 
 # Distinct exit codes of the launcher, documented in the script: a command's own code never hides them.
 BUDGET, WRONG_CALL, REFUSED, MEMORY, DELAY, NOT_FOUND = 120, 121, 122, 123, 124, 127
@@ -239,7 +240,7 @@ class Budget(unittest.TestCase):
 
         budget = bounded_run.Budget(min_available_mb=4096, max_load=12.0, max_workers=2, wait=600)
         unmet = bounded_run.wait_for_budget(
-            budget, state=lambda: next(states), sleep=sleep, now=lambda: clock[0],
+            budget, state=lambda: next(states), sleep=sleep, now=lambda: clock[0], say=lambda text: None,
         )
         self.assertEqual(unmet, [])
         self.assertEqual(len(slept), 2)
@@ -253,7 +254,7 @@ class Budget(unittest.TestCase):
 
         budget = bounded_run.Budget(min_available_mb=4096, max_load=12.0, max_workers=2, wait=60)
         unmet = bounded_run.wait_for_budget(
-            budget, state=lambda: (1000, 40.0), sleep=sleep, now=lambda: clock[0],
+            budget, state=lambda: (1000, 40.0), sleep=sleep, now=lambda: clock[0], say=lambda text: None,
         )
         self.assertEqual(len(unmet), 2)
         self.assertGreaterEqual(clock[0], 60)
@@ -338,6 +339,57 @@ class Workers(unittest.TestCase):
                 self.assertEqual(done.returncode, 0, done.stderr)
                 self.assertIn("['pytest', '-n', '2']", done.stdout)
                 self.assertIn("ramenés à 2", done.stderr)
+
+
+class Wiring(unittest.TestCase):
+    """Ticket #66: the agents launch through the launcher, and the project says its numbers."""
+
+    @staticmethod
+    def read(*parts: str) -> str:
+        return " ".join(support.PLUGIN.joinpath(*parts).read_text(encoding="utf-8").split())
+
+    def test_the_template_documents_both_keys_without_a_default_value(self) -> None:
+        """No F-NNNN: ticket #66, critère 8: le gabarit documente run-limits et run-budget, en valeurs d'exemple."""
+        template = self.read("templates", "usine.md")
+        self.assertIn("- `run-limits` : `<", template)
+        self.assertIn("<mémoire en Mo> | <délai en secondes>", template)
+        self.assertIn("- `run-budget` : `<", template)
+        self.assertIn("sans objet (clé `run-limits` absente)", template)
+        self.assertIn("sans objet (clé `run-budget` absente)", template)
+        self.assertIn("bounded_run.py", template)
+
+    def test_this_repository_declares_its_limits_and_its_budget(self) -> None:
+        """No F-NNNN: ticket #66, critère 8: ce dépôt déclare 2000 Mo | 300 s, 4096 Mo, charge 12, 2 workers."""
+        from usine import load, split_value
+
+        config = load(support.REPO_ROOT)
+        self.assertEqual(config["run-limits"], ["2000 | 300"])
+        parts = split_value(config["run-budget"][0], 4)
+        assert parts is not None, "the key run-budget has four parts"
+        self.assertEqual(parts[:3], ["4096", "12", "2"])  # the wait is the fourth part, the project's own choice
+        self.assertTrue(parts[3].isdigit())
+
+    def test_the_coder_and_the_gate_launch_suites_and_probes_through_the_launcher(self) -> None:
+        """No F-NNNN: ticket #66, critère 8: coder.md et qc-gate.md lancent toute suite et toute sonde par le lanceur."""
+        for agent in ("coder.md", "qc-gate.md"):
+            with self.subTest(agent=agent):
+                text = self.read("agents", agent)
+                self.assertIn("${CLAUDE_PLUGIN_ROOT}/scripts/bounded_run.py", text)
+                self.assertIn("run-limits", text)
+                self.assertIn("run-budget", text)
+        self.assertIn("sans objet (clé `run-limits` absente)", self.read("agents", "qc-gate.md"))
+
+    def test_the_build_checks_the_budget_before_a_sub_agent_that_runs_tests(self) -> None:
+        """No F-NNNN: ticket #66, critère 8: feature-build lit le budget (--check) avant un coder ou un qc-gate."""
+        text = self.read("skills", "feature-build", "SKILL.md")
+        self.assertIn("bounded_run.py", text)
+        self.assertIn("--check", text)
+
+    def test_the_installation_page_says_the_launcher_and_what_was_not_seen_on_windows(self) -> None:
+        """No F-NNNN: ticket #66, critère 8: la page d'installation décrit le lanceur, ses clés et ce qui n'est vu qu'en CI."""
+        page = self.read("..", "..", "docs", "installation.md")
+        for word in ("bounded_run.py", "`run-limits`", "`run-budget`", "CI"):
+            self.assertIn(word, page)
 
 
 class SharedBound(unittest.TestCase):

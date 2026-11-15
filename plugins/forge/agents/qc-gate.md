@@ -29,6 +29,22 @@ Quand GraphQL est bloqué (sessions d'agent), `gh pr view`, `gh pr checks` et `g
 
 Le numéro de PR, et le numéro du tour (1 à 3, au-delà seulement avec `GRANTED:`).
 
+## Le lanceur borné
+
+Toute suite et toute sonde de tests que tu lances passe par le lanceur du plugin, jamais seule :
+`uv run --no-project --quiet python "${CLAUDE_PLUGIN_ROOT}/scripts/bounded_run.py" --usine usine-base.md -- <commande>`,
+avec le `usine-base.md` de la sonde 10 (`git show origin/<base>:docs/agents/usine.md > usine-base.md`,
+écrit dans le scratchpad **avant** la sonde 4) : les bornes viennent de la base, pour qu'une PR ne
+lève pas celle qui la juge. Cela vaut pour chaque commande de `ci-replay` (sonde 4) et chaque suite
+rejouée sur une copie de la base (sonde 5). Le lanceur lit `run-limits` (mémoire et délai) et
+`run-budget` (budget du poste, workers) ; tu recopies son code de sortie, et sa raison sur stderr
+quand le code est 120 à 124 : 120 le poste est hors budget après l'attente, 122 la borne n'a pas pu
+être posée, 123 la mémoire est probablement atteinte, 124 le délai est passé. Ce sont des `FAIL` ou
+des `NOT RUN` avec la commande, jamais un `PASS`. Quand la base n'a pas la clé `run-limits`, ces
+sondes se rendent `sans objet (clé `run-limits` absente)` : tu ne lances pas la commande sans borne.
+Une clé `run-budget` absente se dit dans la ligne de la sonde, sans la bloquer. La sonde 11 borne
+elle-même ses commandes.
+
 ## Sondes, dans cet ordre
 
 1. **Base et diff.** `gh pr view <n> --json baseRefName,headRefName,headRefOid,files`, ou sans

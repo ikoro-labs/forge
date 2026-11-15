@@ -75,7 +75,7 @@ from typing import Any, NamedTuple, NoReturn
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "hooks"))
 
 import usine  # noqa: E402
-from handoff_header import ProcessGroup, group_options  # noqa: E402
+from handoff_header import ProcessGroup, _win32, group_options  # noqa: E402
 
 TAIL_BYTES = 8192
 POLL_SECONDS = 10
@@ -307,6 +307,11 @@ def system_state() -> tuple[int | None, float | None]:
 def _windows_available_mb() -> int | None:
     import ctypes
 
+    try:
+        kernel32 = _win32()[2]
+    except (OSError, AttributeError):
+        return None
+
     class MemoryStatus(ctypes.Structure):
         _fields_ = [
             ("dwLength", ctypes.c_uint32), ("dwMemoryLoad", ctypes.c_uint32), ("ullTotalPhys", ctypes.c_uint64),
@@ -318,7 +323,8 @@ def _windows_available_mb() -> int | None:
     try:
         status = MemoryStatus()
         status.dwLength = ctypes.sizeof(MemoryStatus)
-        if not ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):  # type: ignore[attr-defined]
+        kernel32.GlobalMemoryStatusEx.argtypes = (ctypes.c_void_p,)
+        if not kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
             return None
         return int(status.ullAvailPhys // (1024 * 1024))
     except (OSError, AttributeError):

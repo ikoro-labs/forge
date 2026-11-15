@@ -137,6 +137,13 @@ Avant chaque lancement aussi, quand la clé `report-repo` est déclarée, lis le
 `Free slots: 0`, aucun coder ne part : rapporte la ligne, qui nomme l'hôte sous son plancher ou sans
 runner libre, et attends qu'une revue ou un coder en vol se termine avant de la relire. Sur
 `Free slots: unknown`, dis-le et garde les seuls plafonds `--parallel` et `--max`.
+Avant chaque lancement d'un `forge:coder` ou de `forge:qc` (un sous-agent qui lance des tests), lis le
+budget du poste, que partagent tes sessions et leurs workers :
+`uv run --no-project --quiet python "${CLAUDE_PLUGIN_ROOT}/scripts/bounded_run.py" --check`. Code 0 :
+lance. Code 120 (`MemAvailable` ou charge hors seuil de la clé `run-budget`, après son attente) :
+aucun agent ne part, rapporte la raison de stderr et attends qu'un travail en vol se termine avant de
+relire. Sortie « sans objet (clé `run-budget` absente) » : aucun seuil, dis-le avec le nom de la clé.
+Un autre code est un appel faux (121) : arrête-toi et rends le message.
 Alors :
 
 1. `gh issue edit <n> --add-assignee @me --add-label agent-claimed` : le ticket est pris, et

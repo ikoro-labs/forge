@@ -183,6 +183,31 @@ Les commandes qui rejouent la CI en local, une par ligne.
 - `ci-replay` : `<uv run pytest>`
 - `ci-replay` : `<pnpm -r test>`
 
+La borne de toute suite et de toute sonde qu'un agent lance, par `scripts/bounded_run.py` : le coder et
+le mesureur lancent chaque commande de `ci-replay`, `install` exceptée, par ce lanceur
+(`bounded_run.py -- <commande>`). Deux clés, chacune avec son étape « sans objet » et aucune valeur par
+défaut.
+
+`run-limits` : la mémoire en Mo et le délai en secondes de chaque commande, une seule ligne. Le lanceur
+la tient par `RLIMIT_AS` et le groupe de processus tué au délai sous Linux, par un objet de tâche sous
+Windows ; une borne qu'il ne peut pas poser refuse de lancer. Sans la clé, il exige `--memory-mb` et
+`--timeout`, et `forge:qc-gate` rend « sans objet (clé `run-limits` absente) » pour ce qu'il aurait
+borné.
+
+- `run-limits` : `<mémoire en Mo> | <délai en secondes>`
+
+`run-budget` : le budget du poste entier, que se partagent les sessions, les sous-agents et les workers
+(une borne par commande ne l'arrête pas : des processus de 150 Mo chacun, assez nombreux, vident la
+mémoire d'un poste). Quatre nombres sur une seule ligne : les Mo disponibles au moins (`MemAvailable`),
+la charge à 1 min au plus, le nombre de workers parallèles au plus, et l'attente au plus en secondes.
+Avant de lancer une suite, une sonde ou un sous-agent de tests, le lanceur lit le poste ; hors seuil il
+attend jusqu'à ce délai, puis sort en 120 avec la raison sur stderr, sans rien lancer. Il ramène le
+`-n` de pytest-xdist, `-n auto` compris, au plafond de workers, quand la commande nomme pytest. Sous
+Windows, sans moyenne de charge, seule la mémoire juge. Sans la clé, l'étape est « sans objet (clé
+`run-budget` absente) » : aucun seuil n'est supposé.
+
+- `run-budget` : `<Mo disponibles au moins> | <charge à 1 min au plus> | <workers au plus> | <attente au plus en secondes>`
+
 Le rejeu des tests d'une PR sur sa base, par `forge:qc-gate` : les fichiers de test que la PR ajoute
 ou change sont posés dans une copie de la base, puis rejoués, et chacun doit y échouer. Un test
 rouge sur la base prouve le changement ; un qui y passe déjà est rendu à `forge:qc-conf`. Deux clés,
