@@ -116,5 +116,48 @@ class Bounds(unittest.TestCase):
         self.assertIn("no-such-command-forge-66", done.stderr)
 
 
+class Limits(unittest.TestCase):
+    def test_the_key_run_limits_gives_the_memory_and_the_delay(self) -> None:
+        """No F-NNNN: ticket #66, critère 4: la clé run-limits pose mémoire et délai, sans option."""
+        runner = Runner(self)
+        usine = runner.usine("- `run-limits` : `400 | 2`\n")
+        slept = runner.run("--usine", usine, command=python("import time; time.sleep(60)"))
+        self.assertEqual(slept.returncode, DELAY, slept.stderr)
+        self.assertIn("délai de 2 s dépassé", slept.stderr)
+        fine = runner.run("--usine", usine, command=python("print('vert')"))
+        self.assertEqual(fine.returncode, 0, fine.stderr)
+
+    def test_an_option_wins_over_the_key(self) -> None:
+        """No F-NNNN: ticket #66, critère 4: une option passe avant la clé."""
+        runner = Runner(self)
+        usine = runner.usine("- `run-limits` : `400 | 60`\n")
+        done = runner.run(
+            "--usine", usine, "--timeout", "2", command=python("import time; time.sleep(30)"),
+        )
+        self.assertEqual(done.returncode, DELAY, done.stderr)
+
+    def test_without_the_key_both_options_are_required(self) -> None:
+        """No F-NNNN: ticket #66, critère 4: sans clé run-limits, le lanceur exige ses deux options et la nomme."""
+        runner = Runner(self)
+        usine = runner.usine("- `ci-replay` : `autre`\n")
+        for options in ([], ["--memory-mb", "400"], ["--timeout", "20"]):
+            with self.subTest(options=options):
+                done = runner.run("--usine", usine, *options, command=python("print('vert')"))
+                self.assertEqual(done.returncode, WRONG_CALL, done.stderr)
+                self.assertIn("clé `run-limits` absente", done.stderr)
+                self.assertNotIn("vert", done.stdout)
+
+    def test_a_malformed_key_or_a_non_positive_option_is_a_wrong_call(self) -> None:
+        """No F-NNNN: ticket #66, critère 4: une valeur invalide est un appel faux, jamais une borne devinée."""
+        runner = Runner(self)
+        for text in ("- `run-limits` : `400`\n", "- `run-limits` : `beaucoup | 300`\n", "- `run-limits` : `0 | 300`\n"):
+            with self.subTest(text=text):
+                done = runner.run("--usine", runner.usine(text), command=python("print('vert')"))
+                self.assertEqual(done.returncode, WRONG_CALL, done.stderr)
+                self.assertIn("run-limits", done.stderr)
+        done = runner.run("--memory-mb", "0", "--timeout", "20", command=python("print('vert')"))
+        self.assertEqual(done.returncode, WRONG_CALL, done.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()

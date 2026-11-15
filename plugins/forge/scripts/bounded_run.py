@@ -15,10 +15,11 @@ import subprocess
 import sys
 import threading
 from pathlib import Path
-from typing import Any, NamedTuple
+from typing import Any, NamedTuple, NoReturn
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "hooks"))
 
+import usine  # noqa: E402
 from handoff_header import ProcessGroup, group_options  # noqa: E402
 
 TAIL_BYTES = 8192
@@ -118,13 +119,71 @@ def run_bounded(
     return Outcome(code)
 
 
+class Call(argparse.ArgumentParser):
+    """Its usage errors exit with the launcher's own code: 2 is a test suite's."""
+
+    def error(self, message: str) -> NoReturn:
+        self.print_usage(sys.stderr)
+        print(f"bounded_run: {message}", file=sys.stderr)
+        raise SystemExit(WRONG_CALL)
+
+
+def positive(text: str) -> int:
+    value = int(text)
+    if value < 1:
+        raise argparse.ArgumentTypeError(f"{text} n'est pas un nombre positif")
+    return value
+
+
+def read_config(path: str | None) -> dict[str, list[str]]:
+    """The keys of `usine.md` (`--usine`, else the project's); empty when the file is absent."""
+    config_file = Path(path) if path else usine.project_root() / usine.CONFIG_PATH
+    try:
+        return usine.parse(config_file.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {}
+    except (OSError, UnicodeDecodeError) as error:
+        raise ValueError(f"{config_file} illisible ({error})") from error
+
+
+def key_limits(config: dict[str, list[str]]) -> tuple[int | None, int | None]:
+    """The memory (MB) and the delay (s) of the key `run-limits`, None for both when it is absent."""
+    values = config.get("run-limits")
+    if not values:
+        return None, None
+    parts = usine.split_value(values[0], 2) if len(values) == 1 else None
+    try:
+        if parts:
+            return positive(parts[0]), positive(parts[1])
+    except (ValueError, argparse.ArgumentTypeError):
+        pass
+    raise ValueError(
+        "la clé `run-limits` vaut une seule ligne `<mémoire en Mo> | <délai en secondes>`, deux nombres positifs"
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     options, command = (argv[: argv.index("--")], argv[argv.index("--") + 1 :]) if "--" in argv else (argv, [])
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
-    parser.add_argument("--memory-mb", type=int, help="memory limit, in MB")
-    parser.add_argument("--timeout", type=int, help="delay, in seconds")
+    parser = Call(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
+    parser.add_argument("--memory-mb", type=positive, help="memory limit, in MB (else the key run-limits)")
+    parser.add_argument("--timeout", type=positive, help="delay, in seconds (else the key run-limits)")
+    parser.add_argument("--usine", help="the usine.md to read (default: docs/agents/usine.md)")
     args = parser.parse_args(options)
+    try:
+        key_memory, key_timeout = key_limits(read_config(args.usine))
+    except ValueError as error:
+        print(f"bounded_run: {error}", file=sys.stderr)
+        return WRONG_CALL
+    memory_mb = args.memory_mb or key_memory
+    timeout = args.timeout or key_timeout
+    if not memory_mb or not timeout:
+        print(
+            "bounded_run: sans objet (clé `run-limits` absente) : passe --memory-mb et --timeout, "
+            "la borne n'a pas de valeur par défaut",
+            file=sys.stderr,
+        )
+        return WRONG_CALL
     if not command:
         print("bounded_run: aucune commande après --", file=sys.stderr)
         return WRONG_CALL
@@ -132,14 +191,14 @@ def main(argv: list[str] | None = None) -> int:
         print(f"bounded_run: commande introuvable ({command[0]})", file=sys.stderr)
         return NOT_FOUND
     tail = Tail()
-    outcome = run_bounded(command, timeout=args.timeout, memory_mb=args.memory_mb, tail=tail)
+    outcome = run_bounded(command, timeout=timeout, memory_mb=memory_mb, tail=tail)
     seen = tail.finish()
     if outcome.code is None:
         print(f"bounded_run: {outcome.why}", file=sys.stderr)
         return DELAY if outcome.kind == "delay" else REFUSED
     if outcome.code != 0 and MEMORY_FAILURE.search(seen):
         print(
-            f"bounded_run: borne de mémoire de {args.memory_mb} Mo probablement atteinte "
+            f"bounded_run: borne de mémoire de {memory_mb} Mo probablement atteinte "
             "(un échec d'allocation est dans la sortie d'erreur de la commande)",
             file=sys.stderr,
         )
