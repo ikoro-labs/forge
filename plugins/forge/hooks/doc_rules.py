@@ -13,6 +13,11 @@ Keys of `docs/agents/usine.md`, each absent key making its step "sans objet" (no
   out. The index is generated: `doc-frontmatter` does not judge it and a hand edit is undone.
   The file is written only when its content changes. Without `doc-frontmatter` there is no
   index.
+- `doc-cap`, repeatable, `<pattern> | <n> mots` or `<pattern> | <n> lignes`: the body of a
+  matching file (front matter excluded; words are cut on whitespace, every line counts, blank
+  ones too) stays under the cap. The ratchet is the file as `HEAD` holds it (`git show`): absent
+  from `HEAD` or under the cap there, it must stay under the cap; already over it there, it
+  may not grow. An unreadable value is reported, never guessed.
 
 Every problem is a line for `after_write`, which reports it with exit code 2: the write stays and
 the agent fixes the file. A file written through a shell command does not come through the hook,
@@ -33,12 +38,15 @@ from pathlib import Path
 from urllib.parse import quote
 
 from handoff_header import HeaderError, split
-from usine import matches
+from usine import matches, split_value
 
 FRONTMATTER_KEY = "doc-frontmatter"
 INDEX_KEY = "doc-index"
+CAP_KEY = "doc-cap"
 GIT_TIMEOUT = 30
 FIELD = re.compile(r"^([A-Za-z0-9_.-]+)[ \t]*:[ \t]*(.*)$")
+CAP = re.compile(r"([1-9][0-9]*)\s+(mots|lignes)")
+UNITS = {"mots": "words", "lignes": "lines"}
 HEADING = re.compile(r"^# +(.+?)\s*$")
 
 
@@ -58,6 +66,14 @@ def read(content: str) -> tuple[dict[str, str], str]:
         if match := FIELD.match(line.rstrip("\r\n")):
             fields.setdefault(match.group(1), scalar(match.group(2)))
     return fields, rest.partition("\n")[2]
+
+
+def body_of(content: str) -> str:
+    """The text after the front matter, or the whole text when it has none."""
+    try:
+        return read(content)[1]
+    except HeaderError:
+        return content.removeprefix("\ufeff")
 
 
 def patterns(config: Mapping[str, list[str]], key: str) -> tuple[list[str], list[str]]:
@@ -171,6 +187,48 @@ def refresh_index(
     return None
 
 
+def measure(body: str, unit: str) -> int:
+    return len(body.split()) if unit == "mots" else len(body.splitlines())
+
+
+def cap_problems(
+    config: Mapping[str, list[str]], root: Path, relative: str, content: str
+) -> list[str]:
+    problems: list[str] = []
+    head_body: str | None = None
+    looked = False
+    for value in config.get(CAP_KEY, []):
+        parts = split_value(value, 2)
+        limit = CAP.fullmatch(parts[1]) if parts else None
+        if parts is None or limit is None:
+            problems.append(
+                f"{CAP_KEY}: `{value}` is not `<pattern> | <n> mots` or `<pattern> | <n> lignes`"
+                " (n above 0), line ignored"
+            )
+            continue
+        if not matches(parts[0], relative):
+            continue
+        cap, unit = int(limit.group(1)), limit.group(2)
+        count = measure(body_of(content), unit)
+        if count <= cap:
+            continue
+        if not looked:
+            looked = True
+            shown = git(root, "show", f"HEAD:./{relative}")
+            head_body = None if shown is None else body_of(shown)
+        before = None if head_body is None else measure(head_body, unit)
+        if before is not None and before > cap and count <= before:
+            continue
+        said = f"holds {count} {UNITS[unit]}, over the cap of {cap}"
+        if before is not None and before > cap:
+            said += f", and it held {before} at HEAD, over the cap already: it may not grow"
+        problems.append(
+            f"{CAP_KEY}: {relative} {said} (`{value}`); shorten it, or write a new document"
+            " that replaces this one"
+        )
+    return problems
+
+
 def doc_problems(
     config: Mapping[str, list[str]], root: Path, relative: str, content: str
 ) -> list[str]:
@@ -182,4 +240,5 @@ def doc_problems(
                 problems.append(problem)
         if index and (problem := refresh_index(root, index, covers, relative)):
             problems.append(problem)
+    problems.extend(cap_problems(config, root, relative, content))
     return problems

@@ -275,5 +275,127 @@ class Index(DocsCase):
         self.assertFalse(self.index.exists())
 
 
+def words(count: int) -> str:
+    return " ".join(["word"] * count) + "\n"
+
+
+class Caps(DocsCase):
+    """The `doc-cap` key: the body of a written file stays under its cap, with a ratchet on HEAD."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.configure(("doc-cap", "docs/adr/*.md | 10 mots"))
+        self.init_repo()
+
+    def test_a_new_file_over_the_cap_is_refused_with_the_count_the_cap_and_the_way_out(
+        self,
+    ) -> None:
+        """#199 (b): absent from HEAD, the file must stand under the cap."""
+        target = self.write("docs/adr/a.md", words(11))
+        code, err = self.run_hook(target)
+        self.assertEqual(code, 2)
+        self.assertIn("docs/adr/a.md holds 11 words, over the cap of 10", err)
+        self.assertIn("`docs/adr/*.md | 10 mots`", err)
+        self.assertIn("doc-cap", err)
+        self.assertIn("shorten it, or write a new document that replaces this one", err)
+        self.assertEqual(target.read_text(encoding="utf-8"), words(11))
+
+    def test_a_file_at_or_under_the_cap_passes(self) -> None:
+        """#199 (b)."""
+        self.assertEqual(self.run_hook(self.write("docs/adr/a.md", words(10))), (0, ""))
+        self.assertEqual(self.run_hook(self.write("docs/adr/a.md", words(3))), (0, ""))
+
+    def test_the_front_matter_is_not_counted(self) -> None:
+        """#199 (b): the body only, whatever the header holds."""
+        header = "---\ntype: adr\ntitle: " + words(50) + "---\n"
+        self.assertEqual(self.run_hook(self.write("docs/adr/a.md", header + words(10))), (0, ""))
+        self.assertEqual(self.run_hook(self.write("docs/adr/a.md", header + words(11)))[0], 2)
+
+    def test_a_file_the_pattern_does_not_cover_is_not_counted(self) -> None:
+        """#199 (b)."""
+        self.assertEqual(self.run_hook(self.write("docs/other/a.md", words(500))), (0, ""))
+
+    def test_the_cap_in_lines_counts_every_line_of_the_body(self) -> None:
+        """#199 (b): blank lines count, the front matter does not."""
+        self.configure(("doc-cap", "docs/*.md | 4 lignes"))
+        header = "---\ntype: note\n---\n"
+        self.assertEqual(self.run_hook(self.write("docs/a.md", header + "1\n\n3\n4\n")), (0, ""))
+        code, err = self.run_hook(self.write("docs/a.md", header + "1\n\n3\n4\n5\n"))
+        self.assertEqual(code, 2)
+        self.assertIn("holds 5 lines, over the cap of 4", err)
+
+    def test_every_matching_line_is_held(self) -> None:
+        """#199 (b): a words cap and a lines cap on the same file both apply."""
+        self.configure(("doc-cap", "docs/*.md | 100 mots"), ("doc-cap", "docs/*.md | 2 lignes"))
+        code, err = self.run_hook(self.write("docs/a.md", "1\n2\n3\n"))
+        self.assertEqual(code, 2)
+        self.assertIn("holds 3 lines", err)
+        self.assertNotIn("words", err)
+
+    def test_a_file_already_over_the_cap_at_head_may_shrink_but_not_grow(self) -> None:
+        """#199 (b), cliquet: the reference is the file at HEAD."""
+        target = self.write("docs/adr/old.md", words(30))
+        self.commit_all()
+        self.assertEqual(self.run_hook(self.write("docs/adr/old.md", words(30))), (0, ""))
+        self.assertEqual(self.run_hook(self.write("docs/adr/old.md", words(20))), (0, ""))
+        code, err = self.run_hook(self.write("docs/adr/old.md", words(31)))
+        self.assertEqual(code, 2)
+        self.assertIn("holds 31 words, over the cap of 10", err)
+        self.assertIn("30 at HEAD", err)
+        self.assertIn("may not grow", err)
+        self.assertEqual(target.read_text(encoding="utf-8"), words(31))
+
+    def test_the_ratchet_is_the_committed_version_not_the_last_write(self) -> None:
+        """#199 (b): a write that shrank the file does not lower the reference before the commit."""
+        self.write("docs/adr/old.md", words(30))
+        self.commit_all()
+        self.assertEqual(self.run_hook(self.write("docs/adr/old.md", words(12))), (0, ""))
+        self.assertEqual(self.run_hook(self.write("docs/adr/old.md", words(25))), (0, ""))
+
+    def test_a_file_under_the_cap_at_head_must_stay_under_it(self) -> None:
+        """#199 (b): the ratchet only protects what was already over."""
+        self.write("docs/adr/small.md", words(5))
+        self.commit_all()
+        self.assertEqual(self.run_hook(self.write("docs/adr/small.md", words(10))), (0, ""))
+        code, err = self.run_hook(self.write("docs/adr/small.md", words(11)))
+        self.assertEqual(code, 2)
+        self.assertNotIn("at HEAD", err)
+
+    def test_a_repository_without_a_head_holds_every_file_to_the_cap(self) -> None:
+        """#199 (b): nothing committed yet, so nothing to be lenient about."""
+        self.assertEqual(self.run_hook(self.write("docs/adr/a.md", words(11)))[0], 2)
+
+    def test_the_head_version_counts_its_body_without_the_front_matter_too(self) -> None:
+        """#199 (b)."""
+        header = "---\ntype: adr\n---\n"
+        self.write("docs/adr/old.md", header + words(30))
+        self.commit_all()
+        self.assertEqual(self.run_hook(self.write("docs/adr/old.md", header + words(30))), (0, ""))
+        self.assertEqual(self.run_hook(self.write("docs/adr/old.md", header + words(31)))[0], 2)
+
+    def test_an_unreadable_value_is_reported_and_never_guessed(self) -> None:
+        """#199 (b): no unit, an unknown unit, zero, not a number, a missing pattern."""
+        for value in (
+            "docs/adr/*.md | 10",
+            "docs/adr/*.md | 10 octets",
+            "docs/adr/*.md | 0 mots",
+            "docs/adr/*.md | beaucoup mots",
+            "docs/adr/*.md | -3 mots",
+            "10 mots",
+            "docs/adr/*.md |  | 10 mots",
+        ):
+            with self.subTest(value=value):
+                self.configure(("doc-cap", value))
+                code, err = self.run_hook(self.write("docs/adr/a.md", words(500)))
+                self.assertEqual(code, 2)
+                self.assertIn(f"doc-cap: `{value}` is not", err)
+                self.assertIn("line ignored", err)
+
+    def test_without_the_key_no_file_is_capped(self) -> None:
+        """#199 (b): `doc-cap` absent, step without object, no default cap."""
+        self.configure()
+        self.assertEqual(self.run_hook(self.write("docs/adr/a.md", words(5000))), (0, ""))
+
+
 if __name__ == "__main__":
     unittest.main()
