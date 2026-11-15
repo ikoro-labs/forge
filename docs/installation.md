@@ -594,9 +594,11 @@ Limites connues :
 - Un cache nommé par la transcription d'un agent qui s'arrête, mais dont `guard_output` refuse la
   sortie au même `SubagentStop`, est supprimé alors que l'agent continue (les deux hooks tournent en
   parallèle) : l'agent le recrée.
-- Une branche `worktree-agent-*` sans worktree et à la tête de `main` est supprimée : un agent que
-  Claude Code crée à l'instant, entre la création de sa branche et celle de son worktree, y est
-  exposé pendant quelques millisecondes.
+- Un agent que Claude Code crée à l'instant est exposé pendant quelques millisecondes : entre la
+  création de sa branche et celle de son worktree (une branche `worktree-agent-*` sans worktree, à
+  la tête de `main`, est supprimée), puis entre la création du worktree et son verrou (un worktree
+  non verrouillé est celui d'un agent fini). Aucun des deux n'a été observé ; ni l'un ni l'autre
+  n'a été essayé contre un vrai lancement d'agent.
 - Essayé par les tests seulement, sur des dépôts jetables (un dépôt nu en `origin`) sous Linux
   (la date de départ du verrou n'y est comparée que sous Linux) ; rien n'a été essayé sous Windows
   hors de la CI, qui ne prouve pas le hook sur un vrai poste. Que `agent_transcript_path` soit dans l'événement
