@@ -42,6 +42,8 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -50,6 +52,7 @@ import handoff_header
 from usine import load, project_root
 
 GIT_TIMEOUT = 20
+MAX_TRANSCRIPT = 64 * 1024 * 1024  # a larger transcript is not read: the doubt keeps
 AGENT_DIR = "agent-"
 BRANCH_PREFIX = "worktree-agent-"
 # Where a commit is safe: the local `main`, or any remote-tracking ref (`origin/main` among them).
@@ -156,6 +159,74 @@ def clean_branches(repo: Path) -> list[str]:
     return report
 
 
+def declared_folders(config: dict[str, list[str]], key: str, repo: Path) -> list[Path]:
+    """The folders a key names, `~` expanded. A relative one is dropped, and so is one that holds the
+    home or the repository (a purge there would reach the user's own folders): the doubt keeps."""
+    found = []
+    for value in config.get(key, []):
+        folder = Path(os.path.expanduser(value))
+        home = Path(os.path.expanduser("~"))
+        if folder.is_absolute() and not any(
+            Path(os.path.normcase(os.path.realpath(held))).is_relative_to(os.path.normcase(os.path.realpath(folder)))
+            for held in (home, repo)
+        ):
+            found.append(folder)
+    return found
+
+
+def mentions(folder: Path, text: str) -> bool:
+    """Whether the text names the folder: by its path, as JSON writes it, or from `~`, and not a
+    longer name that merely starts the same."""
+    spellings = {str(folder), folder.as_posix(), json.dumps(str(folder))[1:-1]}
+    home = Path(os.path.expanduser("~"))
+    if folder.is_relative_to(home):
+        spellings.add("~/" + folder.relative_to(home).as_posix())
+    return any(
+        re.search(re.escape(spelling) + r"(?![\w.-])", text) for spelling in spellings
+    )
+
+
+def clean_caches(folders: list[Path], transcript: object) -> list[str]:
+    """Delete the direct subfolders of each cache folder that the agent's transcript names."""
+    if not folders or not isinstance(transcript, str) or not transcript:
+        return []
+    path = Path(os.path.expanduser(transcript))
+    try:
+        if path.stat().st_size > MAX_TRANSCRIPT:
+            return []
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    report = []
+    for folder in folders:
+        try:
+            children = sorted(child for child in folder.iterdir() if child.is_dir() and not child.is_symlink())
+        except OSError:
+            continue
+        for child in children:
+            if not mentions(child, text):
+                continue
+            try:
+                remove_tree(child)
+                report.append(f"purged agent cache {child}")
+            except OSError:
+                report.append(f"left agent cache {child}: it cannot be removed")
+    return report
+
+
+def remove_tree(path: Path) -> None:
+    """rmtree that also removes the read-only files a Windows folder may hold."""
+
+    def writable(function, target, _error) -> None:
+        os.chmod(target, 0o700)
+        function(target)
+
+    if sys.version_info >= (3, 12):
+        shutil.rmtree(path, onexc=writable)
+    else:
+        shutil.rmtree(path, onerror=writable)
+
+
 def emit(event_name: str, lines: list[str]) -> None:
     """One line per element, by the channel of the event; nothing when there is nothing."""
     if not lines:
@@ -176,11 +247,17 @@ def clean(event: dict[str, object]) -> list[str]:
     if not (repo / ".git").is_dir():
         return []
     config = load(project_root(event))
-    del config  # the keys of steps 3 and 4 are read there
+    # Caches are purged at SubagentStop only: at SessionStart another session's agent may live in them.
+    caches = declared_folders(config, "agent-cache-dir", repo) if name == "SubagentStop" else []
+    steps = (
+        lambda: clean_worktrees(repo),
+        lambda: clean_branches(repo),
+        lambda: clean_caches(caches, event.get("agent_transcript_path")),
+    )
     report: list[str] = []
-    for step in (clean_worktrees, clean_branches):
+    for step in steps:
         try:
-            report.extend(step(repo))
+            report.extend(step())
         except Exception:  # noqa: BLE001 - one step failing must not stop the others
             continue
     return report

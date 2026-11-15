@@ -83,6 +83,13 @@ class Cleanup(unittest.TestCase):
         listing = self.git("worktree", "list", "--porcelain")
         return [Path(line.removeprefix("worktree ")) for line in listing.splitlines() if line.startswith("worktree ")]
 
+    def declare(self, **keys: str) -> None:
+        """The project's `docs/agents/usine.md`, with the given keys (`agent_cache_dir` is `agent-cache-dir`)."""
+        lines = [f"- `{key.replace('_', '-')}` : `{value}`" for key, value in keys.items()]
+        path = self.repo / "docs" / "agents" / "usine.md"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("# Usine\n\n" + "\n".join(lines) + "\n", encoding="utf-8")
+
     # --- the hook as Claude Code runs it -------------------------------------------------------
 
     def event(self, name: str = "SubagentStop", **fields: object) -> dict[str, object]:
@@ -289,6 +296,92 @@ class Branches(Cleanup):
         self.assertFalse(merged.exists() or working.exists())
         self.assertEqual(sorted(self.branches()), ["main", "worktree-agent-busy"])
         self.assertEqual(len(message.splitlines()), 3)
+
+
+@unittest.skipUnless(HAS_GIT, "the hook works on git repositories")
+class Caches(Cleanup):
+    def cache(self, name: str) -> Path:
+        folder = self.home / "cache" / "agents" / name
+        folder.mkdir(parents=True)
+        (folder / "data.bin").write_text("cached", encoding="utf-8")
+        return folder
+
+    def transcript(self, *mentions: object) -> Path:
+        """The transcript of the stopping agent: JSON lines whose text mentions the given paths."""
+        path = self.home / "transcript.jsonl"
+        lines = [json.dumps({"type": "assistant", "text": f"cache at {mention}/data.bin"}) for mention in mentions]
+        path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        return path
+
+    def test_the_cache_the_transcript_names_is_purged_and_its_neighbour_kept(self) -> None:
+        """#199 (c): the agent that stops names its cache, by its path or by `~/...`; the folder next to
+        it, even one whose name starts the same, is another agent's."""
+        self.declare(agent_cache_dir="~/cache/agents")
+        named, tilded = self.cache("abc"), self.cache("def")
+        neighbour, lookalike = self.cache("ghi"), self.cache("abc-other")
+        transcript = self.transcript(named, "~/cache/agents/def")
+        message = self.message(self.run_hook(self.event(agent_transcript_path=str(transcript))))
+        self.assertFalse(named.exists() or tilded.exists())
+        self.assertTrue(neighbour.exists() and lookalike.exists())
+        self.assertEqual(len(message.splitlines()), 2)
+
+    def test_nothing_is_purged_at_session_start(self) -> None:
+        """#199 (c): at SessionStart other sessions may have live agents in the same folder."""
+        self.declare(agent_cache_dir="~/cache/agents")
+        named = self.cache("abc")
+        transcript = self.transcript(named)
+        result = self.run_hook(self.event("SessionStart", agent_transcript_path=str(transcript)))
+        self.assertTrue(named.exists())
+        self.assertEqual(self.message(result), "")
+
+    def test_without_the_key_no_cache_is_touched(self) -> None:
+        """#199 (c): no `agent-cache-dir`, no default: the step is "sans objet"."""
+        self.declare(rescue_bundle_dir="~/bundles")
+        named = self.cache("abc")
+        transcript = self.transcript(named)
+        result = self.run_hook(self.event(agent_transcript_path=str(transcript)))
+        self.assertTrue(named.exists())
+        self.assertEqual(self.message(result), "")
+
+    def test_a_transcript_that_cannot_be_read_purges_nothing(self) -> None:
+        """#199 (c): the doubt keeps."""
+        self.declare(agent_cache_dir="~/cache/agents")
+        named = self.cache("abc")
+        for fields in ({}, {"agent_transcript_path": str(self.home / "missing.jsonl")}, {"agent_transcript_path": 3}):
+            with self.subTest(fields=fields):
+                result = self.run_hook(self.event(**fields))
+                self.assertEqual((result.returncode, result.stdout), (0, ""), result.stderr)
+                self.assertTrue(named.exists())
+
+    def test_only_real_subfolders_are_purged(self) -> None:
+        """#199 (c): a file or a symbolic link in the folder is not an agent's cache."""
+        self.declare(agent_cache_dir="~/cache/agents")
+        real = self.cache("abc")
+        target = self.home / "precious"
+        target.mkdir()
+        (target / "keep.txt").write_text("keep", encoding="utf-8")
+        link: Path | None = real.parent / "link"
+        try:
+            real.parent.joinpath("link").symlink_to(target, target_is_directory=True)
+        except OSError:
+            link = None  # Windows without the privilege to link
+        stray = real.parent / "stray.txt"
+        stray.write_text("file", encoding="utf-8")
+        transcript = self.transcript(real, real.parent / "link", stray)
+        self.run_hook(self.event(agent_transcript_path=str(transcript)))
+        self.assertFalse(real.exists())
+        self.assertTrue(stray.exists() and (target / "keep.txt").exists())
+        self.assertTrue(link is None or link.is_symlink())
+
+    def test_a_folder_that_holds_the_home_or_the_repository_is_never_purged(self) -> None:
+        """#199 (c): a key pointing at `~` or at a parent of the repository would purge the user's own folders."""
+        for value in ("~", str(self.home), str(self.home.parent)):
+            with self.subTest(value=value):
+                self.declare(agent_cache_dir=value)
+                transcript = self.transcript(self.repo, self.origin)
+                result = self.run_hook(self.event(agent_transcript_path=str(transcript)))
+                self.assertEqual((result.returncode, result.stdout), (0, ""), result.stderr)
+                self.assertTrue(self.repo.exists() and self.origin.exists())
 
 
 @unittest.skipUnless(HAS_GIT, "the hook works on git repositories")
