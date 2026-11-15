@@ -132,6 +132,11 @@ tickets lancés dans le passage sont moins que `--max`, et qu'aucun arrêt n'est
 Avec `--parallel 1`, une PR en file ou en revue compte aussi comme travail en vol : aucun coder ne
 part avant sa fusion, et c'est la série, sans remise à jour. Avant chaque lancement, un fichier
 `.claude/PAUSED` arrête le passage comme un plafond : son texte est la raison, que tu rapportes.
+Avant chaque lancement aussi, quand la clé `report-repo` est déclarée, lis les places libres :
+`uv run --no-project --quiet python "${CLAUDE_PLUGIN_ROOT}/scripts/report_mail.py" --slots`. Sur
+`Free slots: 0`, aucun coder ne part : rapporte la ligne, qui nomme l'hôte sous son plancher ou sans
+runner libre, et attends qu'une revue ou un coder en vol se termine avant de la relire. Sur
+`Free slots: unknown`, dis-le et garde les seuls plafonds `--parallel` et `--max`.
 Alors :
 
 1. `gh issue edit <n> --add-assignee @me --add-label agent-claimed` : le ticket est pris, et
