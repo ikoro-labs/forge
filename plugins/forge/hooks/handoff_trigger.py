@@ -8,7 +8,7 @@ the first notice, it stops waiting, lists the agents still alive for a rescue an
 relay (stage "hard"). Past each notice, only a new user prompt gets a reminder: repeating it
 after every tool call would interrupt the work.
 
-The threshold is CLAUDE_SESSION_TOKEN_LIMIT, 150k by default. Only handoff_relay.py raises it,
+The threshold is CLAUDE_SESSION_TOKEN_LIMIT, 300k by default. Only handoff_relay.py raises it,
 to 400k for a successor whose handoff carries a feature; no settings, skill or session sets it.
 
 State and handoffs live outside the plugin cache, which every version rewrites:
@@ -46,7 +46,7 @@ from pathlib import Path
 
 from usine import project_root
 
-DEFAULT_LIMIT = 150000
+DEFAULT_LIMIT = 300000
 HARD_MARGIN = 35000
 HOOKS = Path(__file__).resolve().parent
 MANIFEST = HOOKS.parent / ".claude-plugin" / "plugin.json"
