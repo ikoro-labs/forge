@@ -11,7 +11,7 @@ Source: ikoro-labs/forge#3. Closing a session kills its subagents, so the relay 
 `en_vol`. --force is the hard cap of the drain: it is admitted only when the header lists
 the agents left for a rescue under `sauvetage`. Every check runs before the daily counter
 moves. The successor's drain threshold is set here and nowhere else: 400k when the handoff
-carries a feature, 150k otherwise, written in the header as `seuil`. It is always passed
+carries a feature, 300k otherwise, written in the header as `seuil`. It is always passed
 explicitly: the relay inherits the threshold of the session that runs it, which may be the
 400k of an orchestration.
 
@@ -35,7 +35,7 @@ Code 6 is one session per repository (ikoro-labs/forge#4): another live session 
 repository, found by `handoff_header.py sessions`, is the successor in effect. The header gets
 the successor, its threshold and its author, the calling session (CLAUDE_CODE_SESSION_ID):
 the successor's own `sessions` leaves out its author, alive during its closing delay.
-Environment: CLAUDE_HANDOFF_RELAY_MAX (default 5), CLAUDE_HANDOFF_CLOSE_DELAY seconds
+Environment: CLAUDE_HANDOFF_RELAY_MAX (default 200), CLAUDE_HANDOFF_CLOSE_DELAY seconds
 before closing the old session (default 45, 0 keeps it open), CLAUDE_HANDOFF_TERMINAL (a
 terminal command that runs the words after it, such as `ghostty -e`, `gnome-terminal --` or
 `wt.exe` on Windows: the relay opens `claude attach <id>` in it; unset, the desktop's default
@@ -388,7 +388,7 @@ def relay(argv: list[str]) -> int:
     if hand_over_only:
         return hand_over(handoff, force)
     dry_run = os.environ.get("CLAUDE_HANDOFF_CLOSE_DRY_RUN", "").strip().lower() not in OFF
-    cap = int(os.environ.get("CLAUDE_HANDOFF_RELAY_MAX", "5"))
+    cap = int(os.environ.get("CLAUDE_HANDOFF_RELAY_MAX", "200"))
     close_delay = int(os.environ.get("CLAUDE_HANDOFF_CLOSE_DELAY", "45"))
     terminal = viewer_terminal()
     state = Path.home() / ".claude" / "hooks" / "state"
@@ -398,7 +398,7 @@ def relay(argv: list[str]) -> int:
         values = handoff_header.check(handoff)
     except (handoff_header.HeaderError, OSError, ValueError) as error:
         return fail(f"invalid handoff header: {error}", 2)
-    threshold = 400000 if handoff_header.features(values) else 150000
+    threshold = 400000 if handoff_header.features(values) else 300000
     owner = os.environ.get("CLAUDE_PID", "")
     refused = agents_refusal(values, project, owner, force)
     if refused:
