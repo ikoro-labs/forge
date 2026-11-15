@@ -9,6 +9,27 @@ Ce dépôt a été recréé le 2026-10-23 ; l'ancien est `ikoro-labs/forge-archi
 numéros de PR et de ticket nus (`#38`) renvoient à l'ancien dépôt ; un renvoi au nouveau dépôt
 porte son nom (`ikoro-labs/forge#7`).
 
+## [1.11.0] - 2026-11-15
+
+Le mail de relevé dit où en est chaque feature ouverte et propose les tickets prêts qui tiennent
+dans les places libres. Version mineure : une nouvelle partie du mail, aucune clé nouvelle.
+
+- Scripts : `report_mail.py` gagne la partie « Features » : chaque feature ouverte avec son
+  pourcentage (`completion.percent`), ses PR ouvertes et ses tickets prêts ; une feature que `gh`
+  ne lit pas dit « tickets not read » et le reste du mail part. `completion.py` rend aussi
+  étiquettes, assignés et bloqueurs ouverts des sous-issues, en un appel `gh` par feature
+  (ikoro-labs/forge#200, critère A7 de #181).
+- Scripts : avec N places libres (N > 0), la partie « Awaiting you » propose au plus N tickets
+  prêts et demande lesquels lancer ; le mail ne lance rien. Avec 0 place ou un nombre inconnu, la
+  partie Features dit pourquoi il n'y a pas de proposition (ikoro-labs/forge#200, critère A9 de
+  #181).
+- Gabarits : `report-mail.md` gagne la section « Features », facultative.
+- Tests : cas nouveaux de `tests/test_report_mail.py` et `tests/test_completion.py`.
+- Gestes humains : aucun. La partie Features n'est pas un événement : un mail qui ne changerait
+  que par elle ne part pas (code 10 inchangé).
+- Resté dehors : A4 (retrait des copies hors dépôt, geste de chaque projet), A11 et A12 de #181 ;
+  #181 reste ouvert.
+
 ## [1.10.0] - 2026-11-15
 
 Le mail de relevé part même quand les runners sont illisibles, et aucun coder ne part sans place
