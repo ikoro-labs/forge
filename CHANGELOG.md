@@ -26,8 +26,15 @@ nouvelle option (`report_mail.py --slots`).
   sur `Free slots: 0`, aucun coder ne part (ikoro-labs/forge#196, critère A10 de #181).
 - Gabarits : `usine.md` documente `report-host-floor` et le format de sonde qu'il exige.
 - Tests : cas nouveaux de `tests/test_report_mail.py` (jeton refusé, places, plancher, sonde).
-- Gestes humains : aucun ; un projet qui veut la garde des places déclare `report-host-floor` et
-  une sonde au format `mem-free` et `disk-free`.
+- Gestes humains : aucun requis, mais un projet qui déclare `report-repo` change de comportement
+  sans autre clé : chaque mail porte la ligne « Free slots », et `forge:feature-build` ne lance
+  aucun coder quand tous ses runners sont occupés (`Free slots: 0`). Le plancher
+  `report-host-floor` et une sonde au format `mem-free` et `disk-free` ajoutent la garde de la
+  mémoire et du disque. Un jeton qui ne lit pas les runners donne `unknown`, et seuls `--parallel`
+  et `--max` bornent alors le passage.
+- Resté dehors : les critères A4 (Shipyard et MeridianRe passent à ce script et retirent leur copie
+  hors dépôt, geste de chaque projet après le tag), et A7, A9, A11 et A12 de #181, à livrer ;
+  #181 reste ouvert.
 
 ## [1.9.0] - 2026-11-14
 
