@@ -314,6 +314,13 @@ class SlotsTests(unittest.TestCase):
         self.assertIn("not applicable", out)
 
 
+class FeatureBuildTests(unittest.TestCase):
+    def test_a10_feature_build_reads_the_slots_before_each_coder(self) -> None:
+        text = (support.PLUGIN / "skills" / "feature-build" / "SKILL.md").read_text(encoding="utf-8")
+        self.assertRegex(text, r"report_mail\.py\"? --slots")
+        self.assertIn("Free slots: 0", text)
+
+
 class TemplateTests(unittest.TestCase):
     def test_a1_the_usine_template_documents_every_key_the_script_reads(self) -> None:
         from usine import parse
