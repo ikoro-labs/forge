@@ -9,6 +9,26 @@ Ce dépôt a été recréé le 2026-10-23 ; l'ancien est `ikoro-labs/forge-archi
 numéros de PR et de ticket nus (`#38`) renvoient à l'ancien dépôt ; un renvoi au nouveau dépôt
 porte son nom (`ikoro-labs/forge#7`).
 
+## [1.10.0] - 2026-11-15
+
+Le mail de relevé part même quand les runners sont illisibles, et aucun coder ne part sans place
+libre sur le poste. Version mineure : une nouvelle clé facultative (`report-host-floor`) et une
+nouvelle option (`report_mail.py --slots`).
+
+- Scripts : `report_mail.py` ne sort plus en échec quand `gh api .../actions/runners` refuse le
+  jeton (droit d'administration absent) ; le mail et `--line` disent « runners not read »
+  (ikoro-labs/forge#195). Refs #181.
+- Scripts : `report_mail.py --slots` rend en une ligne les places libres des hôtes de
+  `report-host` : les runners libres d'un hôte, aucun sous son plancher `report-host-floor`
+  (mémoire et disque libres en Gio, lus par une sonde qui imprime `mem-free` et `disk-free`), et
+  `unknown` quand des runners comptés sont illisibles (ikoro-labs/forge#196, critère A8 de #181).
+- Skills : `forge:feature-build` lit `--slots` avant chaque coder quand `report-repo` est déclarée ;
+  sur `Free slots: 0`, aucun coder ne part (ikoro-labs/forge#196, critère A10 de #181).
+- Gabarits : `usine.md` documente `report-host-floor` et le format de sonde qu'il exige.
+- Tests : cas nouveaux de `tests/test_report_mail.py` (jeton refusé, places, plancher, sonde).
+- Gestes humains : aucun ; un projet qui veut la garde des places déclare `report-host-floor` et
+  une sonde au format `mem-free` et `disk-free`.
+
 ## [1.9.0] - 2026-11-14
 
 Le mail de relevé de l'usine vient de forge, le relais de passation ouvre sa fenêtre sans réglage,
