@@ -131,6 +131,17 @@ avant un coder ou une revue. Aucune clé n'a de valeur par défaut : sans `run-l
 côté Windows (la mémoire disponible par `GlobalMemoryStatusEx`, sans charge à 1 min, et la borne par
 objet de tâche) n'a tourné que dans la CI. macOS n'est pas couvert.
 
+Une sonde de plus, sans clé nouvelle, rejoue la suite sur chaque commit de la PR : à partir des clés
+`ci-replay`, `install`, `run-limits` et `run-budget`, `plugins/forge/scripts/commit_replay.py` extrait
+chaque commit propre à la PR par `git archive` (comme `base_replay.py`, sans rien écrire dans le dépôt,
+sa configuration comprise), y lance les commandes sous la même borne (`run_bounded`) après avoir lu le
+budget du poste, et rend une ligne `PASS`, `FAIL` ou `NOT RUN` par commit. La règle d'un commit vert
+par critère n'était vérifiée par personne : un commit intermédiaire rouge fait tomber un `git bisect`
+sur la base, et `forge:qc-conf` en fait un `BLOCKER` (règle `F-24` du socle). La sonde coûte la suite
+multipliée par le nombre de commits. Elle ne ramène pas le `-n` de pytest-xdist : les commandes passent
+par un shell. Éprouvé sous Linux seulement : le côté Windows repose sur `run_bounded`, qui n'a tourné que dans la
+CI de ce dépôt, et cette sonde n'y a pas encore tourné ; macOS n'est pas couvert.
+
 Deux clés, `ui-labels` (les fichiers de libellés de l'interface, une ligne par fichier ou dossier) et
 `ui-forbidden-word` (un mot ou un motif refusé à l'écran, une ligne par mot), ouvrent la sonde des
 libellés de `forge:qc-gate` : `plugins/forge/scripts/ui_labels.py` lit les lignes que la PR ajoute

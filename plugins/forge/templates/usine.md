@@ -208,6 +208,14 @@ Windows, sans moyenne de charge, seule la mémoire juge. Sans la clé, l'étape 
 
 - `run-budget` : `<Mo disponibles au moins> | <charge à 1 min au plus> | <workers au plus> | <attente au plus en secondes>`
 
+Le rejeu de chaque commit d'une PR, par `forge:qc-gate` (`scripts/commit_replay.py`) : chaque commande de
+`ci-replay`, précédée de `install`, tourne sur chaque commit propre à la PR, pris seul, dans une copie
+extraite par `git archive` et supprimée ensuite, sous la borne de `run-limits` et après le budget de
+`run-budget`. Un commit rouge fait tomber un `git bisect` sur la base : c'est un `BLOCKER` pour
+`forge:qc-conf`, par la règle `F-24` du socle. Aucune clé de plus : sans `ci-replay`, « sans objet (clé
+`ci-replay` absente) » ; sans `run-limits`, « sans objet (clé `run-limits` absente) » ; sans `run-budget`,
+la sonde le dit et ne l'attend pas. Elle dure la suite multipliée par le nombre de commits.
+
 Le rejeu des tests d'une PR sur sa base, par `forge:qc-gate` : les fichiers de test que la PR ajoute
 ou change sont posés dans une copie de la base, puis rejoués, et chacun doit y échouer. Un test
 rouge sur la base prouve le changement ; un qui y passe déjà est rendu à `forge:qc-conf`. Deux clés,

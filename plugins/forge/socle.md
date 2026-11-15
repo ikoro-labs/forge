@@ -50,6 +50,7 @@ Proof: the mechanism that enforces the rule, or `reading` when only a reviewer c
 | F-21 | prose | No third party used as a model, competitor or namesake is named, nor its people, repositories or identifiers: write "anonymous". Tools the project uses are named. | reading |
 | F-22 | prose | Branch `<type>/<slug>` (`feat`, `fix`, `docs`, `test`, `chore`; slug in lowercase English with hyphens); PR title and commit subject `<type>(<scope>): <what changes>`, never "wip"; a commit body says why and ends with `Refs #n` or `Closes #n`, then the `Co-Authored-By` line. | reading of `git log` and the PR title |
 | F-23 | prose | The PR body follows `templates/pr.md` and cites its ticket: `Closes #n`, or `Refs #n` with the points it delivers. | key `trace-check`; reading |
+| F-24 | test | Each commit of a PR, taken alone, passes the commands of the key `ci-replay`: a commit that is red breaks `git bisect` on the base, whatever the head does. | `qc-gate`, `scripts/commit_replay.py` |
 
 ## Validation cases
 
