@@ -9,6 +9,34 @@ Ce dépôt a été recréé le 2026-10-23 ; l'ancien est `ikoro-labs/forge-archi
 numéros de PR et de ticket nus (`#38`) renvoient à l'ancien dépôt ; un renvoi au nouveau dépôt
 porte son nom (`ikoro-labs/forge#7`).
 
+## [1.12.0] - 2026-11-15
+
+La réponse de session et la passation portent le tableau des features, et une session sans feature
+passe la main plus tard. Version mineure : une nouvelle option, un champ exigé de plus dans la
+réponse de session, des valeurs par défaut changées ; aucune clé nouvelle.
+
+- Scripts : `report_mail.py --features` rend, du calcul de la partie Features du mail, un tableau
+  (feature, fermés sur total, PR ouvertes, tickets bloqués, tickets prêts) puis la ligne
+  `In parallel:`, tickets et features qui tiennent dans les places libres ; une seule ligne sans
+  `report-repo`, sans `feature-dir` ou sans feature ouverte. Le module `features_block.py` porte la
+  forme du bloc, partagée par le script et la garde (ikoro-labs/forge#204, critère A11 de #181).
+- Hooks : `guard_output` (Stop) exige un cinquième champ `Features` dans la réponse de session, le
+  bloc du script ou sa ligne, et refuse tout autre contenu ; le bloc sort des plafonds de lignes et
+  de mots (ikoro-labs/forge#204, A11 de #181).
+- Hooks : la consigne de passation fait lancer `report_mail.py --features` et recopier sa sortie
+  sous `Features:` ; aucun hook ne relit ce corps (ikoro-labs/forge#204, A12 de #181).
+- Hooks : sans variable, le seuil de passation d'une session sans feature passe de 150k à 300k
+  jetons (400k avec une feature, inchangé), et le plafond quotidien de relais par projet
+  (`CLAUDE_HANDOFF_RELAY_MAX`) de 5 à 200 (ikoro-labs/forge#206, #205).
+- Gabarits : `session-reply.md` gagne le champ `Features`.
+- Tests : cas nouveaux de `tests/test_report_mail.py`, `tests/test_output_check.py`,
+  `tests/test_guard_output.py` et `tests/test_handoff.py`.
+- Gestes humains : aucun. Une session qui monte à cette version voit sa réponse refusée une fois
+  sans le champ `Features` ; sans `report-repo`, la ligne `not applicable` suffit.
+- Resté dehors : A4 de #181 (retrait des copies hors dépôt, geste de chaque projet) ; #181 reste
+  ouvert. Deux MINOR du verdict de #204 : la ligne « `feature-dir` absent » ne s'imprime jamais,
+  la clé retombant sur le gabarit, et un tableau tapé à la main de la bonne forme passe la garde.
+
 ## [1.11.0] - 2026-11-15
 
 Le mail de relevé dit où en est chaque feature ouverte et propose les tickets prêts qui tiennent
