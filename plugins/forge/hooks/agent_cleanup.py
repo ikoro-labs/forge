@@ -227,6 +227,34 @@ def remove_tree(path: Path) -> None:
         shutil.rmtree(path, onerror=writable)
 
 
+def clean_bundles(repo: Path, folders: list[Path]) -> list[str]:
+    """Delete each `*.bundle` whose heads all exist here and are contained in `main` or a remote branch.
+
+    A bundle that cannot be read, or has a head this repository lacks, stays and is reported; one
+    whose heads exist but are not contained yet stays silently, it is still the only copy.
+    """
+    report = []
+    for folder in folders:
+        try:
+            bundles = sorted(path for path in folder.glob("*.bundle") if path.is_file() and not path.is_symlink())
+        except OSError:
+            continue
+        for bundle in bundles:
+            listing = git_output(repo, "bundle", "list-heads", str(bundle))
+            heads = [line.split()[0] for line in (listing or "").splitlines() if line.split()]
+            if not heads:
+                report.append(f"left rescue bundle {bundle}: it cannot be read")
+            elif any(git_output(repo, "rev-parse", "--verify", "--quiet", f"{sha}^{{commit}}") is None for sha in heads):
+                report.append(f"left rescue bundle {bundle}: a head is not in this repository")
+            elif all(contained(repo, sha) for sha in heads):
+                try:
+                    bundle.unlink()
+                    report.append(f"deleted rescue bundle {bundle} (its heads are in main or a remote branch)")
+                except OSError:
+                    report.append(f"left rescue bundle {bundle}: it cannot be deleted")
+    return report
+
+
 def emit(event_name: str, lines: list[str]) -> None:
     """One line per element, by the channel of the event; nothing when there is nothing."""
     if not lines:
@@ -253,6 +281,7 @@ def clean(event: dict[str, object]) -> list[str]:
         lambda: clean_worktrees(repo),
         lambda: clean_branches(repo),
         lambda: clean_caches(caches, event.get("agent_transcript_path")),
+        lambda: clean_bundles(repo, declared_folders(config, "rescue-bundle-dir", repo)),
     )
     report: list[str] = []
     for step in steps:

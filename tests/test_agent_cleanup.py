@@ -385,6 +385,82 @@ class Caches(Cleanup):
 
 
 @unittest.skipUnless(HAS_GIT, "the hook works on git repositories")
+class Bundles(Cleanup):
+    def setUp(self) -> None:
+        super().setUp()
+        self.folder = self.home / "bundles"
+        self.folder.mkdir()
+        self.declare(rescue_bundle_dir="~/bundles")
+
+    def bundle(self, name: str, *refs: str) -> Path:
+        """A rescue bundle of the given refs of this repository."""
+        path = self.folder / f"{name}.bundle"
+        self.git("bundle", "create", "-q", str(path), *refs)
+        return path
+
+    def ahead(self, branch: str, pushed: bool) -> str:
+        """A branch one commit ahead of `main`, pushed to the remote or not; its sha."""
+        sha = self.git("commit-tree", "HEAD^{tree}", "-p", "HEAD", "-m", f"work of {branch}")
+        self.git("branch", branch, sha)
+        if pushed:
+            self.git("push", "-q", "origin", f"{branch}:refs/heads/{branch}")
+            self.git("fetch", "-q", "origin")
+        return sha
+
+    def test_a_bundle_whose_heads_are_in_main_or_a_remote_branch_is_deleted(self) -> None:
+        """#199 (c): the rescue is redundant once its heads are in `main` or on a remote branch."""
+        in_main = self.bundle("in-main", "main")
+        self.ahead("rescued", pushed=True)
+        on_remote = self.bundle("on-remote", "rescued")
+        message = self.message(self.run_hook(self.event("SessionStart")))
+        self.assertFalse(in_main.exists() or on_remote.exists())
+        self.assertEqual(len(message.splitlines()), 2)
+
+    def test_a_bundle_with_a_head_not_contained_yet_is_kept_silently(self) -> None:
+        """#199 (c): the heads exist here but are on no `main` and no remote branch: still the only copy."""
+        self.ahead("unpushed", pushed=False)
+        self.ahead("pushed", pushed=True)
+        both = self.bundle("both", "unpushed", "pushed")
+        result = self.run_hook(self.event())
+        self.assertTrue(both.exists())
+        self.assertEqual(self.message(result), "")
+
+    def test_a_bundle_with_an_unknown_head_is_kept_and_reported(self) -> None:
+        """#199 (c): a head this repository lacks cannot be shown contained."""
+        other = self.home / "other"
+        self.git_in(self.home, "init", "-q", "-b", "main", str(other))
+        self.commit("elsewhere", folder=other)
+        foreign = self.folder / "foreign.bundle"
+        self.git_in(other, "bundle", "create", "-q", str(foreign), "main")
+        message = self.message(self.run_hook(self.event()))
+        self.assertTrue(foreign.exists())
+        self.assertIn("foreign.bundle", message)
+
+    def test_an_unreadable_bundle_is_kept_and_reported(self) -> None:
+        """#199 (c): the doubt keeps."""
+        broken = self.folder / "broken.bundle"
+        broken.write_text("not a bundle", encoding="utf-8")
+        message = self.message(self.run_hook(self.event()))
+        self.assertTrue(broken.exists())
+        self.assertIn("broken.bundle", message)
+
+    def test_only_bundle_files_are_considered(self) -> None:
+        """#199 (c): `*.bundle` only."""
+        note = self.folder / "notes.txt"
+        note.write_text("keep", encoding="utf-8")
+        self.run_hook(self.event())
+        self.assertTrue(note.exists())
+
+    def test_without_the_key_no_bundle_is_touched(self) -> None:
+        """#199 (c): no `rescue-bundle-dir`, no default: the step is "sans objet"."""
+        self.declare(agent_cache_dir="~/cache/agents")
+        in_main = self.bundle("in-main", "main")
+        result = self.run_hook(self.event())
+        self.assertTrue(in_main.exists())
+        self.assertEqual(self.message(result), "")
+
+
+@unittest.skipUnless(HAS_GIT, "the hook works on git repositories")
 class FailsOpen(Cleanup):
     def test_an_event_it_cannot_read_exits_zero_and_says_nothing(self) -> None:
         """#199 (c): the hook never blocks, never exits 2, which would hold the agent at SubagentStop."""
