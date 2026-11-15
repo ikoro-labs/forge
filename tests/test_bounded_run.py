@@ -159,5 +159,14 @@ class Limits(unittest.TestCase):
         self.assertEqual(done.returncode, WRONG_CALL, done.stderr)
 
 
+class SharedBound(unittest.TestCase):
+    def test_base_replay_holds_its_commands_with_the_same_bound(self) -> None:
+        """No F-NNNN: ticket #66, critère 5: la borne de base_replay est celle du lanceur, une seule fonction."""
+        replay = (support.PLUGIN / "scripts" / "base_replay.py").read_text(encoding="utf-8")
+        self.assertNotIn("setrlimit", replay, "base_replay sets its own limit instead of sharing run_bounded")
+        self.assertIn("from bounded_run import", replay)
+        self.assertIn("setrlimit", SCRIPT.read_text(encoding="utf-8"))
+
+
 if __name__ == "__main__":
     unittest.main()
