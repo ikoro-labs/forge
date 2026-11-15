@@ -110,9 +110,16 @@ def _host_of(labels: Sequence[str], hosts: Mapping[str, str]) -> str | None:
     return None
 
 
-def _runners(gh: Gh, repo: str, hosts: Mapping[str, str]) -> dict[str, list[tuple[str, bool, bool]]]:
-    """Each host's runners as `(name, online, busy)`; the runners no host claims go under `""`."""
-    data = _json(gh, ["api", f"repos/{repo}/actions/runners?per_page=100"])
+def _runners(gh: Gh, repo: str, hosts: Mapping[str, str]) -> dict[str, list[tuple[str, bool, bool]]] | None:
+    """Each host's runners as `(name, online, busy)`; the runners no host claims go under `""`.
+
+    None when `gh` cannot read them: the runner list needs an administrator token, which an agent
+    token may lack, and the rest of the mail must still go out.
+    """
+    try:
+        data = _json(gh, ["api", f"repos/{repo}/actions/runners?per_page=100"])
+    except subprocess.CalledProcessError:
+        return None
     found: dict[str, list[tuple[str, bool, bool]]] = {}
     items = data.get("runners", []) if isinstance(data, dict) else []
     for item in items:
@@ -209,7 +216,7 @@ def _changes(repo: str, now: Mapping, old: Mapping | None) -> list[str]:
 def _online(survey: Mapping) -> dict[str, str]:
     return {
         host: f"{sum(r[1] for r in rows)}/{len(rows)} online"
-        for host, rows in survey["runners"].items()
+        for host, rows in (survey["runners"] or {}).items()
     }
 
 
@@ -231,7 +238,7 @@ def _waiting(repo: str, survey: Mapping) -> list[str]:
         for number, state in survey["open"].items()
         if " green " in f" {state} "
     ]
-    for host, rows in survey["runners"].items():
+    for host, rows in (survey["runners"] or {}).items():
         down = [name for name, online, _ in rows if not online]
         if down:
             found.append(f"{repo}: runner(s) offline on {host or 'no host'}: {', '.join(down)}.")
@@ -264,6 +271,9 @@ def _ci_part(surveys: Mapping[str, dict], config: Mapping[str, list[str]], probe
     rows: list[str] = []
     hosts: list[str] = []
     for repo, survey in surveys.items():
+        if survey["runners"] is None:
+            rows.append(f"<tr><td>{e(repo)}</td><td>-</td><td>runners not read</td></tr>")
+            continue
         for host, runners in survey["runners"].items():
             name = host or "no host"
             if host and host not in hosts:
@@ -316,8 +326,10 @@ def session_line(config: Mapping[str, list[str]], surveys: Mapping[str, dict], p
     for repo, survey in surveys.items():
         hosts = "; ".join(
             f"{host or 'no host'} {sum(r[1] for r in rows)}/{len(rows)} online, {sum(r[2] for r in rows)} busy"
-            for host, rows in survey["runners"].items()
+            for host, rows in (survey["runners"] or {}).items()
         )
+        if survey["runners"] is None:
+            hosts = "runners not read"
         pieces.append(
             f"{repo}: {hosts or 'no runner'}; queued {survey['queued']}, running {survey['running']},"
             f" main {survey['main']}"
