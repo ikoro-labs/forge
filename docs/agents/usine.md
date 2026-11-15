@@ -69,3 +69,6 @@ La suite de tests de ce dépôt, dont la sortie se raccourcit quand elle passe.
 - `baselines`, `size-check`, `trace-check`, `trace-replay`, `review-grid` : aucun outil encore.
 - `em-dash-allowances` : aucun fichier n'en tolère.
 - `readonly-agent`, `readonly-command` : aucun agent du dépôt en plus de ceux du plugin.
+- `agent-cache-dir`, `rescue-bundle-dir` : ce dépôt n'a pas de dossier de caches d'agents ni de bundles
+  de sauvetage à tenir ; le ménage d'`agent_cleanup.py` y retire seulement les worktrees et les
+  branches `worktree-agent-*`, qui ne lisent aucune clé.

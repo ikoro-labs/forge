@@ -461,6 +461,89 @@ class Bundles(Cleanup):
 
 
 @unittest.skipUnless(HAS_GIT, "the hook works on git repositories")
+class Reporting(Cleanup):
+    def test_subagent_stop_reports_by_system_message_one_line_per_element(self) -> None:
+        """#199 (c): the documented channel of SubagentStop is `systemMessage`, and it holds no `additionalContext`."""
+        self.git("branch", "worktree-agent-a1")
+        self.git("branch", "worktree-agent-a2")
+        result = self.run_hook(self.event())
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        self.assertEqual(set(output), {"systemMessage"})
+        lines = output["systemMessage"].splitlines()
+        self.assertEqual(len(lines), 2)
+        self.assertTrue(any("worktree-agent-a1" in line for line in lines))
+        self.assertTrue(any("worktree-agent-a2" in line for line in lines))
+
+    def test_session_start_reports_by_system_message_and_additional_context(self) -> None:
+        """#199 (c): at SessionStart the same lines also reach the session as `additionalContext`."""
+        self.git("branch", "worktree-agent-a1")
+        result = self.run_hook(self.event("SessionStart", source="startup"))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        specific = output["hookSpecificOutput"]
+        self.assertEqual(specific["hookEventName"], "SessionStart")
+        self.assertIn("worktree-agent-a1", specific["additionalContext"])
+        self.assertIn("worktree-agent-a1", output["systemMessage"])
+
+    def test_an_event_other_than_the_two_it_serves_does_nothing(self) -> None:
+        """#199 (c): wired by mistake on another event, it removes nothing."""
+        self.git("branch", "worktree-agent-a1")
+        result = self.run_hook(self.event("Stop"))
+        self.assertEqual((result.returncode, result.stdout), (0, ""), result.stderr)
+        self.assertIn("worktree-agent-a1", self.branches())
+
+    def test_a_key_naming_a_file_instead_of_a_folder_costs_nothing_and_the_other_steps_run(self) -> None:
+        """#199 (c): a cache folder that is a file leaves the branch step to run."""
+        self.declare(agent_cache_dir="~/cache-file", rescue_bundle_dir="~/cache-file")
+        (self.home / "cache-file").write_text("a file, not a folder", encoding="utf-8")
+        transcript = self.home / "transcript.jsonl"
+        transcript.write_text("{}\n", encoding="utf-8")
+        self.git("branch", "worktree-agent-a1")
+        result = self.run_hook(self.event(agent_transcript_path=str(transcript)))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("worktree-agent-a1", self.branches())
+
+
+class Declaration(unittest.TestCase):
+    def hook_groups(self, event: str) -> list[dict[str, object]]:
+        hooks = json.loads((support.PLUGIN / "hooks" / "hooks.json").read_text(encoding="utf-8"))["hooks"]
+        return [
+            hook for group in hooks.get(event, []) for hook in group["hooks"]
+            if "agent_cleanup.py" in hook.get("command", "")
+        ]
+
+    def test_hooks_json_binds_the_hook_to_both_events_as_an_observer_that_never_blocks(self) -> None:
+        """#199 (c): SubagentStop and SessionStart, `; exit 0` and no `exit 2` (which would hold the agent
+        at SubagentStop), no `onFailure: block`, and a `timeout`."""
+        for event in ("SubagentStop", "SessionStart"):
+            with self.subTest(event=event):
+                found = self.hook_groups(event)
+                self.assertEqual(len(found), 1, found)
+                hook = found[0]
+                command = str(hook["command"])
+                self.assertEqual(
+                    command, 'uv run --no-project --quiet python "${CLAUDE_PLUGIN_ROOT}/hooks/agent_cleanup.py"; exit 0',
+                )
+                self.assertNotIn("exit 2", command)
+                self.assertNotIn("onFailure", hook)
+                self.assertIsInstance(hook.get("timeout"), int)
+                self.assertTrue(0 < int(str(hook["timeout"])) <= 60)
+
+    def test_hooks_json_describes_the_cleanup(self) -> None:
+        text = json.loads((support.PLUGIN / "hooks" / "hooks.json").read_text(encoding="utf-8"))["description"]
+        self.assertIn("cleanup after a finished agent", text)
+
+    def test_the_template_documents_both_keys_and_this_repository_declares_them_absent(self) -> None:
+        template = (support.PLUGIN / "templates" / "usine.md").read_text(encoding="utf-8")
+        factory = (support.REPO_ROOT / "docs" / "agents" / "usine.md").read_text(encoding="utf-8")
+        for key in ("agent-cache-dir", "rescue-bundle-dir"):
+            with self.subTest(key=key):
+                self.assertIn(f"- `{key}` : `<", template)
+                self.assertIn(f"`{key}`", factory.split("## Clés absentes")[1])
+
+
+@unittest.skipUnless(HAS_GIT, "the hook works on git repositories")
 class FailsOpen(Cleanup):
     def test_an_event_it_cannot_read_exits_zero_and_says_nothing(self) -> None:
         """#199 (c): the hook never blocks, never exits 2, which would hold the agent at SubagentStop."""
