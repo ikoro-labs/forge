@@ -137,6 +137,25 @@ def clean_worktrees(repo: Path) -> list[str]:
     return report
 
 
+def clean_branches(repo: Path) -> list[str]:
+    """`git branch -D` on each `worktree-agent-*` branch that no worktree holds and whose tip is safe."""
+    entries = worktree_entries(repo)
+    listing = git_output(repo, "for-each-ref", "--format=%(refname) %(objectname)", f"refs/heads/{BRANCH_PREFIX}*")
+    if entries is None or not listing:
+        return []
+    held = {fields.get("branch") for fields in entries}
+    report = []
+    for line in listing.splitlines():
+        ref, _, sha = line.partition(" ")
+        name = ref.removeprefix("refs/heads/")
+        if ref in held or not name.startswith(BRANCH_PREFIX) or not contained(repo, sha):
+            continue
+        deletion = git(repo, "branch", "-D", name)
+        if deletion is not None and deletion.returncode == 0:
+            report.append(f"deleted branch {name} ({sha[:8]}, in main or a remote branch, no worktree)")
+    return report
+
+
 def emit(event_name: str, lines: list[str]) -> None:
     """One line per element, by the channel of the event; nothing when there is nothing."""
     if not lines:
@@ -159,7 +178,7 @@ def clean(event: dict[str, object]) -> list[str]:
     config = load(project_root(event))
     del config  # the keys of steps 3 and 4 are read there
     report: list[str] = []
-    for step in (clean_worktrees,):
+    for step in (clean_worktrees, clean_branches):
         try:
             report.extend(step(repo))
         except Exception:  # noqa: BLE001 - one step failing must not stop the others

@@ -234,6 +234,64 @@ class Worktrees(Cleanup):
 
 
 @unittest.skipUnless(HAS_GIT, "the hook works on git repositories")
+class Branches(Cleanup):
+    def branch_ahead(self, name: str) -> str:
+        """A local branch one commit ahead of `main`, never pushed, with no worktree; its sha."""
+        sha = self.git("commit-tree", "HEAD^{tree}", "-p", "HEAD", "-m", f"work of {name}")
+        self.git("branch", name, sha)
+        return sha
+
+    def test_an_orphan_branch_contained_in_main_is_deleted(self) -> None:
+        """#199 (c): no worktree, tip already in `main`: nothing to lose, `git branch -D`."""
+        self.git("branch", "worktree-agent-a1")
+        message = self.message(self.run_hook(self.event()))
+        self.assertNotIn("worktree-agent-a1", self.branches())
+        self.assertIn("worktree-agent-a1", message)
+
+    def test_an_orphan_branch_with_unpushed_work_is_kept(self) -> None:
+        """#199 (c): a tip found in no `main` and no remote branch would be lost."""
+        self.branch_ahead("worktree-agent-a1")
+        result = self.run_hook(self.event())
+        self.assertIn("worktree-agent-a1", self.branches())
+        self.assertEqual(self.message(result), "")
+
+    def test_an_orphan_branch_pushed_to_a_remote_branch_is_deleted(self) -> None:
+        """#199 (c): not merged into `main`, but on the remote: `-d` would refuse, the hook's `-D` does not."""
+        sha = self.branch_ahead("worktree-agent-a1")
+        self.git("push", "-q", "origin", f"{sha}:refs/heads/feature")
+        self.git("fetch", "-q", "origin")
+        self.run_hook(self.event())
+        self.assertNotIn("worktree-agent-a1", self.branches())
+
+    def test_a_branch_outside_the_agent_pattern_is_never_touched(self) -> None:
+        """#199 (c): `worktree-agent-*` only, even for a branch contained in `main`."""
+        for name in ("feature-y", "agent-a1", "my-worktree-agent-a1", "worktree-agents"):
+            self.git("branch", name)
+        result = self.run_hook(self.event())
+        self.assertEqual(self.message(result), "")
+        self.assertEqual(
+            sorted(self.branches()), ["agent-a1", "feature-y", "main", "my-worktree-agent-a1", "worktree-agents"],
+        )
+
+    def test_a_branch_a_live_worktree_holds_is_kept(self) -> None:
+        """#199 (c): the branch of the agent still running is not an orphan."""
+        path = self.agent_worktree("a1")
+        self.lock(path, self.running_session())
+        self.run_hook(self.event())
+        self.assertIn("worktree-agent-a1", self.branches())
+
+    def test_a_branch_whose_worktree_was_just_removed_is_deleted_when_contained(self) -> None:
+        """#199 (c): the worktree goes, then its branch, in one passage; a branch with work stays."""
+        merged = self.agent_worktree("done")
+        working = self.agent_worktree("busy")
+        self.commit("unpushed", folder=working)
+        message = self.message(self.run_hook(self.event()))
+        self.assertFalse(merged.exists() or working.exists())
+        self.assertEqual(sorted(self.branches()), ["main", "worktree-agent-busy"])
+        self.assertEqual(len(message.splitlines()), 3)
+
+
+@unittest.skipUnless(HAS_GIT, "the hook works on git repositories")
 class FailsOpen(Cleanup):
     def test_an_event_it_cannot_read_exits_zero_and_says_nothing(self) -> None:
         """#199 (c): the hook never blocks, never exits 2, which would hold the agent at SubagentStop."""
