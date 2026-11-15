@@ -25,7 +25,6 @@ from __future__ import annotations
 
 import json
 import math
-import re
 import shlex
 import shutil
 import subprocess
@@ -35,8 +34,9 @@ import time
 from collections.abc import Mapping
 from pathlib import Path
 
+from doc_rules import doc_problems
 from handoff_header import ProcessGroup, group_options
-from usine import load, project_root, split_value
+from usine import load, matches, project_root, split_value
 
 EM_DASH = chr(0x2014)
 ALLOWANCES_KEY = "em-dash-allowances"
@@ -75,35 +75,6 @@ def load_allowances(root: Path) -> dict[str, int]:
         return parse_allowances((root / listing[-1]).read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError):
         return {}
-
-
-def pattern_regex(pattern: str) -> re.Pattern[str]:
-    """The regular expression of a path pattern: `**/`, `*`, `?` and `{a,b}`, the rest literal."""
-    out: list[str] = []
-    i = 0
-    while i < len(pattern):
-        char = pattern[i]
-        if pattern.startswith("**/", i) and (i == 0 or pattern[i - 1] == "/"):
-            out.append("(?:.*/)?")
-            i += 3
-            continue
-        end = pattern.find("}", i) if char == "{" else -1
-        if char == "{" and end != -1 and "{" not in pattern[i + 1 : end]:
-            choices = pattern[i + 1 : end].split(",")
-            out.append("(?:" + "|".join(re.escape(choice) for choice in choices) + ")")
-            i = end
-        elif char == "*":
-            out.append("[^/]*")
-        elif char == "?":
-            out.append("[^/]")
-        else:
-            out.append(re.escape(char))
-        i += 1
-    return re.compile("".join(out))
-
-
-def matches(pattern: str, relative: str) -> bool:
-    return pattern_regex(pattern).fullmatch(relative) is not None
 
 
 def split_command(command: str) -> list[str]:
@@ -193,6 +164,7 @@ def main() -> int:
     content = path.read_text(encoding="utf-8", errors="replace")
     if problem := em_dash_problem(relative, content, load_allowances(root)):
         problems.append(problem)
+    problems.extend(doc_problems(config, root, relative, content))
     if not problems:
         return 0
     sys.stderr.write("".join(line + "\n" for line in problems))

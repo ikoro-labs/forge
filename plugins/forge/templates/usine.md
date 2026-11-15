@@ -594,6 +594,42 @@ la clé, rien n'est formaté.
 - `format-on-write` : `<**/*.py | uv run ruff format>`
 - `format-on-write` : `<apps/web/**/*.{ts,tsx} | pnpm --dir apps/web exec prettier --write>`
 
+Les documents que le projet tient par hook plutôt que par une consigne dans un skill. Le hook
+`after_write` les contrôle sur le fichier que l'agent vient d'écrire, avec la même sortie que le
+tiret cadratin : une ligne sur stderr, code 2, l'écriture reste et l'agent corrige. Seul le fichier
+écrit est jugé : un document existant que personne ne touche ne bloque rien. Un fichier écrit par
+une commande de shell (un heredoc, `sed`) ne passe pas par ce hook. Sans une clé, son contrôle est
+sans objet, et aucune ne prend de valeur par défaut. Le motif est celui de `format-on-write`.
+
+`doc-frontmatter` : un motif par ligne. Un `.md` écrit dont le chemin relatif en suit un doit
+s'ouvrir sur un frontmatter (`---`, des lignes plates `clé: valeur`, `---`) qui porte un `type` non
+vide ; sinon le hook dit quoi ajouter en tête de fichier.
+
+- `doc-frontmatter` : `<docs/**/*.md>`
+
+`doc-index` : le chemin de l'index généré des documents que couvre `doc-frontmatter`. À chaque
+écriture d'un tel fichier, le hook reconstruit l'index depuis `git ls-files` (les fichiers suivis et
+les non suivis que git n'ignore pas, plus le fichier écrit) : un frontmatter `type: index`, une
+ligne qui dit qu'il est généré et ne s'édite pas à la main, puis un tableau Document, Type, Titre
+trié par chemin, pour chaque `.md` couvert qui porte un `type` (le titre est `title` du frontmatter,
+sinon le premier titre `# `). L'index ne s'y liste pas, le contrôle de `doc-frontmatter` ne le juge
+pas, et le fichier n'est réécrit que si son contenu change. Une seule valeur ; sans
+`doc-frontmatter`, pas d'index.
+
+- `doc-index` : `<docs/index.md>`
+
+`doc-cap` : `<motif> | <n> mots` ou `<motif> | <n> lignes`, une ligne par plafond (plusieurs
+plafonds peuvent viser un même fichier). Le compte porte sur le corps du fichier écrit, frontmatter
+exclu : les mots se coupent sur les blancs, toutes les lignes comptent, les vides aussi. Le
+cliquet est la version du fichier à `HEAD` (`git show`) : absent de `HEAD` ou sous le plafond à
+`HEAD`, le fichier doit tenir sous le plafond ; déjà au-dessus à `HEAD`, il ne peut pas grandir.
+Un dépassement sort le compte, le plafond, la ligne de la clé, et la consigne de raccourcir ou
+d'écrire un nouveau document qui remplace l'ancien. Une valeur illisible (pas d'unité, `0`, un
+nombre qui n'en est pas un) est signalée et ignorée, jamais devinée.
+
+- `doc-cap` : `<docs/adr/*.md | 800 mots>`
+- `doc-cap` : `<docs/guides/*.md | 300 lignes>`
+
 ### Output structure
 
 The hook `guard_output` checks every output against its template under `templates/`: a subagent's
