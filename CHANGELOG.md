@@ -9,6 +9,31 @@ Ce dépôt a été recréé le 2026-10-23 ; l'ancien est `ikoro-labs/forge-archi
 numéros de PR et de ticket nus (`#38`) renvoient à l'ancien dépôt ; un renvoi au nouveau dépôt
 porte son nom (`ikoro-labs/forge#7`).
 
+## [1.14.0] - 2026-11-16
+
+Tout test lancé par un agent passe par un lanceur borné, qui tient aussi le budget du poste entier.
+Version mineure : un script et deux clés nouvelles, sans valeur par défaut.
+
+- Scripts : `bounded_run.py` lance une commande sous une borne de mémoire et un délai (`RLIMIT_AS`
+  et groupe de processus sous Linux, objet de tâche sous Windows) ; une borne qu'il ne peut pas
+  poser refuse de lancer. Avant le lancement, il lit la mémoire disponible et la charge à 1 min du
+  poste, attend s'ils sont hors budget, puis sort en 120. Il ramène le `-n` de pytest-xdist au
+  plafond, `-n auto` compris. Codes distincts : 120 budget, 121 appel faux, 122 borne refusée, 123
+  mémoire probablement atteinte, 124 délai. `--check` lit le budget sans rien lancer
+  (ikoro-labs/forge#214, ikoro-labs/forge#66).
+- Scripts : `base_replay.py` pose sa borne par la fonction partagée `run_bounded`.
+- Agents : `forge:coder` et `forge:qc-gate` lancent toute suite et toute sonde par le lanceur ;
+  `forge:feature-build` lit le budget avant un sous-agent de tests.
+- Gabarits : `usine.md` documente `run-limits` (`<Mo> | <secondes>`) et `run-budget` (`<Mo
+  disponibles> | <charge> | <workers> | <attente>`). Ce dépôt déclare `2000 | 300` et
+  `4096 | 12 | 2 | 300`.
+- Tests : `tests/test_bounded_run.py`.
+- Gestes humains : un projet qui veut la borne et le budget déclare les deux clés ; sans elles, le
+  lanceur exige ses options et `forge:qc-gate` rend « sans objet ».
+- Resté dehors : un `-n` posé par un fichier de configuration, par `PYTEST_ADDOPTS` ou caché dans
+  une chaîne shell n'est pas vu ; macOS n'est pas couvert ; le côté Windows n'a tourné qu'en CI.
+  Trois MINOR de la revue de #214 sont reportés sur ikoro-labs/forge#55.
+
 ## [1.13.0] - 2026-11-15
 
 Trois règles de l'usine passent de la prose aux hooks : le frontmatter et l'index des documents,
