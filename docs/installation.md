@@ -551,6 +551,58 @@ Les messages de session (résultats d'outils, notifications, messages d'une autr
 pas l'humain. Essayé par les tests seulement, sous Linux et sous Windows ; pas encore dans une vraie
 session.
 
+## Le ménage après un agent
+
+Ce qu'un agent laisse derrière lui (son worktree, sa branche, ses caches, ses bundles de sauvetage)
+se nettoyait à la main à chaque relais, par de la prose. Le hook `agent_cleanup.py` le fait, au
+`SubagentStop` et au `SessionStart` (ikoro-labs/forge#199, point c). Ce n'est pas un garde : il
+observe, échoue ouvert, sort toujours en 0 (`; exit 0` dans sa commande de `hooks.json`, jamais de
+code 2, qui retiendrait l'agent au `SubagentStop`) et a un `timeout` de 30 secondes. Il agit sur la
+copie principale du dépôt, même quand l'événement vient d'un worktree, sans réseau (aucun `git
+fetch`), et ne fait rien hors d'un dépôt git. Une erreur de lecture ne supprime rien : le doute garde.
+
+| Étape | Ce qu'il fait | Clé |
+| --- | --- | --- |
+| Worktrees `.claude/worktrees/agent-*` | retire celui d'un agent fini : non verrouillé, ou verrouillé par un détenteur mort. Propre (`git status --porcelain` vide, non suivis compris), il est déverrouillé s'il l'est, puis retiré sans `--force` ; sa branche garde son travail. Sale, ou à tête détachée dont le commit n'est dans `main`, `origin/main` ni aucune branche distante, il est laissé et signalé | aucune |
+| Branches `worktree-agent-*` | `git branch -D` de celles qu'aucun worktree ne tient et dont la tête est dans `main` ou une branche de suivi distante | aucune |
+| Caches d'agents | au `SubagentStop` seulement, supprime les sous-dossiers directs du dossier que nomme la transcription de l'agent qui s'arrête (`agent_transcript_path`) ; un voisin, un lien symbolique, un fichier restent | `agent-cache-dir` |
+| Bundles de sauvetage | supprime chaque `*.bundle` dont toutes les têtes (`git bundle list-heads`) existent dans le dépôt et sont dans `main` ou une branche distante ; un bundle illisible ou à tête absente reste et est signalé | `rescue-bundle-dir` |
+
+Un agent est fini quand le détenteur de son verrou ne vit plus. Le verrou de Claude Code
+(`claude agent agent-<id> (pid <N> start <S>)`) nomme le pid de la session, pas celui de l'agent :
+il vit tant que la session vit. Un pid qui vit mais n'a plus la date de départ du verrou a été
+réattribué et compte comme mort ; c'est la règle de `live_agents`, partagée par
+`handoff_header.lock_holder_alive`. Sous Windows le verrou s'arrête au pid, et un pid vivant vaut
+détenteur vivant. Au `SubagentStop`, le worktree de l'agent qui s'arrête est encore verrouillé par la
+session vivante : il reste, et un passage suivant le retire.
+
+`guard_git` continue de refuser `git branch -D` à un agent et n'a pas changé : le hook lance
+lui-même cette commande, par `subprocess`, sur le seul motif `worktree-agent-*` et ces conditions.
+Les deux clés sont des dossiers, `~` développé ; une clé absente rend son étape « sans objet (clé
+`<nom>` absente) », sans valeur par défaut, et un dossier qui contient le home ou le dépôt est ignoré.
+Les caches ne se purgent jamais au `SessionStart` : d'autres sessions du poste peuvent avoir des
+agents vivants dans le même dossier. Chaque élément retiré, supprimé ou laissé fait une ligne, dans
+`systemMessage` (et `additionalContext` au `SessionStart`) ; rien n'est dit quand il n'y a rien.
+
+Limites connues :
+
+- « Contenu dans une branche distante » se lit dans les branches de suivi telles qu'elles sont au
+  dernier `git fetch` : une branche poussée par un autre poste y est absente tant qu'on n'a pas
+  récupéré.
+- Un fichier ignoré par git (`node_modules`, un cache de build) disparaît avec le worktree propre
+  qui le portait : `git status --porcelain` ne le liste pas.
+- Un cache nommé par la transcription d'un agent qui s'arrête, mais dont `guard_output` refuse la
+  sortie au même `SubagentStop`, est supprimé alors que l'agent continue (les deux hooks tournent en
+  parallèle) : l'agent le recrée.
+- Une branche `worktree-agent-*` sans worktree et à la tête de `main` est supprimée : un agent que
+  Claude Code crée à l'instant, entre la création de sa branche et celle de son worktree, y est
+  exposé pendant quelques millisecondes.
+- Essayé par les tests seulement, sur des dépôts jetables (un dépôt nu en `origin`) sous Linux
+  (la date de départ du verrou n'y est comparée que sous Linux) ; rien n'a été essayé sous Windows
+  hors de la CI, qui ne prouve pas le hook sur un vrai poste. Que `agent_transcript_path` soit dans l'événement
+  `SubagentStop` est lu dans le schéma du binaire de Claude Code 2.1.325 et utilisé déjà par
+  `guard_output`, pas relevé sur un événement réel. Pas encore dans une vraie session.
+
 ## Compléter ou remplacer, sans éditer le plugin
 
 - **Un complément** est un fichier du projet : ses skills de domaine, son arbitre du métier, ses

@@ -78,6 +78,7 @@ ne fusionne une PR rouge, ou ne sort de son rôle.
 | `guard_report_mail` | le mail de relevé de l'usine (`scripts/report_mail.py`) suit `templates/report-mail.md` : `report_mail.py --sent` n'enregistre l'envoi que pour un mail qui porte « What changed », « Awaiting you », « CI and runners » et un tableau ([détail](docs/installation.md#le-mail-de-relevé)) |
 | `after_write` | formate chaque fichier écrit avec les formateurs que le projet déclare (clé `format-on-write`), puis refuse le tiret cadratin au-delà de ce que le projet admet |
 | `trim_output` | la longue sortie d'une commande de tests qui réussit est raccourcie, la sortie complète gardée dans un journal |
+| `agent_cleanup` | le ménage après un agent fini, sans geste à la main : son worktree propre est retiré (sale, il est laissé et signalé), sa branche `worktree-agent-*` orpheline et contenue dans `main` ou une branche distante est supprimée, et, si le projet déclare les clés `agent-cache-dir` et `rescue-bundle-dir`, ses caches et les bundles de sauvetage contenus ; il n'est pas un garde : il échoue ouvert et ne bloque jamais ([détail](docs/installation.md#le-ménage-après-un-agent)) |
 | `sessions_notice`, `handoff_*` | une seule session par dépôt, et la passation à une nouvelle session quand le contexte atteint 300 000 jetons (400 000 avec une feature), 200 relais par jour et par projet au plus |
 
 ## The infrastructure guard
