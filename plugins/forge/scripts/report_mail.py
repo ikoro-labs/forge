@@ -4,10 +4,12 @@
     report_mail.py [--root <dir>] [--state-dir <dir>] --sent   record the mail printed last as sent
     report_mail.py [--root <dir>] --line     print the "CI and runners" part in one line (no state)
     report_mail.py [--root <dir>] --slots    print the free slots in one line (no state)
+    report_mail.py [--root <dir>] --features print the Features block in Markdown (no state)
 
-Exit code: 0 when a mail is due, 10 when nothing happened since the last one sent (nothing is
-printed), 2 on a missing key or a usage error, 1 when `gh` fails. A mail is due when, since the
-last send: a PR merged, a verdict was posted, the set of items under the attention label changed, the
+Exit code: 0 when a mail is due (and for `--line`, `--slots` and `--features`, which print), 10 when
+nothing happened since the last one sent (nothing is printed), 2 on a missing key or a usage error,
+1 when `gh` fails (the survey of the mail, and of `--line`, `--slots` and `--features`). A mail is
+due when, since the last send: a PR merged, a verdict was posted, the set of items under the attention label changed, the
 last finished run of main changed or is red, an open PR changed (head, checks, mergeability), the
 runners of a host changed (online count), or, with `report-digest-hour`, no mail went out yet this
 UTC day and that hour has passed. The first run has no baseline: it sends one mail without a change
@@ -29,7 +31,14 @@ A feature `gh` cannot read says "tickets not read", never a guessed figure. With
 "Awaiting you" proposes at most N ready tickets (features in folder order, tickets in sub-issue
 order) and asks which to launch; with 0 or unknown slots the part says "no proposal" and why. The mail
 launches nothing, and this part is never an event: it does not make a mail due.
-`features_state` returns these as data, for any other rendering.
+`features_state` returns these as data, for any other rendering: besides the above, per feature its
+blocked tickets (open, with an open blocker) and, with N free slots, up to N features that have a ready
+ticket. `--features` renders that data as the field `Features` of the session's reply
+(`templates/session-reply.md`, written by `features_block.py`, which the output guard also reads): a
+line `Features:`, a table (`Feature | Closed / total | Open PRs | Blocked | Ready`, one row per open
+feature, a feature `gh` cannot read saying "tickets not read"), then one line, `In parallel:`, that
+names the ready tickets and the features that can start in the free slots, or says "no proposal" and
+why. Without `report-repo`, or without `feature-dir`, or without an open feature, one line says so.
 
 Keys read (no default; a key absent makes its part say so, except `report-repo`, which stops the
 script): `report-repo` (repeatable), `report-attention-label`, `report-main-workflow`,
@@ -59,6 +68,7 @@ PLUGIN = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PLUGIN / "hooks"))
 sys.path.insert(0, str(PLUGIN / "scripts"))
 import completion  # noqa: E402
+import features_block  # noqa: E402
 from guard_ticket_budget import feature_dir  # noqa: E402
 from usine import load, project_root, split_value  # noqa: E402
 
@@ -353,15 +363,21 @@ def features_state(
     """The open features of the project and what the human can launch, as data.
 
     `note` is the one line that says there is nothing to list; else `features` holds, per feature,
-    `label`, `percent` (`completion.percent`), `prs`, `ready` (numbers) and `error`, the reason its
-    tickets were not read. `free` is the free slots (None unknown); `proposal` is up to `free` ready
-    tickets as `(feature, number)`, and `why` says why there is none when it is empty for lack of slots.
+    `feature`, `label`, `percent` (`completion.percent`), `prs`, `blocked` (the open tickets with an
+    open blocker), `ready` (numbers) and `error`, the reason its tickets were not read. `absent` names
+    the key whose absence leaves nothing to list. `free` is the free slots (None unknown); `proposal`
+    is up to `free` ready tickets as `(feature, number)`, `parallel` up to `free` features with a ready
+    ticket, in folder order, and `why` says why there is none when it is empty for lack of slots.
     """
-    state: dict[str, Any] = {"note": None, "features": [], "free": None, "proposal": [], "why": None}
+    state: dict[str, Any] = {
+        "note": None, "absent": None, "features": [], "free": None, "proposal": [], "parallel": [],
+        "why": None,
+    }
     directory = feature_dir(config)
     repo = (config.get("report-repo") or [""])[0]
     if directory is None:
         state["note"] = "No feature list: key `feature-dir` absent."
+        state["absent"] = "feature-dir"
         return state
     chosen = completion.open_features(root, config, directory)
     if not chosen:
@@ -378,8 +394,8 @@ def features_state(
     for feature, folder in chosen.items():
         header = completion.idea(folder)
         entry: dict[str, Any] = {
-            "label": completion.feature_label(feature, header),
-            "percent": None, "prs": [], "ready": [], "error": None,
+            "feature": feature, "label": completion.feature_label(feature, header),
+            "percent": None, "prs": [], "blocked": [], "ready": [], "error": None,
         }
         state["features"].append(entry)
         tracking = header.get("issue", "")
@@ -393,6 +409,10 @@ def features_state(
         still_open, closed, _ = completion.tally(found)
         entry["percent"] = completion.percent(closed, len(still_open))
         entry["ready"] = [issue["number"] for issue in found if completion.is_ready(issue)]
+        entry["blocked"] = [
+            issue["number"] for issue in found
+            if str(issue["state"]).upper() == "OPEN" and issue["blockedBy"] > 0
+        ]
         entry["prs"] = [
             p["number"] for p in prs
             if {int(n) for n in CITES.findall(p["body"])} & {issue["number"] for issue in found}
@@ -402,8 +422,9 @@ def features_state(
     if not free:
         state["why"] = f"free slots {'unknown' if free is None else free}"
         return state
-    ready = [(e["label"].split()[0], n) for e in state["features"] for n in e["ready"]]
+    ready = [(e["feature"], n) for e in state["features"] for n in e["ready"]]
     state["proposal"] = ready[:free]
+    state["parallel"] = [e["feature"] for e in state["features"] if e["ready"]][:free]
     return state
 
 
@@ -558,6 +579,7 @@ def main(
     parser.add_argument("--sent", action="store_true")
     parser.add_argument("--line", action="store_true")
     parser.add_argument("--slots", action="store_true")
+    parser.add_argument("--features", action="store_true")
     args = parser.parse_args(list(argv))
     probe = functools.cache(probe)  # the mail reads each probe for its line and for the floors
     root = Path(args.root) if args.root else project_root()
@@ -577,15 +599,21 @@ def main(
     if args.slots and not repos:
         sys.stdout.write("Free slots: not applicable (key `report-repo` absent).\n")
         return 0
+    if args.features and not repos:
+        sys.stdout.write(features_block.not_applicable("report-repo"))
+        return 0
     if not repos:
         sys.stderr.write("the report needs the key `report-repo` in docs/agents/usine.md: none set\n")
         return 2
-    if args.line or args.slots:
+    if args.line or args.slots or args.features:
         try:
             surveys = {repo: _survey(gh, repo, config, None) for repo in repos}
         except (OSError, subprocess.CalledProcessError, ValueError, KeyError) as error:
             sys.stderr.write(f"gh failed: {error}\n")
             return 1
+        if args.features:
+            sys.stdout.write(features_block.render(features_state(config, surveys, probe, root, gh)))
+            return 0
         line = slots_line(config, surveys, probe) if args.slots else session_line(config, surveys, probe)
         sys.stdout.write(line + "\n")
         return 0

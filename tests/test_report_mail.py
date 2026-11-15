@@ -472,6 +472,121 @@ class FeaturesTests(unittest.TestCase):
         self.assertIn("Free slots: 1 ", report_mail.slots_line({}, surveys, lambda c: ""))
 
 
+BLOCK_SUBS = {40: [(11, CLOSED, "", 0, 0), (12, OPENED, READY, 0, 0), (13, OPENED, "", 0, 1)]}
+HEADER_ROW = "| Feature | Closed / total | Open PRs | Blocked | Ready |"
+
+
+class FeaturesBlockTests(unittest.TestCase):
+    """F-0181 A11: `--features` prints the features table and what can start in parallel."""
+
+    def block(self, config: str, fake: Fake, features: dict | None = None, probe=None) -> tuple[int, str, str]:
+        root, state = with_features(self, config, features if features is not None else {1: 40})
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = main(["--root", str(root), "--state-dir", str(state), "--features"], gh=fake,
+                        probe=probe or (lambda c: "mem-free 8 disk-free 50"), now=NOW)
+        self.assertFalse(state.exists())  # no state read for the mail, none written
+        return code, out.getvalue(), err.getvalue()
+
+    def test_a11_the_option_prints_the_table_of_each_open_feature(self) -> None:
+        fake = features_of(BLOCK_SUBS, open_prs=[PR_CITING, PR_OTHER])
+        code, out, _ = self.block(FEATURES, fake)
+        self.assertEqual(code, 0)
+        lines = out.splitlines()
+        self.assertEqual(lines[0], "Features:")
+        self.assertIn(HEADER_ROW, lines)
+        self.assertIn("| F-0001 demo 1 | 33 % (1 / 3) | #77 | #13 | #12 |", lines)
+
+    def test_a11_the_table_is_followed_by_the_line_of_what_runs_in_parallel(self) -> None:
+        subs = {40: [(12, OPENED, READY, 0, 0), (13, OPENED, READY, 0, 0), (14, OPENED, READY, 0, 0)],
+                41: [(21, OPENED, READY, 0, 0)], 42: [(31, OPENED, "", 0, 0)]}
+        runners = {"runners": [
+            {"name": f"r{i}", "status": "online", "busy": False, "labels": [{"name": "pc-label"}]}
+            for i in (1, 2)]}
+        _, out, _ = self.block(FEATURES, features_of(subs, runners=runners), {1: 40, 2: 41, 3: 42})
+        last = out.strip().splitlines()[-1]
+        self.assertTrue(last.startswith("In parallel:"), last)
+        self.assertIn("free slots 2", last)
+        self.assertRegex(last, r"tickets #12 \(F-0001\), #13 \(F-0001\)")
+        self.assertNotIn("#14", last)
+        self.assertRegex(last, r"features F-0001, F-0002\.$")  # F-0003 has no ready ticket
+
+    def test_a11_the_features_launched_are_at_most_the_free_slots(self) -> None:
+        subs = {40: [(12, OPENED, READY, 0, 0)], 41: [(21, OPENED, READY, 0, 0)]}
+        runners = {"runners": [{"name": "r1", "status": "online", "busy": False, "labels": [{"name": "pc-label"}]}]}
+        _, out, _ = self.block(FEATURES, features_of(subs, runners=runners), {1: 40, 2: 41})
+        last = out.strip().splitlines()[-1]
+        self.assertRegex(last, r"features F-0001\.$")
+
+    def test_a11_blocked_counts_open_tickets_with_an_open_blocker_only(self) -> None:
+        subs = {40: [(1, OPENED, READY, 0, 2), (2, CLOSED, "", 0, 1), (3, OPENED, "", 0, 0), (4, OPENED, "", 0, 1)]}
+        _, out, _ = self.block(FEATURES, features_of(subs))
+        row = next(line for line in out.splitlines() if line.startswith("| F-0001"))
+        self.assertEqual([cell.strip() for cell in row.strip("|").split("|")][3], "#1, #4")
+
+    def test_a11_a_feature_without_blocked_or_pr_says_none(self) -> None:
+        _, out, _ = self.block(FEATURES, features_of({40: [(1, OPENED, "", 0, 0)]}))
+        row = next(line for line in out.splitlines() if line.startswith("| F-0001"))
+        self.assertEqual([c.strip() for c in row.strip("|").split("|")][2:], ["none", "none", "none"])
+
+    def test_a11_unreadable_tickets_say_tickets_not_read_never_a_figure(self) -> None:
+        fake = features_of({40: subprocess.CalledProcessError(1, "gh")})
+        code, out, _ = self.block(FEATURES, fake)
+        self.assertEqual(code, 0)
+        row = next(line for line in out.splitlines() if line.startswith("| F-0001"))
+        self.assertIn("tickets not read", row)
+        self.assertNotIn("%", row)
+
+    def test_a11_zero_or_unknown_slots_give_no_proposal_and_say_why(self) -> None:
+        busy = {"runners": [{"name": "r1", "status": "online", "busy": True, "labels": [{"name": "pc-label"}]}]}
+        _, out, _ = self.block(FEATURES, features_of(SUBS, runners=busy))
+        self.assertEqual(out.strip().splitlines()[-1], "In parallel: no proposal, free slots 0.")
+        unread = features_of(SUBS, runners=subprocess.CalledProcessError(1, "gh"))
+        _, out, _ = self.block(FEATURES, unread)
+        self.assertEqual(out.strip().splitlines()[-1], "In parallel: no proposal, free slots unknown.")
+
+    def test_a11_free_slots_without_a_ready_ticket_say_so(self) -> None:
+        _, out, _ = self.block(FEATURES, features_of({40: [(13, OPENED, "", 0, 0)]}))
+        self.assertEqual(out.strip().splitlines()[-1], "In parallel: no proposal, no ready ticket.")
+
+    def test_a11_the_state_and_the_mail_come_from_one_calculation(self) -> None:
+        # The ready tickets of the table are the ones the mail proposes.
+        subs = {40: [(12, OPENED, READY, 0, 0), (13, OPENED, READY, 0, 0)]}
+        runners = {"runners": [{"name": "r1", "status": "online", "busy": False, "labels": [{"name": "pc-label"}]}]}
+        _, out, _ = self.block(FEATURES, features_of(subs, runners=runners))
+        _, mail, _ = FeaturesTests.mail(self, FEATURES, features_of(subs, runners=runners))
+        self.assertIn("#12", out.strip().splitlines()[-1])
+        self.assertRegex(part(mail, "Awaiting you"), r"#12")
+
+    def test_a11_without_a_key_or_an_open_feature_one_line_says_so(self) -> None:
+        # The key falls back to the plugin template's value: only a template without it leaves none.
+        with mock.patch("guard_ticket_budget.TEMPLATE", Path("missing") / "usine.md"):
+            _, out, _ = self.block(CONFIG, features_of({}), {})
+        self.assertEqual(out, "Features: not applicable (key `feature-dir` absent).\n")
+        _, out, _ = self.block(FEATURES, features_of({}), {})
+        self.assertEqual(out, "Features: no open feature.\n")
+        with project("- `feature-dir` : `docs/features`\n") as (root, state):
+            code, out, _ = run(root, state, Fake(), "--features")
+        self.assertEqual((code, out), (0, "Features: not applicable (key `report-repo` absent).\n"))
+
+    def test_a11_a_gh_failure_exits_1_as_the_line_does(self) -> None:
+        class Failing(Fake):
+            def __call__(self, args: list[str]) -> str:
+                raise subprocess.CalledProcessError(1, "gh")
+
+        for option in ("--line", "--features"):
+            with self.subTest(option=option), project(FEATURES) as (root, state):
+                code, out, err = run(root, state, Failing(), option)
+                self.assertEqual((code, out), (1, ""))
+                self.assertIn("gh failed", err)
+
+    def test_a11_the_mail_html_is_unchanged_by_the_new_data(self) -> None:
+        subs = {40: [(12, OPENED, READY, 0, 0), (13, OPENED, "", 0, 1)]}
+        _, mail, _ = FeaturesTests.mail(self, FEATURES, features_of(subs))
+        self.assertNotIn("Blocked", mail)
+        self.assertNotIn("In parallel", mail)
+
+
 class FeatureBuildTests(unittest.TestCase):
     def test_a10_feature_build_reads_the_slots_before_each_coder(self) -> None:
         text = (support.PLUGIN / "skills" / "feature-build" / "SKILL.md").read_text(encoding="utf-8")
