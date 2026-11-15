@@ -7,6 +7,9 @@
 <h3>Awaiting you</h3>
 <One line per thing only the human can do, or "Nothing.">
 
+<h3>Features</h3>
+<One line per open feature: its percent, its open PRs, its ready tickets; or one line saying there is none. With free slots, "Awaiting you" proposes the ready tickets that fit and asks which to launch; without, this part says why there is no proposal. Optional: not an event.>
+
 <h3>CI and runners</h3>
 <A table of the runners by host, then one line each: queued and running runs, the last run of main, memory and disk of each host.>
 

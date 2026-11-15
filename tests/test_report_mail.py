@@ -427,6 +427,49 @@ class FeaturesTests(unittest.TestCase):
         self.assertIn("F-0001", part(out.getvalue(), "Features"))
         self.assertNotIn("F-0002", part(out.getvalue(), "Features"))
 
+    def test_a9_1_free_slots_propose_that_many_ready_tickets_and_ask_which_to_launch(self) -> None:
+        subs = {40: [(12, OPENED, READY, 0, 0), (13, OPENED, READY, 0, 0), (14, OPENED, READY, 0, 0)]}
+        runners = {"runners": [
+            {"name": f"r{i}", "status": "online", "busy": False, "labels": [{"name": "pc-label"}]}
+            for i in (1, 2)]}
+        code, mail, _ = self.mail(FEATURES, features_of(subs, runners=runners))
+        self.assertEqual(code, 0)
+        waiting = part(mail, "Awaiting you")
+        self.assertRegex(waiting, r"#12.*#13")
+        self.assertNotIn("#14", waiting)
+        self.assertRegex(waiting, r"(?i)which")
+        self.assertRegex(waiting, r"(?i)starts? nothing|launch")
+
+    def test_a9_1_no_ready_ticket_means_no_proposal(self) -> None:
+        _, mail, _ = self.mail(FEATURES, features_of({40: [(13, OPENED, "", 0, 0)]}))
+        self.assertNotRegex(part(mail, "Awaiting you"), r"(?i)which")
+
+    def test_a9_2_unknown_slots_give_no_proposal_and_say_why(self) -> None:
+        fake = features_of(SUBS, runners=subprocess.CalledProcessError(1, "gh"))
+        _, mail, _ = self.mail(FEATURES, fake)
+        self.assertIn("no proposal: free slots unknown", part(mail, "Features"))
+        self.assertNotRegex(part(mail, "Awaiting you"), r"(?i)which")
+
+    def test_a9_2_zero_slots_give_no_proposal_and_say_why(self) -> None:
+        busy = {"runners": [{"name": "r1", "status": "online", "busy": True, "labels": [{"name": "pc-label"}]}]}
+        _, mail, _ = self.mail(FEATURES, features_of(SUBS, runners=busy))
+        self.assertIn("no proposal: free slots 0", part(mail, "Features"))
+        self.assertNotRegex(part(mail, "Awaiting you"), r"(?i)which")
+
+    def test_a9_3_the_features_part_does_not_make_the_mail_due(self) -> None:
+        root, state = with_features(self, FEATURES, {1: 40})
+        seed(state)
+        fake = features_of(SUBS, open_prs=[], merged=[OLD_PR])
+        code, out, _ = run(root, state, fake)
+        self.assertEqual(code, 10)
+        self.assertEqual(out, "")
+
+    def test_a9_the_slots_line_and_the_proposal_use_the_same_count(self) -> None:
+        import report_mail
+
+        surveys = {"acme/widgets": {"runners": {"": [("r1", True, False)]}}}
+        self.assertEqual(report_mail.free_slots({}, surveys, lambda c: "")[0], 1)
+        self.assertIn("Free slots: 1 ", report_mail.slots_line({}, surveys, lambda c: ""))
 
 
 class FeatureBuildTests(unittest.TestCase):

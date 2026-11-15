@@ -306,8 +306,10 @@ def _under_floor(floor: Sequence[str], command: str | None, probe: Probe) -> str
     return None
 
 
-def slots_line(config: Mapping[str, list[str]], surveys: Mapping[str, dict], probe: Probe) -> str:
-    """The free slots in one line: `Free slots: <n|unknown> (<host> <n>[, why]; ...).`"""
+def free_slots(
+    config: Mapping[str, list[str]], surveys: Mapping[str, dict], probe: Probe
+) -> tuple[int | None, list[str]]:
+    """The free slots, None when unknown, and one piece per host saying how the count came."""
     floors = {f[0]: f[1:] for f in (split_value(v, 3) for v in config.get("report-host-floor", [])) if f}
     commands = _pairs(config, "report-host-probe")
     hosts = list(_pairs(config, "report-host")) or [""]
@@ -333,6 +335,12 @@ def slots_line(config: Mapping[str, list[str]], surveys: Mapping[str, dict], pro
         )
         total = None if total is None else total + free
         pieces.append(f"{name} {free}")
+    return total, pieces
+
+
+def slots_line(config: Mapping[str, list[str]], surveys: Mapping[str, dict], probe: Probe) -> str:
+    """The free slots in one line: `Free slots: <n|unknown> (<host> <n>[, why]; ...).`"""
+    total, pieces = free_slots(config, surveys, probe)
     return f"Free slots: {'unknown' if total is None else total} ({'; '.join(pieces)})."
 
 
@@ -389,6 +397,13 @@ def features_state(
             p["number"] for p in prs
             if {int(n) for n in CITES.findall(p["body"])} & {issue["number"] for issue in found}
         ]
+    free, _ = free_slots(config, surveys, probe)
+    state["free"] = free
+    if not free:
+        state["why"] = f"free slots {'unknown' if free is None else free}"
+        return state
+    ready = [(e["label"].split()[0], n) for e in state["features"] for n in e["ready"]]
+    state["proposal"] = ready[:free]
     return state
 
 
@@ -406,6 +421,8 @@ def _features_part(state: Mapping[str, Any]) -> str:
         )
         out.append(f"<li>{e(entry['label'])}: {e(text)}.</li>")
     out.append("</ul>")
+    if state["why"]:
+        out.append(f"<p>no proposal: {e(state['why'])}.</p>")
     return "".join(out)
 
 
@@ -511,6 +528,13 @@ def build(
         out.append(f"<p>Since {e(str(since))}.</p><ul>" + "".join(f"<li>{e(c)}</li>" for c in changes) + "</ul>")
     else:
         out.append(f"<p>Since {e(str(since))}: nothing changed (digest).</p>")
+    if features and features["proposal"]:
+        waiting.append(
+            "Free slots "
+            + f"{features['free']}: ready to launch "
+            + ", ".join(f"#{n} ({f})" for f, n in features["proposal"])
+            + ". Which should I launch? This mail starts nothing."
+        )
     out.append("<h3>Awaiting you</h3>")
     out.append(
         "<ul>" + "".join(f"<li>{e(w)}</li>" for w in waiting) + "</ul>" if waiting else "<p>Nothing.</p>"
