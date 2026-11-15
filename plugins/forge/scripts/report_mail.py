@@ -3,6 +3,7 @@
     report_mail.py [--root <dir>] [--state-dir <dir>]     print the mail (HTML) on standard output
     report_mail.py [--root <dir>] [--state-dir <dir>] --sent   record the mail printed last as sent
     report_mail.py [--root <dir>] --line     print the "CI and runners" part in one line (no state)
+    report_mail.py [--root <dir>] --slots    print the free slots in one line (no state)
 
 Exit code: 0 when a mail is due, 10 when nothing happened since the last one sent (nothing is
 printed), 2 on a missing key or a usage error, 1 when `gh` fails. A mail is due when, since the
@@ -12,19 +13,27 @@ runners of a host changed (online count), or, with `report-digest-hour`, no mail
 UTC day and that hour has passed. The first run has no baseline: it sends one mail without a change
 list. The mail keeps what changed since the last send, plus the present state of CI and runners.
 
+Free slots: a host's slots are its free runners (online, not busy), across the repositories read.
+A host with a `report-host-floor` gets none when its probe reads free memory or disk under the floor,
+or when the probe fails or prints no `mem-free <GiB>` and `disk-free <GiB>`. The total is unknown
+when the runners of a host still counted could not be read (a token without administrator rights).
+`feature-build` reads `--slots` before each coder: 0, no coder starts.
+
 Keys read (no default; a key absent makes its part say so, except `report-repo`, which stops the
 script): `report-repo` (repeatable), `report-attention-label`, `report-main-workflow`,
 `report-host` (`<host> | <runner label>`), `report-host-probe` (`<host> | <command>`),
-`report-digest-hour`. The state lives in `--state-dir`, else in
+`report-digest-hour`, `report-host-floor` (`<host> | <memory GiB> | <disk GiB>`). The state lives in `--state-dir`, else in
 `~/.claude/hooks/state/report-mail/<repository>`.
 """
 
 from __future__ import annotations
 
 import argparse
+import functools
 import html
 import json
 import os
+import re
 import statistics
 import subprocess
 import sys
@@ -262,6 +271,54 @@ def _probe_lines(config: Mapping[str, list[str]], hosts: Sequence[str], probe: P
     return lines
 
 
+FREE = {"mem": re.compile(r"\bmem-free[ =:]*(\d+(?:\.\d+)?)"), "disk": re.compile(r"\bdisk-free[ =:]*(\d+(?:\.\d+)?)")}
+
+
+def _under_floor(floor: Sequence[str], command: str | None, probe: Probe) -> str | None:
+    """Why the host gets no slot under its floor `(mem, disk)`, or None when it is above it."""
+    try:
+        text = probe(command) if command else ""
+    except (OSError, subprocess.SubprocessError):
+        text = ""
+    for (kind, pattern), minimum in zip(FREE.items(), floor):
+        found = pattern.search(text)
+        if not found:
+            return "probe unreadable"
+        if float(found.group(1)) < float(minimum):
+            return f"under its floor ({kind}-free {found.group(1)} < {minimum})"
+    return None
+
+
+def slots_line(config: Mapping[str, list[str]], surveys: Mapping[str, dict], probe: Probe) -> str:
+    """The free slots in one line: `Free slots: <n|unknown> (<host> <n>[, why]; ...).`"""
+    floors = {f[0]: f[1:] for f in (split_value(v, 3) for v in config.get("report-host-floor", [])) if f}
+    commands = _pairs(config, "report-host-probe")
+    hosts = list(_pairs(config, "report-host")) or [""]
+    total: int | None = 0
+    pieces: list[str] = []
+    for host in hosts:
+        why = _under_floor(floors[host], commands.get(host), probe) if host in floors else None
+        name = host or "all runners"
+        if why:
+            pieces.append(f"{name} 0, {why}")
+            continue
+        if any(s["runners"] is None for s in surveys.values()):
+            total = None
+            pieces.append(f"{name} unknown, runners not read")
+            continue
+        free = sum(
+            1
+            for s in surveys.values()
+            for h, rows in s["runners"].items()
+            if h == host or not host
+            for _, online, busy in rows
+            if online and not busy
+        )
+        total = None if total is None else total + free
+        pieces.append(f"{name} {free}")
+    return f"Free slots: {'unknown' if total is None else total} ({'; '.join(pieces)})."
+
+
 def _ci_part(surveys: Mapping[str, dict], config: Mapping[str, list[str]], probe: Probe) -> str:
     e = html.escape
     out = ["<h3>CI and runners</h3>"]
@@ -296,6 +353,7 @@ def _ci_part(surveys: Mapping[str, dict], config: Mapping[str, list[str]], probe
     hosts_listed = [h for h in (split_value(v, 2) for v in config.get("report-host", [])) if h]
     for line in _probe_lines(config, [h[0] for h in hosts_listed], probe):
         out.append(f"<li>{e(line)}</li>")
+    out.append(f"<li>{e(slots_line(config, surveys, probe))}</li>")
     out.append("</ul>")
     return "".join(out)
 
@@ -382,7 +440,9 @@ def main(
     parser.add_argument("--state-dir")
     parser.add_argument("--sent", action="store_true")
     parser.add_argument("--line", action="store_true")
+    parser.add_argument("--slots", action="store_true")
     args = parser.parse_args(list(argv))
+    probe = functools.cache(probe)  # the mail reads each probe for its line and for the floors
     root = Path(args.root) if args.root else project_root()
     config = load(root)
     folder = state_dir(config, args.state_dir)
@@ -397,16 +457,20 @@ def main(
     if args.line and not repos:
         sys.stdout.write("CI and runners: not applicable (key `report-repo` absent).\n")
         return 0
+    if args.slots and not repos:
+        sys.stdout.write("Free slots: not applicable (key `report-repo` absent).\n")
+        return 0
     if not repos:
         sys.stderr.write("the report needs the key `report-repo` in docs/agents/usine.md: none set\n")
         return 2
-    if args.line:
+    if args.line or args.slots:
         try:
             surveys = {repo: _survey(gh, repo, config, None) for repo in repos}
         except (OSError, subprocess.CalledProcessError, ValueError, KeyError) as error:
             sys.stderr.write(f"gh failed: {error}\n")
             return 1
-        sys.stdout.write(session_line(config, surveys, probe) + "\n")
+        line = slots_line(config, surveys, probe) if args.slots else session_line(config, surveys, probe)
+        sys.stdout.write(line + "\n")
         return 0
     moment = now or datetime.now(timezone.utc)
     try:

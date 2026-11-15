@@ -250,6 +250,70 @@ class SessionLineTests(unittest.TestCase):
             self.assertIn("not applicable (key `report-repo` absent)", out)
 
 
+FLOORS = CONFIG + "- `report-host-floor` : `pc | 2 | 10`\n- `report-host-floor` : `vps | 1 | 5`\n"
+
+
+def slots(config: str, readings: dict[str, str], fake: Fake | None = None) -> tuple[int, str]:
+    """`--slots` with a probe that prints `readings[command]`, or fails when the command is absent."""
+    def probe(command: str) -> str:
+        if command not in readings:
+            raise OSError("no route")
+        return readings[command]
+
+    with project(config) as (root, state):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+            code = main(["--root", str(root), "--state-dir", str(state), "--slots"],
+                        gh=fake or Fake(), probe=probe, now=NOW)
+        return code, out.getvalue()
+
+
+PC_PROBE = "echo mem 3/16G disk 40/200G"
+
+
+class SlotsTests(unittest.TestCase):
+    def test_a8_free_runners_of_hosts_above_their_floor_are_the_free_slots(self) -> None:
+        config = FLOORS + "- `report-host-probe` : `vps | probe-vps`\n"
+        code, out = slots(config, {PC_PROBE: "mem-free 4 disk-free 50", "probe-vps": "mem-free 9 disk-free 80"})
+        self.assertEqual(code, 0)
+        self.assertEqual(len(out.strip().splitlines()), 1)
+        self.assertTrue(out.startswith("Free slots: 1 "), out)  # r2 on pc; r1 busy, r3 offline
+        self.assertIn("pc 1", out)
+        self.assertIn("vps 0", out)
+
+    def test_a8_a_host_under_its_floor_has_no_slot(self) -> None:
+        code, out = slots(FLOORS, {PC_PROBE: "mem-free 1.5 disk-free 50"})
+        self.assertEqual(code, 0)
+        self.assertTrue(out.startswith("Free slots: 0 "), out)
+        self.assertIn("pc 0, under its floor", out)
+
+    def test_a8_a_disk_under_its_floor_has_no_slot(self) -> None:
+        _, out = slots(FLOORS, {PC_PROBE: "mem-free 8 disk-free 0.5"})
+        self.assertTrue(out.startswith("Free slots: 0 "), out)
+
+    def test_a8_a_floor_without_a_readable_probe_gives_no_slot(self) -> None:
+        _, out = slots(FLOORS, {PC_PROBE: "mem 3/16G"})
+        self.assertIn("pc 0, probe unreadable", out)
+        _, out = slots(FLOORS, {})
+        self.assertIn("pc 0, probe unreadable", out)
+
+    def test_a8_unreadable_runners_leave_the_count_unknown(self) -> None:
+        refused = subprocess.CalledProcessError(1, ["gh", "api", "actions/runners"])
+        _, out = slots(FLOORS, {PC_PROBE: "mem-free 4 disk-free 50"}, Fake(runners=refused))
+        self.assertTrue(out.startswith("Free slots: unknown "), out)
+        _, out = slots(FLOORS, {PC_PROBE: "mem-free 1 disk-free 50"}, Fake(runners=refused))
+        self.assertIn("pc 0, under its floor", out)
+
+    def test_a8_without_a_floor_a_host_counts_its_free_runners(self) -> None:
+        _, out = slots(CONFIG, {})
+        self.assertTrue(out.startswith("Free slots: 1 "), out)
+
+    def test_a8_without_the_repository_key_slots_are_not_applicable(self) -> None:
+        code, out = slots("- `report-host` : `pc | pc-label`\n", {})
+        self.assertEqual(code, 0)
+        self.assertIn("not applicable", out)
+
+
 class TemplateTests(unittest.TestCase):
     def test_a1_the_usine_template_documents_every_key_the_script_reads(self) -> None:
         from usine import parse

@@ -500,6 +500,15 @@ script n'échoue pas.
 
 - `report-host-probe` : `<poste | free -h | awk 'NR==2{print "mem " $3 "/" $2}'; df -h / | awk 'NR==2{print "disk " $3 "/" $2}'>`
 
+Le plancher d'un hôte, en Gio libres : `<hôte> | <mémoire> | <disque>`. Les places libres d'un hôte
+sont ses runners libres (en ligne, pas occupés) ; sous son plancher, il n'en a aucune. Sa sonde doit
+alors imprimer `mem-free <Gio>` et `disk-free <Gio>` : une sonde en échec ou sans ces deux mesures
+donne aucune place. `report_mail.py --slots` rend le total en une ligne, `unknown` quand les runners
+d'un hôte compté sont illisibles (jeton sans droit d'administration) ; `feature-build` le lit avant
+chaque coder. Sans la clé, un hôte compte ses runners libres sans plancher.
+
+- `report-host-floor` : `<poste | 2 | 10>`
+
 L'heure UTC après laquelle un bilan du jour part même sans événement. Sans la clé, aucun bilan : un
 jour sans événement n'envoie rien.
 
