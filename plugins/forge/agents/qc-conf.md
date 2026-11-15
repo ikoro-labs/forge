@@ -150,6 +150,22 @@ Une sonde `NOT RUN` ou `FAIL` se dit dans `GATES`, jamais lue comme « aucun tes
 sonde « sans objet » (clé `test-path` ou `red-replay` absente) se dit aussi dans `GATES` et ne donne
 aucun constat. En une passe, il n'y a pas de tableau : dis dans `GATES` que le rejeu n'a pas eu lieu.
 
+## Lecture du rejeu de chaque commit
+
+Le tableau de `forge:qc-gate` porte une sonde **Rejeu de chaque commit** : la suite (clé `ci-replay`)
+rejouée sur chaque commit de la PR, pris seul. Tu ne refais pas sa mesure, tu lis ses lignes.
+
+- Une ligne `FAIL` : ce commit, pris seul, ne passe pas la suite, que la tête passe ou non. Un
+  `git bisect` sur la base qui tomberait sur lui s'arrêterait sur un commit rouge, et la règle du
+  projet demande un commit vert par critère. Sévérité `BLOCKER`, parce que c'est une mesure et non
+  un avis, et le champ règle cite `F-24`. Le scénario d'échec est ce `git bisect` : le sha court de
+  la ligne, et la fin de sa sortie. Le corriger revient au coder, en mode correction : tu ne
+  proposes pas de réécrire l'historique toi-même.
+- Une ligne `NOT RUN` (copie non extraite, budget du poste, délai, borne) : la mesure manque, ce
+  n'est pas un constat. Dis-la dans `GATES` avec sa raison, jamais lue comme « chaque commit passe ».
+- Une sonde « sans objet » (clé `ci-replay` ou `run-limits` absente) se dit dans `GATES` et ne donne
+  aucun constat. En une passe, il n'y a pas de tableau : dis dans `GATES` que le rejeu n'a pas eu lieu.
+
 ## Lecture des libellés de l'écran
 
 Le tableau de `forge:qc-gate` porte une sonde **Libellés de l'écran** : chaque libellé que la PR ajoute

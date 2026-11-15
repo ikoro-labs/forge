@@ -42,8 +42,8 @@ quand le code est 120 à 124 : 120 le poste est hors budget après l'attente, 12
 être posée, 123 la mémoire est probablement atteinte, 124 le délai est passé. Ce sont des `FAIL` ou
 des `NOT RUN` avec la commande, jamais un `PASS`. Quand la base n'a pas la clé `run-limits`, ces
 sondes se rendent `sans objet (clé `run-limits` absente)` : tu ne lances pas la commande sans borne.
-Une clé `run-budget` absente se dit dans la ligne de la sonde, sans la bloquer. La sonde 11 borne
-elle-même ses commandes.
+Une clé `run-budget` absente se dit dans la ligne de la sonde, sans la bloquer. Les sondes 11 et 14 bornent
+elles-mêmes leurs commandes.
 
 ## Sondes, dans cet ordre
 
@@ -161,6 +161,27 @@ elle-même ses commandes.
     du parcours est une ligne `PARCOURS-TOUCHE`, et sans capture jointe, `MANQUE`. Tu ne juges pas une capture
     et tu ne l'ouvres pas : tu rends ce que le script a mesuré.
 
+14. **Rejeu de chaque commit.** Quand le projet demande un commit vert par critère, rien ne le tient tant
+    que la suite ne tourne que sur la tête : un commit intermédiaire rouge fait tomber un `git bisect`
+    sur la base. Avec les clés de la base, écrites à la sonde 10 dans `usine-base.md`, après avoir lu le
+    budget du poste comme à la sonde 11
+    (`uv run --no-project --quiet python "${CLAUDE_PLUGIN_ROOT}/scripts/bounded_run.py" --usine usine-base.md --check` :
+    code 120, la sonde est `NOT RUN` avec la raison de stderr ; « sans objet (clé `run-budget`
+    absente) », elle part) :
+    `uv run --no-project --quiet python "${CLAUDE_PLUGIN_ROOT}/scripts/commit_replay.py" --base origin/<base> --head <tête> --usine usine-base.md`,
+    lancé depuis un clone du projet (le script liste les commits propres à la PR, du plus ancien au plus
+    récent, en extrait chacun par `git archive` dans sa propre copie, supprimée ensuite, rejoue `install`
+    puis chaque commande de `ci-replay` sous la borne, et n'écrit rien dans le dépôt, configuration
+    comprise). Recopie chaque ligne du script, verbatim, et son code de sortie : 0 chaque commit passe
+    (`PASS`), 1 un commit échoue (rends chaque ligne `FAIL` avec son sha court et la fin de sa sortie,
+    tu ne la juges pas : `forge:qc-conf` le fait), 2 un rejeu n'a pas pu tourner ou
+    l'appel a échoué (`NOT RUN` avec sa commande, jamais `PASS`). Le script borne lui-même mémoire et
+    délai de chaque commande, et attend le budget du poste avant chaque commit : un commit hors budget,
+    ou dont la copie ne s'extrait pas, est `NOT RUN`. Quand le script rend
+    `sans objet (clé ci-replay absente)` ou `sans objet (clé run-limits absente)`, la sonde se rend ainsi.
+    Un `PASS` sur la tête ne remplace pas ces lignes : chaque commit a la sienne. La sonde peut durer le
+    temps de la suite multiplié par le nombre de commits ; un délai atteint est un `NOT RUN`.
+
 Aux tours 2 et 3, rejoue toutes les sondes : une correction peut casser ce qui passait.
 
 ## Sortie
@@ -175,5 +196,5 @@ Un tableau, rien d'autre, au plus trente lignes :
 | ... | ... | ... |
 ```
 
-Puis, sous le tableau, les éléments verbatim des sondes 2, 5, 6, 7, 10, 11, 12 et 13. Une sonde que tu n'as pas
+Puis, sous le tableau, les éléments verbatim des sondes 2, 5, 6, 7, 10, 11, 12, 13 et 14. Une sonde que tu n'as pas
 pu exécuter s'écrit `NOT RUN` avec la commande et sa sortie d'erreur : jamais `PASS`.

@@ -319,7 +319,7 @@ class BaseReplayProbe(unittest.TestCase):
     def test_the_output_hands_the_probe_lines_to_the_judge(self) -> None:
         """No F-NNNN: ticket #43, critère 1: les lignes de la sonde figurent verbatim sous le tableau."""
         gate = self.read("agents", "qc-gate.md")
-        self.assertIn("les éléments verbatim des sondes 2, 5, 6, 7, 10, 11, 12 et 13", gate)
+        self.assertIn("les éléments verbatim des sondes 2, 5, 6, 7, 10, 11, 12, 13 et 14", gate)
 
     def test_the_template_documents_the_two_keys(self) -> None:
         """No F-NNNN: ticket #43, critère 3: test-path et red-replay sont documentées dans le gabarit."""
@@ -369,6 +369,68 @@ class BaseReplayProbe(unittest.TestCase):
         judge = self.read("agents", "qc-conf.md")
         self.assertLess(judge.index("## Lecture des tests"), judge.index("## Lecture du rejeu sur la base"))
         self.assertEqual(judge.count("## Lecture des tests"), 1)
+
+
+class CommitReplayProbe(unittest.TestCase):
+    """Ticket #69: the gate replays the suite on each commit of the PR, and the judge reads the lines."""
+
+    @staticmethod
+    def read(*parts: str) -> str:
+        return " ".join(support.PLUGIN.joinpath(*parts).read_text(encoding="utf-8").split())
+
+    def probe(self) -> str:
+        gate = self.read("agents", "qc-gate.md")
+        start = gate.index("14. **Rejeu de chaque commit.**")
+        return gate[start:gate.index("Aux tours 2 et 3", start)]
+
+    def test_the_gate_runs_the_script_with_the_keys_of_the_base(self) -> None:
+        """No F-NNNN: ticket #69, critère 1: une sonde lance commit_replay.py, clés lues sur la base, budget du poste lu avant."""
+        section = self.probe()
+        self.assertIn("${CLAUDE_PLUGIN_ROOT}/scripts/commit_replay.py", section)
+        self.assertIn("--base origin/<base> --head <tête>", section)
+        self.assertIn("--usine usine-base.md", section)
+        self.assertIn("bounded_run.py", section)
+        self.assertIn("--check", section)
+        self.assertIn("verbatim", section)
+
+    def test_the_gate_renders_a_red_commit_as_a_measure_and_an_impossible_replay_as_not_run(self) -> None:
+        """No F-NNNN: ticket #69, critère 2: une ligne FAIL est une mesure ; un rejeu impossible est NOT RUN, jamais PASS."""
+        section = self.probe()
+        self.assertIn("`FAIL`", section)
+        self.assertIn("tu ne la juges pas", section)
+        self.assertIn("`NOT RUN` avec sa commande", section)
+        self.assertIn("jamais `PASS`", section)
+        self.assertIn("sans objet (clé ci-replay absente)", section)
+        self.assertIn("sans objet (clé run-limits absente)", section)
+
+    def test_the_judge_makes_a_red_commit_a_blocker(self) -> None:
+        """No F-NNNN: ticket #69, critère 2: qc-conf lit les lignes FAIL de la sonde et en fait un BLOCKER qui cite F-24."""
+        judge = self.read("agents", "qc-conf.md")
+        section = judge[judge.index("## Lecture du rejeu de chaque commit"):]
+        section = section[:section.index("\n## ", 1)] if "\n## " in section[1:] else section
+        self.assertIn("`FAIL`", section)
+        self.assertIn("`BLOCKER`", section)
+        self.assertIn("`F-24`", section)
+        self.assertIn("git bisect", section)
+        self.assertIn("`NOT RUN`", section)
+        self.assertIn("`GATES`", section)
+
+    def test_the_socle_holds_the_rule_the_blocker_cites(self) -> None:
+        """No F-NNNN: ticket #69, critère 2: F-24 existe au socle, avec la sonde qui la mesure."""
+        socle = support.PLUGIN.joinpath("socle.md").read_text(encoding="utf-8")
+        row = next(line for line in socle.splitlines() if line.startswith("| F-24 |"))
+        self.assertIn("| test |", row)
+        self.assertIn("commit_replay.py", row)
+        self.assertIn("ci-replay", row)
+
+    def test_the_template_and_the_page_document_the_replay(self) -> None:
+        """No F-NNNN: ticket #69, critère 3: le gabarit et la page de configuration disent la sonde, ses clés et ce qui n'est pas éprouvé."""
+        template = self.read("templates", "usine.md")
+        self.assertIn("commit_replay.py", template)
+        page = " ".join((support.REPO_ROOT / "docs" / "installation.md").read_text(encoding="utf-8").split())
+        self.assertIn("commit_replay.py", page)
+        self.assertIn("git bisect", page)
+        self.assertIn("Éprouvé sous Linux seulement", page[page.index("commit_replay.py"):])
 
 
 class GateProbes(unittest.TestCase):
