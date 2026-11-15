@@ -52,5 +52,33 @@ class RedIntermediateCommit(unittest.TestCase):
         self.assertIn("AssertionError", rows[0][2])
 
 
+class GreenAtEveryCommit(unittest.TestCase):
+    def test_a_pr_green_at_each_commit_passes_in_order(self) -> None:
+        """No F-NNNN: ticket #69, critère 2: une PR verte à chaque commit rend une ligne PASS par commit, du plus ancien au plus récent."""
+        repo = Replay(self)
+        base = repo.commit({"code_under_test.py": CODE_V1, "tests/__init__.py": ""})
+        first = repo.commit({"code_under_test.py": CODE_V2, "tests/test_value.py": TEST_TWO})
+        second = repo.commit({"notes.txt": "rien"})
+        done = repo.commits(base, second, usine())
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        self.assertEqual(
+            [row[:2] for row in repo.rows(done)], [["PASS", first[:7]], ["PASS", second[:7]]], done.stdout
+        )
+
+    def test_a_commit_of_the_base_is_not_replayed(self) -> None:
+        """No F-NNNN: ticket #69, critère 1: seuls les commits que la PR ajoute à la base sont rejoués."""
+        repo = Replay(self)
+        # The base is red (its test fails): only the commits of the PR are judged, from the merge base.
+        repo.commit({"code_under_test.py": CODE_V1, "tests/__init__.py": "", "tests/test_value.py": TEST_TWO})
+        trunk = repo.git("branch", "--show-current")
+        repo.git("switch", "-q", "-c", "pr")
+        head = repo.commit({"code_under_test.py": CODE_V2})
+        repo.git("switch", "-q", trunk)
+        advanced = repo.commit({"autre.txt": "la base a avancé"})
+        done = repo.commits(trunk, head, usine())
+        self.assertEqual([row[:2] for row in repo.rows(done)], [["PASS", head[:7]]], done.stdout + done.stderr)
+        self.assertNotIn(advanced[:7], done.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()
