@@ -460,7 +460,7 @@ class Trigger(unittest.TestCase):
         its successor starts from the same state."""
         script = support.PLUGIN / "scripts" / "report_mail.py"
         command = f'uv run --no-project --quiet python "{script}" --features'
-        drain = " ".join((self.notice(150_000) or "").split())
+        drain = " ".join((self.notice(300_000) or "").split())
         self.assertIn(command, drain)
         self.assertRegex(drain, r"under `Features:`")
 
