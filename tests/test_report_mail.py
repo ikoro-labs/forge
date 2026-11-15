@@ -5,6 +5,7 @@ import io
 import json
 import os
 import re
+import subprocess
 import tempfile
 import unittest
 from collections.abc import Iterator
@@ -65,6 +66,8 @@ class Fake:
         if line.startswith("run list"):
             return json.dumps([{"databaseId": 2}, {"databaseId": 3}])
         if "actions/runners" in line:
+            if isinstance(self.runners, Exception):
+                raise self.runners
             return json.dumps(self.runners)
         if "issues/comments" in line:
             return json.dumps(self.verdicts)
@@ -199,6 +202,18 @@ class ReportMailTests(unittest.TestCase):
                                         gh=Fake(merged=[NEW_PR]), probe=broken, now=NOW)
             self.assertEqual(code, 0)
             self.assertIn("probe for host pc failed", out.getvalue())
+
+    def test_a5_unreadable_runners_do_not_fail_the_mail(self) -> None:
+        refused = subprocess.CalledProcessError(1, ["gh", "api", "actions/runners"])
+        with project() as (root, state):
+            seed(state)
+            code, out, _ = run(root, state, Fake(merged=[NEW_PR], runners=refused))
+            self.assertEqual(code, 0)
+            self.assertIn("runners not read", out)
+            self.assertIn("#2", out)
+            code, out, _ = run(root, state, Fake(runners=refused), "--line")
+            self.assertEqual(code, 0)
+            self.assertIn("acme/widgets: runners not read", out)
 
     def test_a5_without_a_host_key_the_part_says_so(self) -> None:
         with project("- `report-repo` : `acme/widgets`\n") as (root, state):
