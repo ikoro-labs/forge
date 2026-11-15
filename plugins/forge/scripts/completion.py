@@ -59,6 +59,9 @@ class CompletionError(ValueError):
     """A configuration or a count the table cannot trust."""
 
 
+READY_LABEL = "ready-for-agent"
+
+
 def _header(path: Path) -> dict[str, str]:
     try:
         return front_matter(path.read_text(encoding="utf-8"))
@@ -85,6 +88,27 @@ def folders(root: Path, directory: str) -> dict[str, Path]:
             if path.is_dir() and (match := FOLDER.match(path.name)):
                 found.setdefault(f"F-{match.group(1)}", path)
     return found
+
+
+def idea(folder: Path) -> dict[str, str]:
+    """The header of the feature's `idee.md`; empty when it cannot be read."""
+    return _header(folder / "idee.md")
+
+
+def open_features(root: Path, config: Mapping[str, list[str]], directory: str) -> dict[str, Path]:
+    """The open features: a folder without `README.md` whose `etat` is not a closed one."""
+    closed = closed_states(config)
+    return {
+        feature: folder
+        for feature, folder in folders(root, directory).items()
+        if not (folder / "README.md").exists() and idea(folder).get("etat") not in closed
+    }
+
+
+def feature_label(feature: str, header: Mapping[str, str]) -> str:
+    """`F-NNNN <title>`, or the bare number while the title is a template placeholder."""
+    title = header.get("titre", "")
+    return _cell(f"{feature} {title}" if title and not title.startswith("<") else feature)
 
 
 def _cell(text: str) -> str:
@@ -124,8 +148,12 @@ def percent(closed: int, still_open: int) -> str:
 
 
 def sub_issues(tracking: str, root: Path, run: Runner) -> list[dict] | None:
-    """The sub-issues of the tracking issue, each with its number, state and reason; None if unread."""
-    query = '.[] | [.number, .state, (.state_reason // "")] | @tsv'
+    """The sub-issues of the tracking issue, each with its number, state, reason, labels, assignees
+    and open blockers (the `blocked_by` of its dependencies summary); None if unread."""
+    query = (
+        '.[] | [.number, .state, (.state_reason // ""), ([.labels[].name] | join(",")),'
+        " (.assignees | length), (.issue_dependencies_summary.blocked_by // 0)] | @tsv"
+    )
     argv = ["api", f"repos/{{owner}}/{{repo}}/issues/{tracking}/sub_issues", "--paginate"]
     output = run([*argv, "--jq", query], str(root))
     if output is None:
@@ -135,11 +163,40 @@ def sub_issues(tracking: str, root: Path, run: Runner) -> list[dict] | None:
         if not line.strip():
             continue
         parts = line.split("\t")
-        if len(parts) != 3 or not parts[0].isdigit():
+        if len(parts) != 6 or not all(part.isdigit() for part in (parts[0], parts[4], parts[5])):
             return None
-        number, state, reason = parts
-        found.append({"number": int(number), "state": state, "stateReason": reason or None})
+        number, state, reason, labels, assignees, blocked = parts
+        found.append({
+            "number": int(number),
+            "state": state,
+            "stateReason": reason or None,
+            "labels": labels.split(",") if labels else [],
+            "assignees": int(assignees),
+            "blockedBy": int(blocked),
+        })
     return found
+
+
+def is_ready(issue: Mapping[str, object]) -> bool:
+    """The boundary of `feature-build`: open, labelled ready, nobody assigned, no open blocker."""
+    labels = issue.get("labels")
+    return (
+        str(issue.get("state", "")).upper() == "OPEN"
+        and isinstance(labels, list)
+        and READY_LABEL in labels
+        and issue.get("assignees") == 0
+        and issue.get("blockedBy") == 0
+    )
+
+
+def tally(found: list[dict]) -> tuple[list[int], int, list[int]]:
+    """The open numbers, the count of closed tickets and the numbers closed as not planned."""
+    out = sorted(issue["number"] for issue in found if released(issue))
+    counted = [issue for issue in found if not released(issue)]
+    still_open = sorted(
+        issue["number"] for issue in counted if str(issue.get("state", "")).upper() == "OPEN"
+    )
+    return still_open, len(counted) - len(still_open), out
 
 
 def searched(feature: str, root: Path, run: Runner) -> list[dict] | None:
@@ -153,10 +210,10 @@ def searched(feature: str, root: Path, run: Runner) -> list[dict] | None:
 def row(
     feature: str, folder: Path, root: Path, directory: str, run: Runner, now: Clock
 ) -> list[str]:
-    idea = _header(folder / "idee.md")
+    header = idea(folder)
     designs = find_design(root, directory, feature)
     budget = budget_of(_header(designs[0])) if len(designs) == 1 else None
-    tracking = idea.get("issue", "")
+    tracking = header.get("issue", "")
     if tracking.isdigit():
         found = sub_issues(tracking, root, run)
         source = f"{SUB_ISSUES_SOURCE} #{tracking}"
@@ -166,15 +223,9 @@ def row(
     if found is None:
         raise CompletionError(f"gh cannot list the tickets of {feature}: no row is guessed")
     read_at = now()
-    out = sorted(issue["number"] for issue in found if released(issue))
-    counted = [issue for issue in found if not released(issue)]
-    still_open = sorted(
-        issue["number"] for issue in counted if str(issue.get("state", "")).upper() == "OPEN"
-    )
-    closed = len(counted) - len(still_open)
-    title = idea.get("titre", "")
+    still_open, closed, out = tally(found)
     return [
-        _cell(f"{feature} {title}" if title and not title.startswith("<") else feature),
+        feature_label(feature, header),
         f"#{tracking}" if tracking.isdigit() else "?",
         f"{closed} / {budget if budget is not None else '?'}",
         percent(closed, len(still_open)),
@@ -203,13 +254,7 @@ def table(root: Path, wanted: list[str], run: Runner = run_gh, now: Clock | None
             raise CompletionError(f"no folder under `{directory}` for {', '.join(missing)}")
         chosen = {feature: found[feature] for feature in wanted}
     else:
-        closed = closed_states(config)
-        chosen = {
-            feature: folder
-            for feature, folder in found.items()
-            if not (folder / "README.md").exists()
-            and _header(folder / "idee.md").get("etat") not in closed
-        }
+        chosen = open_features(root, config, directory)
     headers = HEADERS if column is None else (*HEADERS, column[0])
     lines = ["| " + " | ".join(headers) + " |", "|" + "---|" * len(headers)]
     for feature, folder in chosen.items():

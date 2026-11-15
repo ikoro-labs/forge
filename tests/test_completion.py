@@ -11,7 +11,7 @@ from pathlib import Path
 from unittest import mock
 
 import support
-from completion import CompletionError, main, percent, table
+from completion import CompletionError, is_ready, main, percent, sub_issues, table
 from guard_completion import HEADERS, decision, has_table
 from test_guard_ticket_budget import FakeGh, ticket
 
@@ -52,7 +52,7 @@ class Gh(FakeGh):
             return None
         tracking = int(argv[1].split("/")[-2])
         return "".join(
-            f"{n}\t{state}\t{reason}\n" for n, state, reason in self.subs.get(tracking, [])
+            f"{n}\t{state}\t{reason}\t\t0\t0\n" for n, state, reason in self.subs.get(tracking, [])
         )
 
 
@@ -351,6 +351,24 @@ class Guard(unittest.TestCase):
     def test_an_unreadable_transcript_passes(self) -> None:
         missing = (self.project.root / "none.jsonl").as_posix()
         self.assertIsNone(decision({"transcript_path": missing, "stop_hook_active": False}))
+
+
+class Ready(unittest.TestCase):
+    def test_sub_issues_keep_labels_assignees_and_open_blockers_for_the_ready_boundary(self) -> None:
+        line = "7\tOPEN\t\tready-for-agent,x\t0\t0\n8\tOPEN\t\tready-for-agent\t1\t0\n9\tOPEN\t\tready-for-agent\t0\t2\n"
+        found = sub_issues("40", Path("."), lambda argv, cwd: line)
+        assert found is not None
+        self.assertEqual([is_ready(issue) for issue in found], [True, False, False])
+        self.assertEqual(found[0]["labels"], ["ready-for-agent", "x"])
+
+    def test_a_line_short_of_a_field_leaves_the_sub_issues_unread(self) -> None:
+        self.assertIsNone(sub_issues("40", Path("."), lambda argv, cwd: "7\tOPEN\t\n"))
+        self.assertIsNone(sub_issues("40", Path("."), lambda argv, cwd: "7\tOPEN\t\tl\tx\t0\n"))
+        self.assertIsNone(sub_issues("40", Path("."), lambda argv, cwd: None))
+
+    def test_a_closed_ticket_is_never_ready(self) -> None:
+        self.assertFalse(is_ready({"state": "CLOSED", "labels": ["ready-for-agent"], "assignees": 0, "blockedBy": 0}))
+        self.assertFalse(is_ready({"state": "OPEN"}))
 
 
 def _unique(pairs: list[tuple[str, object]]) -> dict[str, object]:
