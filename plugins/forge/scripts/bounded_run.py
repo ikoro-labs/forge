@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import os
 import re
+import shutil
 import subprocess
 import sys
 import threading
@@ -124,6 +125,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--memory-mb", type=int, help="memory limit, in MB")
     parser.add_argument("--timeout", type=int, help="delay, in seconds")
     args = parser.parse_args(options)
+    if not command:
+        print("bounded_run: aucune commande après --", file=sys.stderr)
+        return WRONG_CALL
+    if not shutil.which(command[0]):
+        print(f"bounded_run: commande introuvable ({command[0]})", file=sys.stderr)
+        return NOT_FOUND
     tail = Tail()
     outcome = run_bounded(command, timeout=args.timeout, memory_mb=args.memory_mb, tail=tail)
     seen = tail.finish()

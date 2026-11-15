@@ -89,6 +89,32 @@ class Bounds(unittest.TestCase):
         self.assertIn("mémoire", done.stderr.splitlines()[-1])
         self.assertIn("MemoryError", done.stderr)  # the command's own error is still shown
 
+    @unittest.skipUnless(
+        sys.platform == "linux",
+        "an impossible RLIMIT_AS is built by overflowing it; the Windows refusal is seen in CI only, never forced here",
+    )
+    def test_a_bound_that_cannot_be_set_refuses_to_run(self) -> None:
+        """No F-NNNN: ticket #66, critère 3: une borne impossible à poser refuse de lancer, la commande ne tourne pas."""
+        import resource
+
+        if resource.getrlimit(resource.RLIMIT_AS)[1] != resource.RLIM_INFINITY:
+            self.skipTest("the session's own limit caps the huge value instead of refusing it")
+        runner = Runner(self)
+        marker = runner.root / "ran"
+        source = f"open({str(marker)!r}, 'w').close()"
+        # 10**15 MB is past 2**64 bytes, the largest limit setrlimit takes: it overflows.
+        done = runner.run("--memory-mb", str(10**15), "--timeout", "20", command=python(source))
+        self.assertEqual(done.returncode, REFUSED, done.stderr)
+        self.assertIn("limite non posée", done.stderr)
+        self.assertFalse(marker.exists(), "the command ran without its bound")
+
+    def test_a_command_that_does_not_exist_gets_the_not_found_code(self) -> None:
+        """No F-NNNN: ticket #66, critère 1: une commande introuvable se dit, sans passer pour une borne."""
+        runner = Runner(self)
+        done = runner.run("--memory-mb", "400", "--timeout", "20", command=["no-such-command-forge-66"])
+        self.assertEqual(done.returncode, NOT_FOUND, done.stderr)
+        self.assertIn("no-such-command-forge-66", done.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()
