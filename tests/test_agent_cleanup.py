@@ -13,6 +13,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -101,10 +102,12 @@ class Cleanup(unittest.TestCase):
             base.update(agent_id="a0123456789abcdef", agent_type="forge:coder", stop_hook_active=False)
         return {**base, **fields}
 
-    def run_hook(self, event: object, folder: Path | None = None) -> subprocess.CompletedProcess[str]:
+    def run_hook(
+        self, event: object, folder: Path | None = None, env: dict[str, str] | None = None,
+    ) -> subprocess.CompletedProcess[str]:
         stdin = event if isinstance(event, str) else json.dumps(event)
         return subprocess.run(
-            [sys.executable, str(HOOK)], input=stdin, capture_output=True, text=True, env=self.env,
+            [sys.executable, str(HOOK)], input=stdin, capture_output=True, text=True, env=env or self.env,
             cwd=folder or self.repo, timeout=120, check=False,
         )
 
@@ -116,8 +119,30 @@ class Cleanup(unittest.TestCase):
 
     # --- agent worktrees, as Claude Code makes and locks them ----------------------------------
 
-    def agent_worktree(self, agent_id: str, detach: bool = False) -> Path:
-        """`<repo>/.claude/worktrees/agent-<id>` on branch `worktree-agent-<id>`, or on a detached head."""
+    def record_agent(
+        self, agent_id: str, finished: object = True, silent_for: float | None = 2 * 3600,
+        config_dir: Path | None = None,
+    ) -> None:
+        """What Claude Code keeps of a subagent under its config folder: `agent-<id>.meta.json` (with
+        `finished` once the agent has returned) and `agent-<id>.jsonl`, its transcript, last written
+        `silent_for` seconds ago. `finished=None` writes no `finished` field, `silent_for=None` no transcript."""
+        folder = (config_dir or self.home / ".claude") / "projects" / "-demo" / "session-1" / "subagents"
+        folder.mkdir(parents=True, exist_ok=True)
+        meta: dict[str, object] = {"agentType": "forge:coder", "worktreePath": str(self.worktrees / f"agent-{agent_id}")}
+        if finished is not None:
+            meta["finished"] = finished
+        (folder / f"agent-{agent_id}.meta.json").write_text(json.dumps(meta), encoding="utf-8")
+        if silent_for is not None:
+            transcript = folder / f"agent-{agent_id}.jsonl"
+            transcript.write_text("{}\n", encoding="utf-8")
+            written = time.time() - silent_for
+            os.utime(transcript, (written, written))
+
+    def agent_worktree(self, agent_id: str, detach: bool = False, recorded: bool = True) -> Path:
+        """`<repo>/.claude/worktrees/agent-<id>` on branch `worktree-agent-<id>`, or on a detached head.
+        By default the agent has returned long ago (`record_agent`): an unlocked worktree is removed only so."""
+        if recorded:
+            self.record_agent(agent_id)
         path = self.worktrees / f"agent-{agent_id}"
         if detach:
             self.git("worktree", "add", "-q", "--detach", str(path))
@@ -238,6 +263,92 @@ class Worktrees(Cleanup):
         """#199 (c): nothing removed, nothing left: nothing said."""
         result = self.run_hook(self.event())
         self.assertEqual((result.returncode, result.stdout), (0, ""), result.stderr)
+
+
+@unittest.skipUnless(HAS_GIT, "the hook works on git repositories")
+class LivingAgents(Cleanup):
+    """An agent woken by `SendMessage` works in its worktree without locking it: only what Claude Code
+    records of the agent (`finished`, and a transcript silent for the grace delay) tells it from a finished one."""
+
+    def test_a_clean_unlocked_worktree_of_an_agent_not_finished_stays_with_its_branch(self) -> None:
+        """#199 (c): the meta says `finished: false`; the worktree is clean and its branch pushed, and it stays."""
+        path = self.agent_worktree("a1", recorded=False)
+        self.record_agent("a1", finished=False)
+        sha = self.commit("pushed work", folder=path)
+        self.git("push", "-q", "origin", f"{sha}:refs/heads/feature")
+        self.git("fetch", "-q", "origin")
+        result = self.run_hook(self.event())
+        self.assertTrue(path.exists())
+        self.assertIn("worktree-agent-a1", self.branches())
+        self.assertEqual(self.message(result), "")
+
+    def test_a_finished_agent_woken_again_keeps_its_worktree_while_its_transcript_is_fresh(self) -> None:
+        """#199 (c): `finished: true`, but the transcript was written a minute ago: a `SendMessage` woke it."""
+        path = self.agent_worktree("a1", recorded=False)
+        self.record_agent("a1", finished=True, silent_for=60)
+        self.run_hook(self.event())
+        self.assertTrue(path.exists())
+        self.assertIn("worktree-agent-a1", self.branches())
+
+    def test_the_grace_delay_is_thirty_minutes(self) -> None:
+        """#199 (c): 29 minutes of silence keep the worktree, 31 let it go."""
+        recent = self.agent_worktree("a1", recorded=False)
+        self.record_agent("a1", silent_for=29 * 60)
+        quiet = self.agent_worktree("a2", recorded=False)
+        self.record_agent("a2", silent_for=31 * 60)
+        self.run_hook(self.event())
+        self.assertTrue(recent.exists())
+        self.assertFalse(quiet.exists())
+
+    def test_a_finished_agent_silent_beyond_the_delay_is_removed(self) -> None:
+        """#199 (c): `finished: true` and a transcript older than the delay: the agent is finished."""
+        path = self.agent_worktree("a1", recorded=False)
+        self.record_agent("a1", finished=True, silent_for=2 * 3600)
+        message = self.message(self.run_hook(self.event()))
+        self.assertFalse(path.exists())
+        self.assertIn("agent-a1", message)
+
+    def test_a_worktree_with_no_meta_stays_without_a_word(self) -> None:
+        """#199 (c): no `agent-<id>.meta.json` found: the doubt keeps, and nothing is reported."""
+        path = self.agent_worktree("a1", recorded=False)
+        result = self.run_hook(self.event())
+        self.assertTrue(path.exists())
+        self.assertEqual(self.message(result), "")
+
+    def test_an_unreadable_meta_or_a_missing_transcript_or_finished_field_keeps_the_worktree(self) -> None:
+        """#199 (c): a meta that is not JSON, one without `finished`, one with a non-boolean, a transcript
+        that is missing: each keeps its worktree, silently."""
+        garbled = self.agent_worktree("a1", recorded=False)
+        self.record_agent("a1")
+        records = self.home / ".claude" / "projects" / "-demo" / "session-1" / "subagents"
+        (records / "agent-a1.meta.json").write_text("{not json", encoding="utf-8")
+        no_field = self.agent_worktree("a2", recorded=False)
+        self.record_agent("a2", finished=None)
+        text = self.agent_worktree("a3", recorded=False)
+        self.record_agent("a3", finished="true")
+        no_transcript = self.agent_worktree("a4", recorded=False)
+        self.record_agent("a4", silent_for=None)
+        result = self.run_hook(self.event())
+        for path in (garbled, no_field, text, no_transcript):
+            self.assertTrue(path.exists(), path)
+        self.assertEqual(self.message(result), "")
+
+    def test_the_config_folder_is_claude_config_dir_when_it_is_set(self) -> None:
+        """#199 (c): the records are looked up under `CLAUDE_CONFIG_DIR`, else under `~/.claude`."""
+        elsewhere = self.home / "elsewhere"
+        path = self.agent_worktree("a1", recorded=False)
+        self.record_agent("a1", config_dir=elsewhere)
+        self.run_hook(self.event())
+        self.assertTrue(path.exists(), "the default folder holds no record of the agent")
+        self.run_hook(self.event(), env={**self.env, "CLAUDE_CONFIG_DIR": str(elsewhere)})
+        self.assertFalse(path.exists())
+
+    def test_a_dead_lock_holder_frees_a_worktree_whatever_the_records_say(self) -> None:
+        """#199 (c): a locked worktree is judged by its holder alone, as before."""
+        path = self.agent_worktree("a1", recorded=False)
+        self.lock(path, self.gone_session(), start="1")
+        self.run_hook(self.event())
+        self.assertFalse(path.exists())
 
 
 @unittest.skipUnless(HAS_GIT, "the hook works on git repositories")

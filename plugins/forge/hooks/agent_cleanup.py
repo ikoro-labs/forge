@@ -6,15 +6,24 @@ main checkout of the repository (`handoff_header.main_checkout`), without networ
 outside a git repository. It touches only what follows, and a read error deletes nothing: the
 doubt keeps.
 
-1. Worktrees `<main checkout>/.claude/worktrees/agent-*` whose agent is finished: unlocked, or
-   locked by a holder that is gone (`handoff_header.lock_holder_alive`, the rule of `live_agents`:
-   a dead pid, or a live pid with another start time, was reused). A clean one (`git status
-   --porcelain` empty, untracked files included) is unlocked if it is locked, then removed
-   without `--force`; a branch it carried stays, with its work. A detached head is removed only if
-   its commit is contained in `main`, `origin/main` or a remote branch, else it would be lost. A
-   dirty one, or one whose detached head is found nowhere else, is left and reported.
-   At SubagentStop, the worktree of the agent that stops is still locked by the living session:
-   it stays, and goes at a later passage.
+1. Worktrees `<main checkout>/.claude/worktrees/agent-*` whose agent is finished:
+   - locked by a holder that is gone (`handoff_header.lock_holder_alive`, the rule of `live_agents`:
+     a dead pid, or a live pid with another start time, was reused): the session is dead, its agents
+     with it;
+   - unlocked: only when Claude Code records the agent as returned (`agent-<id>.meta.json` with
+     `"finished": true`, under `<config folder>/projects/<project>/<session>/subagents/`, the config
+     folder being `CLAUDE_CONFIG_DIR` or `~/.claude`) and its transcript `agent-<id>.jsonl` has not been
+     written for `TRANSCRIPT_GRACE` (30 minutes). An agent woken by `SendMessage` works in its worktree
+     without locking it, and what becomes of `finished` then was not observed: the silence of the
+     transcript tells a living agent. A record missing or unreadable keeps the worktree, silently.
+   A clean one (`git status --porcelain` empty, untracked files included) is unlocked if it is
+   locked, then removed without `--force`; a branch it carried stays, with its work. A detached head
+   is removed only if its commit is contained in `main`, `origin/main` or a remote branch, else it
+   would be lost. A dirty one, or one whose detached head is found nowhere else, is left and reported.
+   At SubagentStop, the worktree of the agent that stops is still locked by the living session, or
+   its transcript was just written: it stays, and goes at a later passage. The cost of the delay: an
+   agent returned, clean and pushed, then woken by `SendMessage` more than 30 minutes later, finds no
+   worktree; its work is on its pushed branch.
 2. Local branches `worktree-agent-*` that no worktree holds and whose tip is contained in `main`,
    `origin/main` or a remote-tracking branch: `git branch -D`. The deletion is run here, by
    subprocess: `guard_git` keeps refusing `git branch -D` to an agent.
@@ -40,12 +49,14 @@ which would hold a subagent at SubagentStop.
 
 from __future__ import annotations
 
+import glob
 import json
 import os
 import re
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import handoff_header
@@ -53,6 +64,10 @@ from usine import load, project_root
 
 GIT_TIMEOUT = 20
 MAX_TRANSCRIPT = 64 * 1024 * 1024  # a larger transcript is not read: the doubt keeps
+# An unlocked worktree is a finished agent's only when its transcript has been silent this long: 30
+# minutes, beyond the longest tool call, so that an agent woken by SendMessage (it works in its
+# worktree without locking it, and its transcript grows with each step) is not taken for finished.
+TRANSCRIPT_GRACE = 30 * 60
 AGENT_DIR = "agent-"
 BRANCH_PREFIX = "worktree-agent-"
 # Where a commit is safe: the local `main`, or any remote-tracking ref (`origin/main` among them).
@@ -105,11 +120,40 @@ def is_agent_worktree(repo: Path, path: str) -> bool:
     return Path(path).name.startswith(AGENT_DIR) and same_path(Path(path).parent, repo / ".claude" / "worktrees")
 
 
-def finished(fields: dict[str, str]) -> bool:
-    """An agent is finished when nothing locks its worktree, or the lock's holder is gone."""
-    if "locked" not in fields:
+def claude_config_dir() -> Path:
+    """Where Claude Code keeps its records: `CLAUDE_CONFIG_DIR` when set, else `~/.claude`."""
+    return Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path(os.path.expanduser("~")) / ".claude")
+
+
+def returned_and_silent(agent_dir: str) -> bool:
+    """Whether Claude Code records the agent as returned and its transcript has been silent for the
+    grace delay. The records are `<config>/projects/<project>/<session>/subagents/agent-<id>.meta.json`
+    (`"finished": true` once the agent has returned) and `agent-<id>.jsonl`, its transcript. A record
+    that is missing, unreadable or not as expected, or a clock that puts the write in the future, is
+    not that: the doubt keeps the worktree, and says nothing."""
+    try:
+        metas = sorted(claude_config_dir().glob(f"projects/*/*/subagents/{glob.escape(agent_dir)}.meta.json"))
+        if not metas:
+            return False
+        for meta in metas:
+            record = json.loads(meta.read_text(encoding="utf-8"))
+            if not isinstance(record, dict) or record.get("finished") is not True:
+                return False
+            age = time.time() - meta.with_name(f"{agent_dir}.jsonl").stat().st_mtime
+            if age < TRANSCRIPT_GRACE:
+                return False
         return True
-    return not handoff_header.lock_holder_alive(fields["locked"])[0]
+    except (OSError, ValueError):
+        return False
+
+
+def finished(fields: dict[str, str]) -> bool:
+    """A locked worktree is a finished agent's when the lock's holder is gone (its session is dead, and
+    its agents with it). An unlocked one may be a living agent woken by SendMessage, which does not lock
+    it: it is finished only when Claude Code records the agent as returned and its transcript is silent."""
+    if "locked" in fields:
+        return not handoff_header.lock_holder_alive(fields["locked"])[0]
+    return returned_and_silent(Path(fields.get("worktree", "")).name)
 
 
 def clean_worktrees(repo: Path) -> list[str]:
