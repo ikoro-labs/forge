@@ -48,7 +48,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "hooks"))
 
 import usine  # noqa: E402
 from base_replay import extract_base, git, run  # noqa: E402
-from bounded_run import Budget, key_budget, key_limits, positive, system_state, wait_for_budget  # noqa: E402
+from bounded_run import Budget, key_budget, key_limits, positive, wait_for_budget  # noqa: E402
 
 PASS, FAIL, NOT_RUN, NONE = "PASS", "FAIL", "NOT RUN", "NONE"
 
