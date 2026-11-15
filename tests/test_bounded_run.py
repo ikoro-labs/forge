@@ -73,6 +73,22 @@ class Bounds(unittest.TestCase):
         self.assertEqual(done.returncode, DELAY, done.stderr)
         self.assertIn("délai de 2 s dépassé", done.stderr)
 
+    @unittest.skipUnless(
+        sys.platform == "linux" or os.name == "nt",
+        "the memory limit is set with RLIMIT_AS on Linux and a job object on Windows; macOS is not covered",
+    )
+    def test_a_command_over_its_memory_limit_gets_the_memory_code_and_a_reason(self) -> None:
+        """No F-NNNN: ticket #66, critère 2: la mémoire dépassée donne un code distinct et sa raison sur stderr."""
+        runner = Runner(self)
+        # Tiny on Linux (the allocation fails, nothing is committed); a Windows Python needs more to start.
+        limit, asked = ("64", 200) if sys.platform == "linux" else ("300", 800)
+        done = runner.run(
+            "--memory-mb", limit, "--timeout", "20", command=python(f"bytearray({asked} * 10**6)"),
+        )
+        self.assertEqual(done.returncode, MEMORY, done.stderr)
+        self.assertIn("mémoire", done.stderr.splitlines()[-1])
+        self.assertIn("MemoryError", done.stderr)  # the command's own error is still shown
+
 
 if __name__ == "__main__":
     unittest.main()
