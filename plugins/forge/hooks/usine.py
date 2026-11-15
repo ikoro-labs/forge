@@ -41,6 +41,35 @@ def split_value(value: str, parts: int) -> list[str] | None:
     return pieces
 
 
+def pattern_regex(pattern: str) -> re.Pattern[str]:
+    """The regular expression of a path pattern: `**/`, `*`, `?` and `{a,b}`, the rest literal."""
+    out: list[str] = []
+    i = 0
+    while i < len(pattern):
+        char = pattern[i]
+        if pattern.startswith("**/", i) and (i == 0 or pattern[i - 1] == "/"):
+            out.append("(?:.*/)?")
+            i += 3
+            continue
+        end = pattern.find("}", i) if char == "{" else -1
+        if char == "{" and end != -1 and "{" not in pattern[i + 1 : end]:
+            choices = pattern[i + 1 : end].split(",")
+            out.append("(?:" + "|".join(re.escape(choice) for choice in choices) + ")")
+            i = end
+        elif char == "*":
+            out.append("[^/]*")
+        elif char == "?":
+            out.append("[^/]")
+        else:
+            out.append(re.escape(char))
+        i += 1
+    return re.compile("".join(out))
+
+
+def matches(pattern: str, relative: str) -> bool:
+    return pattern_regex(pattern).fullmatch(relative) is not None
+
+
 def project_root(event: Mapping[str, object] | None = None) -> Path:
     """The project's directory: Claude Code's `CLAUDE_PROJECT_DIR`, else the event's cwd."""
     root = os.environ.get("CLAUDE_PROJECT_DIR") or (event or {}).get("cwd") or "."
