@@ -19,6 +19,9 @@ The rules, the same for every kind that has them:
 - at most the `max-lines:` of that header line (`0` for none), in written lines: blank lines and HTML
   comments do not count.
   A project replaces a template with the key `output-template` (`<kind> | <path>`);
+- the `Features` field of a session reply is the block `report_mail.py --features` prints
+  (`features_block.py` says its shape): it is checked for that shape, and left out of the line cap,
+  the word cap and the paragraph cap, which hold for the rest of the reply;
 - a structured format (`verdict`, `coder`, `decider`) takes a closed set of keys: an unknown key is
   refused, unless the project names it with `output-extra-keys` (`<kind> | KEY, KEY`). The verdict
   and the coder's block are read by `parse_output.py`, their one source of rules.

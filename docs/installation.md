@@ -607,10 +607,22 @@ can also run on a body before it posts it:
 | body of `gh issue create\|edit\|comment\|close -c`, `gh pr create\|edit\|comment\|review\|merge\|close -c`, `gh api ... -f\|-F body=` or `--input`, `gh api graphql` mutations `addComment`, `createIssue`..., read by `hooks/gh_bodies.py` (the reader `guard_cases` shares: gh behind a wrapper, in `bash -c`, `eval` or a substitution, a file after a `cd`); the text of a GitHub MCP tool, by the words of its name | `ticket.md`, `pr.md`, `comment.md`, or `verdict.md` when it opens with `VERDICT:` | every time |
 | the session's reply to the human | `templates/session-reply.md` | once per stop (`stop_hook_active`), then logged |
 
-The reply carries four fields: `Done`, `Measured`, `Awaiting your decision` and `CI and runners` (or
-`Fait`, `Mesure`, `Attend ta décision`, `CI et runners`). The last is one line, which
-`scripts/report_mail.py --line` prints from the `report-*` keys of `usine.md` (see
-[Le mail de relevé](#le-mail-de-relevé)); without those keys the line reads `not applicable`.
+The reply carries five fields: `Done`, `Measured`, `Awaiting your decision`, `CI and runners` and
+`Features` (or `Fait`, `Mesure`, `Attend ta décision`, `CI et runners`, `Features`, the last being the
+same word in both languages). `CI and runners` is one line, which `scripts/report_mail.py --line`
+prints from the `report-*` keys of `usine.md` (see [Le mail de relevé](#le-mail-de-relevé)); without
+those keys the line reads `not applicable`.
+
+`Features` is the output of `scripts/report_mail.py --features`, copied as printed, from the same
+calculation as the Features part of the mail: a table with one row per open feature (`Feature`,
+`Closed / total`, `Open PRs`, `Blocked`, `Ready`), then a line `In parallel:` that names the ready
+tickets and the features that fit in the free slots, or says `no proposal` and why. Without
+`report-repo`, without `feature-dir` or without an open feature, the script prints one line instead
+(`Features: not applicable (key ... absent).`, `Features: no open feature.`). The `Stop` guard
+refuses a reply without the field, and a field that is neither the table (its header row, its
+separator, a row per feature, the `In parallel:` line) nor one of those lines. The block comes from
+the script, so it counts neither in the 15 lines of the template nor in the words of the reply.
+The handoff of a session carries the same block (see [La passation](sessions.md#la-passation)).
 
 The word caps (ticket 150, comment 150, PR 200, session reply 150, subagent return 200), the
 `max-lines` of each template header (ticket 25, PR 40, comment 12, session reply 15, subagent
@@ -630,6 +642,12 @@ the suite of `tests/` only, not yet in a real session.
 mail et sort en code 10, sans rien imprimer, quand rien n'a changé depuis le dernier envoi ; une fois
 le mail envoyé, `report_mail.py --sent` enregistre l'envoi. L'état (`state.json`, le mail en attente
 `mail.html`) vit dans `--state-dir`, sinon dans `~/.claude/hooks/state/report-mail/<dépôt>`.
+
+`report_mail.py --line`, `--slots` et `--features` impriment, sans état ni envoi, la partie « CI and
+runners » en une ligne, les places libres en une ligne et la partie « Features » en tableau Markdown
+(la même donnée que celle du mail, `features_state`, plus les tickets bloqués et les features qui
+tiennent dans les places libres) ; ils sortent en code 1 quand `gh` échoue. La réponse de session
+reprend les deux premières lignes et ce tableau (voir [Output structure](#output-structure)).
 
 Le hook `guard_report_mail` (`PreToolUse` sur `Bash` et `PowerShell`) lit `mail.html` quand une
 commande lance `report_mail.py --sent`, et le compare à `templates/report-mail.md` par

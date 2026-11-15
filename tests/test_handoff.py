@@ -451,6 +451,15 @@ class Trigger(unittest.TestCase):
         self.assertIsNone(self.notice(151_000))
         self.assertIn("stage drain", self.notice(151_000, "UserPromptSubmit") or "")
 
+    def test_a12_the_handoff_instruction_asks_for_the_features_block(self) -> None:
+        """F-0181 A12: the session copies `report_mail.py --features` into the handoff body, so that
+        its successor starts from the same state."""
+        script = support.PLUGIN / "scripts" / "report_mail.py"
+        command = f'uv run --no-project --quiet python "{script}" --features'
+        drain = " ".join((self.notice(150_000) or "").split())
+        self.assertIn(command, drain)
+        self.assertRegex(drain, r"under `Features:`")
+
     def test_the_handoffs_can_live_outside_any_claude_folder(self) -> None:
         os.environ["FORGE_TEST_ROOT"] = str(self.home)
         os.environ["CLAUDE_HANDOFF_DIR"] = os.path.join("$FORGE_TEST_ROOT", "passations")
