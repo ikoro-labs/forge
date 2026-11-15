@@ -1,5 +1,6 @@
 """Ticket #69: `commit_replay.py` replays the suite on each commit of a PR, each in its own copy."""
 
+import re
 import subprocess
 import sys
 import unittest
@@ -187,6 +188,16 @@ class Bounds(unittest.TestCase):
         done = repo.commits(base, head, usine(extra="- `run-budget` : `4096 | 12`\n"))
         self.assertEqual(done.returncode, 2, done.stdout + done.stderr)
         self.assertRegex(done.stdout, r"(?m)^NOT RUN\t-\t.*run-budget")
+
+
+class EscapeHatches(unittest.TestCase):
+    def test_each_noqa_of_the_script_carries_its_reason(self) -> None:
+        """No F-NNNN: ticket #69, F-13: chaque noqa de commit_replay.py porte sa raison sur la même ligne."""
+        bare = [
+            line.strip() for line in SCRIPT.read_text(encoding="utf-8").splitlines()
+            if "noqa" in line and not re.search(r"noqa: \w+\s+\S", line)
+        ]
+        self.assertEqual(bare, [])
 
 
 if __name__ == "__main__":
