@@ -68,4 +68,6 @@ La suite de tests de ce dépôt, dont la sortie se raccourcit quand elle passe.
 - `install` : la suite n'a que la bibliothèque standard ; `uv` choisit le Python.
 - `baselines`, `size-check`, `trace-check`, `trace-replay`, `review-grid` : aucun outil encore.
 - `em-dash-allowances` : aucun fichier n'en tolère.
+- `doc-frontmatter`, `doc-index`, `doc-cap` : ce dépôt n'a décidé ni de `type` de frontmatter, ni
+  d'index, ni de plafond pour sa documentation (`README.md`, `docs/`, `CHANGELOG.md`).
 - `readonly-agent`, `readonly-command` : aucun agent du dépôt en plus de ceux du plugin.

@@ -635,6 +635,27 @@ a file it cannot open, a pipe into standard input) is refused, and so is `curl` 
 `api.github.com`; `Stop` lets through a reply it cannot read, and a crash passes: only exit 3 blocks. Tried by
 the suite of `tests/` only, not yet in a real session.
 
+## Les documents que l'agent écrit
+
+Le hook `after_write` tient trois règles de documentation que les projets portaient en prose,
+chacune par une clé de `docs/agents/usine.md` (gabarit : `plugins/forge/templates/usine.md`,
+section Hooks). Une clé absente rend son contrôle sans objet, sans valeur par défaut.
+
+- `doc-frontmatter` : un `.md` écrit dont le chemin suit un motif s'ouvre sur un frontmatter
+  portant un `type` non vide.
+- `doc-index` : à chaque écriture d'un tel fichier, l'index des documents est reconstruit depuis
+  `git ls-files`, et réécrit seulement si son contenu change.
+- `doc-cap` : un plafond de mots ou de lignes sur le corps d'un fichier, frontmatter exclu ; un
+  fichier déjà au-dessus à `HEAD` ne peut plus grandir, les autres tiennent sous le plafond. Un
+  amendement se fait en écrivant un nouveau document qui remplace l'ancien.
+
+Un refus sort en code 2 : la ligne que l'agent voit dit le fichier, la règle et ce qu'il faut
+faire, et l'écriture reste. Seul le fichier écrit est jugé, donc l'existant que personne ne touche
+ne bloque rien : le cliquet est naturel. Un fichier écrit par une commande de shell (un heredoc,
+`sed`) ne passe pas par ce hook, comme pour le tiret cadratin ; le hook de commit du projet reste
+le filet de ceux-là. Éprouvé par la suite de `tests/` sous Linux seulement (dépôts git jetables) ;
+pas encore dans une vraie session.
+
 ## Le mail de relevé
 
 `scripts/report_mail.py` construit le mail de relevé de l'usine (HTML) à partir des clés `report-*` de
