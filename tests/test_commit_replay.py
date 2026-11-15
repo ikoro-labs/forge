@@ -80,5 +80,30 @@ class GreenAtEveryCommit(unittest.TestCase):
         self.assertNotIn(advanced[:7], done.stdout)
 
 
+class CopyNotExtracted(unittest.TestCase):
+    def test_a_commit_whose_copy_cannot_be_extracted_is_not_run_and_never_passes(self) -> None:
+        """No F-NNNN: ticket #69, critère 3: un commit dont la copie ne s'extrait pas est NOT RUN, jamais PASS, et les autres commits sont rejoués."""
+        repo = Replay(self)
+        base = repo.commit({"code_under_test.py": CODE_V1, "tests/__init__.py": ""})
+        first = repo.commit({"code_under_test.py": CODE_V2, "tests/test_value.py": TEST_TWO})
+        broken = repo.commit({"notes.txt": "un objet qui va manquer"})
+        repo.git("rm", "-q", "notes.txt")
+        last = repo.commit({"autre.txt": "suite"})
+        # Delete the loose object of `notes.txt` in the throwaway repository: `git archive` cannot read it.
+        blob = repo.git("rev-parse", f"{broken}:notes.txt")
+        loose = repo.work / ".git" / "objects" / blob[:2] / blob[2:]
+        loose.chmod(0o600)
+        loose.unlink()
+        done = repo.commits(base, last, usine())
+        rows = repo.rows(done)
+        self.assertEqual(done.returncode, 2, done.stdout + done.stderr)
+        self.assertEqual(
+            [row[:2] for row in rows],
+            [["PASS", first[:7]], ["NOT RUN", broken[:7]], ["PASS", last[:7]]],
+            done.stdout,
+        )
+        self.assertIn("copie non extraite", rows[1][2])
+
+
 if __name__ == "__main__":
     unittest.main()

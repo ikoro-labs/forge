@@ -70,7 +70,8 @@ def replay_commit(
         try:
             extract_base(sha, root)
         except (RuntimeError, OSError, tarfile.TarError) as error:
-            return NOT_RUN, f"copie non extraite : {error}"
+            # One line per commit: git's message can hold several.
+            return NOT_RUN, "copie non extraite : " + "\\n".join(str(error).splitlines())
         for command in config.get("install", []) + config["ci-replay"]:
             code, tail, why = run(command, root, timeout, memory_mb)
             if code is None:
