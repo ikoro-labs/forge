@@ -19,10 +19,23 @@ or when the probe fails or prints no `mem-free <GiB>` and `disk-free <GiB>`. The
 when the runners of a host still counted could not be read (a token without administrator rights).
 `feature-build` reads `--slots` before each coder: 0, no coder starts.
 
+Features: the mail lists each open feature of `feature-dir` (no `README.md`, `etat` not closed, as
+`completion.py` selects them) in one line: its percent (`completion.percent`, closed over published,
+tickets closed as not planned apart), the open PRs of the first `report-repo` whose body cites one of
+its tickets (`Closes`, `Fixes`, `Resolves` or `Refs` `#n`), and its ready tickets (the boundary of
+`feature-build`: open, `ready-for-agent`, nobody assigned, no open blocker). The tickets are the
+sub-issues of the `issue:` of its `idee.md`, one `gh` call per feature, read in that first repository.
+A feature `gh` cannot read says "tickets not read", never a guessed figure. With free slots N > 0,
+"Awaiting you" proposes at most N ready tickets (features in folder order, tickets in sub-issue
+order) and asks which to launch; with 0 or unknown slots the part says "no proposal" and why. The mail
+launches nothing, and this part is never an event: it does not make a mail due.
+`features_state` returns these as data, for any other rendering.
+
 Keys read (no default; a key absent makes its part say so, except `report-repo`, which stops the
 script): `report-repo` (repeatable), `report-attention-label`, `report-main-workflow`,
 `report-host` (`<host> | <runner label>`), `report-host-probe` (`<host> | <command>`),
-`report-digest-hour`, `report-host-floor` (`<host> | <memory GiB> | <disk GiB>`). The state lives in `--state-dir`, else in
+`report-digest-hour`, `report-host-floor` (`<host> | <memory GiB> | <disk GiB>`), and `feature-dir`
+(read as `completion.py` reads it). The state lives in `--state-dir`, else in
 `~/.claude/hooks/state/report-mail/<repository>`.
 """
 
@@ -44,6 +57,9 @@ from typing import Any
 
 PLUGIN = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PLUGIN / "hooks"))
+sys.path.insert(0, str(PLUGIN / "scripts"))
+import completion  # noqa: E402
+from guard_ticket_budget import feature_dir  # noqa: E402
 from usine import load, project_root, split_value  # noqa: E402
 
 NOTHING_CHANGED = 10
@@ -162,7 +178,7 @@ def _survey(gh: Gh, repo: str, config: Mapping[str, list[str]], since: str | Non
     last_run = _json(gh, run_args)
     main = f"{last_run[0]['conclusion']} {last_run[0]['headSha'][:7]}" if last_run else "no run"
     open_prs = _json(gh, ["pr", "list", "-R", repo, "--state", "open", "--json",
-                          "number,title,headRefOid,mergeStateStatus,statusCheckRollup,isDraft"])
+                          "number,title,headRefOid,mergeStateStatus,statusCheckRollup,isDraft,body"])
     verdicts: list[tuple[str, str]] = []
     if since:
         comments = _json(gh, ["api", f"repos/{repo}/issues/comments?since={since}&per_page=100"])
@@ -183,6 +199,7 @@ def _survey(gh: Gh, repo: str, config: Mapping[str, list[str]], since: str | Non
             for p in open_prs
             if not p.get("isDraft")
         },
+        "prs": [{"number": p["number"], "body": p.get("body") or ""} for p in open_prs],
         "runners": _runners(gh, repo, hosts),
         "queued": _count(gh, repo, "queued"),
         "running": _count(gh, repo, "in_progress"),
@@ -319,6 +336,79 @@ def slots_line(config: Mapping[str, list[str]], surveys: Mapping[str, dict], pro
     return f"Free slots: {'unknown' if total is None else total} ({'; '.join(pieces)})."
 
 
+CITES = re.compile(r"\b(?:closes|fixes|resolves|refs)\s+#(\d+)", re.IGNORECASE)
+
+
+def features_state(
+    config: Mapping[str, list[str]], surveys: Mapping[str, dict], probe: Probe, root: Path, gh: Gh
+) -> dict[str, Any]:
+    """The open features of the project and what the human can launch, as data.
+
+    `note` is the one line that says there is nothing to list; else `features` holds, per feature,
+    `label`, `percent` (`completion.percent`), `prs`, `ready` (numbers) and `error`, the reason its
+    tickets were not read. `free` is the free slots (None unknown); `proposal` is up to `free` ready
+    tickets as `(feature, number)`, and `why` says why there is none when it is empty for lack of slots.
+    """
+    state: dict[str, Any] = {"note": None, "features": [], "free": None, "proposal": [], "why": None}
+    directory = feature_dir(config)
+    repo = (config.get("report-repo") or [""])[0]
+    if directory is None:
+        state["note"] = "No feature list: key `feature-dir` absent."
+        return state
+    chosen = completion.open_features(root, config, directory)
+    if not chosen:
+        state["note"] = "No open feature."
+        return state
+
+    def run(argv: list[str], cwd: str | None) -> str | None:
+        try:
+            return gh([a.replace("{owner}/{repo}", repo) for a in argv])
+        except (OSError, subprocess.SubprocessError):
+            return None
+
+    prs = (surveys.get(repo) or {}).get("prs", [])
+    for feature, folder in chosen.items():
+        header = completion.idea(folder)
+        entry: dict[str, Any] = {
+            "label": completion.feature_label(feature, header),
+            "percent": None, "prs": [], "ready": [], "error": None,
+        }
+        state["features"].append(entry)
+        tracking = header.get("issue", "")
+        if not tracking.isdigit():
+            entry["error"] = "no tracking issue, tickets not read"
+            continue
+        found = completion.sub_issues(tracking, root, run)
+        if found is None:
+            entry["error"] = "tickets not read"
+            continue
+        still_open, closed, _ = completion.tally(found)
+        entry["percent"] = completion.percent(closed, len(still_open))
+        entry["ready"] = [issue["number"] for issue in found if completion.is_ready(issue)]
+        entry["prs"] = [
+            p["number"] for p in prs
+            if {int(n) for n in CITES.findall(p["body"])} & {issue["number"] for issue in found}
+        ]
+    return state
+
+
+def _features_part(state: Mapping[str, Any]) -> str:
+    e = html.escape
+    out = ["<h3>Features</h3>"]
+    if state["note"]:
+        out.append(f"<p>{e(state['note'])}</p>")
+        return "".join(out)
+    out.append("<ul>")
+    for entry in state["features"]:
+        text = entry["error"] or (
+            f"{entry['percent']}; open PRs " + (", ".join(f"#{n}" for n in entry["prs"]) or "none")
+            + "; ready " + (", ".join(f"#{n}" for n in entry["ready"]) or "none")
+        )
+        out.append(f"<li>{e(entry['label'])}: {e(text)}.</li>")
+    out.append("</ul>")
+    return "".join(out)
+
+
 def _ci_part(surveys: Mapping[str, dict], config: Mapping[str, list[str]], probe: Probe) -> str:
     e = html.escape
     out = ["<h3>CI and runners</h3>"]
@@ -403,8 +493,9 @@ def build(
     old: Mapping | None,
     stamp: str,
     probe: Probe,
+    features: Mapping[str, Any] | None = None,
 ) -> tuple[str, bool]:
-    """The mail's HTML, and whether any event makes it due."""
+    """The mail's HTML, and whether any event makes it due (the Features part is never an event)."""
     e = html.escape
     changes: list[str] = []
     waiting: list[str] = []
@@ -424,6 +515,8 @@ def build(
     out.append(
         "<ul>" + "".join(f"<li>{e(w)}</li>" for w in waiting) + "</ul>" if waiting else "<p>Nothing.</p>"
     )
+    if features is not None:
+        out.append(_features_part(features))
     out.append(_ci_part(surveys, config, probe))
     out.append("<h3>Figures</h3>" + _figures(surveys))
     return "\n".join(out) + "\n", bool(changes)
@@ -488,7 +581,8 @@ def main(
         old = {repo: saved.get("fingerprint", {}).get(repo, {}) for repo in repos}
         old["since"] = since
     stamp = moment.strftime("%Y-%m-%dT%H:%MZ")
-    mail, due = build(config, surveys, old, stamp, probe)
+    features = features_state(config, surveys, probe, root, gh)
+    mail, due = build(config, surveys, old, stamp, probe, features)
     digest_hour = (config.get("report-digest-hour") or [""])[-1]
     today = moment.strftime("%Y-%m-%d")
     if digest_hour.isdigit() and saved.get("digest_date") != today and moment.hour >= int(digest_hour):

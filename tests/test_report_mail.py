@@ -45,9 +45,10 @@ class Fake:
     """Stands for `gh`: answers by the shape of the call, records every call."""
 
     def __init__(self, merged=(), main="success", main_sha="abc1234def", runners=RUNNERS,
-                 verdicts=(), attention=()) -> None:
+                 verdicts=(), attention=(), open_prs=(), subs=None) -> None:
         self.merged, self.main, self.sha = list(merged), main, main_sha
         self.runners, self.verdicts, self.attention = runners, list(verdicts), list(attention)
+        self.open_prs, self.subs = list(open_prs), subs or {}
         self.calls: list[list[str]] = []
 
     def __call__(self, args: list[str]) -> str:
@@ -56,7 +57,7 @@ class Fake:
         if line.startswith("pr list") and "--state merged" in line:
             return json.dumps(self.merged)
         if line.startswith("pr list") and "--state open" in line and "--label" not in line:
-            return json.dumps([])
+            return json.dumps(self.open_prs)
         if line.startswith(("pr list", "issue list")) and "--label" in line:
             return json.dumps(self.attention)
         if line.startswith("run list") and "--status completed" in line:
@@ -71,6 +72,11 @@ class Fake:
             return json.dumps(self.runners)
         if "issues/comments" in line:
             return json.dumps(self.verdicts)
+        if line.startswith("api repos/") and line.split()[1].endswith("/sub_issues"):
+            rows = self.subs.get(int(line.split()[1].split("/")[-2]), [])
+            if isinstance(rows, Exception):
+                raise rows
+            return "".join("\t".join(map(str, row)) + "\n" for row in rows)
         raise AssertionError(f"unexpected gh call: {line}")
 
 
@@ -312,6 +318,115 @@ class SlotsTests(unittest.TestCase):
         code, out = slots("- `report-host` : `pc | pc-label`\n", {})
         self.assertEqual(code, 0)
         self.assertIn("not applicable", out)
+
+
+FEATURES = CONFIG + "- `feature-dir` : `docs/features`\n"
+IDEA = "---\nfeature: F-{n:04d}\ntitre: demo {n}\netat: actif\nissue: {issue}\n---\n"
+READY = "ready-for-agent"
+CLOSED = "CLOSED\tCOMPLETED"
+OPENED = "OPEN\t"
+# One sub-issue as the sub_issues jq prints it: number, state, reason, labels, assignees, blockers.
+SUBS = {40: [(11, CLOSED, "", 0, 0), (12, OPENED, READY, 0, 0), (13, OPENED, "", 0, 0)]}
+
+
+def sub(row: tuple) -> tuple:
+    number, state, labels, assignees, blocked = row
+    return (number, *state.split("\t"), labels, assignees, blocked)
+
+
+def with_features(test: unittest.TestCase, config: str, features: dict[int, int | str]) -> tuple[Path, Path]:
+    cm = project(config)
+    root, state = cm.__enter__()
+    test.addCleanup(cm.__exit__, None, None, None)
+    for number, issue in features.items():
+        folder = root / "docs" / "features" / f"{number:04d}-demo"
+        folder.mkdir(parents=True)
+        (folder / "idee.md").write_text(IDEA.format(n=number, issue=issue), encoding="utf-8")
+    return root, state
+
+
+def features_of(subs: dict, **fake: object) -> Fake:
+    return Fake(subs={k: [sub(r) for r in v] if isinstance(v, list) else v for k, v in subs.items()}, **fake)
+
+
+def part(mail: str, title: str) -> str:
+    return re.split(rf"<h3>{title}</h3>", mail)[1].split("<h3>")[0]
+
+
+PR_CITING = {"number": 77, "title": "t", "headRefOid": "abc1234def", "mergeStateStatus": "CLEAN",
+             "statusCheckRollup": [], "isDraft": False, "body": "Does it.\n\nCloses #13\n"}
+PR_OTHER = {**PR_CITING, "number": 78, "body": "Refs #999"}
+
+
+class FeaturesTests(unittest.TestCase):
+    def mail(self, config: str, fake: Fake, features: dict | None = None, probe=None) -> tuple[int, str, str]:
+        root, state = with_features(self, config, features if features is not None else {1: 40})
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = main(["--root", str(root), "--state-dir", str(state)], gh=fake,
+                        probe=probe or (lambda c: "mem-free 8 disk-free 50"), now=NOW)
+        return code, out.getvalue(), err.getvalue()
+
+    def test_a7_1_an_open_feature_shows_its_percent_its_prs_and_its_ready_tickets(self) -> None:
+        fake = features_of(SUBS, open_prs=[PR_CITING, PR_OTHER])
+        code, mail, _ = self.mail(FEATURES, fake)
+        self.assertEqual(code, 0)
+        features = part(mail, "Features")
+        self.assertIn("F-0001", features)
+        self.assertIn("33 % (1 / 3)", features)
+        self.assertIn("#77", features)
+        self.assertNotIn("#78", features)
+        self.assertRegex(features, r"ready[^<]*#12")
+        self.assertNotRegex(features, r"ready[^<]*#13")
+        subs_calls = [c for c in fake.calls if c[1].endswith("/sub_issues")]
+        self.assertEqual(len(subs_calls), 1)
+        self.assertIn("repos/acme/widgets/issues/40/sub_issues", subs_calls[0][1])
+
+    def test_a7_the_percent_is_the_one_of_completion(self) -> None:
+        from completion import percent
+
+        subs = {40: [(1, CLOSED, "", 0, 0), (2, "CLOSED\tNOT_PLANNED", "", 0, 0), (3, OPENED, READY, 1, 0)]}
+        _, mail, _ = self.mail(FEATURES, features_of(subs))
+        self.assertIn(percent(1, 1), part(mail, "Features"))
+
+    def test_a7_a_ready_ticket_is_open_labelled_unassigned_and_unblocked(self) -> None:
+        subs = {40: [(1, OPENED, READY, 1, 0), (2, OPENED, READY, 0, 1), (3, CLOSED, READY, 0, 0),
+                     (4, OPENED, "needs-info", 0, 0), (5, OPENED, f"x,{READY}", 0, 0)]}
+        _, mail, _ = self.mail(FEATURES, features_of(subs))
+        self.assertRegex(part(mail, "Features"), r"ready[^<]*#5")
+        for number in "1234":
+            self.assertNotRegex(part(mail, "Features"), rf"ready[^<]*#{number}\b")
+
+    def test_a7_2_unreadable_sub_issues_say_tickets_not_read_and_the_mail_goes_out(self) -> None:
+        fake = features_of({40: subprocess.CalledProcessError(1, "gh")})
+        code, mail, _ = self.mail(FEATURES, fake)
+        self.assertEqual(code, 0)
+        self.assertIn("tickets not read", part(mail, "Features"))
+        self.assertNotIn("%", part(mail, "Features"))
+        self.assertIn("<h3>CI and runners</h3>", mail)
+
+    def test_a7_without_a_tracking_issue_the_line_says_so(self) -> None:
+        code, mail, _ = self.mail(FEATURES, features_of({}), {1: ""})
+        self.assertEqual(code, 0)
+        self.assertIn("tickets not read", part(mail, "Features"))
+        self.assertIn("no tracking issue", part(mail, "Features"))
+
+    def test_a7_without_the_key_or_without_an_open_feature_one_line_says_so(self) -> None:
+        _, mail, _ = self.mail(CONFIG, features_of({}), {})
+        self.assertRegex(part(mail, "Features"), r"(?i)no open feature|`feature-dir`")
+        _, mail, _ = self.mail(FEATURES, features_of({}), {})
+        self.assertRegex(part(mail, "Features"), "(?i)no open feature")
+
+    def test_a7_a_delivered_feature_is_not_listed(self) -> None:
+        root, state = with_features(self, FEATURES, {1: 40, 2: 40})
+        (root / "docs" / "features" / "0002-demo" / "README.md").write_text("done", encoding="utf-8")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+            main(["--root", str(root), "--state-dir", str(state)], gh=features_of(SUBS), now=NOW,
+                 probe=lambda c: "mem-free 8 disk-free 50")
+        self.assertIn("F-0001", part(out.getvalue(), "Features"))
+        self.assertNotIn("F-0002", part(out.getvalue(), "Features"))
+
 
 
 class FeatureBuildTests(unittest.TestCase):
