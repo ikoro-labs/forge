@@ -113,6 +113,24 @@ contre un code qui ne l'attend pas : éprouvé sous Linux seulement : le côté 
 tâche, la commande démarrée suspendue) n'a tourné que dans la CI, où sa première version a échoué (borne
 non tenue) ; la version corrigée n'est pas encore vue verte. Il juge au grain du fichier, qu'il rejoue en entier.
 
+Deux clés, `run-limits` (`<mémoire en Mo> | <délai en secondes>`) et `run-budget` (`<Mo disponibles au
+moins> | <charge à 1 min au plus> | <workers au plus> | <attente au plus en secondes>`), bornent toute
+suite et toute sonde de tests qu'un agent lance : `plugins/forge/scripts/bounded_run.py` lance la
+commande sous la borne de mémoire et de délai que `base_replay.py` utilise déjà (une seule fonction,
+`run_bounded`), et lit avant le budget du poste entier, parce qu'une borne par commande n'arrête pas
+des workers assez nombreux pour vider la mémoire d'un poste : `MemAvailable` et la charge à 1 min,
+puis, hors seuil, une attente jusqu'au délai de la clé et une sortie en 120 avec la raison sur stderr.
+Il ramène le `-n` de pytest-xdist, `-n auto` compris, au plafond de workers quand la commande nomme
+pytest (un `-n` posé par un fichier de configuration, par `PYTEST_ADDOPTS` ou caché dans une chaîne
+de shell n'est pas vu). Ses codes propres, 120 à 124 et 127, sont dits dans l'en-tête du script ; la
+mémoire dépassée n'est vue que par un échec d'allocation dans la sortie d'erreur de la commande, donc
+« probablement ». `--check` lit le budget sans rien lancer : c'est ce que `forge:feature-build` joue
+avant un coder ou une revue. Aucune clé n'a de valeur par défaut : sans `run-limits`, le lanceur exige
+`--memory-mb` et `--timeout` et `forge:qc-gate` rend « sans objet (clé `run-limits` absente) » ; sans
+`run-budget`, l'étape est « sans objet (clé `run-budget` absente) ». Éprouvé sous Linux seulement : le
+côté Windows (la mémoire disponible par `GlobalMemoryStatusEx`, sans charge à 1 min, et la borne par
+objet de tâche) n'a tourné que dans la CI. macOS n'est pas couvert.
+
 Deux clés, `ui-labels` (les fichiers de libellés de l'interface, une ligne par fichier ou dossier) et
 `ui-forbidden-word` (un mot ou un motif refusé à l'écran, une ligne par mot), ouvrent la sonde des
 libellés de `forge:qc-gate` : `plugins/forge/scripts/ui_labels.py` lit les lignes que la PR ajoute

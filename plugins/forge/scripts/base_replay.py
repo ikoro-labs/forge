@@ -27,7 +27,8 @@ absente)" and the exit code is 0.
 
 Bounds. Each command (install ones included) runs under a memory limit (`--memory-mb`, 2000 by
 default) and a delay (`--timeout`, 300 s by default), because it runs test code against code that
-does not expect it. On Linux the limit is `RLIMIT_AS` and the process group is killed at the delay;
+does not expect it. The bound is `run_bounded` of `bounded_run.py`, which the launcher shares. On
+Linux the limit is `RLIMIT_AS` and the process group is killed at the delay;
 on Windows the command starts suspended (`ProcessGroup` of `handoff_header`) and runs only once a
 job object with a per-process memory limit holds it, which kills what is left when it closes. The
 Linux side was run on a Linux workstation. The Windows side has run in the CI of this repository
@@ -51,12 +52,11 @@ import sys
 import tarfile
 import tempfile
 from pathlib import Path, PurePosixPath
-from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "hooks"))
 
 import usine  # noqa: E402
-from handoff_header import ProcessGroup, group_options  # noqa: E402
+from bounded_run import run_bounded  # noqa: E402
 
 PASSES, RED, NOT_RUN, NONE = "PASSES", "RED", "NOT RUN", "NONE"
 TAIL_LINES = 15
@@ -110,55 +110,23 @@ def command_for(template: str, path: str) -> str:
     return template.replace("{file}", quote(path)).replace("{name}", quote(PurePosixPath(path).name))
 
 
-def _limit_posix(memory_mb: int):
-    """A `preexec_fn` that caps the address space of the command and drops core dumps."""
-    import resource
-
-    def apply() -> None:
-        limit = memory_mb * 1024 * 1024
-        _, hard = resource.getrlimit(resource.RLIMIT_AS)
-        if hard != resource.RLIM_INFINITY:
-            limit = min(limit, hard)  # the session's own limit stays the ceiling
-        resource.setrlimit(resource.RLIMIT_AS, (limit, limit))
-        resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
-
-    return apply
-
-
 def run(command: str, cwd: Path, timeout: int, memory_mb: int) -> tuple[int | None, str, str]:
     """The exit code (None when the command did not run), the end of its output, and why not.
 
-    The command runs under a memory limit and a delay, and its process group is killed when the
-    delay passes. A limit that cannot be set is a command not run. The group is `ProcessGroup` of
-    `handoff_header`: on Windows the command starts suspended (it is `cmd.exe`, which starts the
-    real command) and runs only once its job object holds it with the limit, so nothing escapes.
+    The command runs under the bound of `bounded_run.run_bounded`, shared with the launcher: a
+    memory limit, a delay, the process group killed when the delay passes, and a command not run
+    when its limit cannot be set. It is `cmd.exe` or `sh`, which starts the real command.
     """
     with tempfile.TemporaryFile() as log:
-        try:
-            options: dict[str, Any] = {"preexec_fn": _limit_posix(memory_mb)} if os.name != "nt" else {}
-            process = subprocess.Popen(
-                command, shell=True, cwd=cwd, stdout=log, stderr=subprocess.STDOUT,
-                **group_options(suspended=True), **options,
-            )
-        except (OSError, subprocess.SubprocessError) as error:
-            return None, "", f"limite non posée ou commande non lancée ({error})"
-        group = ProcessGroup(process, memory_mb=memory_mb, suspended=True)
-        try:
-            if not group.limited:
-                group.kill()
-                return None, "", "limite de mémoire non posée"
-            group.start()
-            try:
-                code = process.wait(timeout=timeout)
-            except subprocess.TimeoutExpired:
-                group.kill()
-                return None, "", f"délai de {timeout} s dépassé"
-            group.kill()  # what the command left running
-        finally:
-            group.close()
+        outcome = run_bounded(
+            command, shell=True, cwd=cwd, timeout=timeout, memory_mb=memory_mb,
+            stdout=log, stderr=subprocess.STDOUT,
+        )
+        if outcome.code is None:
+            return None, "", outcome.why
         log.seek(0)
         lines = log.read().decode("utf-8", errors="replace").splitlines()
-    return code, "\\n".join(lines[-TAIL_LINES:]), ""
+    return outcome.code, "\\n".join(lines[-TAIL_LINES:]), ""
 
 
 def replay(args: argparse.Namespace, config: dict[str, list[str]]) -> tuple[list[tuple[str, str, str]], int]:

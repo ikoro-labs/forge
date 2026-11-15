@@ -138,6 +138,19 @@ lançant. Charge aussi le skill de chaque domaine que le ticket touche, parmi ce
 
 Lance chaque commande de la clé `ci-replay`, puis les suites des contextes touchés.
 
+**Toute suite et toute sonde se lance par le lanceur borné**, celles de la boucle rouge puis verte
+du §3 comprises : `uv run --no-project --quiet python "${CLAUDE_PLUGIN_ROOT}/scripts/bounded_run.py" -- <commande>`.
+Il lit les bornes de la clé `run-limits` (mémoire et délai) et le budget du poste de la clé
+`run-budget` (mémoire disponible, charge à 1 min, workers), et ramène le `-n` de pytest-xdist au
+plafond, `-n auto` compris. Un code 120 dit que le poste est hors budget après l'attente : tu ne
+relances pas la commande autrement, tu rends `BLOCKED` avec la raison de stderr. Les codes 122 à
+124 disent une borne qui n'a pas pu être posée, ou atteinte : une suite qui s'arrête ainsi est un
+échec à corriger, pas à relancer sans borne. Une clé absente rend l'étape « sans objet (clé
+`run-limits` absente) » ou « (clé `run-budget` absente) » : tu le dis dans la PR, et tu ne devines ni
+mémoire, ni délai, ni seuil ; sans `run-limits`, le lanceur exige `--memory-mb` et `--timeout`, que
+la session ou le brief te donne. Une consigne de poste plus stricte que la clé (une borne que le
+brief te transmet) s'ajoute au lanceur, elle ne le remplace pas.
+
 **Trois passages rouges au plus.** Au troisième échec d'une même vérification, arrête-toi et sors
 en `FAILED` avec la commande et sa sortie. Ne boucle pas.
 

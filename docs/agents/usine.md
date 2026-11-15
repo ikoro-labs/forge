@@ -27,6 +27,15 @@ La configuration de l'usine qui développe le plugin `forge` dans ce dépôt. Le
 - `ci-replay` : `claude plugin validate .`
 - `ci-replay` : `claude plugin validate plugins/forge`
 
+La borne de toute suite et de toute sonde, lue par `plugins/forge/scripts/bounded_run.py` : la
+mémoire (2000 Mo) et le délai (300 s) de chaque commande, puis le budget du poste entier, que
+partagent les sessions, les sous-agents et les workers : 4096 Mo disponibles au moins, une charge à
+1 min de 12 au plus, 2 workers au plus, et jusqu'à 300 s d'attente avant de renoncer. L'attente est
+le choix de ce dépôt, que le ticket ne fixait pas.
+
+- `run-limits` : `2000 | 300`
+- `run-budget` : `4096 | 12 | 2 | 300`
+
 Les tests que la PR ajoute, rejoués par `forge:qc-gate` sur une copie de la base, où chacun doit
 échouer. Le motif `-p {name}` choisit le fichier dans `tests/`.
 

@@ -29,6 +29,22 @@ Quand GraphQL est bloqué (sessions d'agent), `gh pr view`, `gh pr checks` et `g
 
 Le numéro de PR, et le numéro du tour (1 à 3, au-delà seulement avec `GRANTED:`).
 
+## Le lanceur borné
+
+Toute suite et toute sonde de tests que tu lances passe par le lanceur du plugin, jamais seule :
+`uv run --no-project --quiet python "${CLAUDE_PLUGIN_ROOT}/scripts/bounded_run.py" --usine usine-base.md -- <commande>`,
+avec le `usine-base.md` de la sonde 10 (`git show origin/<base>:docs/agents/usine.md > usine-base.md`,
+écrit dans le scratchpad **avant** la sonde 4) : les bornes viennent de la base, pour qu'une PR ne
+lève pas celle qui la juge. Cela vaut pour chaque commande de `ci-replay` (sonde 4) et chaque suite
+rejouée sur une copie de la base (sonde 5). Le lanceur lit `run-limits` (mémoire et délai) et
+`run-budget` (budget du poste, workers) ; tu recopies son code de sortie, et sa raison sur stderr
+quand le code est 120 à 124 : 120 le poste est hors budget après l'attente, 122 la borne n'a pas pu
+être posée, 123 la mémoire est probablement atteinte, 124 le délai est passé. Ce sont des `FAIL` ou
+des `NOT RUN` avec la commande, jamais un `PASS`. Quand la base n'a pas la clé `run-limits`, ces
+sondes se rendent `sans objet (clé `run-limits` absente)` : tu ne lances pas la commande sans borne.
+Une clé `run-budget` absente se dit dans la ligne de la sonde, sans la bloquer. La sonde 11 borne
+elle-même ses commandes.
+
 ## Sondes, dans cet ordre
 
 1. **Base et diff.** `gh pr view <n> --json baseRefName,headRefName,headRefOid,files`, ou sans
@@ -94,7 +110,10 @@ Le numéro de PR, et le numéro du tour (1 à 3, au-delà seulement avec `GRANTE
 11. **Rejeu des tests sur la base.** Le rouge d'un test n'est qu'une déclaration tant que personne ne
     le remesure : les fichiers de test que la PR ajoute ou change sont posés, tels que la tête les a,
     dans une copie de la **base**, puis rejoués. Avec les clés de la base, déjà écrites à la sonde 10
-    dans `usine-base.md` :
+    dans `usine-base.md`, après avoir lu le budget du poste
+    (`uv run --no-project --quiet python "${CLAUDE_PLUGIN_ROOT}/scripts/bounded_run.py" --usine usine-base.md --check` :
+    code 120, la sonde est `NOT RUN` avec la raison de stderr ; « sans objet (clé `run-budget`
+    absente) », elle part) :
     `uv run --no-project --quiet python "${CLAUDE_PLUGIN_ROOT}/scripts/base_replay.py" --base origin/<base> --head <tête> --usine usine-base.md`,
     lancé depuis un clone du projet (le script crée et supprime sa propre copie, et n'écrit rien dans
     le dépôt). Recopie chaque ligne du script, verbatim, et son code de sortie : 0 aucun fichier ne
