@@ -377,7 +377,10 @@ class Wiring(unittest.TestCase):
                 self.assertIn("${CLAUDE_PLUGIN_ROOT}/scripts/bounded_run.py", text)
                 self.assertIn("run-limits", text)
                 self.assertIn("run-budget", text)
-        self.assertIn("sans objet (clé `run-limits` absente)", self.read("agents", "qc-gate.md"))
+        gate = self.read("agents", "qc-gate.md")
+        self.assertIn("sans objet (clé `run-limits` absente)", gate)
+        # The replay on the base binds its own commands but is a probe too: the budget is read first.
+        self.assertIn("bounded_run.py\" --usine usine-base.md --check", gate)
 
     def test_the_build_checks_the_budget_before_a_sub_agent_that_runs_tests(self) -> None:
         """No F-NNNN: ticket #66, critère 8: feature-build lit le budget (--check) avant un coder ou un qc-gate."""

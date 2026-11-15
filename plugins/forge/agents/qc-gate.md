@@ -110,7 +110,10 @@ elle-même ses commandes.
 11. **Rejeu des tests sur la base.** Le rouge d'un test n'est qu'une déclaration tant que personne ne
     le remesure : les fichiers de test que la PR ajoute ou change sont posés, tels que la tête les a,
     dans une copie de la **base**, puis rejoués. Avec les clés de la base, déjà écrites à la sonde 10
-    dans `usine-base.md` :
+    dans `usine-base.md`, après avoir lu le budget du poste
+    (`uv run --no-project --quiet python "${CLAUDE_PLUGIN_ROOT}/scripts/bounded_run.py" --usine usine-base.md --check` :
+    code 120, la sonde est `NOT RUN` avec la raison de stderr ; « sans objet (clé `run-budget`
+    absente) », elle part) :
     `uv run --no-project --quiet python "${CLAUDE_PLUGIN_ROOT}/scripts/base_replay.py" --base origin/<base> --head <tête> --usine usine-base.md`,
     lancé depuis un clone du projet (le script crée et supprime sa propre copie, et n'écrit rien dans
     le dépôt). Recopie chaque ligne du script, verbatim, et son code de sortie : 0 aucun fichier ne
