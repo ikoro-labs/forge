@@ -9,6 +9,43 @@ Ce dépôt a été recréé le 2026-10-23 ; l'ancien est `ikoro-labs/forge-archi
 numéros de PR et de ticket nus (`#38`) renvoient à l'ancien dépôt ; un renvoi au nouveau dépôt
 porte son nom (`ikoro-labs/forge#7`).
 
+## [1.13.0] - 2026-11-15
+
+Trois règles de l'usine passent de la prose aux hooks : le frontmatter et l'index des documents,
+les plafonds de la documentation, et le ménage après chaque agent. Version mineure : cinq clés
+nouvelles, toutes facultatives ; sans elles, seul le ménage des worktrees et des branches d'agents
+agit.
+
+- Hooks : `after_write` tient trois clés. `doc-frontmatter` refuse un `.md` de ses motifs sans
+  frontmatter lisible portant un `type` non vide ; `doc-index` régénère l'index de ces documents à
+  chaque écriture ; `doc-cap` tient un plafond de mots ou de lignes par motif, avec un cliquet sur la
+  version à `HEAD` (un fichier déjà au-dessus ne peut pas grandir). Seul le fichier écrit est jugé ;
+  un fichier écrit par une commande shell ne passe pas par là (ikoro-labs/forge#210, points (a) et
+  (b) de ikoro-labs/forge#199).
+- Hooks : `agent_cleanup.py`, au `SubagentStop` et au `SessionStart`, échoue ouvert. Il retire le
+  worktree propre d'un agent fini et signale un worktree sale ; il supprime les branches
+  `worktree-agent-*` orphelines dont la tête est dans `main` ou sur une branche distante ; il purge
+  les caches d'agents (clé `agent-cache-dir`, au `SubagentStop` seulement) et les bundles de
+  sauvetage contenus (clé `rescue-bundle-dir`). Un agent est fini quand le détenteur de son verrou
+  est mort ou réattribué, ou, sans verrou, quand sa méta porte `finished` et que sa transcription se
+  tait depuis 30 minutes. `guard_git` refuse toujours `git branch -D` aux agents
+  (ikoro-labs/forge#211, point (c) de ikoro-labs/forge#199).
+- Hooks : `handoff_header.lock_holder_alive`, extrait de `live_agents`, juge le détenteur d'un
+  verrou de worktree pour les deux.
+- Gabarits : `usine.md` documente `doc-frontmatter`, `doc-index`, `doc-cap`, `agent-cache-dir` et
+  `rescue-bundle-dir`.
+- Tests : `tests/test_after_write_docs.py`, `tests/test_agent_cleanup.py`, cas nouveaux de
+  `tests/test_handoff.py`.
+- Gestes humains : aucun. Un projet qui monte à cette version voit disparaître, à sa prochaine
+  session, les worktrees propres de ses agents finis et leurs branches déjà poussées. Un coder
+  réveillé par `SendMessage` plus de 30 minutes après son rendu ne retrouve plus son worktree ; son
+  travail reste sur sa branche.
+- Resté dehors, au verdict des PR : la docstring de `doc_rules.py` cite le ticket de ce dépôt ; deux
+  lignes `doc-index` ou une valeur vide passent sans mot ; un cache voisin cité par la transcription
+  de l'agent qui s'arrête est purgé aussi (reporté sur ikoro-labs/forge#199) ; une branche distante
+  périmée compte comme sûre ; deux défauts de prose dans `docs/installation.md`. Rien d'éprouvé en
+  vraie session ni sous Windows en local.
+
 ## [1.12.0] - 2026-11-15
 
 La réponse de session et la passation portent le tableau des features, et une session sans feature
