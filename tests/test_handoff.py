@@ -115,6 +115,32 @@ class Header(unittest.TestCase):
         self.assertEqual(session.groups() if session else None, ("7", "12"))
 
 
+class LockHolder(unittest.TestCase):
+    """`lock_holder_alive`, the one judgment of a worktree lock shared by `live_agents` and the
+    agent cleanup hook (#199 (c))."""
+
+    def test_the_running_holder_with_its_own_start_time_is_alive(self) -> None:
+        pid = os.getpid()
+        start = handoff_header.process_start(pid)
+        self.assertEqual(handoff_header.lock_holder_alive(f"claude agent x (pid {pid} start {start})"), (True, pid))
+
+    def test_a_gone_holder_is_dead(self) -> None:
+        gone = subprocess.Popen([sys.executable, "-c", "pass"])
+        gone.wait()
+        reason = f"claude agent x (pid {gone.pid} start 1)"
+        self.assertEqual(handoff_header.lock_holder_alive(reason), (False, gone.pid))
+
+    @unittest.skipIf(WINDOWS, "a Windows lock has no start time: a running pid is taken for its holder")
+    def test_a_running_pid_with_another_start_time_was_reused_and_is_dead(self) -> None:
+        """#199 (c): the pid lives, its start time is not the one the lock recorded."""
+        pid = os.getpid()
+        reason = f"claude agent x (pid {pid} start {int(handoff_header.process_start(pid)) + 1})"
+        self.assertEqual(handoff_header.lock_holder_alive(reason), (False, pid))
+
+    def test_a_reason_in_an_unknown_format_counts_as_alive(self) -> None:
+        self.assertEqual(handoff_header.lock_holder_alive("manual lock"), (True, None))
+
+
 class Processes(unittest.TestCase):
     def test_this_process_is_alive_and_has_a_start_time(self) -> None:
         self.assertTrue(handoff_header.process_alive(os.getpid()))

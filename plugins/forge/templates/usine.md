@@ -532,6 +532,28 @@ aucune sortie n'est raccourcie. Une par ligne.
 
 - `trimmed-command` : `<uv run pytest>`
 
+Le ménage après un agent fini (`agent_cleanup.py`, au `SubagentStop` et au `SessionStart`) retire sans
+clé le worktree propre d'un agent fini (`.claude/worktrees/agent-*` ; fini : verrou d'un détenteur mort,
+ou, sans verrou, agent noté rendu par Claude Code et sa transcription silencieuse depuis 30 minutes)
+et supprime la branche
+`worktree-agent-*` orpheline dont la tête est dans `main` ou une branche distante : ces deux étapes
+suivent la convention de Claude Code, pas une valeur du projet. Deux clés ajoutent le reste, chacune
+indépendante, et une clé absente rend son étape « sans objet (clé `<nom>` absente) » : rien n'est
+supprimé, aucune valeur par défaut. Chacune est un dossier, `~` développé, un par ligne.
+
+Le dossier où les agents posent leurs caches. Au `SubagentStop` seulement, le hook supprime les
+sous-dossiers directs que nomme la transcription de l'agent qui s'arrête ; jamais au `SessionStart`,
+car une autre session du poste peut avoir des agents vivants dans ce dossier. Un dossier qui contient
+le home ou le dépôt est ignoré.
+
+- `agent-cache-dir` : `<~/.cache/agents>`
+
+Le dossier des bundles de sauvetage (`*.bundle`, `git bundle create`). Le hook supprime chaque bundle
+dont toutes les têtes existent dans le dépôt et sont contenues dans `main` ou une branche distante ;
+un bundle illisible, ou dont une tête manque au dépôt, reste et est signalé.
+
+- `rescue-bundle-dir` : `<~/.cache/rescue-bundles>`
+
 Les agents du projet tenus en lecture seule comme les décideurs du plugin (l'arbitre du métier, en
 général), sous leur nom tel que le voient les hooks. Un par ligne.
 

@@ -71,3 +71,6 @@ La suite de tests de ce dépôt, dont la sortie se raccourcit quand elle passe.
 - `doc-frontmatter`, `doc-index`, `doc-cap` : ce dépôt n'a décidé ni de `type` de frontmatter, ni
   d'index, ni de plafond pour sa documentation (`README.md`, `docs/`, `CHANGELOG.md`).
 - `readonly-agent`, `readonly-command` : aucun agent du dépôt en plus de ceux du plugin.
+- `agent-cache-dir`, `rescue-bundle-dir` : ce dépôt n'a pas de dossier de caches d'agents ni de bundles
+  de sauvetage à tenir ; le ménage d'`agent_cleanup.py` y retire seulement les worktrees et les
+  branches `worktree-agent-*`, qui ne lisent aucune clé.
