@@ -3,6 +3,7 @@
 import subprocess
 import sys
 import unittest
+from pathlib import Path
 
 import support
 from test_base_replay import CODE_V1, CODE_V2, Repo
@@ -103,6 +104,89 @@ class CopyNotExtracted(unittest.TestCase):
             done.stdout,
         )
         self.assertIn("copie non extraite", rows[1][2])
+
+
+def snapshot(folder: Path) -> dict[str, tuple[int, int]]:
+    """Each file under `folder` with its size and modification time."""
+    return {
+        str(path.relative_to(folder)): (path.stat().st_size, path.stat().st_mtime_ns)
+        for path in sorted(folder.rglob("*")) if path.is_file()
+    }
+
+
+class RepositoryLeftIntact(unittest.TestCase):
+    def test_the_replayed_repository_and_its_configuration_are_not_written(self) -> None:
+        """No F-NNNN: ticket #69, critère 4: rien n'est écrit dans le dépôt rejoué, sa configuration comprise, et les copies sont supprimées."""
+        repo = Replay(self)
+        base = repo.commit({"code_under_test.py": CODE_V1, "tests/__init__.py": ""})
+        repo.commit({"tests/test_value.py": TEST_TWO})
+        head = repo.commit({"code_under_test.py": CODE_V2})
+        before = snapshot(repo.work)
+        config = (repo.work / ".git" / "config").read_bytes()
+        done = repo.commits(base, head, usine())
+        self.assertEqual(done.returncode, 1, done.stdout + done.stderr)
+        self.assertEqual(snapshot(repo.work), before)
+        self.assertEqual((repo.work / ".git" / "config").read_bytes(), config)
+        # The copies live in the scratch folder the script was given as TMPDIR: none is left.
+        self.assertEqual(list(repo.scratch.iterdir()), [])
+
+
+class WithoutItsKeys(unittest.TestCase):
+    def test_an_absent_key_is_sans_objet_and_runs_nothing(self) -> None:
+        """No F-NNNN: ticket #69, critère 5: une clé absente rend « sans objet (clé <nom> absente) » et ne lance rien."""
+        repo = Replay(self)
+        base = repo.commit({"code_under_test.py": CODE_V1, "tests/__init__.py": ""})
+        head = repo.commit({"tests/test_value.py": TEST_TWO})
+        no_replay = repo.commits(base, head, LIMITS)
+        self.assertEqual((no_replay.returncode, no_replay.stdout.strip()), (0, "sans objet (clé ci-replay absente)"))
+        no_limits = repo.commits(base, head, f"- `ci-replay` : `{SUITE}`\n")
+        self.assertEqual((no_limits.returncode, no_limits.stdout.strip()), (0, "sans objet (clé run-limits absente)"))
+        self.assertEqual(list(repo.scratch.iterdir()), [])
+
+    def test_a_pr_without_commit_of_its_own_says_none(self) -> None:
+        """No F-NNNN: ticket #69, critère 1: une tête qui est la base n'a aucun commit à rejouer, et le dit sans PASS."""
+        repo = Replay(self)
+        base = repo.commit({"code_under_test.py": CODE_V1, "tests/__init__.py": ""})
+        done = repo.commits(base, base, usine())
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        self.assertRegex(done.stdout, r"(?m)^NONE\t-\t")
+        self.assertNotIn("PASS", done.stdout)
+
+
+class Bounds(unittest.TestCase):
+    def fixture(self) -> tuple[Replay, str, str]:
+        repo = Replay(self)
+        base = repo.commit({"code_under_test.py": CODE_V1, "tests/__init__.py": ""})
+        repo.commit({"code_under_test.py": CODE_V2})
+        return repo, base, repo.commit({"notes.txt": "rien"})
+
+    def test_a_post_out_of_budget_runs_nothing_and_every_commit_is_not_run(self) -> None:
+        """No F-NNNN: ticket #69, critère 6: hors budget du poste, rien n'est lancé et chaque commit est NOT RUN avec la raison."""
+        repo, base, head = self.fixture()
+        marker = repo.root / "launched"
+        suite = f'"{sys.executable}" -c "open(r\'{marker}\', \'w\').close()"'
+        # A post with 10**9 MB available at least is never within budget; the wait is 0 s.
+        done = repo.commits(base, head, usine(suite, "- `run-budget` : `1000000000 | 100000 | 2 | 0`\n"))
+        self.assertEqual(done.returncode, 2, done.stdout + done.stderr)
+        self.assertEqual([row[0] for row in repo.rows(done)], ["NOT RUN", "NOT RUN"])
+        self.assertIn("budget du poste non tenu", done.stdout)
+        self.assertFalse(marker.exists(), "the suite was launched out of budget")
+
+    def test_a_command_over_its_delay_is_not_run_and_never_passes(self) -> None:
+        """No F-NNNN: ticket #69, critère 6: une suite qui dépasse le délai est NOT RUN avec sa commande, jamais PASS."""
+        repo, base, head = self.fixture()
+        suite = f'"{sys.executable}" -c "import time; time.sleep(60)"'
+        done = repo.commits(base, head, usine(suite), "--timeout", "2")
+        self.assertEqual(done.returncode, 2, done.stdout + done.stderr)
+        self.assertRegex(done.stdout, r"(?m)^NOT RUN\t\w+\t.*time\.sleep.*délai de 2 s")
+        self.assertNotIn("PASS", done.stdout)
+
+    def test_a_bad_run_budget_is_a_failed_call_never_a_pass(self) -> None:
+        """No F-NNNN: ticket #69, critère 6: une clé run-budget invalide est un appel en échec, sans valeur devinée."""
+        repo, base, head = self.fixture()
+        done = repo.commits(base, head, usine(extra="- `run-budget` : `4096 | 12`\n"))
+        self.assertEqual(done.returncode, 2, done.stdout + done.stderr)
+        self.assertRegex(done.stdout, r"(?m)^NOT RUN\t-\t.*run-budget")
 
 
 if __name__ == "__main__":
