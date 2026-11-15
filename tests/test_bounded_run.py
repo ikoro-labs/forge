@@ -65,5 +65,14 @@ class ExitCode(unittest.TestCase):
         self.assertEqual(failing.returncode, 3, failing.stderr)
 
 
+class Bounds(unittest.TestCase):
+    def test_a_command_over_its_delay_gets_the_delay_code_and_a_reason(self) -> None:
+        """No F-NNNN: ticket #66, critère 2: le délai dépassé tue la commande, code distinct, raison sur stderr."""
+        runner = Runner(self)
+        done = runner.run("--memory-mb", "400", "--timeout", "2", command=python("import time; time.sleep(60)"))
+        self.assertEqual(done.returncode, DELAY, done.stderr)
+        self.assertIn("délai de 2 s dépassé", done.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()

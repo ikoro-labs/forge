@@ -20,6 +20,9 @@ from handoff_header import ProcessGroup, group_options  # noqa: E402
 
 TAIL_BYTES = 8192
 
+# Exit codes of the launcher, in the range `timeout(1)` uses for its own, apart from the command's.
+BUDGET, WRONG_CALL, REFUSED, MEMORY, DELAY, NOT_FOUND = 120, 121, 122, 123, 124, 127
+
 
 class Outcome(NamedTuple):
     """How a bounded command ended: its exit code (None when it did not run), why not, and the kind
@@ -89,7 +92,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--timeout", type=int, help="delay, in seconds")
     args = parser.parse_args(options)
     outcome = run_bounded(command, timeout=args.timeout, memory_mb=args.memory_mb)
-    return outcome.code if outcome.code is not None else 1
+    if outcome.code is None:
+        print(f"bounded_run: {outcome.why}", file=sys.stderr)
+        return DELAY if outcome.kind == "delay" else REFUSED
+    return outcome.code
 
 
 if __name__ == "__main__":
