@@ -23,6 +23,16 @@ Refused, with the reason on stderr and exit code 2 so Claude Code blocks the cal
   guard refuses nothing on that account and reads nothing. `/forge:qc` keeps its own rule, which
   stops before the merge: the guard is the net, the rule avoids the refusal.
 
+- `gh pr merge`, for every agent whatever its name, whose method is not the one of the project's
+  `merge-method` key: another option than the key's (`--merge`, `--squash`, `--rebase`, or `-m`,
+  `-s`, `-r`), none at all (gh would ask a human), or two. A `gh api` merge is read the same way, by
+  its `merge_method` field (or query string), and refused without one, as GitHub then merges by
+  merge commit whatever the key says, or when the method sits in a file (`--input`, `@file`).
+  Closed by default: an absent key, two lines, or a value that is not `merge`, `squash` or
+  `rebase` refuses every merge, and the refusal cites the faulty line. `--disable-auto` alone
+  cancels an auto-merge, merges nothing and reads no key. A caller of `refusal` that passes no
+  `merge_method` (None) does not ask for the check; `main` always passes the key's lines.
+
 The command is parsed, not grepped: a commit message that says "push --force" is data. Heredoc
 bodies are dropped first, then the command is split on shell operators with `shlex`. A wrapper
 hides no refusal: assignments, `env`, `sudo`, `command`, `timeout`, `nice`, `nohup`, `xargs` and
