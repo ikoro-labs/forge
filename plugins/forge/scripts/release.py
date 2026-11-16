@@ -14,7 +14,9 @@ The output is one fact per line, in French, on standard output. The standard lib
 from __future__ import annotations
 
 import argparse
+import functools
 import re
+import subprocess
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -37,6 +39,10 @@ REACHED, NOT_REACHED, ABSENT = "atteint", "non atteint", "sans objet"
 MET, NOT_MET, UNVERIFIABLE = "tenue", "non tenue", "non vérifiable"
 STATE_MAX_AGE = timedelta(hours=1)
 SEV1 = "sev1"
+TRIAL_SCRIPT = Path(__file__).resolve().parent / "e2e_trial.py"
+TRIAL_TIMEOUT_SECONDS = 3600
+TRIAL_KEYS = ("RESULTAT", "TETE", "ETAPE", "RAISON")
+HEX_SHA = re.compile(r"[0-9a-f]{40}")
 WRONG_CALL = 2
 
 
@@ -245,15 +251,73 @@ def sev1_condition(project: Path, run: Runner, now: datetime) -> Condition:
     return Condition("sev1", MET, f"aucun ticket `{SEV1}` ouvert")
 
 
+def trial_facts(stdout: str) -> dict[str, str]:
+    """The `KEY: value` lines the trial prints (`RESULTAT`, `TETE`, `ETAPE`, `RAISON`); the first of each key."""
+    facts: dict[str, str] = {}
+    for line in stdout.splitlines():
+        key, separator, value = line.partition(": ")
+        if separator and key in TRIAL_KEYS:
+            facts.setdefault(key, value.strip())
+    return facts
+
+
+def essai_condition(project: Path, run: Runner, now: datetime, script: Path, plugin: str | None) -> Condition:
+    """The end-to-end trial passes on the head of the base.
+
+    The trial is launched here, once, by `script` (the trial of the plugin by default, a stand-in in the
+    tests). Only a `RESULTAT: PASS`, exit 0, on exactly the head of the base and on an unmodified tree
+    holds; a `FAIL` does not; anything else (a key absent, a wrong call, no result line, a head it cannot
+    read, a script that does not run) is "non vérifiable".
+    """
+    f = factory_slo.Factory(project, now - timedelta(days=1), now, run)
+    base_head = f.git("rev-parse", "--verify", "--quiet", f.base_ref())
+    if not base_head or not base_head.strip():
+        return Condition("essai", UNVERIFIABLE, f"la tête de la base `{f.base_ref()}` est illisible")
+    base_head = base_head.strip()
+    command = [sys.executable, str(script), "--projet", str(project), *(["--plugin", plugin] if plugin else [])]
+    try:
+        done = subprocess.run(
+            command, cwd=project, capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=TRIAL_TIMEOUT_SECONDS,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        return Condition("essai", UNVERIFIABLE, f"l'essai n'a pas pu tourner : {error}")
+    facts = trial_facts(done.stdout)
+    if "SANS-OBJET" in done.stdout and "RESULTAT" not in facts:
+        return Condition("essai", UNVERIFIABLE, " ".join(done.stdout.split()))
+    result = facts.get("RESULTAT")
+    if result == "FAIL":
+        return Condition("essai", NOT_MET, f"l'essai a échoué à l'étape {facts.get('ETAPE', '?')} : {facts.get('RAISON', 'raison non donnée')}")
+    if done.returncode != 0 or result != "PASS":
+        detail = (done.stderr.strip() or done.stdout.strip() or "aucune sortie")[:300]
+        return Condition("essai", UNVERIFIABLE, f"l'essai n'a pas rendu de résultat net (sortie {done.returncode}) : {detail}")
+    tried = facts.get("TETE", "")
+    sha = tried.split()[0] if tried else ""
+    if not HEX_SHA.fullmatch(sha):
+        return Condition("essai", UNVERIFIABLE, f"la tête essayée est illisible : `{tried}`")
+    if "arbre modifié" in tried:
+        return Condition("essai", NOT_MET, f"l'essai a passé sur {sha[:12]} avec un arbre modifié : il ne prouve pas la tête de la base")
+    if sha != base_head:
+        return Condition("essai", NOT_MET, f"l'essai a passé sur {sha[:12]}, la tête de la base est {base_head[:12]}")
+    return Condition("essai", MET, f"l'essai passe sur la tête de la base {base_head[:12]}")
+
+
 CONDITIONS: dict[str, Callable[[Path, Runner, datetime], Condition]] = {
     "slo": slo_condition,
     "budget": budget_condition,
     "sev1": sev1_condition,
 }
+CONDITION_NAMES = (*CONDITIONS, "essai")
+
+
+def conditions_for(args: argparse.Namespace) -> dict[str, Callable[[Path, Runner, datetime], Condition]]:
+    """The four conditions, the trial bound to the script and the plugin of the call."""
+    essai = functools.partial(essai_condition, script=args.essai or TRIAL_SCRIPT, plugin=args.plugin)
+    return {**CONDITIONS, "essai": essai}
 
 
 def run_condition(args: argparse.Namespace, run: Runner, now: datetime) -> int:
-    print(CONDITIONS[args.name](args.projet, run, now).line())
+    print(conditions_for(args)[args.name](args.projet, run, now).line())
     return 0
 
 
@@ -265,8 +329,10 @@ def main(argv: list[str] | None = None, run: Runner | None = None, now: datetime
     trigger = commands.add_parser("trigger", help="whether a version is due")
     trigger.add_argument("projet", type=Path)
     condition = commands.add_parser("condition", help="one condition of the release")
-    condition.add_argument("name", choices=sorted(CONDITIONS))
+    condition.add_argument("name", choices=CONDITION_NAMES)
     condition.add_argument("projet", type=Path)
+    condition.add_argument("--plugin", help="the plugin the trial tries (the checkout of the head of the base)")
+    condition.add_argument("--essai", type=Path, help="the trial script (default: e2e_trial.py next to this script)")
     args = parser.parse_args(argv)
     run = run or factory_slo.run_command
     moment = now or datetime.now(timezone.utc)

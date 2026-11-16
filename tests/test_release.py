@@ -202,6 +202,78 @@ class SloCondition(Base):
         self.assertEqual(self.condition()[0], "non vérifiable")
 
 
+class EssaiCondition(Base):
+    """L'essai de bout en bout passe sur la tête de la base : un faux script tient la place de l'essai."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.head = self.world.commit("feat: tête de la base", "2026-11-15T10:00:00Z")
+        self.script = Path(self.tmp.name) / "faux_essai.py"
+
+    def trial(self, stdout: str, code: int = 0, stderr: str = "") -> None:
+        """Écrit le faux essai : il note ses arguments à côté de lui, imprime et sort avec `code`."""
+        self.script.write_text(
+            "import json\nimport sys\nfrom pathlib import Path\n"
+            "Path(__file__).with_name('arguments.json').write_text(json.dumps(sys.argv[1:]))\n"
+            f"print({stdout!r})\nprint({stderr!r}, file=sys.stderr)\nsys.exit({code})\n",
+            encoding="utf-8",
+        )
+
+    def condition(self, *extra: str) -> tuple[str, str]:
+        code, out, _ = self.run_main("condition", "essai", "--essai", str(self.script), *extra)
+        self.assertEqual(code, 0)
+        line = next(line for line in out.splitlines() if line.startswith("CONDITION: essai"))
+        _, status, text = (part.strip() for part in line.split("|", 2))
+        return status, text
+
+    def test_a_pass_on_the_head_of_the_base_holds_and_the_script_gets_the_project_and_the_plugin(self) -> None:
+        """Ticket #71 : `RESULTAT: PASS` sur la tête de la base : tenue ; le projet et le plugin sont transmis."""
+        self.trial(f"RESULTAT: PASS\nTETE: {self.head}\nDEPOT: o/essai")
+        status, text = self.condition("--plugin", "/plugin/a/essayer")
+        self.assertEqual(status, "tenue")
+        self.assertIn(self.head[:12], text)
+        arguments = json.loads((self.script.with_name("arguments.json")).read_text(encoding="utf-8"))
+        self.assertEqual(arguments, ["--projet", str(self.world.root), "--plugin", "/plugin/a/essayer"])
+
+    def test_a_pass_on_another_commit_or_on_a_modified_tree_does_not_hold(self) -> None:
+        """Ticket #71 : un PASS qui n'a pas porté sur la tête de la base, ou sur un arbre modifié, ne la prouve pas."""
+        self.trial("RESULTAT: PASS\nTETE: " + "a" * 40)
+        status, text = self.condition()
+        self.assertEqual(status, "non tenue")
+        self.assertIn("a" * 12, text)
+        self.assertIn(self.head[:12], text)
+        self.trial(f"RESULTAT: PASS\nTETE: {self.head} (arbre modifié)")
+        status, text = self.condition()
+        self.assertEqual(status, "non tenue")
+        self.assertIn("arbre modifié", text)
+
+    def test_a_fail_does_not_hold_and_names_the_step_and_the_reason(self) -> None:
+        """Ticket #71 : `RESULTAT: FAIL` (exit 1) : non tenue, avec `ETAPE` et `RAISON`."""
+        self.trial(f"RESULTAT: FAIL\nETAPE: checks\nRAISON: un check est rouge\nTETE: {self.head}", code=1)
+        status, text = self.condition()
+        self.assertEqual(status, "non tenue")
+        self.assertIn("checks", text)
+        self.assertIn("un check est rouge", text)
+
+    def test_what_is_not_a_clear_result_cannot_be_verified(self) -> None:
+        """Ticket #71 : sans objet, mauvais appel, sortie muette, PASS qui sort en erreur, script absent : non vérifiable."""
+        cases = {
+            "sans objet": ("SANS-OBJET (clé `e2e-command` absente)", 0),
+            "mauvais appel": ("", 2),
+            "sortie muette": ("rien d'utile", 0),
+            "pass en erreur": (f"RESULTAT: PASS\nTETE: {self.head}", 1),
+            "tête inconnue": ("RESULTAT: PASS\nTETE: inconnue (le plugin n'est pas dans un dépôt git)", 0),
+        }
+        for name, (stdout, code) in cases.items():
+            with self.subTest(case=name):
+                self.trial(stdout, code=code, stderr="e2e_trial: mauvais appel")
+                self.assertEqual(self.condition()[0], "non vérifiable")
+        self.trial("SANS-OBJET (clé `e2e-command` absente)")
+        self.assertIn("clé `e2e-command` absente", self.condition()[1])
+        self.script.unlink()
+        self.assertEqual(self.condition()[0], "non vérifiable")
+
+
 class Sev1Condition(Base):
     """Aucun ticket `sev1` n'est ouvert."""
 
