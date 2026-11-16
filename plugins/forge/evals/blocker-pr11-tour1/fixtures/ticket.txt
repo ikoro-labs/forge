@@ -1,0 +1,47 @@
+Ticket #2: after_write formate chaque fichier écrit avec le formateur que le projet déclare
+
+## Constat
+
+`after_write` ne contrôle aujourd'hui qu'une chose après chaque écriture d'un agent : le tiret cadratin (clé `em-dash-allowances`). Un projet qui formate son code (un formateur Python, un formateur du front) doit garder son propre hook à côté de celui du plugin. Deux hooks tournent alors après chaque écriture, et le formatage n'existe que dans les projets qui ont recopié le leur : il ne se partage pas.
+
+## Ce qui est attendu
+
+- Une clé `format-on-write` dans `docs/agents/usine.md`, répétable : un motif de chemin et la commande qui formate un fichier de ce motif (par exemple `**/*.py` avec la commande du formateur Python, `apps/web/**/*.{ts,tsx}` avec celle du front).
+- `after_write` lance, pour chaque fichier écrit, les commandes dont le motif lui correspond, depuis la racine du dépôt, avec un délai borné.
+- L'échec d'un formateur n'annule pas l'écriture : une ligne fixe nomme le fichier et la commande, et le juge la voit dans le journal.
+- Clé absente : comportement inchangé, aucun formateur deviné.
+- Le gabarit `templates/usine.md` documente la clé ; des tests couvrent un motif qui correspond, un motif qui ne correspond pas, un formateur en échec et un délai dépassé.
+
+La forme exacte de la valeur (séparateur, place du chemin du fichier dans la commande) est à trancher par `forge:staff-engineer`.
+
+--- Commentaire du 2026-10-23T20:58:25Z
+## Tri : avis de forge:staff-engineer (RESERVED, décision à `accepting-human`)
+
+Sans clé `decision-matrix`, la forme revient à l'humain. Recommandation :
+
+- Ligne : `format-on-write` : `<motif> | <commande>`, par exemple `**/*.py | uv run ruff format` ou `apps/web/**/*.{ts,tsx} | pnpm --dir apps/web exec prettier --write`.
+- Le chemin du fichier s'ajoute en dernier argument, en absolu, sans substitution. La commande est découpée par `shlex` (POSIX), lancée sans shell depuis la racine, `argv[0]` résolu par `shutil.which` (PATHEXT sous Windows).
+- Motif comparé au chemin relatif POSIX entier, casse comprise, par un traducteur écrit à la main (`PurePath.full_match` et `glob.translate` n'existent qu'en 3.13, `PurePath.match` ignore `**`, le `*` de fnmatch traverse `/`) : `**/`, `*`, `?`, `{a,b}` non imbriqué ; tout le reste est littéral. Un test par forme.
+- Plusieurs motifs : toutes les commandes, dans l'ordre du fichier, avant le contrôle du tiret cadratin.
+- Délai : une constante du hook, pas une clé : 30 s par commande, 120 s au total. `hooks.json` (protégé) ne change pas. Sortie dans un fichier temporaire, pas dans des tubes (un petit-enfant de `uv run` bloquerait la lecture).
+- Échec ou délai : `format-on-write: <commande> failed on <chemin> (exit <n> | timed out after <n>s)` sur stderr, code 2 (PostToolUse : l'agent le voit, l'écriture reste). Le « journal » du ticket n'existe pas : le coder reporte la ligne dans les NOTES de sa PR.
+- Revient sur un choix consigné (`CHANGELOG.md:390`, docstring d'`after_write.py`) : la PR corrige la docstring et le README.
+
+### Points communs aux tickets #2, #3, #5 et #6
+
+- **Valeur à plusieurs parties** : le parseur (`plugins/forge/hooks/usine.py:20`) ne lit qu'une valeur entre backticks. Recommandation : ne pas toucher au parseur, couper la valeur au premier ` | ` (puis au suivant s'il faut plus de deux parties), la dernière partie gardant le reste (une commande peut contenir `|`). Un seul helper `split_value(value, parts)` dans `usine.py`, testé dans `tests/test_usine.py` ; une valeur à qui il manque une partie est signalée, jamais complétée.
+- **« Aucune valeur par défaut »** : la règle vise les clés. Un comportement intégré au hook, qu'une clé complète, la respecte (comme le refus de `--force` par `guard_git`), tant que la doc ne présente pas la liste intégrée comme la valeur de la clé.
+
+Statut : `ready-for-human`, en attente de la décision.
+
+--- Commentaire du 2026-10-23T21:00:40Z
+## Décision de l'humain (`accepting-human`, 2026-10-23)
+
+Les recommandations du commentaire de tri ci-dessus sont retenues telles quelles et font partie du ticket. Les valeurs à plusieurs parties se coupent au premier ` | `, par le helper `split_value` de `plugins/forge/hooks/usine.py`, testé dans `tests/test_usine.py` ; si ce helper existe déjà sur `main`, le réutiliser. Ce ticket revient sur le choix consigné dans le CHANGELOG : la PR le dit dans la zone concernée et corrige la docstring du hook.
+
+Statut : `ready-for-agent`.
+
+--- Commentaire du 2026-10-23T21:02:23Z
+## Consigne de l'humain (2026-10-23)
+
+La PR met à jour le schéma du README : sa source `docs/architecture.excalidraw` et son export `docs/architecture.svg`, cohérents entre eux (`docs/contribuer.md`, « Le schéma et le logo »). Ce qui doit y paraître : la boîte `after_write` des hooks PostToolUse, qui formate désormais. La PR dit comment l'export a été produit et ce qui n'a pas été vérifié à l'œil.

@@ -1,0 +1,6 @@
+schema_version: "1.0"
+name: faux-accept-pr23-tour1
+description: "Rejoue la PR 23 au tour 1 devant forge:qc-conf (une correction de sonde dont un changement n'a aucun test, ACCEPT à l'époque). Verdict attendu, REJECT, ou au moins le BLOCKER qui manquait: la PR a été fusionnée sur ACCEPT et ce défaut a suivi."
+tags: [faux-accept, juge]
+context:
+  scaffold_script: scaffold.sh

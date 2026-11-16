@@ -1,0 +1,6 @@
+schema_version: "1.0"
+name: blocker-pr13-tour1
+description: "Rejoue la PR 13 au tour 1 devant forge:qc-conf (une sonde never-weaken qui rend NONE sur des diffs que git écrit autrement (binaire, fichier vide)). Verdict attendu, REJECT: un BLOCKER avéré est dans le diff."
+tags: [blocker, juge]
+context:
+  scaffold_script: scaffold.sh

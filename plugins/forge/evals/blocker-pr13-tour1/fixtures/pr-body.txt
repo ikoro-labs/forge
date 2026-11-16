@@ -1,0 +1,53 @@
+PR #13: feat(qc): arrêter la fusion par l'agent quand une règle never-weaken s'applique
+
+## Résumé
+
+Un projet peut déclarer, par la clé `never-weaken` de `docs/agents/usine.md`, des changements qu'aucun agent ne fusionne, même sur ACCEPT : un humain le fait, comme pour un chemin protégé. Une entrée est `<chemin> | <type> [| <paramètre>]`, le chemin étant un fichier ou un dossier (fini par `/`). Trois types fermés, décidés sur le diff seul :
+
+- `removed-line` : une ligne retirée sous le chemin, un fichier supprimé ou sorti du chemin.
+- `raised-number | <regex à un groupe>` : un nombre monte (lignes retirées et ajoutées d'un fichier appariées dans l'ordre).
+- `lowered-rank | <champ> | <rang> > <rang> ...` : un rang baisse, le meilleur d'abord.
+
+Pourquoi : élargir ce qu'un agent fusionne seul est une décision de gouvernance ; ce ticket ne fait que retirer des droits à l'agent (tri de `forge:staff-engineer`, décision de l'humain sur #5, `delegated-path` parti dans #8).
+
+- `plugins/forge/scripts/never_weaken.py` (bibliothèque standard) lit un diff et rend une ligne par entrée (`APPLIES`, `NONE`, `INVALID`) et un code de sortie (0, 1, 2). Il réutilise `split_value` de `hooks/usine.py` (#11), ne lance aucune commande du projet (un test le garde).
+- `forge:qc-gate` : sonde 10, le script sur le diff de la PR.
+- `forge:qc-conf` : nomme les entrées qui s'appliquent dans la ligne `GATES` (`never-weaken : ...`), sans REJECT.
+- `/forge:qc` : une entrée qui s'applique pose `needs-your-attention`, écrit la raison dans `Attention`, et ne fusionne pas, même sur ACCEPT.
+- Gabarit `usine.md`, `README.md`, `docs/installation.md`, schéma du README (consigne de l'humain sur #5).
+
+Closes #5
+
+## Décisions que la spec ne fixait pas
+
+- **Les entrées sont lues sur la base**, pas sur la tête (`git show origin/<base>:docs/agents/usine.md` passé à `--usine`) : sinon une PR retirerait la règle qui la juge. En plus, une PR qui retire ou modifie une ligne `never-weaken` de `docs/agents/usine.md` s'applique elle-même (dernière ligne de la sortie du script). Limite : une règle ajoutée par une PR ne protège qu'à partir de sa fusion.
+- **Fail closed** : entrée à qui il manque une partie, type inconnu, paramètre absent ou mal formé : `INVALID`, code 2, jamais complétée ni lue comme « aucune ». Une valeur illisible ou hors échelle qui change s'applique (`raised-number`, `lowered-rank`). Sonde `FAIL` ou `NOT RUN` : `/forge:qc` arrête la fusion aussi.
+- **Chemin** : un dossier se termine par `/`, sinon fichier exact (pas de préfixe brut comme `protected-path`).
+- **Appariement** : lignes retirées et ajoutées appariées dans l'ordre par fichier ; une ligne ajoutée sans vis-à-vis (champ créé) ou retirée sans vis-à-vis (champ supprimé) n'est pas un « relevé » ou un « abaissé » ; supprimer un fichier ou une ligne se couvre par `removed-line`.
+- **Une passe** : `/forge:qc` ne revoit plus en une passe (sans `forge:qc-gate`) une PR dont le diff touche le chemin d'une entrée, y compris du Markdown : la sonde ne tourne que dans `forge:qc-gate`.
+- Le verdict reste ACCEPT (choix du coder, le ticket ne le dit pas) : la PR n'est pas rejetée, la décision de la fusionner revient à un humain.
+- Ce dépôt n'a pas encore d'entrée `never-weaken` dans son propre `docs/agents/usine.md` : le ticket ne la demande pas.
+- `CHANGELOG.md` et `version` : non touchés, ils s'ouvrent à la publication (`docs/contribuer.md`).
+
+## Ce qui ne change pas
+
+Le parseur `usine.py` (seul `split_value` est utilisé), les hooks, `hooks.json`, `parse_output.py` (la ligne `GATES` reste une ligne libre), la version du plugin, les autres clés. `delegated-path` (#8) n'est pas touché.
+
+## Schéma du README
+
+`docs/architecture.excalidraw` et `docs/architecture.svg`, modifiés ensemble : la boîte de la revue `/forge:qc` dit « chemin protégé ou changement never-weaken : un humain fusionne » (texte, boîte de 60 à 70 px, flèche prolongée, cadre de la revue de 250 à 262 px). La source est modifiée par un script JSON (le fichier se réécrit à l'identique hors des lignes touchées : 16 lignes), puis exportée avec `exportToSvg` de `@excalidraw/excalidraw` 0.18.1 sous Node 22 et jsdom, outillage hors du dépôt (méthode de #9 et #11 : chargeur ESM pour les imports sans extension, `FontFace` simulé, polices intégrées par l'export). Contrôle : l'export de l'ancienne source (celle de `main`) redonne `docs/architecture.svg` de `main` à l'octet (`cmp` identique). Le test de l'export garde que chaque ligne de texte de la source figure dans l'SVG, et un nouveau test que la boîte dit `never-weaken`.
+
+**Pas vérifié à l'œil** : ni dans Excalidraw ni dans un navigateur. Seul contrôle visuel : un rendu PNG par cairosvg, où la boîte à trois lignes tient dans son cadre, sans chevauchement, et la flèche y aboutit. Ce rendu tronque par ailleurs la partie gauche du schéma et noircit les étiquettes (« epingle », « OPEN »), limite de cairosvg déjà vue sur `main`, non comparée ici.
+
+## Preuves
+
+- Rouge avant : `tests/test_never_weaken.py` échoue d'abord par `ModuleNotFoundError: never_weaken` (aucun script), puis, à chaque type, 7 échecs (`raised-number`) et 9 (`lowered-rank`) avant le code ; les tests de contenu (`NeverWeaken`, 5 échecs) et du schéma (1 échec) avant leurs textes.
+- Vert après : `uv run --no-project --quiet python -m unittest discover -s tests` : `Ran 256 tests ... OK (skipped=3)` (3 sauts, non comparés un à un à ceux de `main`).
+- `claude plugin validate .` et `claude plugin validate plugins/forge` : `Validation passed` des deux.
+- Essayé sur un vrai poste : le script a tourné en ligne de commande, sous Linux, sur le diff de cette branche avec une entrée `tests/ | removed-line` (`NONE`, code 0). Pas essayé : sous Windows (en CI seulement), dans une vraie revue `/forge:qc` (sonde 10 de `forge:qc-gate` et arrêt de la fusion jamais exécutés par un agent), ni sur un vrai diff avec renommages (`git diff` sans `--no-renames` : les en-têtes `rename from/to` sont gérés par les tests, pas vus sur un vrai dépôt).
+
+## Suite
+
+`delegated-path` : #8. Une entrée `never-weaken` pour ce dépôt, si l'humain en veut une.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)

@@ -1,0 +1,16 @@
+| Sonde | Résultat | Détail |
+|---|---|---|
+| Base et diff | 7 fichier(s) dans pr.diff, +495 -25 | diff de la base à la tête |
+| Périmètre | à lire | fichiers de pr.diff : README.md, docs/installation.md, plugins/forge/hooks/guard_git.py, plugins/forge/hooks/guard_readonly.py, plugins/forge/templates/usine.md, tests/test_guard_git.py, tests/test_usine.py ; la PR change aussi docs/architecture.excalidraw et docs/architecture.svg (export du schéma, retirés de pr.diff pour sa taille : ni lus ni jugés ici) |
+| CI | PASS | tests (windows-latest): success, tests (ubuntu-latest): success, validate: success |
+| Rejeu local | NOT RUN | sonde non rejouée : tableau figé du jeu de référence |
+| Tests sautés | NOT RUN | sonde non rejouée : tableau figé du jeu de référence |
+| Listes de référence | NOT RUN | sonde non rejouée : tableau figé du jeu de référence |
+| Échappatoires ajoutées | NOT RUN | sonde non rejouée : tableau figé du jeu de référence |
+| Taille | NOT RUN | sonde non rejouée : tableau figé du jeu de référence |
+| Trace | NOT RUN | sonde non rejouée : tableau figé du jeu de référence |
+| Règles never-weaken | NOT RUN | sonde non rejouée : tableau figé du jeu de référence |
+| Rejeu des tests sur la base | NOT RUN | sonde non rejouée : tableau figé du jeu de référence |
+| Libellés de l'écran | NOT RUN | sonde non rejouée : tableau figé du jeu de référence |
+| Preuves d'écran | NOT RUN | sonde non rejouée : tableau figé du jeu de référence |
+| Rejeu de chaque commit | NOT RUN | sonde non rejouée : tableau figé du jeu de référence |

@@ -1,0 +1,181 @@
+diff --git a/plugins/forge/scripts/never_weaken.py b/plugins/forge/scripts/never_weaken.py
+index 7fdcb46..7464203 100644
+--- a/plugins/forge/scripts/never_weaken.py
++++ b/plugins/forge/scripts/never_weaken.py
+@@ -12,10 +12,11 @@ script launches no command the project declares. Each `never-weaken` entry is
+ 
+ `<path>` is a file, or a directory when it ends with `/`. One line per entry is printed, `<status>`,
+ `<entry>` and `<detail>` separated by tabs, the status being APPLIES (the diff weakens what the
+-entry guards), NONE, or INVALID (the entry is malformed, or its diff cannot be read: it is never
+-read as NONE). A last line, `docs/agents/usine.md : never-weaken`, says whether the diff removes
+-or edits an entry (APPLIES) : a PR cannot lift the guard it is judged by. Exit code 0 when no entry applies, 1 when one does, 2 when one is invalid or the
+-call is wrong. Without the key, the step is "sans objet" and the exit code is 0.
++entry guards), NONE, or INVALID (the entry is malformed). A diff that cannot be read (a binary
++patch under the path) is APPLIES, never NONE and never INVALID. A last line,
++`docs/agents/usine.md : never-weaken`, says whether the diff removes or edits an entry (APPLIES) :
++a PR cannot lift the guard it is judged by. Exit code 0 when no entry applies, 1 when one does
++(an unreadable diff included), 2 when one is invalid or the call is wrong. Without the key, the step is "sans objet" and the exit code is 0.
+ 
+ The entries are read from the base (`--usine`, `git show origin/<base>:docs/agents/usine.md`), so a
+ PR cannot lift the guard it is judged by. The standard library only.
+@@ -113,9 +114,9 @@ def parse_diff(text: str) -> list[FileChange]:
+             elif line.startswith("+++ "):
+                 current.new_path = _path(line[4:])
+             elif line.startswith("rename from "):
+-                current.old_path = _path(line[len("rename from "):])
++                current.old_path = _unquote(line[len("rename from "):])
+             elif line.startswith("rename to "):
+-                current.new_path = _path(line[len("rename to "):])
++                current.new_path = _unquote(line[len("rename to "):])
+         elif line.startswith("-"):
+             current.removed.append(line[1:])
+         elif line.startswith("+"):
+@@ -130,6 +131,13 @@ def under(path: str | None, scope: str) -> bool:
+     return path.startswith(scope) if scope.endswith("/") else path == scope
+ 
+ 
++def _scoped(change: FileChange, scope: str) -> str | None:
++    """The path of the file under `scope`, after or before the change: a rename is read at both ends."""
++    if under(change.new_path, scope):
++        return change.new_path
++    return change.old_path if under(change.old_path, scope) else None
++
++
+ def _unreadable(change: FileChange, scope: str) -> str | None:
+     """A binary patch under the path cannot be read: it applies, never reads as no change."""
+     if change.unreadable and (under(change.old_path, scope) or under(change.new_path, scope)):
+@@ -167,17 +175,18 @@ def _raised_number(changes: list[FileChange], scope: str, parameter: str) -> tup
+         if unreadable := _unreadable(change, scope):
+             hits.append(unreadable)
+             continue
+-        if not under(change.new_path, scope):
++        path = _scoped(change, scope)
++        if path is None:
+             continue
+         for old, new in _changed_values(change, pattern):
+             try:
+                 raised = float(new) > float(old)
+             except ValueError:
+                 if old != new:
+-                    hits.append(f"{change.new_path}: valeur illisible, {old} puis {new}")
++                    hits.append(f"{path}: valeur illisible, {old} puis {new}")
+                 continue
+             if raised:
+-                hits.append(f"{change.new_path}: {old} relevé à {new}")
++                hits.append(f"{path}: {old} relevé à {new}")
+     if hits:
+         return APPLIES, "; ".join(hits)
+     return NONE, "aucune valeur relevée sous le chemin"
+@@ -215,15 +224,16 @@ def _lowered_rank(
+         if unreadable := _unreadable(change, scope):
+             hits.append(unreadable)
+             continue
+-        if not under(change.new_path, scope):
++        path = _scoped(change, scope)
++        if path is None:
+             continue
+         for old, new in _changed_values(change, pattern):
+             if old == new:
+                 continue
+             if old not in ranks or new not in ranks:
+-                hits.append(f"{change.new_path}: rang hors échelle, {old} puis {new}")
++                hits.append(f"{path}: rang hors échelle, {old} puis {new}")
+             elif ranks.index(new) > ranks.index(old):
+-                hits.append(f"{change.new_path}: {old} abaissé à {new}")
++                hits.append(f"{path}: {old} abaissé à {new}")
+     if hits:
+         return APPLIES, "; ".join(hits)
+     return NONE, "aucun rang abaissé sous le chemin"
+diff --git a/tests/test_never_weaken.py b/tests/test_never_weaken.py
+index e8eb1d5..bd18f80 100644
+--- a/tests/test_never_weaken.py
++++ b/tests/test_never_weaken.py
+@@ -36,11 +36,12 @@ def deleted(path: str, *lines: str) -> str:
+ 
+ def real_diff(before: dict[str, bytes], after: dict[str, bytes], *flags: str) -> str:
+     """The `git diff` of two states of a throwaway repository, as `git` really prints it."""
++    home = tempfile.mkdtemp()  # private: never the shared temporary folder itself
+     env = {
+         "PATH": os.environ.get("PATH", ""),
+         "SYSTEMROOT": os.environ.get("SYSTEMROOT", ""),
+-        "HOME": tempfile.gettempdir(),
+-        "USERPROFILE": tempfile.gettempdir(),
++        "HOME": home,
++        "USERPROFILE": home,
+         "GIT_CONFIG_NOSYSTEM": "1",
+     }
+ 
+@@ -63,11 +64,14 @@ def real_diff(before: dict[str, bytes], after: dict[str, bytes], *flags: str) ->
+         git("add", "-A")
+         git("commit", "-q", "--allow-empty", "-m", "state")
+ 
+-    with tempfile.TemporaryDirectory() as folder:
+-        git("init", "-q")
+-        write(before)
+-        write(after)
+-        return git(*flags, "diff", "HEAD~1", "HEAD")
++    try:
++        with tempfile.TemporaryDirectory() as folder:
++            git("init", "-q")
++            write(before)
++            write(after)
++            return git(*flags, "diff", "HEAD~1", "HEAD")
++    finally:
++        shutil.rmtree(home, ignore_errors=True)
+ 
+ 
+ def statuses(entries: list[str], text: str) -> list[str]:
+@@ -378,5 +382,53 @@ class RealGitDiffs(unittest.TestCase):
+             self.assertEqual(code, 1, text)
+ 
+ 
++class RenameKeepsItsPath(unittest.TestCase):
++    """Ticket #16: `rename from` and `rename to` carry no `a/` or `b/` prefix to strip."""
++
++    BODY = b"un\ndeux\ntrois\n"
++
++    def test_a_root_folder_a_moved_unchanged_applies(self) -> None:
++        text = real_diff({"a/seuils/ref.txt": self.BODY}, {"archive/ref.txt": self.BODY})
++        self.assertIn("rename from a/seuils/ref.txt", text)
++        self.assertEqual(statuses(["a/seuils/ | removed-line"], text), [APPLIES])
++
++    def test_a_root_folder_b_moved_unchanged_applies(self) -> None:
++        text = real_diff({"b/seuils/ref.txt": self.BODY}, {"archive/ref.txt": self.BODY})
++        self.assertEqual(statuses(["b/seuils/ | removed-line"], text), [APPLIES])
++
++    def test_a_file_renamed_into_a_root_folder_b_is_read_under_its_real_path(self) -> None:
++        text = real_diff({"x/ref.txt": self.BODY}, {"b/y/ref.txt": self.BODY})
++        self.assertEqual(statuses(["x/ | removed-line"], text), [APPLIES])
++        self.assertEqual(statuses(["b/y/ | removed-line"], text), [NONE])
++
++
++class RenameWithEdit(unittest.TestCase):
++    """Ticket #16: a file leaving or entering the path while it changes is read under the entry."""
++
++    TOLERANCES = b"[tol]\nrel_tol = 1e-3\nabs_tol = 1e-6\nname = 'seuils'\nother = 1\nmore = 2\n"
++    RAISED = TOLERANCES.replace(b"1e-3", b"1e-2")
++    NUMBER = "config/tolerances.toml | raised-number | ^rel_tol = (\\S+)"
++    RANK = "docs/fonctions/ | lowered-rank | statut | certifie > valide > brouillon"
++    FICHE = b"# Fonction\n\nstatut: certifie\nUne ligne\nUne autre\nEncore une\n"
++
++    def test_a_renamed_file_with_a_raised_number_applies(self) -> None:
++        text = real_diff({"config/tolerances.toml": self.TOLERANCES}, {"config/tol.toml": self.RAISED})
++        self.assertIn("rename from config/tolerances.toml", text)
++        self.assertEqual(statuses([self.NUMBER], text), [APPLIES])
++
++    def test_a_renamed_file_with_a_lowered_rank_applies(self) -> None:
++        after = {"docs/archive/f.md": self.FICHE.replace(b"certifie", b"brouillon")}
++        text = real_diff({"docs/fonctions/f.md": self.FICHE}, after)
++        self.assertEqual(statuses([self.RANK], text), [APPLIES])
++
++    def test_a_file_entering_the_path_by_rename_is_still_read(self) -> None:
++        text = real_diff({"x/tol.toml": self.TOLERANCES}, {"config/tolerances.toml": self.RAISED})
++        self.assertEqual(statuses([self.NUMBER], text), [APPLIES])
++
++    def test_a_renamed_file_without_a_raise_does_not_apply(self) -> None:
++        text = real_diff({"config/tolerances.toml": self.TOLERANCES}, {"config/tol.toml": self.TOLERANCES})
++        self.assertEqual(statuses([self.NUMBER], text), [NONE])
++
++
+ if __name__ == "__main__":
+     unittest.main()

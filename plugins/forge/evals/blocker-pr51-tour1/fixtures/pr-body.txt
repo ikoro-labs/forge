@@ -1,0 +1,33 @@
+PR #51: feat(qc-gate): rejouer les tests ajoutés sur la base, chacun doit y échouer
+
+## Résumé
+
+Le rouge d'un test n'était qu'une déclaration du coder. `forge:qc-gate` le remesure maintenant (#43).
+
+- **Script** `plugins/forge/scripts/base_replay.py` : extrait le merge base (`git archive`, rien n'est écrit dans le dépôt ni dans sa configuration), y pose les fichiers de test ajoutés ou changés sous `test-path` tels que la tête les a, lance `install` puis `red-replay` une fois par fichier, et rend `PASSES` (la commande sort à 0 sur la base), `RED`, `NOT RUN` (avec sa commande) ou `NONE`. Une clé absente rend `sans objet (clé <nom> absente)`.
+- **Bornes** : chaque commande tourne sous une limite de mémoire (2000 Mo, plafonnée par la limite de la session) et un délai (300 s). Linux : `RLIMIT_AS` et groupe de processus tué au délai. Windows : objet de tâche (job object) avec limite mémoire par processus. Une limite qui ne se pose pas rend `NOT RUN`, jamais une commande non bornée.
+- **Sonde 11 de `qc-gate`**, **section « Lecture du rejeu sur la base » de `qc-conf`** (distincte de « Lecture des tests », #42) : `BLOCKER` si le test qui passe sur la base est la seule preuve d'un critère de comportement nouveau, `MINOR` sinon, sauf justification dans la PR.
+- **Clés** `test-path` et `red-replay` : gabarit `usine.md`, `docs/installation.md`, et `docs/agents/usine.md` de ce dépôt (`tests/`, la suite unittest par `-p {name}`).
+
+Le grain du fichier est la décision de l'humain sur #43 (https://github.com/ikoro-labs/forge/issues/43#issuecomment-6385217410) : `red-replay` est une commande unique avec `{file}` ou `{name}`, lancée une fois par fichier, et la sortie dit ce grain. Autre décision que le ticket ne fixait pas : le grain est donc le fichier. Un fichier avec un test qui passe à côté d'un test rouge est rendu `RED`, et le test qui passe n'est pas vu. Les clés sont lues sur la base (comme `never-weaken`) : sur cette PR, qui les ajoute, la sonde sera donc « sans objet ».
+
+Refs #43
+
+Points livrés : le rejeu des tests ajoutés ou changés sur la base **au grain du fichier de test**, avec ce grain dit dans la sortie de la sonde, dans la sonde 11 de `qc-gate` et dans la lecture de `qc-conf` ; les bornes de mémoire et de délai (Linux et Windows) ; les clés `test-path` et `red-replay`. Reste sous #43 : le grain du test (voir « Suite »).
+
+## Ce qui ne change pas
+
+Version et `CHANGELOG.md` (la publication est une PR à part), hooks, `hooks.json`, `forge:coder`, la lecture de qualité des tests de `qc-conf` (#42). `parse_output.py` et la forme du verdict sont inchangés.
+
+## Preuves
+
+- Rouge avant (script absent, `(ulimit -v 2000000; timeout 300 uv run --no-project --quiet python -m unittest discover -s tests -p test_base_replay.py)`) : `FAILED (failures=5)`, `AssertionError: 2 != 0`. Le test mémoire a aussi été vu rouge : `'PASSES' unexpectedly found in 'PASSES\ttests/test_new.py'` sans la limite.
+- Vert après, même commande sous limite : suite entière `Ran 321 tests ... OK (skipped=5)`.
+- `claude plugin validate .` et `claude plugin validate plugins/forge` : `Validation passed` deux fois.
+- Le script lancé sur cette branche contre `origin/main` : `RED tests/test_base_replay.py` et `RED tests/test_plugin_content.py` (les tests ajoutés échouent sur la base), code 0.
+- Essayé sur un vrai poste : Linux seulement (Linux 7.0, Python 3.14). Le côté Windows (job object, `list2cmdline`) est écrit d'après la documentation Win32 et n'a jamais tourné ; sa première exécution sera la CI `tests (windows-latest)`. macOS n'est pas couvert.
+- Synchronisée avec main à 3561f15 : conflit dans docs/installation.md (les deux paragraphes gardés, `test-path`/`red-replay` puis `ticket-skill`), aucun dans plugins/forge/templates/usine.md ; suite sous limite `Ran 326 tests ... OK (skipped=5)`, validations du plugin passées.
+
+## Suite
+
+Le grain du test reste à faire sous #43 (le ticket reste ouvert) : d'abord repérer les tests ajoutés ou changés (pas seulement les fichiers), puis choisir entre un rapport par test rendu par `red-replay` (JUnit XML lu par `xml.etree`, préféré par l'avis du staff-engineer : une clé de moins, un seul lancement) et des clés en plus.

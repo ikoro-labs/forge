@@ -1,0 +1,33 @@
+PR #30: fix(hooks): guard_git lit les gestes du propriétaire sans ouvrir son entrée standard (reprise de #28)
+
+## Résumé
+
+Reprise de #18 après la PR #28 (rejetée au tour 2, fermée avec `agent-rework`). Cette PR repart de ses commits justes (GraphQL dans les heredocs, GET explicite avec champs, scripts de runner, `deploy-key -R`, wrappers) et ferme ses deux BLOCKER, ses MINOR et ses NOTE.
+
+Depuis #28 :
+- **Un seul découpeur des arguments de `gh api`**, fidèle à pflag : la valeur d'une option (`--jq -XGET`) n'est plus prise pour la méthode, le dernier `-X` compte (1er BLOCKER du tour 2).
+- **Le garde n'ouvre jamais un chemin sous `/dev/` ou `/proc/`** après normalisation (absolu depuis le cwd, `//`, `/./`, `..`, lien symbolique résolu) : il vaut l'entrée standard, comme `-` (2e BLOCKER). Un fichier lu est ordinaire (`stat` avant l'ouverture), de 1 Mo au plus, lu au plus plafond plus un octet : `/dev/zero` et un FIFO ne saturent ni ne bloquent plus, `--body-file` de `gh pr merge` compris. L'entrée standard de `--input -` est la redirection de cette commande (`<` ou heredoc), pas le heredoc d'une autre (NOTE du tour 1).
+- **Runner Windows** : `bin/Runner.Listener.exe` en plus de `bin/Runner.Listener`, testé avec un dossier à la forme Windows.
+- **Enregistrement d'un runner** : `--unattended` et `--pat`, et toute affectation `ACTIONS_RUNNER_INPUT_*` (devant la commande, `env`, `export`, seule, `bash -c`, heredoc).
+- **`hooks.json`** : un refus de règle se reconnaît à ce que le garde écrit, plus au code 2 (script absent et erreur d'usage de `uv` sortent aussi en 2). La forme `{ ...; }` disparaît ; la commande reste écrite pour un shell POSIX, ce que `docs/installation.md` dit.
+- Prose : « fails closed » ; `docs/installation.md` dit ce que le code tient, lignes rejustifiées.
+
+Les tests de l'entrée standard interceptent `io.open`, `builtins.open` et `os.open` (pathlib ouvre par `io.open`) et lèvent avant toute lecture d'un périphérique ou d'un fichier non ordinaire : l'ancien garde de test ne voyait rien, et un `/dev/zero` lu sans borne avait saturé la mémoire du poste.
+
+Closes #18
+
+## Ce qui ne change pas
+
+Ni la version, ni le `CHANGELOG.md`, ni les autres hooks. Le saut de ligne comme séparateur de commandes reste au ticket #29.
+
+## Preuves
+
+- `uv run --no-project --quiet python -m unittest discover -s tests` : rouge d'abord (85 échecs sur la classe `StandardInputIsNeverOpened`, en 0,1 s, sans lecture), puis 319 tests OK (5 sautés), sous `ulimit -v 2000000`, mémoire maximale observée 31 Mo.
+- `claude plugin validate .` et `claude plugin validate plugins/forge` : passent.
+- Essayé sur un vrai poste : Linux seulement. Pas encore sous Windows (Git Bash, PowerShell, runner Windows réel) ni avec le vrai hook de Claude Code.
+
+## Suite
+
+Le prérequis shell POSIX de la commande de `guard_git` sous Windows reste à éprouver sur un poste Windows. #29 pour le saut de ligne.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)

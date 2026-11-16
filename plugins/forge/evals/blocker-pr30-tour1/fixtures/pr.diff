@@ -1,0 +1,1475 @@
+diff --git a/.claude/rules/forge.md b/.claude/rules/forge.md
+index 1673824..b51c65a 100644
+--- a/.claude/rules/forge.md
++++ b/.claude/rules/forge.md
+@@ -21,10 +21,13 @@ La grille que lisent le coder, le juge et les décideurs sur toute PR de ce dép
+   sous Windows, à partir de Python 3.10. Une question de processus passe par `handoff_header.py`
+   (`/proc` sous Linux, API Win32 sous Windows), jamais par `/proc` seul. Aucun `python3` cité : sous
+   Windows, c'est un alias du Microsoft Store.
+-- Un garde (`guard_git`, `guard_coder`, `guard_readonly`) vaut refus quand il échoue : `|| exit 2`
+-  dans sa commande de `hooks.json`, et `guard_git` ajoute `"onFailure": "block"` pour le dépassement
+-  du `timeout`, que `|| exit 2` ne couvre pas. Un hook qui
+-  avertit ou observe ne bloque jamais la session : son échec sort à 0.
++- Un garde de rôle ou de commande (`guard_git`, `guard_coder`, `guard_readonly`) vaut refus quand il
++  échoue : `|| exit 2` dans sa commande de `hooks.json` ; celle de `guard_git` lit ce que le garde
++  écrit, et dit que le garde a échoué et que la commande est refusée par précaution quand ce n'est
++  pas un refus de règle (le code 2 seul ne le dit pas : un script absent ou une erreur d'usage de
++  `uv` sortent aussi en 2). Elle est écrite pour un shell POSIX (`docs/installation.md`). Il ajoute `"onFailure": "block"` pour le dépassement du `timeout`, que
++  `|| exit 2` ne couvre pas. `guard_pause` n'en est pas un : il échoue ouvert, comme tout hook qui
++  avertit ou observe, et ne bloque jamais la session (son échec sort à 0).
+ - Un garde d'agent filtre sur le nom préfixé (`forge:coder`, `forge:qc-gate`...) : un agent de
+   plugin ignore `hooks` dans son front matter. Chaque filtre a son test, car un filtre faux ne
+   s'appliquerait à personne, en silence.
+diff --git a/docs/installation.md b/docs/installation.md
+index 94144f7..925db24 100644
+--- a/docs/installation.md
++++ b/docs/installation.md
+@@ -115,18 +115,58 @@ dit que l'humain les fait et que l'agent les liste en fin de compte rendu. La li
+   secrets et variables d'Actions, ses permissions, les clés de déploiement, les webhooks, les
+   environnements, le transfert, et sur le dépôt lui-même (`PATCH`, `DELETE`) ;
+ - les mutations GraphQL de protection de branche, de ruleset, de collaborateur et de dépôt, mais
+-  pas les autres : le plugin s'en sert pour les sous-issues ;
++  pas les autres : le plugin s'en sert pour les sous-issues. La requête est lue dans les arguments,
++  dans le heredoc ou la redirection `<` de cette commande quand elle lit son entrée standard
++  (`--input -`, `-F query=@-`), dans un heredoc `query="$(cat <<EOF ...)"`, et dans le fichier que
++  nomment `--input` ou `-F query=@fichier`. Un chemin sous `/dev/` ou `/proc/` vaut `-` une fois
++  écrit en entier (`/dev/stdin`, `/dev/./stdin`, `//dev/stdin`, `/dev/fd/0`, `stdin` après
++  `cd /dev`, un lien symbolique vers l'un d'eux) : le garde ne l'ouvre jamais. Il ne lit qu'un
++  fichier ordinaire de 1 Mo au plus. Une forme qui vise `graphql` et ne se lit pas est refusée par
++  précaution, même si ce n'était pas une mutation : fichier absent, trop gros, qui n'est pas
++  ordinaire (périphérique, FIFO, dossier), entrée standard d'un tube ou d'une chaîne
++  (`<<<`), heredoc d'une autre commande, substitution `$(...)` ou variable du shell pour la
++  requête ;
+ - `gh secret` et `gh variable` (`set`, `delete`), `gh repo` (`delete`, `rename`, `archive`,
+-  `edit --visibility`, `deploy-key add` et `delete`) ;
+-- `config.sh`, `config.cmd` et `svc.sh` d'un runner, aussi derrière `sudo`, `bash`, `sh` ou
+-  `cmd /c` (`svc.sh status` reste une lecture).
+-
+-La lecture passe toujours. Un projet ajoute ses gestes avec la clé `owner-gesture` de
+-`docs/agents/usine.md`, une ligne `<préfixe de commande> | <raison>` chacune ; sans la clé, la liste
+-intégrée s'applique seule. Ce comportement resserre celui des projets qui gardaient ces gestes dans
+-leurs propres hooks : ceux-ci peuvent rester, ils tournent à côté. Cette garde protège d'un
+-accident, pas d'une intention : un wrapper (`env gh`, `/usr/bin/gh`) et une mutation GraphQL lue
+-dans un fichier (`--input`, `query=@fichier`) ne sont pas lus.
++  `edit --visibility`, `deploy-key add` et `delete`, les options de `gh` avant l'action étant
++  retirées) ;
++- `config.sh`, `config.cmd` et `svc.sh` d'un runner, aussi derrière `sudo` (options collées
++  comprises), `env`, `nohup`, `bash`, `sh` ou `cmd /c`, et dans un heredoc envoyé à un shell
++  (`svc.sh status` reste une lecture). Un script de ce nom n'est celui d'un runner que dans un
++  dossier qui porte `run.sh` ou `run.cmd` et `bin/Runner.Listener` (`bin/Runner.Listener.exe`
++  sous Windows), ou appelé avec `--url`, `--token`, `--pat`, `--unattended`, `install`,
++  `uninstall`, `start`, `stop` ou `remove` : un `scripts/config.sh` de projet passe. Toute
++  affectation `ACTIONS_RUNNER_INPUT_*` est refusée, où qu'elle soit (devant la commande, après
++  `env` ou `export`, seule, dans `bash -c` ou un heredoc), car le runner y lit son enregistrement.
++
++La lecture passe toujours : un `GET` ou `HEAD` explicite (le dernier `-X`/`--method` compte, comme
++pour gh, et la valeur d'une option comme `--jq` ou `-q` n'est pas une méthode), avec `-f`/`-F` ou
++non, ou l'absence de méthode, de champ et de `--input` (avec un champ ou `--input`, gh envoie un
++`POST`). Un projet ajoute ses gestes avec la clé `owner-gesture` de `docs/agents/usine.md`, une
++ligne `<préfixe de commande> | <raison>` chacune ; sans la clé, la liste intégrée s'applique
++seule. Ce comportement resserre celui des projets qui gardaient ces gestes dans leurs propres
++hooks : ceux-ci peuvent rester, ils tournent à côté.
++
++Cette garde protège d'un accident, pas d'une intention. Les formes qu'elle ne lit pas :
++
++- un wrapper devant `gh` (`env gh`, `command gh`, `/usr/bin/gh`), et pour les scripts de runner un
++  wrapper autre que `sudo`, `env`, `nohup`, `bash`, `sh`, `zsh`, `dash`, `cmd /c` et PowerShell
++  (`exec ./svc.sh`, `xargs`, `ssh runner ./svc.sh start`) ;
++- une mutation GraphQL hors de `gh api graphql` (`curl` vers l'API, un script), et celle d'un
++  fichier que le garde ne peut pas lire depuis la machine où il tourne ;
++- un script de runner appelé sans argument de runner depuis un dossier qui n'en porte pas les
++  fichiers, ou dont le dossier n'est pas connu du garde (`cd "$DIR"`, `cd -`) ;
++- une commande placée sur une autre ligne que la première : les sauts de ligne ne séparent pas les
++  commandes pour le garde, hors des heredocs qu'il lit (constaté, hors du périmètre de ce
++  changement) ;
++- le contenu d'un heredoc envoyé à autre chose qu'un shell ou qu'un `gh api graphql`.
++
++Éprouvé sous Linux seulement. Sous Windows, les chemins `C:\...`, `config.cmd` et le dossier d'un
++runner Windows sont lus par des tests qui ne dépendent pas du système. La commande de `guard_git`
++dans `hooks.json` est écrite pour un shell POSIX (`$(...)`, `case`, `printf`) : c'est celui de
++Linux et de macOS, et ce doit être Git Bash sous Windows, ce qui n'a pas été essayé. Elle ne
++s'analyse pas sous PowerShell sans Git Bash, et ce que Claude Code y fait d'une commande qui ne
++s'analyse pas n'a pas été essayé non plus. `guard_coder` et `guard_readonly`, qui s'écrivent
++`... || exit 2`, n'ont pas ce prérequis.
+ 
+ ## Compléter ou remplacer, sans éditer le plugin
+ 
+diff --git a/plugins/forge/hooks/guard_git.py b/plugins/forge/hooks/guard_git.py
+index 5a78a4e..00fab9e 100644
+--- a/plugins/forge/hooks/guard_git.py
++++ b/plugins/forge/hooks/guard_git.py
+@@ -22,29 +22,36 @@ The branch that matters is the one of the directory git acts on: `cd <dir> &&` a
+ <dir>` move it, so each command is judged against the branch checked out there.
+ 
+ Also refused, to every agent, are the gestures of the owner of the repository: a write by
+-`gh api` (any method but GET and HEAD) on collaborators, invitations, branch protection,
+-rulesets, runners, secrets, variables, Actions permissions, keys, webhooks, environments, a
+-transfer or the repository itself; the GraphQL mutations of protection, rulesets, collaborators
+-and the repository (the sub-issue mutations the plugin uses are not among them); `gh secret` and
+-`gh variable` `set` and `delete`; `gh repo` `delete`, `rename`, `archive`, `edit --visibility`
+-and `deploy-key add` and `delete`; the runner scripts `config.sh`, `config.cmd` and `svc.sh`,
+-also behind `sudo`, `bash`, `sh` and `cmd /c`. A reading is always allowed. The refusal names the
+-gesture and says it is the human's, to list at the end of the report. A project adds its own with
+-the `owner-gesture` key of `docs/agents/usine.md`, one `<command prefix> | <reason>` per line;
+-the built-in list holds without it. This replaces the earlier choice to leave every owner gesture
+-to the project's own hooks.
++`gh api` (any method but an explicit GET or HEAD) on collaborators, invitations, branch
++protection, rulesets, runners, secrets, variables, Actions permissions, keys, webhooks,
++environments, a transfer or the repository itself; the GraphQL mutations of protection, rulesets,
++collaborators and the repository (the sub-issue mutations the plugin uses are not among them),
++read in the arguments, in the heredocs of the command and in the files `--input` and `-F
++query=@file` name, a form aimed at `graphql` that cannot be read being refused as a precaution;
++`gh secret` and `gh variable` `set` and `delete`; `gh repo` `delete`, `rename`, `archive`, `edit
++--visibility` and `deploy-key add` and `delete`; the runner scripts `config.sh`, `config.cmd` and
++`svc.sh`, only in a runner's folder or with a runner's argument, also behind `sudo`, `env`,
++`nohup`, `bash`, `sh`, `cmd /c` and a heredoc fed to a shell. A reading is always allowed. The
++refusal names the gesture and says it is the human's, to list at the end of the report. A project
++adds its own with the `owner-gesture` key of `docs/agents/usine.md`, one `<command prefix> |
++<reason>` per line; the built-in list holds without it. This replaces the earlier choice to leave
++every owner gesture to the project's own hooks.
+ """
+ 
+ from __future__ import annotations
+ 
+ import json
++import os
++import posixpath
+ import re
+ import shlex
+ import shutil
++import stat
+ import subprocess
+ import sys
+ from collections.abc import Callable, Iterable
+ from pathlib import Path, PurePosixPath, PureWindowsPath
++from typing import NamedTuple
+ 
+ from usine import load, project_root, split_value
+ 
+@@ -59,18 +66,26 @@ OPERATORS = {";", "&&", "||", "|", "&", "(", ")"}
+ BRANCH_SWITCH = ({"checkout", "-b"}, {"checkout", "-B"}, {"switch", "-c"}, {"switch", "-C"})
+ 
+ 
+-def without_heredoc_bodies(command: str) -> str:
++def split_heredocs(command: str) -> tuple[str, str]:
++    """The command without its heredoc bodies, and those bodies, one after the other."""
+     kept: list[str] = []
++    bodies: list[str] = []
+     delimiter: str | None = None
+     for line in command.splitlines():
+         if delimiter is not None:
+             if line.strip() == delimiter:
+                 delimiter = None
++            else:
++                bodies.append(line)
+             continue
+         kept.append(line)
+         if match := HEREDOC.search(line):
+             delimiter = match.group(2)
+-    return "\n".join(kept)
++    return "\n".join(kept), "\n".join(bodies)
++
++
++def without_heredoc_bodies(command: str) -> str:
++    return split_heredocs(command)[0]
+ 
+ 
+ def _commands(command: str) -> list[list[str] | str]:
+@@ -294,44 +309,185 @@ def _merge_message(
+                 parts.append(value)
+             elif value and value != "-":
+                 path = _moved(here, value)
+-                text = read_text(path) if path is not None and path != UNKNOWN else None
+-                parts.append(text or "")
++                reads = path is not None and path != UNKNOWN and not is_standard_input_path(path, here)
++                parts.append((read_text(path) if reads else None) or "")
+         index += 1
+     return "\n".join(parts)
+ 
+ 
++# The most a file read for its text may weigh: a query or a message is far smaller.
++READ_CAP = 1024 * 1024
++
++
++def is_standard_input_path(path: str, here: str | None = None) -> bool:
++    """Whether `path` is under `/dev/` or `/proc/` once written out in full, so it may be the input.
++
++    The path is made absolute from `here` (or the working directory), normalised (`//`, `/./`,
++    `..`) and its symbolic links resolved. `/dev/stdin`, `/dev/fd/0`, `/proc/self/fd/0`, and any
++    other way to name the standard input are among them: the guard has read its own, and a
++    device or a `/proc` entry is not a file to read (`/dev/zero` never ends, a FIFO blocks).
++    """
++    text = path.replace("\\", "/")
++    if not text.startswith("/") and here not in (None, UNKNOWN):
++        text = posixpath.join(here.replace("\\", "/"), text)  # type: ignore[union-attr]
++    if not text.startswith("/"):
++        try:
++            text = posixpath.join(os.getcwd().replace("\\", "/"), text)
++        except OSError:
++            return True  # a directory that cannot be told: not a path to open
++    candidates = [posixpath.normpath(text)]
++    try:
++        candidates.append(os.path.realpath(text).replace("\\", "/"))
++    except (OSError, ValueError):
++        return True
++    for candidate in candidates:
++        # POSIX keeps a leading `//` apart (`//dev/stdin`), the shell does not.
++        candidate = "/" + candidate.lstrip("/")
++        if candidate in ("/dev", "/proc") or candidate.startswith(("/dev/", "/proc/")):
++            return True
++    return False
++
++
+ def read_text_or_none(path: str) -> str | None:
+-    """The file's text, or None when it cannot be read: gh reports a missing file itself."""
++    """The text of an ordinary file of at most `READ_CAP` bytes, or None.
++
++    None when it cannot be read: gh reports a missing file itself. A device, a FIFO, a directory
++    and a file over the cap are not read, and the open never waits: `stat` rules first.
++    """
+     try:
+-        return Path(native_directory(path) or path).read_text(encoding="utf-8")
++        target = Path(native_directory(path) or path)
++        if is_standard_input_path(str(target)) or not stat.S_ISREG(target.stat().st_mode):
++            return None
++        with target.open("rb") as stream:
++            data = stream.read(READ_CAP + 1)
++        return None if len(data) > READ_CAP else data.decode("utf-8")
+     except (OSError, UnicodeDecodeError, ValueError):
+         return None
+ 
+ 
+-# The fields and bodies of `gh api`: any of them makes gh send a POST unless `-X` says otherwise.
+-API_FIELDS = frozenset({"-f", "-F", "--field", "--raw-field", "--input"})
++# The options of `gh api` as pflag, the library gh parses with, reads them. The ones that take a
++# value consume the next word whatever it looks like (`--jq -XGET` is a filter, not a method), and
++# a short one takes the rest of its word (`-XGET`, `-X=GET`, `-iXGET`). The other ones are flags.
++API_LONG_VALUE_OPTIONS = {
++    "method": "method",
++    "header": "header",
++    "raw-field": "raw-field",
++    "field": "field",
++    "input": "input",
++    "jq": "jq",
++    "template": "template",
++    "cache": "cache",
++    "hostname": "hostname",
++    "preview": "preview",
++}
++API_SHORT_VALUE_OPTIONS = {
++    "X": "method",
++    "H": "header",
++    "f": "raw-field",
++    "F": "field",
++    "q": "jq",
++    "t": "template",
++    "p": "preview",
++}
++# What makes gh send a body, or fields: a POST unless `-X` says otherwise.
++API_BODY_OPTIONS = frozenset({"raw-field", "field", "input"})
++# A redirection operator, which takes the next word as its target: `>`, `2>&1`'s `>&`, `<<`, `<<<`.
++REDIRECTION = re.compile(r"^[<>&]+$")
++
++
++class ApiCall(NamedTuple):
++    """A `gh api` call as gh reads it: its method, its endpoint and its body options in order."""
++
++    method: str | None  # the last `-X` or `--method`; None when there is none
++    endpoint: str
++    options: list[tuple[str, str]]  # `(name, value)` of each field and `--input`, as typed
++
++
++def without_redirections(words: list[str]) -> tuple[list[str], list[tuple[str, str]]]:
++    """The words without the redirections, and the redirections as `(operator, target)`.
++
++    The shell removes them before gh sees its arguments: `gh api > out -X PUT x` has no `out`.
++    A bare number in front of an operator is a file descriptor (`2>/dev/null`).
++    """
++    kept: list[str] = []
++    redirections: list[tuple[str, str]] = []
++    index = 0
++    while index < len(words):
++        word = words[index]
++        if REDIRECTION.match(word):
++            target = words[index + 1] if index + 1 < len(words) else ""
++            redirections.append((word, target))
++            if kept and kept[-1].isdigit():
++                kept.pop()
++            index += 2
++            continue
++        kept.append(word)
++        index += 1
++    return kept, redirections
++
++
++def parse_api(args: list[str]) -> ApiCall:
++    """Split the words after `api` the way gh does: the one place that knows its options."""
++    words, _ = without_redirections(args)
++    method: str | None = None
++    endpoint: str | None = None
++    options: list[tuple[str, str]] = []
++
++    def take(name: str, value: str) -> None:
++        nonlocal method
++        if name == "method":
++            method = value
++        elif name in API_BODY_OPTIONS:
++            options.append((name, value))
++
++    index = 0
++    while index < len(words):
++        word = words[index]
++        index += 1
++        if word == "--":
++            endpoint = endpoint if endpoint is not None else (words[index] if index < len(words) else "")
++            break
++        if word.startswith("--"):
++            name, equals, value = word[2:].partition("=")
++            if name in API_LONG_VALUE_OPTIONS:
++                if not equals:
++                    value = words[index] if index < len(words) else ""
++                    index += 1
++                take(API_LONG_VALUE_OPTIONS[name], value)
++        elif word.startswith("-") and len(word) > 1:
++            position = 1
++            while position < len(word):
++                letter = word[position]
++                position += 1
++                if letter not in API_SHORT_VALUE_OPTIONS:
++                    continue
++                rest = word[position:]
++                if rest.startswith("=") and len(rest) > 1:
++                    value = rest[1:]
++                elif rest:
++                    value = rest
++                else:
++                    value = words[index] if index < len(words) else ""
++                    index += 1
++                take(API_SHORT_VALUE_OPTIONS[letter], value)
++                break
++        elif endpoint is None:
++            endpoint = word
++    return ApiCall(method, endpoint or "", options)
+ 
+ 
+ def _gh_api_reads(args: list[str]) -> bool:
+-    """A `gh api` call that gh sends as a GET: no `-X` other than GET, no field, no `--input`."""
+-    for index, word in enumerate(args):
+-        name, _, value = word.partition("=")
+-        if name in API_FIELDS or (name.startswith("-f") or name.startswith("-F")) and len(name) > 2:
+-            return False
+-        if name in ("-X", "--method"):
+-            method = value or (args[index + 1] if index + 1 < len(args) else "")
+-            if method.upper() not in ("GET", "HEAD"):
+-                return False
+-        elif name.startswith("-X") and name[2:].lstrip("=").upper() not in ("GET", "HEAD"):
+-            return False
+-    return True
++    """A `gh api` call that is a read: an explicit GET or HEAD, or no method, field or `--input`.
++
++    An explicit `-X GET` keeps its fields as query parameters, so it is a read with `-f` too;
++    without a method, a field or a body makes gh send a POST.
++    """
++    call = parse_api(args)
++    if call.method is not None:
++        return call.method.upper() in ("GET", "HEAD")
++    return not call.options
+ 
+ 
+-# The options of `gh api` that take their value as the next word (`--flag=value` is one word).
+-API_OPTIONS_WITH_VALUE = frozenset(
+-    {"-X", "--method", "-H", "--header", "-f", "-F", "--field", "--raw-field", "--input"}
+-    | {"-q", "--jq", "-t", "--template", "--cache", "--hostname", "-p", "--preview"}
+-)
+ # What follows `repos/<owner>/<repo>/` or `orgs/<org>/` that belongs to the owner: a write there
+ # is a human's. Anchored at the start, so a file named `hooks` under `contents/` is not one.
+ OWNER_ENDPOINT = re.compile(
+@@ -350,34 +506,111 @@ OWNER_MUTATION = re.compile(
+ )
+ 
+ 
+-def _api_endpoint(args: list[str]) -> str:
+-    index = 0
+-    while index < len(args):
+-        word = args[index]
+-        if word.startswith("-"):
+-            index += 2 if word in API_OPTIONS_WITH_VALUE else 1
++def _api_method(args: list[str]) -> str:
++    method = parse_api(args).method
++    return method.upper() if method is not None else "POST"
++
++
++GRAPHQL_MUTATION_GESTURE = (
++    "gh api graphql (mutation de protection, de ruleset, de collaborateur ou du dépôt)"
++)
++_VARIABLE = re.compile(r"\$\{?\w+\}?")
++
++
++def _graphql_inputs(args: list[str]) -> list[tuple[str, str]]:
++    """What a `gh api graphql` call is fed: `(kind, value)` per `--input` and per field.
++
++    The kind is `input` for `--input <value>` and `query` for a field named `query`; the value of
++    any other field cannot hold the query, except `name=@file`, which reads one.
++    """
++    inputs: list[tuple[str, str]] = []
++    for name, value in parse_api(args).options:
++        if name == "input":
++            inputs.append(("input", value))
+             continue
+-        return word
+-    return ""
++        key, _, content = value.partition("=")
++        if content.startswith("@"):
++            inputs.append(("file", content[1:]))
++        elif key == "query":
++            inputs.append(("query", content))
++    return inputs
+ 
+ 
+-def _api_method(args: list[str]) -> str:
+-    for index, word in enumerate(args):
+-        name, _, value = word.partition("=")
+-        if name in ("-X", "--method"):
+-            return (value or (args[index + 1] if index + 1 < len(args) else "")).upper()
+-        if name.startswith("-X") and len(name) > 2:
+-            return name[2:].lstrip("=").upper()
+-    return "POST"
++def _standard_input_text(
++    args: list[str], here: str | None, bodies: str, read_text: Callable[[str], str | None]
++) -> str | None:
++    """What the shell feeds to the standard input of this very command, or None when unknown.
++
++    Its own redirection counts, the last one as the shell applies it: a file (`< q.json`) is read,
++    a heredoc (`<<EOF`) is the bodies of the command. A heredoc of another command, a pipe and a
++    here-string (`<<<`) are not known.
++    """
++    last = next(
++        (item for item in reversed(without_redirections(args)[1]) if item[0] in ("<", "<<", "<<-")),
++        None,
++    )
++    if last is None:
++        return None
++    operator, target = last
++    if operator == "<":
++        path = _moved(here, target)
++        if path is None or path == UNKNOWN or is_standard_input_path(path, here):
++            return None
++        return read_text(path)
++    return bodies or None
++
+ 
++def _graphql_gesture(
++    args: list[str], here: str | None, bodies: str, read_text: Callable[[str], str | None]
++) -> str | None:
++    """The owner gesture of a `gh api graphql` call: a mutation of the owner, read wherever it is.
+ 
+-def _api_gesture(args: list[str]) -> str | None:
++    The query is read in the arguments, in the heredocs of the command (`--input - <<EOF`, or
++    `query="$(cat <<EOF ...)"`) and in the files it names. What cannot be read (a file that is not
++    there, stdin from a pipe, a substitution or a variable) is refused as a precaution: a mutation
++    of the owner could hide in it, and a guard that fails closed.
++    """
++    texts = [" ".join(args)]
++    unread = ""
++    for kind, value in _graphql_inputs(args):
++        if kind == "query" and not (
++            "`" in value or "$(" in value or _VARIABLE.fullmatch(value.strip())
++        ):
++            continue
++        if kind == "query" and "<<" in value and bodies:
++            texts.append(bodies)  # `$(cat <<EOF ...)`: the heredoc of this command
++        elif kind == "query":
++            unread = unread or "la requête vient d'une substitution ou d'une variable du shell"
++        elif value == "-" or is_standard_input_path(value, here):
++            text = _standard_input_text(args, here, bodies, read_text)
++            if text is None:
++                unread = unread or "la requête vient de l'entrée standard"
++            else:
++                texts.append(text)
++        else:
++            path = _moved(here, value)
++            text = read_text(path) if path is not None and path != UNKNOWN else None
++            if text is None:
++                unread = unread or f"le fichier `{value}` ne peut pas être lu"
++            else:
++                texts.append(text)
++    if OWNER_MUTATION.search("\n".join(texts)):
++        return GRAPHQL_MUTATION_GESTURE
++    if unread:
++        return f"gh api graphql ({unread} ; refusée par précaution, car une mutation du propriétaire pourrait s'y cacher)"
++    return None
++
++
++def _api_gesture(
++    args: list[str],
++    here: str | None = None,
++    bodies: str = "",
++    read_text: Callable[[str], str | None] = read_text_or_none,
++) -> str | None:
+     """The owner gesture of a `gh api` call (the words after `api`), or None."""
+-    endpoint = _api_endpoint(args).split("?", 1)[0].strip("/")
++    endpoint = parse_api(args).endpoint.split("?", 1)[0].strip("/")
+     if endpoint.lower() == "graphql":
+-        if OWNER_MUTATION.search(" ".join(args)):
+-            return "gh api graphql (mutation de protection, de ruleset, de collaborateur ou du dépôt)"
+-        return None
++        return _graphql_gesture(args, here, bodies, read_text)
+     if _gh_api_reads(args):
+         return None
+     scope = OWNER_SCOPE.match(endpoint)
+@@ -406,7 +639,8 @@ def _gh_gesture(words: list[str]) -> str | None:
+         return None
+     group, verb, rest = act
+     if (group, verb) == ("repo", "deploy-key"):
+-        action = next((word for word in rest if not word.startswith("-")), "")
++        index = _skip_options(rest, 0)
++        action = rest[index] if index < len(rest) else ""
+         return f"gh repo deploy-key {action}" if action in ("add", "delete") else None
+     if (group, verb) in OWNER_GH_GESTURES:
+         return f"gh {group} {verb}"
+@@ -424,11 +658,81 @@ RUNNER_SCRIPT = re.compile(r"(?:^|[/\\])(config\.(?:sh|cmd)|svc\.sh)$", re.IGNOR
+ # with their separators gone: a word that starts with `.` or a drive letter still names the script.
+ MANGLED_RUNNER_SCRIPT = re.compile(r"^(?:\.|[A-Za-z]:).*?(config\.(?:sh|cmd)|svc\.sh)$", re.IGNORECASE)
+ SHELLS = frozenset({"bash", "sh", "zsh", "dash"})
+-WRAPPERS = SHELLS | {"sudo", "cmd", "cmd.exe", "powershell", "pwsh", "powershell.exe", "pwsh.exe"}
+-SUDO_OPTIONS_WITH_VALUE = frozenset({"-u", "-g", "-h", "-p", "-C", "-D", "-R", "-T", "-U"})
++WRAPPERS = SHELLS | {"sudo", "env", "nohup", "cmd", "cmd.exe", "powershell", "pwsh"} | {
++    "powershell.exe",
++    "pwsh.exe",
++}
++# The letters of sudo's short options that take a value, alone (`-u runner`), joined to other
++# letters (`-iu runner`) or followed by it (`-urunner`).
++SUDO_VALUE_LETTERS = frozenset("ughpCDRTU")
++ENV_OPTIONS_WITH_VALUE = frozenset({"-u", "-C", "-S", "--unset", "--chdir", "--split-string"})
++
++
++def _option_width(wrapper: str, option: str) -> int:
++    """How many words an option of a wrapper takes: itself, and its value when it is the next word."""
++    if wrapper == "env":
++        return 2 if option in ENV_OPTIONS_WITH_VALUE else 1
++    if wrapper == "sudo" and not option.startswith("--"):
++        for position, letter in enumerate(option[1:], start=1):
++            if letter in SUDO_VALUE_LETTERS:
++                return 2 if position == len(option) - 1 else 1
++    return 1
++
++
++def _skip_wrapper_options(wrapper: str, words: list[str], index: int) -> int:
++    while index < len(words):
++        word = words[index]
++        if wrapper == "env" and "=" in word and not word.startswith("-"):
++            index += 1  # an assignment `env` sets for the command
++        elif word.startswith("-"):
++            index += _option_width(wrapper, word)
++        elif wrapper.startswith("cmd") and word.lower() == "/c":
++            index += 1
++        else:
++            break
++    return index
++
+ 
++# What only a runner's script is called with, and the files that make a folder a runner's.
++RUNNER_ARGUMENTS = frozenset(
++    {"--url", "--token", "--pat", "--unattended", "install", "uninstall", "start", "stop", "remove"}
++)
++# The registration can also come from the environment: the runner reads `ACTIONS_RUNNER_INPUT_*`.
++RUNNER_INPUT_VARIABLE = re.compile(r"^ACTIONS_RUNNER_INPUT_\w+=")
++RUNNER_REGISTRATION_GESTURE = "ACTIONS_RUNNER_INPUT_* (enregistrement d'un runner par l'environnement)"
++# The unpacked runner has a launcher and its listener: `.exe` is the Windows build's.
++RUNNER_MARKERS = (("run.sh", "run.cmd"), ("bin/Runner.Listener", "bin/Runner.Listener.exe"))
+ 
+-def _runner_gesture(words: list[str]) -> str | None:
++
++def is_runner_directory(directory: str | None) -> bool:
++    """Whether `directory` holds an unpacked runner: `run.sh` or `run.cmd`, and `bin/Runner.Listener`."""
++    if directory is None or directory == UNKNOWN:
++        return False
++    try:
++        base = Path(native_directory(directory) or directory)
++        return all(any((base / name).exists() for name in names) for names in RUNNER_MARKERS)
++    except (OSError, ValueError):
++        return False
++
++
++def _is_runner_call(word: str, arguments: list[str], here: str | None) -> bool:
++    """A `config` or `svc` script that is a runner's: its folder, or an argument only a runner takes."""
++    if any(argument.split("=", 1)[0] in RUNNER_ARGUMENTS for argument in arguments):
++        return True
++    folder = _moved(here, str(PurePosixPath(word.replace("\\", "/")).parent)) if "/" in word else here
++    return is_runner_directory(folder)
++
++
++def runner_registration_gesture(words: list[str]) -> str | None:
++    """The refusal of a word that sets a registration variable of the runner, wherever it stands."""
++    if any(RUNNER_INPUT_VARIABLE.match(word) for word in words):
++        return RUNNER_REGISTRATION_GESTURE
++    return None
++
++
++def _runner_gesture(words: list[str], here: str | None = None, bodies: str = "") -> str | None:
++    if gesture := runner_registration_gesture(words):
++        return gesture
+     index = 0
+     while index < len(words):
+         word = words[index]
+@@ -436,12 +740,10 @@ def _runner_gesture(words: list[str]) -> str | None:
+             if word in SHELLS and "-c" in words[index + 1 :]:
+                 position = words.index("-c", index + 1) + 1
+                 if position < len(words):
+-                    return _commands_gesture(words[position])
+-            index += 1
+-            while index < len(words) and (
+-                words[index].startswith("-") or (word.startswith("cmd") and words[index] == "/c")
+-            ):
+-                index += 2 if word == "sudo" and words[index] in SUDO_OPTIONS_WITH_VALUE else 1
++                    return _commands_gesture(words[position], here)
++            index = _skip_wrapper_options(word, words, index + 1)
++            if word in SHELLS and bodies and (index >= len(words) or words[index] in ("<<", "<<-")):
++                return _commands_gesture(bodies, here)  # a script read from a heredoc
+             continue
+         match = RUNNER_SCRIPT.search(word) or MANGLED_RUNNER_SCRIPT.match(word)
+         if match is None:
+@@ -449,24 +751,32 @@ def _runner_gesture(words: list[str]) -> str | None:
+         script = match.group(1).lower()
+         if script == "svc.sh" and words[index + 1 : index + 2] == ["status"]:
+             return None
+-        return script
++        return script if _is_runner_call(word, words[index + 1 :], here) else None
+     return None
+ 
+ 
+-def _commands_gesture(command: str) -> str | None:
++def _commands_gesture(command: str, here: str | None = None) -> str | None:
+     """The owner gesture of the first simple command of `command` that makes one."""
+     for words in segments(command):
+-        if gesture := owner_gesture(words):
++        if gesture := owner_gesture(words, here=here):
+             return gesture
+     return None
+ 
+ 
+-def owner_gesture(words: list[str]) -> str | None:
+-    """The owner gesture a simple command makes, named for the refusal, or None."""
++def owner_gesture(
++    words: list[str],
++    here: str | None = None,
++    bodies: str = "",
++    read_text: Callable[[str], str | None] = read_text_or_none,
++) -> str | None:
++    """The owner gesture a simple command makes, named for the refusal, or None.
++
++    `here` is the directory the command runs in, where a runner's folder is told from a project's.
++    """
+     call = gh_command(words)
+     if call and call[0] == "api":
+-        return _api_gesture(call[1:])
+-    return _gh_gesture(words) or _runner_gesture(words)
++        return _api_gesture(call[1:], here, bodies, read_text)
++    return _gh_gesture(words) or _runner_gesture(words, here, bodies)
+ 
+ 
+ def _owner_refusal(gesture: str) -> str:
+@@ -514,6 +824,7 @@ def refusal(
+     `owner_gestures` are the values of the project's `owner-gesture` key, beside the built-in list.
+     """
+     declared = list(owner_gestures)
++    bodies = split_heredocs(command)[1]
+     branch_of = branch if callable(branch) else (lambda _directory: branch)
+ 
+     def branch_where(directory: str | None) -> str:
+@@ -535,6 +846,8 @@ def refusal(
+                 here = saved.pop() if saved else cwd
+             continue
+         words = item
++        if gesture := runner_registration_gesture(words):
++            return _owner_refusal(gesture)  # before the assignments are set aside
+         while words and "=" in words[0] and not words[0].startswith("-"):
+             words = words[1:]
+         if not words:
+@@ -548,7 +861,7 @@ def refusal(
+                 switched = True
+             if reason := _git_refusal(args, branch_where(_directory_of(args, here)), switched):
+                 return reason
+-        if gesture := owner_gesture(words):
++        if gesture := owner_gesture(words, here, bodies, read_text):
+             return _owner_refusal(gesture)
+         if declared_refusal := _declared_gesture(words, declared):
+             return declared_refusal
+diff --git a/plugins/forge/hooks/hooks.json b/plugins/forge/hooks/hooks.json
+index bb75d3a..1d384c0 100644
+--- a/plugins/forge/hooks/hooks.json
++++ b/plugins/forge/hooks/hooks.json
+@@ -18,7 +18,7 @@
+         "hooks": [
+           {
+             "type": "command",
+-            "command": "uv run --no-project --quiet python \"${CLAUDE_PLUGIN_ROOT}/hooks/guard_git.py\" || exit 2",
++            "command": "out=$(uv run --no-project --quiet python \"${CLAUDE_PLUGIN_ROOT}/hooks/guard_git.py\" 2>&1); code=$?; [ \"$code\" -eq 0 ] && exit 0; printf '%s\n' \"$out\" >&2; case \"$out\" in \"Blocked by the forge plugin (guard_git)\"*|\"guard_git failed\"*) ;; *) echo \"guard_git failed (exit $code before the guard could rule): the command is refused as a precaution. This is not a rule of the repository; retry, and tell the human if it persists.\" >&2;; esac; exit 2",
+             "onFailure": "block",
+             "timeout": 60
+           }
+diff --git a/tests/test_guard_git.py b/tests/test_guard_git.py
+index 084f60b..5ad0c76 100644
+--- a/tests/test_guard_git.py
++++ b/tests/test_guard_git.py
+@@ -1,9 +1,15 @@
++import contextlib
+ import io
+ import json
++import os
++import shutil
++import subprocess
++import stat
+ import sys
+ import tempfile
++import time
+ import unittest
+-from collections.abc import Callable
++from collections.abc import Callable, Iterator
+ from pathlib import Path
+ from unittest import mock
+ 
+@@ -236,17 +242,84 @@ class SplitTicket(unittest.TestCase):
+         self.assertIn("closes #322", verdict or "")
+ 
+ 
++@contextlib.contextmanager
++def isolated_environment() -> Iterator[None]:
++    """HOME and USERPROFILE in an empty folder, and no `CLAUDE_` variable of the session running us."""
++    with tempfile.TemporaryDirectory() as home:
++        env = {name: value for name, value in os.environ.items() if not name.startswith("CLAUDE_")}
++        env.update(HOME=home, USERPROFILE=home)
++        with mock.patch.dict("os.environ", env, clear=True):
++            yield
++
++
++def guard_git_hook() -> dict[str, str]:
++    hooks = json.loads((support.PLUGIN / "hooks" / "hooks.json").read_text(encoding="utf-8"))
++    found = [
++        hook
++        for group in hooks["hooks"]["PreToolUse"]
++        for hook in group["hooks"]
++        if "guard_git.py" in hook["command"]
++    ]
++    assert len(found) == 1
++    return found[0]
++
++
+ class FailsClosed(unittest.TestCase):
+     def test_hooks_json_turns_a_crash_of_guard_git_into_a_refusal(self) -> None:
+-        hooks = json.loads((support.PLUGIN / "hooks" / "hooks.json").read_text(encoding="utf-8"))
+-        found = [
+-            hook
+-            for group in hooks["hooks"]["PreToolUse"]
+-            for hook in group["hooks"]
+-            if "guard_git.py" in hook["command"]
+-        ]
+-        self.assertEqual(len(found), 1)
+-        self.assertTrue(found[0]["command"].endswith("|| exit 2"))
++        command = guard_git_hook()["command"]
++        # The exit code 2 of a rule and the 2 of a script that is missing or of a usage error of
++        # uv are told apart by what the guard writes, not by the code alone.
++        self.assertIn("Blocked by the forge plugin (guard_git)", command)
++        self.assertIn("exit 2", command)
++        self.assertNotIn("|| {", command)
++
++    @unittest.skipUnless(
++        shutil.which("bash") and sys.platform != "win32",
++        "the command of hooks.json is run by the POSIX shell of Linux and macOS; under Windows"
++        " Claude Code runs it in Git Bash, which this suite has not tried",
++    )
++    def test_a_failure_before_the_guard_runs_is_refused_and_says_so(self) -> None:
++        def run(uv_script: str | None) -> subprocess.CompletedProcess[str]:
++            with tempfile.TemporaryDirectory() as folder:
++                if uv_script is not None:
++                    fake = Path(folder) / "uv"
++                    fake.write_text(f"#!/bin/sh\n{uv_script}\n", encoding="utf-8")
++                    fake.chmod(0o755)
++                return subprocess.run(  # noqa: S603 - the shell is found by shutil.which
++                    [str(shutil.which("bash")), "-c", guard_git_hook()["command"]],
++                    env={"PATH": folder, "CLAUDE_PLUGIN_ROOT": str(support.PLUGIN)},
++                    input="EVENT",  # never the runner's own standard input
++                    capture_output=True,
++                    text=True,
++                    check=False,
++                    timeout=30,
++                )
++
++        for name, script in (
++            ("uv is missing", None),
++            ("uv fails", "echo 'ModuleNotFoundError: usine' >&2; exit 1"),
++            ("python cannot open the script", "echo \"python: can't open file 'g.py': [Errno 2]\" >&2; exit 2"),
++            ("uv is called wrongly", "echo 'error: unexpected argument --no-project' >&2; exit 2"),
++            ("uv fails without a word", "exit 2"),
++            ("a rule is quoted by a failure", "echo 'x Blocked by the forge plugin (guard_git)' >&2; exit 2"),
++        ):
++            with self.subTest(case=name):
++                done = run(script)
++                self.assertEqual(done.returncode, 2)
++                self.assertIn("guard_git failed", done.stderr)
++                self.assertIn("refused as a precaution", done.stderr)
++        # A refusal of a rule is already worded by the guard: not reworded as a failure.
++        done = run("echo 'Blocked by the forge plugin (guard_git): force push.' >&2; exit 2")
++        self.assertEqual(done.returncode, 2)
++        self.assertIn("force push", done.stderr)
++        self.assertNotIn("guard_git failed", done.stderr)
++        done = run("echo 'Blocked by the forge plugin (guard_git): a rule.' >&2; exit 2")
++        self.assertEqual(done.stderr.count("a rule"), 1)
++        done = run("exit 0")
++        self.assertEqual((done.returncode, done.stderr), (0, ""))
++        # The event reaches the guard: the command reads its standard input.
++        done = run("read line; echo \"$line\" >&2; exit 2")
++        self.assertIn("EVENT", done.stderr)
+ 
+     def test_hooks_json_blocks_the_command_when_guard_git_times_out(self) -> None:
+         # `|| exit 2` does not cover a timeout: the shell is killed before it can run it.
+@@ -276,16 +349,76 @@ class FailsClosed(unittest.TestCase):
+         self.assertEqual(code, 2)
+         self.assertIn("refused as a precaution", stderr.getvalue())
+ 
++    def test_an_ordinary_command_never_makes_the_guard_fail(self) -> None:
++        # The real `main`, on commands that are none of its business: a crash would refuse them.
++        for name, command in (
++            ("empty", ""),
++            ("a heredoc without gh", "cat > notes.md <<'EOF'\nline one\nline two\nEOF"),
++            ("a heredoc never closed", "cat <<EOF\nline one"),
++            ("a heredoc to a shell", "bash <<'EOF'\necho hello\nEOF"),
++            ("an unclosed quote", 'echo "unclosed'),
++            ("an unclosed quote on gh", "gh api graphql -f query='query { viewer"),
++            ("an unclosed substitution", 'echo "$(cat <<EOF'),
++            ("a very long line", "echo " + "a" * 300_000),
++            ("a very long heredoc line", "cat <<EOF\n" + "b" * 300_000 + "\nEOF"),
++            ("a very long gh line", "gh api graphql -f query='query { " + "viewer " * 40_000 + "}'"),
++            ("only operators", "&& || ; |"),
++            ("a dangling sudo", "sudo -u"),
++            ("a dangling env", "env"),
++            ("a null byte", "ls \x00 ./config.sh"),
++            ("non-ASCII", "echo 'été ✓' && ls"),
++        ):
++            event = json.dumps({"tool_input": {"command": command}, "cwd": None})
++            stderr = io.StringIO()
++            with (
++                self.subTest(case=name),
++                isolated_environment(),
++                mock.patch("sys.stdin", io.StringIO(event)),
++                mock.patch("sys.stderr", stderr),
++            ):
++                code = guarded_main()
++                self.assertNotIn("guard_git failed", stderr.getvalue())
++                self.assertEqual(code, 0, stderr.getvalue())
++
+     def test_a_refusal_of_a_rule_is_not_reworded_as_a_failure(self) -> None:
+         event = json.dumps({"tool_input": {"command": "git push --force"}, "cwd": None})
+         stderr = io.StringIO()
+-        with mock.patch("sys.stdin", io.StringIO(event)), mock.patch("sys.stderr", stderr):
++        with (
++            isolated_environment(),
++            mock.patch("sys.stdin", io.StringIO(event)),
++            mock.patch("sys.stderr", stderr),
++        ):
+             code = guarded_main()
+         self.assertEqual(code, 2)
+         self.assertIn("force push", stderr.getvalue())
+         self.assertNotIn("guard_git failed", stderr.getvalue())
+ 
+ 
++@contextlib.contextmanager
++def runner_folder() -> Iterator[str]:
++    """A folder laid out like an unpacked Actions runner: `run.sh` and `bin/Runner.Listener`."""
++    with tempfile.TemporaryDirectory() as folder:
++        (Path(folder) / "bin").mkdir()
++        (Path(folder) / "bin" / "Runner.Listener").write_text("", encoding="utf-8")
++        (Path(folder) / "run.sh").write_text("", encoding="utf-8")
++        yield Path(folder).as_posix()
++
++
++@contextlib.contextmanager
++def windows_runner_folder() -> Iterator[str]:
++    """A folder laid out like an unpacked Windows runner: `run.cmd` and `bin/Runner.Listener.exe`."""
++    with tempfile.TemporaryDirectory() as folder:
++        (Path(folder) / "bin").mkdir()
++        (Path(folder) / "bin" / "Runner.Listener.exe").write_text("", encoding="utf-8")
++        (Path(folder) / "bin" / "Runner.Listener.dll").write_text("", encoding="utf-8")
++        (Path(folder) / "run.cmd").write_text("", encoding="utf-8")
++        yield Path(folder).as_posix()
++
++
++def refused_in(command: str, cwd: str) -> str | None:
++    return refusal(command, "feat/x", always_green, cwd)
++
++
+ OWNER_REFUSAL = "geste du propriétaire du dépôt, à lister pour l'humain en fin de compte rendu"
+ OWNER_KEY_VALUE = "gh label delete | les étiquettes sont au propriétaire"
+ 
+@@ -387,6 +520,45 @@ class OwnerGestures(unittest.TestCase):
+             with self.subTest(command=command):
+                 self.assertIsNone(refused(command))
+ 
++    def test_an_explicit_get_or_head_stays_a_read_even_with_fields(self) -> None:
++        for command in (
++            "gh api -X GET repos/o/r/collaborators -f per_page=100",
++            "gh api --method GET repos/o/r/collaborators -F per_page=100",
++            "gh api --method=get repos/o/r/rulesets --raw-field includes_parents=true",
++            "gh api -XGET repos/o/r/actions/secrets -f per_page=100",
++            "gh api -X HEAD repos/o/r/keys -f per_page=1",
++        ):
++            with self.subTest(command=command):
++                self.assertIsNone(refused(command))
++
++    def test_a_repeated_method_counts_as_the_last_one_like_gh_does(self) -> None:
++        for command in (
++            "gh api -X GET repos/o/r/collaborators/bob -X PUT",
++            "gh api --method GET --method PUT repos/o/r/collaborators/bob",
++            "gh api -XGET repos/o/r/collaborators/bob --method=PUT",
++        ):
++            with self.subTest(command=command):
++                verdict = refused(command) or ""
++                self.assertIn(OWNER_REFUSAL, verdict)
++                self.assertIn("PUT", verdict)
++        for command in (
++            "gh api -X PUT repos/o/r/collaborators/bob -X GET",
++            "gh api --method PUT --method GET repos/o/r/collaborators",
++        ):
++            with self.subTest(command=command):
++                self.assertIsNone(refused(command))
++
++    def test_fields_without_a_method_are_a_post_and_the_refusal_says_so(self) -> None:
++        for command in (
++            "gh api repos/o/r/collaborators -f per_page=100",
++            "gh api repos/o/r/rulesets --input r.json",
++        ):
++            with self.subTest(command=command):
++                verdict = refused(command) or ""
++                self.assertIn(OWNER_REFUSAL, verdict)
++                self.assertIn("POST", verdict)
++                self.assertNotIn("GET", verdict)
++
+     def test_a_write_by_gh_api_outside_the_owner_endpoints_is_left_alone(self) -> None:
+         for command in (
+             "gh api -X POST repos/o/r/issues/3/comments -f body=x",
+@@ -452,6 +624,151 @@ class OwnerGestures(unittest.TestCase):
+             with self.subTest(command=command):
+                 self.assertIsNone(refused(command))
+ 
++    def test_a_script_with_a_runner_argument_is_refused_wherever_it_stands(self) -> None:
++        for command in (
++            "./config.sh --url https://github.com/o/r --token T",
++            "scripts/config.sh --token=T",
++            "bash scripts/config.sh --url=https://github.com/o/r",
++            "./svc.sh install",
++            "sudo ./svc.sh uninstall",
++            "./svc.sh start",
++            "./svc.sh stop",
++        ):
++            with self.subTest(command=command):
++                self.assertIn(OWNER_REFUSAL, refused(command) or "")
++
++    def test_a_config_script_of_a_project_is_not_a_runner_script(self) -> None:
++        with runner_folder() as runner, tempfile.TemporaryDirectory() as plain:
++            for command in (
++                "bash scripts/config.sh",
++                "bash scripts/config.sh --verbose",
++                "./config.sh --dry-run",
++                f"cd {plain} && ./config.sh",
++                f"{plain}/svc.sh",
++                f"{plain}/svc.sh status",
++                f"cd {runner} && ./svc.sh status",
++            ):
++                with self.subTest(command=command):
++                    self.assertIsNone(refused_in(command, plain))
++
++    def test_a_script_in_a_runner_folder_is_refused_without_any_argument(self) -> None:
++        with runner_folder() as runner, tempfile.TemporaryDirectory() as plain:
++            for command, cwd in (
++                ("./config.sh", runner),
++                ("bash ./svc.sh", runner),
++                ("./config.cmd", runner),
++                (f"{runner}/config.sh", plain),
++                (f"cd {runner} && ./config.sh", plain),
++                (f"sudo -u runner {runner}/svc.sh", plain),
++            ):
++                with self.subTest(command=command):
++                    self.assertIn(OWNER_REFUSAL, refused_in(command, cwd) or "")
++
++    def test_a_script_in_a_windows_runner_folder_is_refused_without_any_argument(self) -> None:
++        with windows_runner_folder() as runner, tempfile.TemporaryDirectory() as plain:
++            for command, cwd in (
++                ("./config.cmd", runner),
++                ("cmd /c config.cmd", runner),
++                (f"{runner}/config.cmd", plain),
++                (f"cd {runner} && ./config.cmd", plain),
++                (f"cd {runner} && cd bin/.. && ./config.cmd", plain),
++            ):
++                with self.subTest(command=command):
++                    self.assertIn(OWNER_REFUSAL, refused_in(command, cwd) or "")
++            for command, cwd in (("./config.cmd", plain), (f"{plain}/config.cmd", plain)):
++                with self.subTest(command=command):
++                    self.assertIsNone(refused_in(command, cwd))
++
++    def test_a_folder_with_only_one_marker_is_not_a_runner_folder(self) -> None:
++        with tempfile.TemporaryDirectory() as folder:
++            (Path(folder) / "bin").mkdir()
++            (Path(folder) / "bin" / "Runner.Listener.exe").write_text("", encoding="utf-8")
++            self.assertIsNone(refused_in("./config.cmd", Path(folder).as_posix()))
++            (Path(folder) / "run.cmd").write_text("", encoding="utf-8")
++            self.assertIn(OWNER_REFUSAL, refused_in("./config.cmd", Path(folder).as_posix()) or "")
++
++    def test_a_runner_registered_by_its_environment_or_by_other_options_is_refused(self) -> None:
++        for command in (
++            "./config.sh --unattended",
++            "./config.sh --unattended --pat=P",
++            "./config.sh --pat P",
++            "scripts/config.sh --pat=P",
++            "ACTIONS_RUNNER_INPUT_URL=https://github.com/o/r ACTIONS_RUNNER_INPUT_TOKEN=T ./config.sh",
++            "ACTIONS_RUNNER_INPUT_TOKEN=T ./config.sh --unattended",
++            "env ACTIONS_RUNNER_INPUT_TOKEN=T ./config.sh",
++            "sudo env ACTIONS_RUNNER_INPUT_URL=u bash ./config.sh",
++            "export ACTIONS_RUNNER_INPUT_TOKEN=T",
++            "export ACTIONS_RUNNER_INPUT_TOKEN=T && ./config.sh",
++            "ACTIONS_RUNNER_INPUT_TOKEN=T",
++            "bash -c 'ACTIONS_RUNNER_INPUT_TOKEN=T ./config.sh'",
++            "bash <<'EOF'\nACTIONS_RUNNER_INPUT_TOKEN=T ./config.sh\nEOF",
++            "echo x; ACTIONS_RUNNER_INPUT_NAME=n ./config.sh",
++        ):
++            with self.subTest(command=command):
++                self.assertIn(OWNER_REFUSAL, refused(command) or "")
++        for command in (
++            "echo ACTIONS_RUNNER_INPUT_URL",
++            "grep -r ACTIONS_RUNNER_INPUT_ docs",
++            "./config.sh --dry-run",
++            "ACTIONS_RUNNER=1 ./build.sh",
++        ):
++            with self.subTest(command=command):
++                self.assertIsNone(refused(command))
++
++    def test_gh_global_options_before_deploy_key_do_not_hide_its_action(self) -> None:
++        for command in (
++            "gh repo deploy-key -R o/r add key.pub",
++            "gh repo deploy-key --repo=o/r delete 5",
++            "gh -R o/r repo deploy-key -R o/r add key.pub",
++        ):
++            with self.subTest(command=command):
++                self.assertIn("deploy-key", refused(command) or "")
++        for command in ("gh repo deploy-key -R o/r list", "gh repo deploy-key list"):
++            with self.subTest(command=command):
++                self.assertIsNone(refused(command))
++
++    def test_sudo_with_a_joined_option_env_and_nohup_do_not_hide_a_runner_script(self) -> None:
++        for command in (
++            "sudo -iu runner ./svc.sh install",
++            "sudo -u runner -H ./svc.sh start",
++            "sudo -urunner ./svc.sh start",
++            "env ./config.sh --token T",
++            "env -i HOME=/x ./svc.sh stop",
++            "env -u FOO ./svc.sh stop",
++            "nohup ./svc.sh start",
++            "nohup sudo ./svc.sh start",
++            "nohup env A=1 bash ./config.sh --url u",
++            "sudo env PATH=/bin ./svc.sh uninstall",
++        ):
++            with self.subTest(command=command):
++                self.assertIn(OWNER_REFUSAL, refused(command) or "")
++        for command in (
++            "sudo -iu runner ./svc.sh status",
++            "env FOO=1 ./build.sh",
++            "nohup ./run.sh",
++            "sudo -iu runner ls",
++        ):
++            with self.subTest(command=command):
++                self.assertIsNone(refused(command))
++
++    def test_a_heredoc_fed_to_a_shell_is_read_as_the_script_it_is(self) -> None:
++        for command in (
++            "bash <<'EOF'\n./config.sh --url u --token T\nEOF",
++            "sudo bash <<EOF\ncd /srv/runner && ./svc.sh install\nEOF",
++            "sh -s <<'EOF'\ngh secret set TOKEN\nEOF",
++            "bash <<'EOF' && echo done\n./svc.sh start\nEOF",
++        ):
++            with self.subTest(command=command):
++                self.assertIn(OWNER_REFUSAL, refused(command) or "")
++        for command in (
++            "bash <<'EOF'\necho hello\nEOF",
++            "cat <<'EOF'\n./config.sh --token T\nEOF",
++            "git commit -m \"$(cat <<'EOF'\nfix: gh secret set\nEOF\n)\"",
++            "bash scripts/build.sh <<'EOF'\nyes\nEOF",
++        ):
++            with self.subTest(command=command):
++                self.assertIsNone(refused(command))
++
+     def test_a_gesture_the_project_declares_is_refused_with_its_reason(self) -> None:
+         lines = [OWNER_KEY_VALUE, "uv run python -m scripts.release | la publication est humaine"]
+         for command in (
+@@ -506,6 +823,99 @@ class OwnerGestures(unittest.TestCase):
+         with tempfile.TemporaryDirectory() as root:
+             self.assertEqual(run(root)[0], 0)
+ 
++    def test_a_mutation_written_in_a_heredoc_is_read(self) -> None:
++        for body in (
++            "mutation { deleteRepository(input: {repositoryId: \"x\"}) { clientMutationId } }",
++            "mutation { updateBranchProtectionRule(input: {}) { clientMutationId } }",
++            "mutation { createRepositoryRuleset(input: {}) { clientMutationId } }",
++            "mutation { addRepositoryCollaborator(input: {}) { clientMutationId } }",
++        ):
++            for command in (
++                f"gh api graphql -f query=\"$(cat <<'EOF'\n{body}\nEOF\n)\"",
++                f"gh api graphql -f query=\"$(cat <<EOF\n{body}\nEOF\n)\" -F owner=o",
++                f"gh api graphql --input - <<'EOF'\n{json.dumps({'query': body})}\nEOF",
++                f"cd /w && gh api graphql --input - <<-'EOF'\n\t{body}\n\tEOF",
++            ):
++                with self.subTest(command=command):
++                    verdict = refused(command) or ""
++                    self.assertIn(OWNER_REFUSAL, verdict)
++                    self.assertIn("gh api graphql", verdict)
++
++    def test_a_mutation_written_in_a_readable_file_is_read(self) -> None:
++        texts = {
++            "/w/m.graphql": "mutation { deleteRepository(input: {}) { clientMutationId } }",
++            "/w/m.json": '{"query": "mutation { updateRepository(input: {}) { id } }"}',
++            "/w/q.graphql": "query { viewer { login } }",
++            "/w/sub.graphql": "mutation { addSubIssue(input: {}) { issue { id } } }",
++        }
++        for command in (
++            "gh api graphql -F query=@m.graphql",
++            "gh api graphql -f query=@m.graphql",
++            "gh api graphql --field query=@/w/m.graphql",
++            "gh api graphql --input m.json",
++            "gh api graphql --input=m.json",
++            "cd /w/sub && gh api graphql --input ../m.json",
++        ):
++            with self.subTest(command=command):
++                verdict = refusal(command, "feat/x", always_green, "/w", read_text=files(texts))
++                self.assertIn(OWNER_REFUSAL, verdict or "")
++        for command in (
++            "gh api graphql -F query=@q.graphql",
++            "gh api graphql --input q.graphql",
++            "gh api graphql -F query=@sub.graphql",
++        ):
++            with self.subTest(command=command):
++                self.assertIsNone(
++                    refusal(command, "feat/x", always_green, "/w", read_text=files(texts))
++                )
++
++    def test_a_graphql_form_that_cannot_be_read_is_refused_as_a_precaution(self) -> None:
++        for command in (
++            "gh api graphql --input missing.json",
++            "gh api graphql -F query=@missing.graphql",
++            "cat q.json | gh api graphql --input -",
++            "echo \"$QUERY\" | gh api graphql -F query=@-",
++            "gh api graphql -f query=\"$(cat q.graphql)\"",
++            "gh api graphql -f query=\"`cat q.graphql`\"",
++            "gh api graphql -f query=\"$QUERY\"",
++            "gh api graphql -f query=${QUERY}",
++            "gh api graphql --input - <<<\"$QUERY\"",
++            "cd \"$DIR\" && gh api graphql --input m.json",
++        ):
++            with self.subTest(command=command):
++                verdict = refused(command) or ""
++                self.assertIn("gh api graphql", verdict)
++                self.assertIn("par précaution", verdict)
++
++    def test_the_standard_input_under_another_name_is_the_heredoc(self) -> None:
++        mutation = '{"query": "mutation { updateRepository(input: {}) { clientMutationId } }"}'
++        sub_issue = '{"query": "mutation { addSubIssue(input: {}) { issue { id } } }"}'
++        for name in ("/dev/stdin", "/dev/fd/0", "/proc/self/fd/0"):
++            for form in (f"--input {name}", f"-F query=@{name}", f"--input={name}"):
++                with self.subTest(form=form):
++                    verdict = refused(f"gh api graphql {form} <<'EOF'\n{mutation}\nEOF") or ""
++                    self.assertIn("mutation", verdict)
++                    self.assertNotIn("par précaution", verdict)
++                    self.assertIsNone(refused(f"gh api graphql {form} <<'EOF'\n{sub_issue}\nEOF"))
++
++    def test_the_standard_input_under_another_name_without_a_heredoc_is_refused(self) -> None:
++        verdict = refused("cat q.json | gh api graphql --input /dev/stdin") or ""
++        self.assertIn("par précaution", verdict)
++
++    def test_a_graphql_read_in_a_heredoc_or_with_variables_passes(self) -> None:
++        for command in (
++            "gh api graphql -f query=\"$(cat <<'EOF'\nquery { viewer { login } }\nEOF\n)\"",
++            "gh api graphql --input - <<'EOF'\n{\"query\": \"query { viewer { login } }\"}\nEOF",
++            "gh api graphql -f query=\"$(cat <<'EOF'\nmutation { addSubIssue(input: {}) { issue { id } } }\n"
++            "EOF\n)\"",
++            "gh api graphql -f query='query($o: String!) { repository(owner: $o, name: \"r\") { id } }'"
++            " -F o=x",
++            "gh api graphql -f query='query { viewer { login } }' -F cursor=\"$CURSOR\"",
++            "gh api repos/o/r/issues --jq '.[].title' <<'EOF'\nupdateRepository\nEOF",
++        ):
++            with self.subTest(command=command):
++                self.assertIsNone(refused(command))
++
+     def test_the_sub_issue_mutations_the_plugin_uses_and_graphql_reads_pass(self) -> None:
+         for command in (
+             "gh api graphql -f query='mutation { addSubIssue(input: {issueId: \"a\", "
+@@ -520,5 +930,273 @@ class OwnerGestures(unittest.TestCase):
+                 self.assertIsNone(refused(command))
+ 
+ 
++MUTATION_JSON = '{"query": "mutation { updateRepository(input: {}) { clientMutationId } }"}'
++SUB_ISSUE_JSON = '{"query": "mutation { addSubIssue(input: {}) { issue { id } } }"}'
++STDIN_SPELLINGS = (
++    "/dev/stdin",
++    "/dev/fd/0",
++    "/proc/self/fd/0",
++    "/dev/./stdin",
++    "//dev/stdin",
++    "///dev/stdin",
++    "/dev//stdin",
++    "/dev/fd/../fd/0",
++    "/dev/../dev/stdin",
++    "/proc/self/../self/fd/0",
++    "/tmp/../dev/stdin",
++    "/proc/thread-self/fd/0",
++)
++
++
++def _refuse_unsafe_open(path: object) -> None:
++    """Raise rather than open what could read without end or block: a device, /proc, a pipe.
++
++    The check is a `stat`, which never blocks, and it runs before any real open: a test written
++    against code that still opens such a path fails here, red, instead of filling the memory.
++    """
++    if isinstance(path, int):
++        raise AssertionError(f"opened the descriptor {path}")
++    text = os.fspath(path)  # type: ignore[arg-type]
++    if isinstance(text, bytes):
++        text = os.fsdecode(text)
++    for candidate in (text, os.path.realpath(text)):
++        normal = os.path.normpath(candidate).replace("\\", "/")
++        if normal.lstrip("/").startswith(("dev/", "proc/")) or normal in ("/dev", "/proc"):
++            raise AssertionError(f"opened {text} ({normal})")
++    try:
++        mode = os.stat(text).st_mode
++    except (OSError, ValueError):
++        return  # it cannot be opened either
++    if not (stat.S_ISREG(mode) or stat.S_ISDIR(mode)):
++        raise AssertionError(f"opened {text}, which is not an ordinary file")
++
++
++@contextlib.contextmanager
++def no_open_under_devices() -> Iterator[None]:
++    """Fail the test if the guard opens a device, /proc or any file that is not an ordinary one.
++
++    `pathlib` opens through `io.open`, which does not call `os.open` or `builtins.open` by name:
++    all three are patched, so that no road to a real open is left.
++    """
++    real_io_open, real_os_open = io.open, os.open
++
++    def checked_io_open(path: object, *args: object, **kwargs: object) -> object:
++        _refuse_unsafe_open(path)
++        return real_io_open(path, *args, **kwargs)  # type: ignore[arg-type]
++
++    def checked_os_open(path: object, *args: object, **kwargs: object) -> int:
++        _refuse_unsafe_open(path)
++        return real_os_open(path, *args, **kwargs)  # type: ignore[arg-type]
++
++    with (
++        mock.patch("io.open", checked_io_open),
++        mock.patch("builtins.open", checked_io_open),
++        mock.patch("os.open", checked_os_open),
++    ):
++        yield
++
++
++class StandardInputIsNeverOpened(unittest.TestCase):
++    """Un chemin qui vaut l'entrée standard n'est jamais ouvert : le garde l'a déjà lue."""
++
++    def test_every_spelling_of_the_standard_input_reads_the_heredoc(self) -> None:
++        for name in STDIN_SPELLINGS:
++            for form in (
++                f"--input {name}",
++                f"--input={name}",
++                f"-F query=@{name}",
++                f"-f query=@{name}",
++                f"--field=query=@{name}",
++            ):
++                with self.subTest(name=name, form=form), no_open_under_devices():
++                    heredoc = f"gh api graphql {form} <<'EOF'\n%s\nEOF"
++                    verdict = refused(heredoc % MUTATION_JSON) or ""
++                    self.assertIn("mutation", verdict)
++                    self.assertNotIn("par précaution", verdict)
++                    self.assertIsNone(refused(heredoc % SUB_ISSUE_JSON))
++                    self.assertIn("par précaution", refused(f"cat q | gh api graphql {form}") or "")
++
++    def test_a_relative_name_is_resolved_where_the_command_stands(self) -> None:
++        for command, cwd in (
++            ("gh api graphql --input stdin", "/dev"),
++            ("gh api graphql --input 0", "/dev/fd"),
++            ("gh api graphql --input 0", "/proc/self/fd"),
++            ("gh api graphql --input fd/0", "/proc/self"),
++            ("gh api graphql --input dev/stdin", "/"),
++            ("gh api graphql --input ../dev/stdin", "/tmp"),
++            ("cd /dev && gh api graphql --input stdin", "/work"),
++            ("cd /dev/fd && gh api graphql -F query=@0", "/work"),
++            ("cd /dev && cd . && gh api graphql --input ./stdin", "/work"),
++            ("cd /w && cd /dev && gh api graphql --input ./stdin", "/work"),
++            ("cd /proc && cd self/fd && gh api graphql --input 0", "/work"),
++        ):
++            with self.subTest(command=command, cwd=cwd), no_open_under_devices():
++                full = f"{command} <<'EOF'\n{MUTATION_JSON}\nEOF"
++                verdict = refusal(full, "feat/x", always_green, cwd) or ""
++                self.assertIn("mutation", verdict)
++                self.assertNotIn("par précaution", verdict)
++                harmless = f"{command} <<'EOF'\n{SUB_ISSUE_JSON}\nEOF"
++                self.assertIsNone(refusal(harmless, "feat/x", always_green, cwd))
++
++    @unittest.skipIf(sys.platform == "win32", "a symbolic link to /dev/stdin is a POSIX thing")
++    def test_a_link_to_the_standard_input_is_the_standard_input(self) -> None:
++        with tempfile.TemporaryDirectory() as folder:
++            link = Path(folder) / "in"
++            link.symlink_to("/dev/stdin")
++            with no_open_under_devices():
++                command = f"gh api graphql --input {link} <<'EOF'\n%s\nEOF"
++                self.assertIn("mutation", refused(command % MUTATION_JSON) or "")
++                self.assertIsNone(refused(command % SUB_ISSUE_JSON))
++
++    def test_a_heredoc_of_another_command_is_not_the_standard_input_of_the_call(self) -> None:
++        texts = {"/w/q.json": SUB_ISSUE_JSON, "/w/m.json": MUTATION_JSON}
++        other = "&& cat <<'EOF'\nupdateRepository\nEOF"
++        for command, expected_mutation in (
++            (f"gh api graphql --input - < q.json {other}", False),
++            (f"gh api graphql --input - < m.json {other}", True),
++            (f"gh api graphql --input - < /w/m.json {other}", True),
++            (f"gh api graphql -F query=@- < m.json {other}", True),
++        ):
++            with self.subTest(command=command):
++                verdict = refusal(command, "feat/x", always_green, "/w", read_text=files(texts))
++                if expected_mutation:
++                    self.assertIn("mutation", verdict or "")
++                    self.assertNotIn("par précaution", verdict or "")
++                else:
++                    self.assertIsNone(verdict)
++        for command in (
++            f"gh api graphql --input - {other}",
++            "gh api graphql --input - < missing.json",
++            'gh api graphql --input - <<< "$QUERY"',
++            f"echo '{SUB_ISSUE_JSON}' | gh api graphql --input - {other}",
++        ):
++            with self.subTest(command=command):
++                verdict = refusal(command, "feat/x", always_green, "/w", read_text=files(texts))
++                self.assertIn("par précaution", verdict or "")
++
++    def test_a_file_that_is_not_an_ordinary_small_file_is_not_read(self) -> None:
++        with tempfile.TemporaryDirectory() as folder, no_open_under_devices():
++            root = Path(folder)
++            big = root / "big.json"
++            big.write_text(" " * (2 * 1024 * 1024) + MUTATION_JSON, encoding="utf-8")
++            small = root / "small.json"
++            small.write_text(MUTATION_JSON, encoding="utf-8")
++            forms = {
++                "a file over the cap": (big.as_posix(), "par précaution"),
++                "a directory": (root.as_posix(), "par précaution"),
++                "an ordinary small file": (small.as_posix(), "mutation"),
++            }
++            if sys.platform != "win32":
++                forms["/dev/zero"] = ("/dev/zero", "par précaution")
++                forms["/dev/null"] = ("/dev/null", "par précaution")
++                forms["/dev/urandom"] = ("/dev/urandom", "par précaution")
++            if hasattr(os, "mkfifo"):
++                fifo = root / "pipe"
++                os.mkfifo(fifo)
++                forms["a FIFO nobody writes to"] = (fifo.as_posix(), "par précaution")
++            for name, (path, expected) in forms.items():
++                for form in (f"--input {path}", f"-F query=@{path}"):
++                    with self.subTest(case=name, form=form):
++                        started = time.monotonic()
++                        verdict = refused(f"gh api graphql {form}") or ""
++                        self.assertLess(time.monotonic() - started, 5)
++                        self.assertIn(expected, verdict)
++
++    def test_a_body_file_of_a_merge_under_a_device_path_is_not_opened(self) -> None:
++        for name in ("/dev/stdin", "/dev/./stdin", "//dev/stdin", "/dev/zero", "/proc/self/fd/0"):
++            for option in (f"--body-file {name}", f"-F {name}", f"--body-file={name}"):
++                with self.subTest(name=name, option=option), no_open_under_devices():
++                    self.assertIsNone(refused(f"gh pr merge 5 {option}", green=True))
++
++
++COLLABORATOR = "repos/o/r/collaborators/bob"
++
++
++class GhApiArgumentsLikeGh(unittest.TestCase):
++    """Un seul découpeur des arguments de `gh api`, comme pflag : la méthode, le point d'accès et
++    les champs ne se lisent pas autrement que gh les lit."""
++
++    def test_the_value_of_an_option_is_never_taken_for_the_method(self) -> None:
++        # gh (pflag) prend le mot suivant pour la valeur de l'option, même s'il commence par `-`.
++        for tail in (
++            "--jq -XGET",
++            "-q -XGET",
++            "-q --method=GET",
++            "-t --method=GET",
++            "-t -X=GET",
++            "--template -XGET",
++            "-p -XGET",
++            "--preview -XGET",
++            "--cache -XGET",
++            "--hostname -XGET",
++            "-H -XGET",
++            "--header -X=GET",
++            "--jq=. -q -XGET",
++        ):
++            with self.subTest(tail=tail):
++                verdict = refused(f"gh api -X PUT {COLLABORATOR} {tail}") or ""
++                self.assertIn(OWNER_REFUSAL, verdict)
++                self.assertIn("PUT", verdict)
++        for command in (
++            f"gh api {COLLABORATOR} --jq -XPUT",
++            f"gh api {COLLABORATOR} -q -X",
++            f"gh api {COLLABORATOR} --template --method=DELETE",
++            f"gh api {COLLABORATOR} --jq -f",
++            f"gh api {COLLABORATOR} -H -F",
++            f"gh api -X GET --jq -XPUT {COLLABORATOR}",
++        ):
++            with self.subTest(command=command):
++                self.assertIsNone(refused(command))
++
++    def test_every_spelling_of_the_method_is_read_and_the_last_one_counts(self) -> None:
++        for command, method in (
++            (f"gh api -XPUT {COLLABORATOR}", "PUT"),
++            (f"gh api -X=PUT {COLLABORATOR}", "PUT"),
++            (f"gh api --method=PUT {COLLABORATOR}", "PUT"),
++            (f"gh api --method PUT {COLLABORATOR}", "PUT"),
++            (f"gh api -iXPUT {COLLABORATOR}", "PUT"),
++            (f"gh api -X GET -XPUT {COLLABORATOR}", "PUT"),
++            (f"gh api -XGET -X=PUT {COLLABORATOR}", "PUT"),
++            (f"gh api -X GET {COLLABORATOR} -f a=b -X DELETE", "DELETE"),
++            (f"gh api -X GET {COLLABORATOR} -fa=b -iXDELETE", "DELETE"),
++            (f"gh api --method=GET --method=PUT {COLLABORATOR}", "PUT"),
++            (f"gh api -X PUT -- {COLLABORATOR}", "PUT"),
++            (f"gh api -X PUT --jq . {COLLABORATOR}", "PUT"),
++            (f"gh api -pXGET {COLLABORATOR} -f permission=admin", "POST"),
++        ):
++            with self.subTest(command=command):
++                verdict = refused(command) or ""
++                self.assertIn(OWNER_REFUSAL, verdict)
++                self.assertIn(f"gh api {method} ", verdict)
++        for command in (
++            f"gh api -XGET {COLLABORATOR}",
++            f"gh api -X=get {COLLABORATOR} -f per_page=1",
++            f"gh api --method=HEAD {COLLABORATOR}",
++            f"gh api -iXGET {COLLABORATOR} -F a=b",
++            f"gh api -X PUT -X GET {COLLABORATOR} -f a=b",
++            f"gh api -X PUT {COLLABORATOR} -XGET",
++            f"gh api -pXGET {COLLABORATOR}",
++            f"gh api -X GET -- {COLLABORATOR}",
++        ):
++            with self.subTest(command=command):
++                self.assertIsNone(refused(command))
++
++    def test_a_redirection_does_not_hide_the_endpoint_or_the_method(self) -> None:
++        for command in (
++            f"gh api 2>/dev/null -X PUT {COLLABORATOR}",
++            f"gh api > out.json -X PUT {COLLABORATOR}",
++            f"gh api -X PUT {COLLABORATOR} > out.json 2>&1",
++            f"gh api >> log.txt {COLLABORATOR} -f permission=admin",
++        ):
++            with self.subTest(command=command):
++                self.assertIn(OWNER_REFUSAL, refused(command) or "")
++        for command in (
++            f"gh api {COLLABORATOR} > out.json",
++            f"gh api -X GET {COLLABORATOR} -f per_page=1 2>&1",
++        ):
++            with self.subTest(command=command):
++                self.assertIsNone(refused(command))
++
++
+ if __name__ == "__main__":
+     unittest.main()

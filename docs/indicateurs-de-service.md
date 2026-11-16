@@ -28,7 +28,7 @@ il ne lit que `docs/agents/usine.md` en configuration.
 | `tokens-per-merge` | jetons de tous les rôles, session principale comprise (`token_audit.py`), divisés par les PR fusionnées |
 | `human-touch` | part des PR qui ont reçu `needs-your-attention`, ou dont la ligne `Attention` du `Rapport d'agent` n'est pas `aucune`, pour une autre raison qu'un chemin de la clé `protected-path` |
 | `main-green` | part des commits de la branche de base dont les checks de la clé `required-contexts` sont verts |
-| `judge-recall`, `false-accept` | lus dans le dernier résultat du jeu de référence (`--reference <fichier JSON>`), sinon « sans objet » |
+| `judge-recall`, `false-accept` | lus dans le dernier résultat du jeu de référence (`--reference <fichier JSON>`, que produit `eval_reference.py score`, voir `docs/jeu-de-reference.md`), sinon « sans objet » |
 
 Les durées sont en heures, la médiane est la vraie médiane, le p90 est au rang le plus proche.
 

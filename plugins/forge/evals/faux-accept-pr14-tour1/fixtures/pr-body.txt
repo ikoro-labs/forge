@@ -1,0 +1,57 @@
+PR #14: feat(hooks): refuser à un agent les gestes du propriétaire du dépôt
+
+## Résumé
+
+`guard_git` ne refusait que les commandes git qui réécrivent l'historique : rien n'empêchait un agent de changer une protection de branche, d'ajouter un collaborateur, d'écrire un secret ou d'enregistrer un runner, gestes qui reviennent au propriétaire du dépôt. Il les refuse maintenant par défaut, à tout agent, et le refus nomme le geste et dit qu'il est à lister pour l'humain en fin de compte rendu (« <geste> : geste du propriétaire du dépôt, à lister pour l'humain en fin de compte rendu »). Un projet ajoute les siens par la clé `owner-gesture`. Le tri de `forge:staff-engineer` et la décision de l'humain sont suivis tels quels ; la PR touche `plugins/forge/hooks/guard_` (chemin protégé) : elle se fusionne à la main.
+
+Closes #3
+
+### Ce qui est refusé (liste intégrée, `plugins/forge/hooks/guard_git.py`)
+
+- **`gh api`**, toute méthode sauf `GET` et `HEAD` (règle `_gh_api_reads`, déplacée de `guard_readonly` dans `guard_git` et importée par lui : une seule règle), sur `collaborators`, `invitations`, `branches/<b>/protection`, `rulesets`, `actions/runners|secrets|variables|permissions`, `dependabot/secrets`, `environments`, `keys`, `hooks`, `transfer`, et sur `repos/<o>/<r>` lui-même. Les endpoints sont ancrés après `repos/<o>/<r>/` ou `orgs/<o>/` : une écriture sur `contents/.../hooks/x.py` passe.
+- **GraphQL** : les mutations `create|update|delete` de `BranchProtectionRule` et `RepositoryRuleset`, `update|delete|archive|unarchive|transferRepository`, et toute mutation dont le nom contient `Collaborator` précédé d'un verbe. Les mutations de sous-issues (`addSubIssue`, `removeSubIssue`, `reprioritizeSubIssue`) passent : un test les garde.
+- **`gh secret|variable set|delete|remove`**, **`gh repo delete|rename|archive`**, **`gh repo edit --visibility`**, **`gh repo deploy-key add|delete`**. Les options globales de gh (`gh -R o/r secret set`) et les affectations d'environnement ne les cachent pas.
+- **`config.sh`, `config.cmd`, `svc.sh`** d'un runner, aussi derrière `sudo` (et ses options à valeur), `bash`/`sh`/`zsh`/`dash` (y compris `-c "..."`), `cmd /c`, `powershell`, `pwsh`. `svc.sh status` reste une lecture.
+- La lecture (`GET`, `HEAD`) passe toujours, y compris sur ces endpoints.
+
+### La clé `owner-gesture`
+
+Une ligne `<préfixe de commande> | <raison>`, répétable, coupée par `split_value` (réutilisé, non dupliqué). Le préfixe est comparé mot à mot après retrait des affectations d'environnement et des options globales de gh (`gh -R o/r label delete` correspond à `gh label delete`). La raison est reprise dans le refus. Une ligne sans raison refuse quand même et le dit (« sans raison »), jamais complétée. Documentée dans `plugins/forge/templates/usine.md`, constante `OWNER_KEY`, `guard_git` ajouté au test qui vérifie que le gabarit documente chaque clé lue par un hook.
+
+### Autres changements
+
+- Docstring de `guard_git.py` et nouvelle section « Les gestes du propriétaire du dépôt » de `docs/installation.md` : le choix consigné au CHANGELOG (« propres à chaque projet, dans ses hooks ») est repris. Ligne `guard_git` du README complétée.
+- Schéma du README : la boîte `guard_git` dit « git et gh sans risque, pas de geste du propriétaire du dépôt » (`docs/architecture.excalidraw` : texte, hauteur et position de l'étiquette).
+- `main()` ne sort plus tôt quand la commande ne contient ni `git` ni `gh` : une clé du projet ou `config.sh` n'en contiennent pas. Le coût est un découpage de plus par appel Bash.
+
+## Ce qui ne change pas
+
+- `plugins/forge/hooks/hooks.json` : le `|| exit 2` manquant sur `guard_git` est une décision séparée, hors ticket. Un plantage de `guard_git` laisse donc toujours passer la commande, comme avant.
+- Le `CHANGELOG.md` et la version : la PR de version dira le resserrement (zone Gestes humains) et le retour sur le choix consigné.
+- `usine.py` (`split_value` existe depuis #11), `guard_readonly` (hors le déplacement de `_gh_api_reads`/`API_FIELDS`, importés de `guard_git`), `guard_coder`.
+- Le comportement des projets consommateurs se **resserre** : un agent qui écrivait un secret ou une protection est maintenant refusé. Leurs propres hooks de `.claude/settings.json` continuent de tourner à côté.
+
+## Preuves
+
+- Test-first, un commit par groupe de gestes. Rouge relevé avant le code : gestes `gh` (`FAILED (failures=16)`), `gh api` et GraphQL (`FAILED (failures=36)`), clé `owner-gesture` (échec d'import de `OWNER_KEY`, puis un cas rouge) et gabarit (`test_usine` rouge tant que la clé n'y était pas). Les tests des scripts de runner ont été écrits avant le code, mais je n'ai pas relevé leur rouge séparément.
+- `uv run --no-project --quiet python -m unittest discover -s tests` : `Ran 271 tests ... OK (skipped=3)` (Linux). Un test par geste refusé (sous-tests par commande), un pour un `GET`, un pour `gh -R o/r secret set`, un pour les mutations de sous-issues, un pour un write hors endpoint propriétaire, un par cas de la clé, un pour `main()` qui lit la clé dans une configuration temporaire.
+- `claude plugin validate .` et `claude plugin validate plugins/forge` : `Validation passed` (deux fois).
+- Hook lancé pour de vrai par `uv run ... python plugins/forge/hooks/guard_git.py` sur un événement JSON : `gh -R o/r secret set X` sort 2 avec le message ; `gh api repos/o/r/collaborators` sort 0.
+- Schéma : export par `exportToSvg` de `@excalidraw/excalidraw` 0.18.1 sous Node et jsdom, outillage hors du dépôt. Contrôle : la source de `main` réexportée donne un SVG identique à l'octet à `docs/architecture.svg`. **Pas vérifié à l'œil dans Excalidraw ni dans le rendu du README** : seul un rendu cairosvg (police de repli, pas Excalifont) a été regardé, le texte sur quatre lignes tient dans la boîte mais de justesse ; avec la vraie police la largeur peut différer.
+- Essayé sur un vrai poste : Linux seulement ; pas sous Windows (la suite doit tourner en CI ; le cas des chemins Windows de `config.cmd` n'est éprouvé que par test, sous Linux).
+
+## Décisions que la spec ne fixait pas, et limites
+
+- `config.cmd` : `shlex` (mode POSIX) retire les antislashs d'un chemin Windows non quoté (`.\config.cmd` devient `.config.cmd`). Le hook reconnaît donc aussi un mot qui commence par `.` ou par une lettre de lecteur et se termine par le nom du script. Conséquence : `C:\x\myconfig.cmd` est refusé aussi (faux positif possible, rare), à confirmer sur un vrai PowerShell.
+- `svc.sh status` est une lecture permise (ajout : le ticket liste `svc.sh` entier).
+- Les gestes `gh secret remove`, `gh variable remove` et la liste `unarchiveRepository` s'ajoutent à la liste du ticket (alias et symétrie).
+- Pour une méthode explicite `-X GET` accompagnée de `-f`, `_gh_api_reads` répond « écriture » (conservateur, repris tel quel de `guard_readonly`) : sur un endpoint propriétaire, c'est refusé.
+- Les noms de mutations GraphQL de collaborateur (`\w*(add|remove|update|invite|create|delete)\w*Collaborator\w*`) ne sont pas relevés dans le schéma réel de GitHub ; ce motif est large exprès. Jamais éprouvé contre l'API réelle.
+- Non lus, comme tout garde de ce dépôt (« protection contre l'accident, pas contre l'intention ») : un wrapper (`env gh`, `/usr/bin/gh`), une requête GraphQL lue dans un fichier (`--input`, `query=@fichier`), une commande construite par substitution de shell.
+
+## Suite
+
+- `|| exit 2` dans `hooks.json` pour `guard_git` : décision séparée.
+- Entrée du `CHANGELOG.md` (Gestes humains, et le retour sur le choix des gestes de propriétaire) : à la PR de version.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)

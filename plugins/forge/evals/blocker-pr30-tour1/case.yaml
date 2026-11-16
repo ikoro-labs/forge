@@ -1,0 +1,6 @@
+schema_version: "1.0"
+name: blocker-pr30-tour1
+description: "Rejoue la PR 30 au tour 1 devant forge:qc-conf (la reprise du même garde de commande, dont le découpage des options à valeur et la lecture de l'entrée standard par un chemin sous /dev restent faux). Verdict attendu, REJECT: un BLOCKER avéré est dans le diff."
+tags: [blocker, juge]
+context:
+  scaffold_script: scaffold.sh

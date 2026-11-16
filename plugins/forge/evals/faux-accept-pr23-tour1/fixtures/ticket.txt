@@ -1,0 +1,19 @@
+Ticket #16: never-weaken : un renommage ne contourne plus une entrée, préfixe a/ ou b/ et ancien chemin compris
+
+## Constat
+
+Relevé par le juge de #13, tour 2 (MINOR) : `plugins/forge/scripts/never_weaken.py` fait passer les lignes `rename from` et `rename to` par `_path`, qui retire tout préfixe `a/` ou `b/`. Ces lignes de git n'ont pas de préfixe. Dans un projet qui a un dossier racine `a/` ou `b/`, une entrée `a/seuils/ | removed-line` est contournée par un déplacement à l'identique de `a/seuils/ref.txt` vers `archive/ref.txt` : la sonde rend `NONE`.
+
+Relevé au tour 1 (MINOR) : `raised-number` et `lowered-rank` ne testent que `new_path`. Un renommage avec édition (`config/tolerances.toml` vers `config/tol.toml` en relevant la valeur) rend `NONE`.
+
+## Ce qui est attendu
+
+- `rename from` et `rename to` sont décodés par `_unquote` seul, sans retrait de préfixe.
+- Les trois types testent `old_path` comme `new_path` : un fichier qui sort du chemin en changeant est lu sous l'entrée.
+- La docstring dit vrai : un diff illisible rend `APPLIES` (code 1), pas `INVALID` (NOTE du tour 2).
+- Le helper de test `real_diff` isole `HOME` dans un dossier privé, pas dans `tempfile.gettempdir()` (NOTE du tour 2).
+- Des tests sur de vrais `git diff` : dossier racine `a/` déplacé, renommage avec relèvement.
+
+## Décision
+
+Décision de l'humain (`accepting-human`, 2026-10-24) : corriger comme le juge le recommande.

@@ -1,0 +1,51 @@
+PR #28: fix(hooks): guard_git lit les gestes du propriétaire dans un heredoc et ne refuse que les scripts de runner
+
+## Résumé
+
+`guard_git` lisait mal les gestes du propriétaire (relevé du juge de #14) et son échec avant `guarded_main` ne disait rien à l'agent (reporté du verdict de #22). Le garde échoue fermé : on préfère refuser une forme qui vise `graphql` et qu'on ne lit pas que la laisser passer, comme le décide le ticket.
+
+Closes #18
+
+### Gestes du propriétaire (`plugins/forge/hooks/guard_git.py`)
+
+- **GraphQL** : la requête est cherchée dans les arguments, dans les heredocs de la commande (`--input - <<EOF`, `query="$(cat <<EOF ...)"`) et dans le fichier de `--input` ou de `-F query=@fichier` quand il est lisible. Une forme qui vise `graphql` et ne se lit pas (fichier absent, entrée standard d'un tube, `$(...)`, backquotes ou variable pour la requête) est refusée « par précaution », mutation ou non. Une requête littérale avec variables GraphQL (`query($o: String!)`) et les mutations de sous-issues passent toujours.
+- **`-X GET` / `--method GET`** (et `HEAD`) restent une lecture avec `-f`/`-F`. Sans méthode, un champ ou `--input` est un `POST`, et le refus le dit.
+- **Scripts de runner** : `config.sh`, `config.cmd`, `svc.sh` ne sont refusés que dans un dossier qui porte `run.sh`/`run.cmd` et `bin/Runner.Listener`, ou avec `--url`, `--token`, `install`, `uninstall`, `start`, `stop`. `bash scripts/config.sh` d'un projet passe ; `./config.sh --url ... --token ...` est refusé.
+- **Options globales** de `gh` retirées avant l'action de `deploy-key` ; `sudo -iu runner`, `env`, `nohup` et un heredoc envoyé à un shell sont lus.
+
+### Échec avant le garde (`plugins/forge/hooks/hooks.json`)
+
+La commande devient `... || { code=$?; [ "$code" -eq 2 ] || echo "guard_git failed ..." >&2; exit 2; }`, avec `"onFailure": "block"` gardé. `uv` absent ou import cassé : l'agent lit que le garde a échoué et que la commande est refusée par précaution.
+
+### Tests et prose
+
+- Les tests qui appellent le vrai `main()` isolent `HOME`, `USERPROFILE` et retirent les `CLAUDE_*`.
+- `.claude/rules/forge.md` : `guard_pause` échoue ouvert, la phrase ne le laisse plus croire.
+- `docs/installation.md` dit ce qui est lu et nomme les limites restantes.
+
+### Décisions que le ticket ne fixait pas
+
+- **Exception du code 2 dans le message d'échec.** La forme du ticket (`|| { echo ...; exit 2; }`) ajouterait « guard_git failed » après chaque refus de règle, que le garde a déjà formulé (code 2). Le bloc ne parle donc que pour un autre code (127 d'un `uv` absent, 1 d'une trace). Contrepartie : un `uv` qui sortirait lui-même en 2 ne serait pas annoncé.
+- **`remove` s'ajoute aux arguments de runner** (`config.sh remove` est le geste inverse de l'enregistrement, et un test existant le demandait).
+- **Un heredoc est relié à tout `gh api graphql` de la commande**, sans savoir à quelle ligne il appartient : un heredoc étranger qui nomme `updateRepository` dans une commande qui vise aussi `graphql` est refusé (faux positif accepté, dans le sens du ticket).
+- **Un fichier lu depuis le dossier du garde** : `cd "$DIR" && gh api graphql --input q.json` (dossier inconnu) est refusé comme non lu.
+
+## Ce qui ne change pas
+
+- La version, le `CHANGELOG.md` (suivi par #19), `guard_coder`, `guard_readonly`, `guard_pause`.
+- Les règles git (branche, commit, push, fusion) de `guard_git`.
+- La clé `owner-gesture` et sa lecture.
+
+## Preuves
+
+- `uv run --no-project --quiet python -m unittest discover -s tests` : 304 tests, OK (5 ignorés, les mêmes qu'avant). Avant : 290. Chaque cas a son test dans les deux sens (refusé, permis) dans `tests/test_guard_git.py`. Rouge vérifié pour l'écart de chaque commit en rejouant les tests sur l'ancien `guard_git.py` (GET : 5 échecs ; script de runner de projet : 5 échecs ; deploy-key, sudo/env/nohup, heredoc de shell : 14 échecs ; message d'échec : 3 échecs). Les tests GraphQL (heredoc, fichier, forme non lue) et la robustesse sur seize commandes ordinaires (heredoc sans gh, guillemets non fermés, lignes de 300 000 caractères...) ont été écrits avec leur code et ne se sont pas vus rouges séparément.
+- `claude plugin validate .` et `claude plugin validate plugins/forge` : `Validation passed` pour les deux.
+- Essayé sur un vrai poste : Linux seulement (bash, `uv` factice dans le test de `hooks.json`). **Pas éprouvé sous Windows** : la commande `|| { code=$?; [ ... ] || echo ...; exit 2; }` suppose le shell POSIX que Claude Code utilise sous Linux et macOS ; sous Windows elle passe par Git Bash, ce que cette suite n'a pas essayé (le test d'exécution est ignoré hors Linux/macOS par `skipUnless`). Pas essayé non plus dans une vraie session Claude Code avec le plugin publié.
+
+## Suite
+
+- **Constaté hors du périmètre, non corrigé** : le garde ne traite pas un saut de ligne comme un séparateur de commandes (`echo hi` puis `git push --force` sur la ligne suivante donne `None`). Dit dans `docs/installation.md` parmi les limites ; à ouvrir en ticket.
+- Le `CHANGELOG.md` de cette version : #19.
+- Chemins protégés (`plugins/forge/hooks/guard_`, `plugins/forge/hooks/hooks.json`) : un humain fusionne.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
