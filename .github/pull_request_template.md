@@ -1,45 +1,31 @@
-## Résumé
+## Summary
 
-<!-- Ce que la PR change, et pourquoi. Une sous-section par changement quand il y en a plusieurs. -->
+<!-- What the PR changes and why, in five lines at most. Cite the ticket: `Closes #n`, or
+`Refs #n` with the points this PR delivers. -->
 
-Closes #
+### Change view
 
-### Vue du changement
+<!-- The smallest view that is enough: pseudo-code, call tree, file tree, diff sketch or Mermaid
+diagram. Leave out when the diff fits in a few lines. -->
 
-<!-- La plus petite vue qui suffise, à côté du texte qu'elle porte : pseudo-code, arbre d'appels ou
-de fichiers, croquis de diff. Inutile quand le diff tient en quelques lignes. -->
+## Door
 
-## Porte
+<!-- `two-way`: going back costs little. `one-way`: a destructive gesture, a release, a data
+migration, a decision hard to undo; name the gesture that cannot be undone. -->
 
-<!-- `double sens` : un retour en arrière coûte peu.
-`sens unique` : geste destructif, publication, migration de données, décision difficile à défaire.
-Pour un sens unique, dis lequel est le geste qui ne se défait pas, et pourquoi. -->
+## Blast radius
 
-## Rayon d'impact
+<!-- One word (none, local, consumers...) and one sentence on what a consumer project can see
+change at the merge (a variable, a gesture, the behaviour of a hook), then what a reader could
+believe touched and that does not change (version, other hooks, projects). -->
 
-<!-- Un mot (aucun, local, consommateurs...) puis une phrase : ce qu'un projet consommateur peut voir
-changer à la fusion (une variable, un geste, le comportement d'un hook). -->
+## Proofs
 
-## Ce qui ne change pas
-
-<!-- Ce qu'un lecteur pourrait croire touché et qui ne l'est pas : version, autres hooks, projets. -->
-
-## Preuves
-
-- Avant (rouge) : le test de chaque critère vu échouer, sortie recopiée, avec la raison de l'échec :
-- Après (vert) : le même test, sortie recopiée :
-- `uv run --no-project --quiet python -m unittest discover -s tests` :
-- `claude plugin validate .` et `claude plugin validate plugins/forge` :
-- Essayé sur un vrai poste (système, version de Claude Code), ou « pas encore » :
-
-## Définition du Done
-
-<!-- Chaque case cochée honnêtement : une case non tenue dit pourquoi. -->
+<!-- Per criterion test: the red output with the reason it fails, then the green output.
+`uv run --no-project --quiet python -m unittest discover -s tests`, `claude plugin validate .`
+and `claude plugin validate plugins/forge` with their result. Tried on a real machine (system,
+Claude Code version), or "not yet". -->
 
 ## Rapport d'agent
 
-<!-- Laissé vide : `/forge:qc` l'écrit. -->
-
-## Suite
-
-<!-- Ce qui reste à faire après cette PR, avec son ticket. -->
+<!-- Left empty: `/forge:qc` writes it, in French. -->
