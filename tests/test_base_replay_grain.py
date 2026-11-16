@@ -7,6 +7,7 @@ repère les tests que la PR ajoute ou change par les lignes du diff, et juge cha
 import sys
 import unittest
 
+import support
 from test_base_replay import Repo
 
 # A stand-in for a project's runner with a JUnit writer (the standard library has none for unittest).
@@ -193,6 +194,46 @@ class LocatingTheTestsAPrChanged(unittest.TestCase):
         cases = [junit_report.Case("m", "test_a", "pass"), junit_report.Case("m", "test_x[1]", "pass")]
         touched = junit_report.touched(cases, text, [range(9, 10)])
         self.assertEqual([case.name for case in touched], ["test_x[1]"])
+
+
+class GrainIsDocumented(unittest.TestCase):
+    """The consumers read the placeholder and the limits of the reading in the template, the page and the agents."""
+
+    @staticmethod
+    def read(*parts: str) -> str:
+        return " ".join(support.REPO_ROOT.joinpath(*parts).read_text(encoding="utf-8").split())
+
+    def test_the_template_and_the_page_document_report_without_a_new_key(self) -> None:
+        """No F-NNNN: ticket #43, grain du test: `{report}` est documenté dans le gabarit et la page, sans clé de plus."""
+        template = self.read("plugins", "forge", "templates", "usine.md")
+        self.assertIn("`{report}`, facultatif et sans clé de plus", template)
+        self.assertIn("--junitxml={report}", template)
+        self.assertIn("jamais `PASSES`", template)
+        page = self.read("docs", "installation.md")
+        self.assertIn("`{report}`", page)
+        self.assertIn("junit_report.py", page)
+        self.assertIn("un test qu'il ne place pas compte comme changé", page)
+        self.assertIn("jamais sur la sortie d'un vrai `pytest`", page)
+
+    def test_the_gate_and_the_judge_read_the_grain_of_the_test(self) -> None:
+        """No F-NNNN: ticket #43, grain du test: la sonde et le juge lisent les lignes `(grain du test)`."""
+        gate = self.read("plugins", "forge", "agents", "qc-gate.md")
+        section = gate[gate.index("**Rejeu des tests sur la base.**"):]
+        self.assertIn("**grain du test**", section)
+        self.assertIn("`<fichier>::<test>`", section)
+        self.assertIn("`SKIPPED`", section)
+        conf = self.read("plugins", "forge", "agents", "qc-conf.md")
+        section = conf[conf.index("## Lecture du rejeu sur la base"):]
+        self.assertIn("`(grain du test)`", section)
+        self.assertIn("une ligne `NONE` ne prouve pas", section)
+
+    def test_the_script_names_the_placeholder_and_the_limits_of_the_reading(self) -> None:
+        """No F-NNNN: ticket #43, grain du test: le script dit `{report}` et les limites du repérage."""
+        script = self.read("plugins", "forge", "scripts", "base_replay.py")
+        self.assertIn("{report}", script)
+        self.assertIn("a reading of the text", script)
+        helper = self.read("plugins", "forge", "scripts", "junit_report.py")
+        self.assertIn("not of the language", helper)
 
 
 if __name__ == "__main__":

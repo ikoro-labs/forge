@@ -111,7 +111,16 @@ parce qu'un test qui ne peut pas échouer sur l'ancien code ne prouve rien du ch
 borne la mémoire (2000 Mo) et le délai (300 s) de chaque commande, puisqu'il exécute du code de test
 contre un code qui ne l'attend pas : éprouvé sous Linux seulement : le côté Windows (un objet de
 tâche, la commande démarrée suspendue) n'a tourné que dans la CI, où sa première version a échoué (borne
-non tenue) ; la version corrigée n'est pas encore vue verte. Il juge au grain du fichier, qu'il rejoue en entier.
+non tenue) ; la version corrigée n'est pas encore vue verte. Il juge au grain du fichier, qu'il rejoue en entier, tant que la commande ne porte pas `{report}`
+(facultatif, sans clé de plus) : le chemin d'un rapport JUnit XML qu'elle écrit (`pytest {file}
+--junitxml={report}`). Le script lit alors ce rapport (`plugins/forge/scripts/junit_report.py`, qui
+refuse un DOCTYPE ou une entité, un rapport étant écrit par du code que la PR contrôle), repère les
+tests que la PR ajoute ou change par les lignes du diff et la place de chaque nom de test dans le
+fichier de la tête, et rend chaque test passant sur la base. Ce repérage lit le texte, pas le langage :
+un test dont le nom n'est pas écrit dans le fichier, ou un assistant changé à côté, n'est pas bien
+placé, et un test qu'il ne place pas compte comme changé. Il n'a été essayé que sur un lanceur Python
+`unittest` écrit pour le test, jamais sur la sortie d'un vrai `pytest` ou d'un lanceur d'un autre langage.
+Ce dépôt n'a pas de rapport JUnit pour `unittest` : sa clé `red-replay` reste au grain du fichier.
 
 Deux clés, `run-limits` (`<mémoire en Mo> | <délai en secondes>`) et `run-budget` (`<Mo disponibles au
 moins> | <charge à 1 min au plus> | <workers au plus> | <attente au plus en secondes>`), bornent toute
