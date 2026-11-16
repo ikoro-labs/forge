@@ -26,7 +26,19 @@ Publier une version :
    `uv run --no-project --quiet python plugins/forge/scripts/factory_slo.py changelog . --depuis <date de la version précédente>`
    (voir `docs/indicateurs-de-service.md`). Le rapport est aussi réécrit dans l'issue de suivi par
    `/forge:slo --publier`.
-3. Vérifier :
+3. Essayer l'usine de bout en bout, avant de vérifier. Si ce dépôt déclare la clé `e2e-command`, lancer
+   cette commande depuis la racine du dépôt, la branche de la version extraite : elle lance
+   `scripts/e2e_trial.py`, qui prépare un projet jetable sur le dépôt d'essai (clé `e2e-repo`), y lance
+   `claude -p --plugin-dir` sur le plugin de la branche, sous le plafond de la clé `e2e-budget-usd` et sous
+   le lanceur borné, lit la PR que l'essai a laissée, puis nettoie ce qu'il a créé. La PR de version
+   (`chore(release)`) recopie, dans ses **Preuves**, les lignes `RESULTAT`, `TETE` (le commit essayé, avec
+   « arbre modifié » quand la branche porte des changements non commités) et, sur un `FAIL`, `ETAPE` et
+   `RAISON`. Un `FAIL` bloque la version : la PR de version ne passe pas tant que l'étape qui a manqué
+   n'est pas corrigée. Sans la clé, l'étape est « sans objet (clé `e2e-command` absente) » : la PR de
+   version le dit, et ne l'écrit jamais comme un `PASS`. La création du dépôt d'essai, de ses étiquettes
+   et de son jeton est un geste humain. L'essai coûte de vrais appels de modèle : il ne se lance qu'à ce
+   geste de version, jamais depuis un test ni depuis un passage de l'usine.
+4. Vérifier :
 
    ```sh
    uv run --no-project --quiet python -m unittest discover -s tests
@@ -34,9 +46,9 @@ Publier une version :
    claude plugin validate plugins/forge
    ```
 
-4. Fusionner sur `main`, puis poser et pousser le tag annoté `forge--v<X.Y.Z>`, deux tirets : c'est
+5. Fusionner sur `main`, puis poser et pousser le tag annoté `forge--v<X.Y.Z>`, deux tirets : c'est
    la forme que Claude Code lit. Les anciens tags `forge-v<X.Y.Z>`, antérieurs à ce dépôt, ne changent pas.
-5. Une fois le tag poussé, deux PR : l'une monte l'épingle de ce dépôt (`.claude/settings.json`),
+6. Une fois le tag poussé, deux PR : l'une monte l'épingle de ce dépôt (`.claude/settings.json`),
    l'autre le tag cité par l'installation, dans `README.md` et `docs/installation.md`.
 
 ## Le dépôt
@@ -65,6 +77,7 @@ plugins/forge/                    le plugin
   scripts/factory_slo.py          les indicateurs de service de l'usine, calculés sans modèle
   scripts/incident.py             la lecture d'une revue d'incident et le refus de celle sans correctif
   scripts/completion.py           le tableau de complétion des features, compté comme le budget
+  scripts/e2e_trial.py            l'essai de bout en bout de l'usine sur un dépôt d'essai, avant une version
   socle.md                        le socle commun des critères de revue, règles F-n
   templates/                      usine.md, ticket.md, pr.md, verdict.md, adr.md, features/
 tests/                            tests des hooks, du parseur et du contenu

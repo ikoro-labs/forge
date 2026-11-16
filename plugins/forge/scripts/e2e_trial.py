@@ -24,8 +24,29 @@ default) and `{budget}` (the key `e2e-budget-usd`) are required, so that a comma
 pinned plugin by mistake, and `{feature}`, `{ticket}` and `{base}` are optional. Any other marker is
 refused.
 
-Exit codes: 0 for `PASS` and for `SANS-OBJET`, 1 for `FAIL`, 2 for a wrong call (an ill-formed key,
-an unreadable file).
+The steps, in this order, each named when it fails: `budget` (the post's budget, `run-budget`, read
+before anything is created), `preparation` (a fresh clone of the trial repository in a throwaway
+folder, then a base branch `e2e/<name>` pushed with a minimal `usine.md` and a feature whose spec is
+accepted), `ticket` (a fictitious ticket `ready-for-agent`, one simple criterion), `lancement` (the
+command, under `bounded_run.py`), `pr` (a pull request aimed at the base branch of the trial, open or
+merged), `citation` (it cites the ticket), `checks` (all green; the ones still running are awaited up
+to `--wait-checks` seconds, none at all is a failure), `nettoyage`.
+
+The cleanup runs whatever happens: it closes the open pull requests aimed at the trial's base branch
+and the ticket the trial opened, and deletes those requests' branches and the base branch. It touches
+nothing it did not create: each object is found by its number or its name, every `gh` gesture names the
+trial repository, and the default branch is never deleted. The trial repository cannot be the
+repository of the project that runs the trial.
+
+The result, one fact per line on standard output: `RESULTAT: PASS` or `RESULTAT: FAIL` (with `ETAPE:`
+and `RAISON:`), `TETE:` (the commit of the plugin tried, "arbre modifié" when its tree holds changes
+the commit does not), `DEPOT:`, `TICKET:`, `PR:`, `CHECKS:`, then one `NETTOYAGE:` line per gesture
+(`ECHEC` for one that failed, which turns a `PASS` into a `FAIL` at the step `nettoyage`). The pull
+request of a release copies `RESULTAT` and `TETE`.
+
+The trial costs real model calls and needs `gh` signed in on the trial repository: run it only by hand,
+for a release. Exit codes: 0 for `PASS` and for `SANS-OBJET`, 1 for `FAIL`, 2 for a wrong call (an
+ill-formed key, an unreadable file, the project's own repository named as the trial repository).
 
 The standard library only.
 """

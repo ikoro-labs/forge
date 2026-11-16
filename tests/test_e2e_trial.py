@@ -541,6 +541,22 @@ class Result(unittest.TestCase):
         self.assertRegex(out, r"(?m)^TETE: 0123abc$")
 
 
+class ReleaseInstruction(unittest.TestCase):
+    def test_the_release_procedure_runs_the_trial_and_copies_its_result_and_head(self) -> None:
+        """Ticket #70, critère 6 : `docs/contribuer.md` fait lancer l'essai avant la version, et recopier résultat et tête."""
+        text = (support.REPO_ROOT / "docs" / "contribuer.md").read_text(encoding="utf-8")
+        steps = text.split("Publier une version :", 1)[1].split("## Le dépôt", 1)[0]
+        for word in ("e2e-command", "e2e_trial.py", "RESULTAT", "TETE", "chore(release)"):
+            with self.subTest(word=word):
+                self.assertIn(word, steps)
+        self.assertIn("sans objet (clé `e2e-command` absente)", steps)
+
+    def test_the_script_is_listed_in_the_tree_of_the_plugin(self) -> None:
+        """Ticket #70, critère 6 : l'arbre de `docs/contribuer.md` cite le script."""
+        text = (support.REPO_ROOT / "docs" / "contribuer.md").read_text(encoding="utf-8")
+        self.assertRegex(text, r"(?m)^\s+scripts/e2e_trial\.py\s+\S")
+
+
 def deleted(project: Project) -> list[str]:
     """The branches the trial deleted, from the `gh api -X DELETE` calls."""
     refs = [
