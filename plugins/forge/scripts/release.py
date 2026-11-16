@@ -1,12 +1,35 @@
 """The conditions of a continuous release: when a version is due, and whether the agent may publish it.
 
-    python release.py trigger <project> [--json]
+    python release.py trigger <project>
+    python release.py condition <slo|budget|sev1|essai> <project> [--plugin DIR] [--essai SCRIPT]
+    python release.py check <project> [--json] [--plugin DIR] [--essai SCRIPT]
 
 `trigger` reads the key `release-trigger` of `docs/agents/usine.md`, one line
 `<merges> | <longest wait>` (`10 | 7 j`: the wait is a number followed by `h` or `j`, as in the key
-`sla`). A key absent is "sans objet": the agent publishes nothing, and no value is guessed. A line it
-cannot read (a count that is not a whole number above zero, a wait it cannot read, a missing part, a
-repeated key) fails the command with code 2 and prints no state: it is never completed.
+`sla`). A version is due when that many pull requests merged on the base wait for a tag of the key
+`release-tag` (their merge commit is in no such tag), or when the oldest of them has waited that long:
+the first bound reached triggers, the bound itself included, and nothing waiting never triggers. A key
+absent, `release-trigger` or `release-tag`, is "sans objet": the agent publishes nothing, and no value
+is guessed. A line it cannot read (a count that is not a whole number above zero, a wait it cannot
+read, a missing part, a repeated key) fails the command with code 2 and prints no state: it is never
+completed.
+
+`condition` prints one of the four conditions the agent publishes on, each `tenue`, `non tenue` or
+`non vérifiable`. A condition missing from the project (a key absent, a file unreadable or older than an
+hour, a label that does not exist, a `gh` that fails) is never `tenue`:
+
+    - `slo`: every objective of `slo-status.json` is `tenu`, computed within the hour;
+    - `budget`: no action of the key `budget-action` is active (`alert` included), same state;
+    - `sev1`: no open ticket carries the `sev1` label, which the repository must hold;
+    - `essai`: the end-to-end trial (`e2e_trial.py`, or `--essai`) passes, `RESULTAT: PASS`, on exactly
+      the head of the base with an unmodified tree. `--plugin` is the plugin it tries: run this from a
+      checkout of the head of the base and name its plugin.
+
+`check` gives the decision: `sans objet` (a key absent), `rien` (no version is due), `publier` (due, the
+four conditions `tenue`) or `humain` (due, one or more missing: `MANQUE:` names them). It reads the
+three cheap conditions first and launches the trial, which costs real model calls, only when they all
+hold; otherwise the trial counts as not held and says it was not launched. It never publishes, tags or
+opens anything: the skill `release` does, on the decision. `--json` prints one document.
 
 The output is one fact per line, in French, on standard output. The standard library only.
 """
@@ -15,6 +38,7 @@ from __future__ import annotations
 
 import argparse
 import functools
+import json
 import re
 import subprocess
 import sys
@@ -321,6 +345,56 @@ def run_condition(args: argparse.Namespace, run: Runner, now: datetime) -> int:
     return 0
 
 
+NOT_RUN = (
+    "essai non lancé : il coûte de vrais appels de modèle et une autre condition manque déjà ; "
+    "la publication revient à l'humain, qui l'essaiera à son geste de version"
+)
+
+
+def check(args: argparse.Namespace, run: Runner, now: datetime) -> dict:
+    """The decision: `sans objet`, `rien` (nothing is due), `publier` or `humain`, with what it rests on.
+
+    The conditions are read once the trigger is reached, the three cheap ones first; the trial, which
+    costs real model calls, is launched only when they all hold.
+    """
+    trigger = due(args.projet, run, now)
+    document: dict = {
+        "declencheur": {
+            "statut": trigger.status, "texte": trigger.text, "fusions_en_attente": trigger.waiting,
+            "plus_ancienne": trigger.oldest.isoformat() if trigger.oldest else None,
+        },
+        "conditions": [],
+        "manque": [],
+    }
+    if not trigger.reached:
+        document["decision"] = "sans objet" if trigger.status == ABSENT else "rien"
+        return document
+    available = conditions_for(args)
+    results = [available[name](args.projet, run, now) for name in CONDITIONS]
+    if all(result.held for result in results):
+        results.append(available["essai"](args.projet, run, now))
+    else:
+        results.append(Condition("essai", UNVERIFIABLE, NOT_RUN))
+    document["conditions"] = [{"nom": r.name, "statut": r.status, "texte": r.text} for r in results]
+    document["manque"] = [r.name for r in results if not r.held]
+    document["decision"] = "humain" if document["manque"] else "publier"
+    return document
+
+
+def run_check(args: argparse.Namespace, run: Runner, now: datetime) -> int:
+    document = check(args, run, now)
+    if args.json:
+        print(json.dumps(document, ensure_ascii=False, indent=2))
+        return 0
+    print(f"DECISION: {document['decision']}")
+    print(f"DECLENCHEUR: {document['declencheur']['texte']}")
+    for item in document["conditions"]:
+        print(Condition(item["nom"], item["statut"], item["texte"]).line())
+    if document["manque"]:
+        print("MANQUE: " + ", ".join(document["manque"]))
+    return 0
+
+
 def main(argv: list[str] | None = None, run: Runner | None = None, now: datetime | None = None) -> int:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -330,14 +404,18 @@ def main(argv: list[str] | None = None, run: Runner | None = None, now: datetime
     trigger.add_argument("projet", type=Path)
     condition = commands.add_parser("condition", help="one condition of the release")
     condition.add_argument("name", choices=CONDITION_NAMES)
-    condition.add_argument("projet", type=Path)
-    condition.add_argument("--plugin", help="the plugin the trial tries (the checkout of the head of the base)")
-    condition.add_argument("--essai", type=Path, help="the trial script (default: e2e_trial.py next to this script)")
+    whole = commands.add_parser("check", help="the trigger, the four conditions and the decision")
+    whole.add_argument("--json", action="store_true")
+    for sub in (condition, whole):
+        sub.add_argument("projet", type=Path)
+        sub.add_argument("--plugin", help="the plugin the trial tries (the checkout of the head of the base)")
+        sub.add_argument("--essai", type=Path, help="the trial script (default: e2e_trial.py next to this script)")
     args = parser.parse_args(argv)
     run = run or factory_slo.run_command
     moment = now or datetime.now(timezone.utc)
+    handlers = {"trigger": run_trigger, "condition": run_condition, "check": run_check}
     try:
-        return run_trigger(args, run, moment) if args.command == "trigger" else run_condition(args, run, moment)
+        return handlers[args.command](args, run, moment)
     except ReleaseError as error:
         print(f"release: {error}", file=sys.stderr)
         return WRONG_CALL

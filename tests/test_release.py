@@ -274,6 +274,131 @@ class EssaiCondition(Base):
         self.assertEqual(self.condition()[0], "non vérifiable")
 
 
+class Check(Base):
+    """`check` : le déclencheur, les quatre conditions, et la décision qui en sort."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.script = Path(self.tmp.name) / "faux_essai.py"
+        self.configure(*SLO, "`budget-action` : `main-green | human-merge`", "`release-trigger` : `1 | 30 j`")
+        oid = self.world.commit("feat: une fusion qui attend", "2026-11-14T10:00:00Z")
+        self.world.answers["pr list"] = [pr(1, "2026-11-14T10:00:00Z", state="MERGED", mergedAt="2026-11-14T10:00:00Z", mergeCommit={"oid": oid})]
+        self.world.answers["label list"] = [{"name": "sev1"}]
+        self.world.answers["issue list"] = []
+        self.write_state({"main-green": "tenu", "accept-round-1": "tenu"})
+        self.trial(f"RESULTAT: PASS\nTETE: {oid}\nDEPOT: o/essai")
+
+    def trial(self, stdout: str, code: int = 0) -> None:
+        self.script.write_text(
+            "import json\nimport sys\nfrom pathlib import Path\n"
+            "Path(__file__).with_name('arguments.json').write_text(json.dumps(sys.argv[1:]))\n"
+            f"print({stdout!r})\nsys.exit({code})\n",
+            encoding="utf-8",
+        )
+        self.script.with_name("arguments.json").unlink(missing_ok=True)
+
+    def launched(self) -> bool:
+        return self.script.with_name("arguments.json").exists()
+
+    def check(self, *extra: str) -> tuple[int, str]:
+        code, out, _ = self.run_main("check", "--essai", str(self.script), *extra)
+        return code, out
+
+    def test_everything_held_publishes(self) -> None:
+        """Ticket #71 : déclencheur atteint, quatre conditions tenues : l'agent publie seul."""
+        code, out = self.check()
+        self.assertEqual(code, 0)
+        self.assertIn("DECISION: publier", out)
+        for name in ("slo", "budget", "sev1", "essai"):
+            self.assertIn(f"CONDITION: {name} | tenue |", out)
+        self.assertNotIn("MANQUE", out)
+        self.assertTrue(self.launched())
+
+    def test_each_missing_condition_hands_the_release_back_to_the_human_and_names_it(self) -> None:
+        """Ticket #71 : une condition manquante, seule, rend la publication à l'humain, nommée."""
+        def slo() -> None:
+            self.write_state({"main-green": "tenu", "accept-round-1": "menacé"})
+
+        def budget() -> None:
+            self.write_state({"main-green": "tenu", "accept-round-1": "tenu"}, epuises=["main-green / 30 j"])
+
+        def sev1() -> None:
+            self.world.answers["issue list"] = [{"number": 7, "title": "garde contourné"}]
+
+        def essai() -> None:
+            self.trial("RESULTAT: FAIL\nETAPE: pr\nRAISON: aucune PR", code=1)
+
+        for name, break_it in (("slo", slo), ("budget", budget), ("sev1", sev1), ("essai", essai)):
+            with self.subTest(condition=name):
+                self.setUp()
+                break_it()
+                code, out = self.check()
+                self.assertEqual(code, 0)
+                self.assertIn("DECISION: humain", out)
+                # L'essai ne part pas quand une condition moins chère manque : il est alors non tenu, lui aussi.
+                self.assertIn("MANQUE: " + (name if name == "essai" else f"{name}, essai") + "\n", out)
+                self.assertNotIn("DECISION: publier", out)
+
+    def test_several_missing_conditions_are_all_named(self) -> None:
+        """Ticket #71 : toutes les conditions manquantes sont nommées, pas seulement la première."""
+        self.write_state({"main-green": "épuisé", "accept-round-1": "tenu"})
+        self.world.answers["issue list"] = [{"number": 7, "title": "x"}]
+        _, out = self.check()
+        self.assertIn("MANQUE: slo, budget, sev1, essai\n", out)
+
+    def test_the_trial_is_not_launched_while_a_cheaper_condition_is_already_missing(self) -> None:
+        """Ticket #71 : l'essai coûte de vrais appels de modèle : il ne part pas quand une autre condition manque."""
+        self.world.answers["issue list"] = [{"number": 7, "title": "x"}]
+        _, out = self.check()
+        self.assertFalse(self.launched())
+        self.assertIn("CONDITION: essai | non vérifiable | essai non lancé", out)
+
+    def test_a_trigger_not_reached_is_nothing_to_do_and_checks_nothing(self) -> None:
+        """Ticket #71 : sans version due, `rien` : aucune condition n'est lue, l'essai ne part pas."""
+        self.configure(*SLO, "`release-trigger` : `2 | 30 j`")
+        code, out = self.check()
+        self.assertEqual(code, 0)
+        self.assertIn("DECISION: rien", out)
+        self.assertNotIn("CONDITION", out)
+        self.assertFalse(self.launched())
+
+    def test_without_the_trigger_key_the_decision_is_sans_objet(self) -> None:
+        """Ticket #71 : clé `release-trigger` absente : « sans objet », aucune publication, aucune condition lue."""
+        self.configure(*SLO)
+        code, out = self.check()
+        self.assertEqual(code, 0)
+        self.assertIn("DECISION: sans objet", out)
+        self.assertIn("clé `release-trigger` absente", out)
+        self.assertNotIn("DECISION: publier", out)
+        self.assertFalse(self.launched())
+
+    def test_a_malformed_trigger_fails_and_publishes_nothing(self) -> None:
+        """Ticket #71 : une clé illisible fait échouer `check` (code 2), sans décision."""
+        self.configure("`release-trigger` : `bientôt | 7 j`")
+        code, out = self.check()
+        self.assertEqual(code, 2)
+        self.assertNotIn("DECISION", out)
+
+    def test_json_carries_the_decision_the_trigger_and_each_condition(self) -> None:
+        """Ticket #71 : `--json` rend un seul document : décision, déclencheur, conditions, manque."""
+        self.world.answers["issue list"] = [{"number": 7, "title": "x"}]
+        code, out = self.check("--json")
+        self.assertEqual(code, 0)
+        document = json.loads(out)
+        self.assertEqual(document["decision"], "humain")
+        self.assertEqual(document["declencheur"]["statut"], "atteint")
+        self.assertEqual(document["declencheur"]["fusions_en_attente"], 1)
+        self.assertEqual([item["nom"] for item in document["conditions"]], ["slo", "budget", "sev1", "essai"])
+        self.assertEqual(document["manque"], ["sev1", "essai"])
+
+    def test_the_default_trial_is_the_script_of_the_plugin_and_is_never_run_here(self) -> None:
+        """Ticket #71 : sans `--essai`, c'est `e2e_trial.py` du plugin qui part ; ce test ne le lance pas."""
+        from release import TRIAL_SCRIPT
+
+        self.assertEqual(TRIAL_SCRIPT, support.PLUGIN / "scripts" / "e2e_trial.py")
+        self.assertTrue(TRIAL_SCRIPT.is_file())
+
+
 class Sev1Condition(Base):
     """Aucun ticket `sev1` n'est ouvert."""
 
