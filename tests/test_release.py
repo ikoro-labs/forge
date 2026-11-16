@@ -6,10 +6,11 @@ lance le vrai essai.
 """
 
 import io
+import json
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import support  # noqa: F401  met le plugin sur le chemin d'import
@@ -31,11 +32,32 @@ class Base(unittest.TestCase):
         text = USINE + "".join(f"- {line}\n" for line in lines)
         (self.world.root / "docs" / "agents" / "usine.md").write_text(text, encoding="utf-8")
 
-    def run_main(self, command: str, *extra: str) -> tuple[int, str, str]:
+    def run_main(self, *words: str) -> tuple[int, str, str]:
+        """`main` avec la commande et ses mots ; le projet vient juste après la commande, ou après le nom de la condition."""
         out, err = io.StringIO(), io.StringIO()
+        command, *rest = words
+        if command == "condition":
+            argv = [command, rest[0], str(self.world.root), *rest[1:]]
+        else:
+            argv = [command, str(self.world.root), *rest]
         with redirect_stdout(out), redirect_stderr(err):
-            code = main([command, str(self.world.root), *extra], run=self.world.runner, now=NOW)
+            code = main(argv, run=self.world.runner, now=NOW)
         return code, out.getvalue(), err.getvalue()
+
+    def state_file(self) -> Path:
+        common = Path(self.world.git("rev-parse", "--path-format=absolute", "--git-common-dir"))
+        return common / "forge" / "slo-status.json"
+
+    def write_state(self, etats: dict[str, str], minutes: int = 30, **extra: object) -> None:
+        """Le fichier d'état que `factory_slo.py status` écrit, calculé il y a `minutes` minutes."""
+        objectifs = [
+            {"sli": sli, "statistique": None, "fenetre_jours": 30, "statut": "sans objet" if etat == "sans objet" else "calculé",
+             **({} if etat == "sans objet" else {"etat": etat})}
+            for sli, etat in etats.items()
+        ]
+        document = {"calcule_le": (NOW - timedelta(minutes=minutes)).isoformat(), "objectifs": objectifs, **extra}
+        self.state_file().parent.mkdir(parents=True, exist_ok=True)
+        self.state_file().write_text(json.dumps(document), encoding="utf-8")
 
 
 class Trigger(Base):
@@ -118,6 +140,64 @@ class Trigger(Base):
         code, out, _ = self.run_main("trigger")
         self.assertEqual(code, 0)
         self.assertIn("DECLENCHEUR: sans objet (clé `release-tag` absente)", out)
+
+
+SLO = ("`slo` : `main-green | >= 90 % | 30`", "`slo` : `accept-round-1 | >= 80 % | 30`")
+
+
+class SloCondition(Base):
+    """Tous les SLO sont `tenu` dans `slo-status.json`, calculé dans l'heure."""
+
+    def condition(self) -> tuple[str, str]:
+        code, out, _ = self.run_main("condition", "slo")
+        self.assertEqual(code, 0)
+        line = next(line for line in out.splitlines() if line.startswith("CONDITION: slo"))
+        _, status, text = (part.strip() for part in line.split("|", 2))
+        return status, text
+
+    def test_every_objective_tenu_and_computed_within_the_hour_holds(self) -> None:
+        """Ticket #71 : tous les SLO `tenu`, calculés il y a moins d'une heure : condition tenue."""
+        self.configure(*SLO)
+        self.write_state({"main-green": "tenu", "accept-round-1": "tenu"}, minutes=59)
+        self.assertEqual(self.condition()[0], "tenue")
+
+    def test_a_menaced_an_exhausted_or_a_sans_objet_objective_does_not_hold(self) -> None:
+        """Ticket #71 : un objectif qui n'est pas `tenu` (menacé, épuisé, sans objet) manque la condition, nommé."""
+        self.configure(*SLO)
+        for etat in ("menacé", "épuisé", "sans objet"):
+            with self.subTest(etat=etat):
+                self.write_state({"main-green": "tenu", "accept-round-1": etat})
+                status, text = self.condition()
+                self.assertEqual(status, "non tenue")
+                self.assertIn("accept-round-1", text)
+                self.assertNotIn("main-green", text)
+
+    def test_a_state_older_than_an_hour_cannot_be_verified(self) -> None:
+        """Ticket #71 : calculé il y a 61 minutes : non vérifiable, avec la commande qui le recalcule."""
+        self.configure(*SLO)
+        self.write_state({"main-green": "tenu", "accept-round-1": "tenu"}, minutes=61)
+        status, text = self.condition()
+        self.assertEqual(status, "non vérifiable")
+        self.assertIn("plus de 1 h", text)
+        self.assertIn("factory_slo.py", text)
+
+    def test_a_missing_or_unreadable_state_cannot_be_verified(self) -> None:
+        """Ticket #71 : fichier absent ou illisible : non vérifiable, jamais « tenue »."""
+        self.configure(*SLO)
+        self.assertEqual(self.condition()[0], "non vérifiable")
+        self.state_file().parent.mkdir(parents=True, exist_ok=True)
+        self.state_file().write_text("{", encoding="utf-8")
+        self.assertEqual(self.condition()[0], "non vérifiable")
+
+    def test_without_the_slo_key_or_with_no_objective_it_cannot_be_verified(self) -> None:
+        """Ticket #71 : clé `slo` absente, ou aucun objectif dans l'état : « sans objet », donc non vérifiable."""
+        self.write_state({"main-green": "tenu"})
+        status, text = self.condition()
+        self.assertEqual(status, "non vérifiable")
+        self.assertIn("clé `slo` absente", text)
+        self.configure(*SLO)
+        self.write_state({})
+        self.assertEqual(self.condition()[0], "non vérifiable")
 
 
 if __name__ == "__main__":

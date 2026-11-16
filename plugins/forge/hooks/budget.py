@@ -119,7 +119,7 @@ def evaluate(lines: list[Line], state: dict) -> list[Verdict]:
     return verdicts
 
 
-def load_state(path: Path | None, now: datetime) -> tuple[dict | None, str | None]:
+def load_state(path: Path | None, now: datetime, max_age: timedelta = MAX_AGE) -> tuple[dict | None, str | None]:
     """The state document, or None and the reason it cannot be used (absent, unreadable, over 24 h)."""
     if path is None:
         return None, "fichier d'état introuvable (le dossier git commun est illisible)"
@@ -140,8 +140,8 @@ def load_state(path: Path | None, now: datetime) -> tuple[dict | None, str | Non
         return None, f"fichier d'état illisible (date du calcul) : {path}"
     if computed.tzinfo is None:
         return None, f"fichier d'état illisible (date sans fuseau) : {path}"
-    if now - computed > MAX_AGE:
-        return None, f"fichier d'état périmé (calculé le {computed.isoformat()}, plus de 24 h) : {path}"
+    if now - computed > max_age:
+        return None, f"fichier d'état périmé (calculé le {computed.isoformat()}, plus de {int(max_age.total_seconds() // 3600)} h) : {path}"
     return document, None
 
 

@@ -24,6 +24,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "hooks"))
 
+import budget  # noqa: E402  the hooks' reader of `slo-status.json` and of the key `budget-action`
 import factory_slo  # noqa: E402  the indicators of the factory, whose runner and base this script reuses
 import sla  # noqa: E402  the hooks' reader of a delay (`4 h`, `3 j`)
 import usine  # noqa: E402  the reader of `usine.md`
@@ -33,6 +34,8 @@ Runner = Callable[[list[str], Path], str]
 TRIGGER_KEY = "release-trigger"
 TAG_KEY = "release-tag"
 REACHED, NOT_REACHED, ABSENT = "atteint", "non atteint", "sans objet"
+MET, NOT_MET, UNVERIFIABLE = "tenue", "non tenue", "non vérifiable"
+STATE_MAX_AGE = timedelta(hours=1)
 WRONG_CALL = 2
 
 
@@ -145,6 +148,67 @@ def run_trigger(args: argparse.Namespace, run: Runner, now: datetime) -> int:
     return 0
 
 
+@dataclass(frozen=True)
+class Condition:
+    """One condition of the release: `tenue`, `non tenue`, or `non vérifiable` (never read as `tenue`)."""
+
+    name: str
+    status: str
+    text: str
+
+    @property
+    def held(self) -> bool:
+        return self.status == MET
+
+    def line(self) -> str:
+        return f"CONDITION: {self.name} | {self.status} | {self.text}"
+
+
+def objective_name(item: dict) -> str:
+    sli, stat = str(item.get("sli")), item.get("statistique")
+    return f"{sli} {stat}" if stat else sli
+
+
+def state_of(project: Path, run: Runner, now: datetime) -> tuple[dict | None, str | None]:
+    """The `slo-status.json` of the project, read as a state fresh within the hour, and why it is not usable."""
+    try:
+        path = factory_slo.state_path(project, run)
+    except RuntimeError as error:
+        return None, f"le dossier git commun est illisible ({error})"
+    state, reason = budget.load_state(path, now, STATE_MAX_AGE)
+    if state is None:
+        return None, f"{reason}. Recalcule l'état : `{budget.STATUS_COMMAND}`"
+    return state, None
+
+
+def slo_condition(project: Path, run: Runner, now: datetime) -> Condition:
+    """Every objective of the `slo` key is `tenu` in a state computed within the hour."""
+    if not usine.load(project).get("slo"):
+        return Condition("slo", UNVERIFIABLE, "sans objet (clé `slo` absente) : aucun objectif à lire")
+    state, reason = state_of(project, run, now)
+    if state is None:
+        return Condition("slo", UNVERIFIABLE, str(reason))
+    objectives = state["objectifs"]
+    if not objectives:
+        return Condition("slo", UNVERIFIABLE, "aucun objectif dans le fichier d'état")
+    missing = [
+        f"{objective_name(item)} ({item.get('etat') or 'sans objet'})"
+        for item in objectives
+        if item.get("statut") != "calculé" or item.get("etat") != budget.HELD
+    ]
+    if missing:
+        return Condition("slo", NOT_MET, "objectifs qui ne sont pas `tenu` : " + ", ".join(missing))
+    return Condition("slo", MET, f"{plural(len(objectives), 'objectif')} `tenu`, calculés dans l'heure")
+
+
+CONDITIONS: dict[str, Callable[[Path, Runner, datetime], Condition]] = {"slo": slo_condition}
+
+
+def run_condition(args: argparse.Namespace, run: Runner, now: datetime) -> int:
+    print(CONDITIONS[args.name](args.projet, run, now).line())
+    return 0
+
+
 def main(argv: list[str] | None = None, run: Runner | None = None, now: datetime | None = None) -> int:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -152,11 +216,14 @@ def main(argv: list[str] | None = None, run: Runner | None = None, now: datetime
     commands = parser.add_subparsers(dest="command", required=True)
     trigger = commands.add_parser("trigger", help="whether a version is due")
     trigger.add_argument("projet", type=Path)
+    condition = commands.add_parser("condition", help="one condition of the release")
+    condition.add_argument("name", choices=sorted(CONDITIONS))
+    condition.add_argument("projet", type=Path)
     args = parser.parse_args(argv)
     run = run or factory_slo.run_command
     moment = now or datetime.now(timezone.utc)
     try:
-        return run_trigger(args, run, moment)
+        return run_trigger(args, run, moment) if args.command == "trigger" else run_condition(args, run, moment)
     except ReleaseError as error:
         print(f"release: {error}", file=sys.stderr)
         return WRONG_CALL
