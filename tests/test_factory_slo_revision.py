@@ -84,5 +84,40 @@ class Revision(unittest.TestCase):
                 self.assertFalse(self.state_file().exists())
 
 
+class DepotConfiguration(unittest.TestCase):
+    """La configuration réelle de ce dépôt (`docs/agents/usine.md`), lue par `status` sur le monde fictif."""
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        isolate(self, self.tmp.name, CLAUDE_CONFIG_DIR=str(Path(self.tmp.name) / "vide"))
+        self.world = build(Path(self.tmp.name))
+        real = support.REPO_ROOT / "docs" / "agents" / "usine.md"
+        (self.world.root / "docs" / "agents" / "usine.md").write_text(real.read_text(encoding="utf-8"), encoding="utf-8")
+
+    def run_command(self, command: str) -> tuple[int, str, str]:
+        out, err = io.StringIO(), io.StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
+            code = main([command, str(self.world.root), "--json"], run=self.world.runner, now=NOW)
+        return code, out.getvalue(), err.getvalue()
+
+    def test_status_reads_this_repository_configuration_without_error(self) -> None:
+        """Ticket #76 : `status` lit les objectifs et la date de révision de ce dépôt, sans erreur."""
+        code, out, err = self.run_command("status")
+        self.assertEqual((code, err), (0, ""))
+        self.assertNotIn("sans objet (clé `slo` absente)", out)
+        document = json.loads(out)
+        labels = {f"{item['sli']} {item['statistique']}" if item["statistique"] else item["sli"] for item in document["objectifs"]}
+        self.assertEqual(labels, {"release-lag p90", "escaped-defects", "false-accept", "main-green"})
+        self.assertEqual(document["revision"], {"date": "2026-12-16", "passee": False})
+
+    def test_budget_reads_this_repository_actions_on_declared_objectives(self) -> None:
+        """Ticket #76 : chaque ligne de `budget-action` de ce dépôt nomme un objectif de `slo` (sinon `budget` échoue)."""
+        code, out, err = self.run_command("budget")
+        self.assertEqual((code, err), (0, ""))
+        self.assertNotIn("sans objet (clé `budget-action` absente)", out)
+        self.assertEqual(len(json.loads(out)["actions"]), 4)
+
+
 if __name__ == "__main__":
     unittest.main()

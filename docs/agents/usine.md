@@ -49,6 +49,26 @@ Les jobs de `.github/workflows/tests.yml`.
 - `required-contexts` : `validate`
 - `required-contexts` : `lint`
 
+## Objectifs de service
+
+Les objectifs de départ de l'usine (ticket #76), lus par `plugins/forge/scripts/factory_slo.py` sur 30
+jours glissants. L'humain a retenu le 2026-11-16 de mesurer pendant 30 jours sans rien bloquer :
+chaque action de budget est `alert`, jamais `human-merge` ni `feature-freeze`. Les cibles sont à
+réviser à la date de `slo-review-date`, sur le rapport des SLO ; changer une valeur reste une
+décision de l'humain. `tokens-per-merge` n'a pas de ligne : sa cible n'est pas fixée.
+
+- `release-tag` : `forge--v{version}`
+- `slo` : `release-lag p90 | <= 24 h | 30`
+- `slo` : `escaped-defects | <= 10 % | 30`
+- `slo` : `false-accept | <= 0 % | 30`
+- `slo` : `main-green | >= 100 % | 30`
+- `slo-review-date` : `2026-12-16`
+- `slo-issue` : `55`
+- `budget-action` : `release-lag p90 | alert`
+- `budget-action` : `escaped-defects | alert`
+- `budget-action` : `false-accept | alert`
+- `budget-action` : `main-green | alert`
+
 ## Revue
 
 Ce qu'aucun agent ne fusionne, même sur ACCEPT : la CI, l'épingle de l'usine de ce dépôt, le
@@ -68,6 +88,9 @@ La suite de tests de ce dépôt, dont la sortie se raccourcit quand elle passe.
 
 ## Clés absentes
 
+- `sla` : `sev2` n'a pas de délai de prise en charge, et l'étape où court le délai de 30 jours de
+  `sev3` n'est pas dite ; aucun délai n'est deviné, la clé reste absente jusqu'à la décision de
+  l'humain (ticket #76).
 - `decision-matrix` : aucune matrice encore ; `forge:staff-engineer` et `forge:product-owner`
   rendent tout en `RESERVED`, et chaque décision revient à l'humain qui accepte.
 - `domain-arbiter`, `domain-skill`, `glossary` : le plugin n'a pas de métier propre.
