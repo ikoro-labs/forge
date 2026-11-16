@@ -15,7 +15,12 @@ rules (see Local rules) and does not repeat these.
   adds its own with the key `security-rules` (`L-n` ids of its local rules).
 - A breach, in the diff, of a `security`, `code`, `test` or `architecture` rule is a `BLOCKER`.
   A breach of a `prose` rule, F-18 and F-19 included wherever the text sits, is a `MINOR` and does
-  not reject.
+  not reject, except F-26 (a sentence of the PR proved false), which is a `BLOCKER`.
+- A `[BLOCKER]` that rests on an execution carries a last `probe:` field (the exact command and
+  the output it must print, each between backticks), which `forge:qc-gate` replays in a copy of the head under the bounded launcher before
+  the blocker counts: a probe that does not print the expected output makes it a `NOTE` marked
+  `non reproduit`. A `[BLOCKER]` with no probe rests on a reading of the code, counts, and is marked
+  `déduit` in the report.
 - A repository may raise the severity of an `F-n` by a local rule `L-n`.
 - A defect outside the diff is a `NOTE` that starts with `out of diff`, and never rejects.
 - A rule that a required check enforces rejects through that check: the finding cites the failing
@@ -51,6 +56,8 @@ Proof: the mechanism that enforces the rule, or `reading` when only a reviewer c
 | F-22 | prose | Branch `<type>/<slug>` (`feat`, `fix`, `docs`, `test`, `chore`; slug in lowercase English with hyphens); PR title and commit subject `<type>(<scope>): <what changes>`, never "wip"; a commit body says why and ends with `Refs #n` or `Closes #n`, then the `Co-Authored-By` line. | reading of `git log` and the PR title |
 | F-23 | prose | The PR body follows `templates/pr.md` and cites its ticket: `Closes #n`, or `Refs #n` with the points it delivers. | key `trace-check`; reading |
 | F-24 | test | Each commit of a PR, taken alone, passes the commands of the key `ci-replay`: a commit that is red breaks `git bisect` on the base, whatever the head does. | `qc-gate`, `scripts/commit_replay.py` |
+| F-25 | code | No guard, `never-weaken` entry or protected path is evaded, even in part (one command form, one root folder that goes through), even beside the scope of the ticket: what the rule says must stop, stops. | `qc-gate`, `scripts/never_weaken.py`, key `protected-path`; probe replayed by `scripts/probe_replay.py`; reading |
+| F-26 | prose | A sentence of the PR (documentation, docstring, comment, proofs section, description) that a command or a reading proves false is corrected before the merge. | probe replayed by `scripts/probe_replay.py`; reading |
 
 ## Validation cases
 

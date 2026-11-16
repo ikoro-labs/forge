@@ -359,8 +359,11 @@ class BaseReplayProbe(unittest.TestCase):
         self.assertIn("`PASSES`", section)
         self.assertIn("test de caractérisation", section)
         self.assertIn("refonte à comportement égal", section)
-        self.assertIn("`BLOCKER` quand il est la seule preuve d'un critère de comportement nouveau", section)
-        self.assertIn("`MINOR` sinon", section)
+        # Ticket #68 raised the severity: a test that passes on the base cannot fail on the old code, a
+        # `BLOCKER` whether or not another test proves the criterion (the grid, not a `MINOR` branch).
+        self.assertIn("`BLOCKER` (voir **Gravité par classe** : un test qui passe déjà sur la base ne peut pas échouer sur l'ancien code)", section)
+        self.assertIn("quand un autre test rouge sur la base prouve le critère", section)
+        self.assertIn("ce critère compte aussi pour absent dans `SPEC`", section)
         self.assertIn("`NOT RUN`", section)
         self.assertIn("sans objet", section)
 
