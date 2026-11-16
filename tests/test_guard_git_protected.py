@@ -149,7 +149,7 @@ class TheHook(unittest.TestCase):
             return guarded_main(), err.getvalue()
 
     def test_the_merge_is_refused_for_every_agent_name_and_none(self) -> None:
-        self.configure("- `protected-path` : `.github/`\n")
+        self.configure("- `merge-method` : `squash`\n- `protected-path` : `.github/`\n")
         for agent in ("forge:qc-conf", "forge:coder", "qc-conf", "autre-agent", None):
             with self.subTest(agent=agent):
                 code, message = self.run_hook("gh pr merge 7 --squash", agent, listing(".github/workflows/ci.yml"))
@@ -158,17 +158,17 @@ class TheHook(unittest.TestCase):
                 self.assertNotIn("guard_git failed", message)
 
     def test_a_clean_diff_goes_through(self) -> None:
-        self.configure("- `protected-path` : `.github/`\n")
+        self.configure("- `merge-method` : `squash`\n- `protected-path` : `.github/`\n")
         self.assertEqual(self.run_hook("gh pr merge 7 --squash", "autre-agent", listing("README.md"))[0], 0)
 
     def test_an_unreadable_list_refuses_the_merge_through_the_hook(self) -> None:
-        self.configure("- `protected-path` : `.github/`\n")
+        self.configure("- `merge-method` : `squash`\n- `protected-path` : `.github/`\n")
         code, message = self.run_hook("gh pr merge 7 --squash", None, unreadable)
         self.assertEqual(code, 2)
         self.assertIn("protected-path", message)
 
     def test_without_the_key_the_merge_goes_through_and_nothing_is_read(self) -> None:
-        self.configure("# Usine\n")
+        self.configure("- `merge-method` : `squash`\n")
         self.assertEqual(self.run_hook("gh pr merge 7 --squash", "forge:qc-conf", unreadable)[0], 0)
 
 

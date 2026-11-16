@@ -1019,12 +1019,17 @@ class MergeOfTheGuard(unittest.TestCase):
             pr_files: PrFiles,
         ) -> tuple[int, str]:
             event = {
-                "tool_input": {"command": "gh pr merge 5 -R ikoro-labs/forge"},
+                "tool_input": {"command": "gh pr merge 5 --merge -R ikoro-labs/forge"},
                 "cwd": ".",
                 "agent_id": "a1",
             }
             err = io.StringIO()
             with tempfile.TemporaryDirectory() as home:
+                # La méthode de fusion est une clé que `guard_git` exige de toute fusion.
+                (Path(home) / "docs" / "agents").mkdir(parents=True)
+                (Path(home) / "docs" / "agents" / "usine.md").write_text(
+                    "- `merge-method` : `merge`\n", encoding="utf-8"
+                )
                 environment = {
                     key: value for key, value in os.environ.items() if not key.startswith("CLAUDE_")
                 }

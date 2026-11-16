@@ -2080,6 +2080,7 @@ def main() -> int:
         pr_files=pr_files_via_gh(cwd),
         gh_aliases=gh_aliases_via_gh(cwd),
         subagent=bool(event.get("agent_id")),
+        merge_method=config.get(METHOD_KEY, []),
     )
     if reason is None:
         return 0

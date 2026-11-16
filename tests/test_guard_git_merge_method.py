@@ -1,9 +1,15 @@
 """La méthode de fusion que dit la clé `merge-method` est la seule qu'un agent lance (ticket #63, suivi #55)."""
 
+import io
+import json
+import os
+import tempfile
 import unittest
+from pathlib import Path
+from unittest import mock
 
 import support  # noqa: F401  met les hooks sur le chemin d'import
-from guard_git import refusal
+from guard_git import guarded_main, refusal
 
 
 def always_green(*_target: str | None) -> bool:
@@ -153,6 +159,74 @@ class RestMerge(unittest.TestCase):
 
     def test_a_read_of_the_merge_endpoint_is_not_a_merge(self) -> None:
         self.assertIsNone(merge("gh api repos/o/r/pulls/5/merge", ["squash"]))
+
+
+class TheHook(unittest.TestCase):
+    """Le vrai `main` de `guard_git`, qui lit la clé `merge-method` de `docs/agents/usine.md`."""
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name) / "projet"
+        (self.root / "docs" / "agents").mkdir(parents=True)
+
+    def configure(self, text: str) -> None:
+        (self.root / "docs" / "agents" / "usine.md").write_text(text, encoding="utf-8")
+
+    def run_hook(self, command: str, agent_type: str | None = None) -> tuple[int, str]:
+        event = {"tool_input": {"command": command}, "cwd": str(self.root)}
+        if agent_type:
+            event["agent_type"] = agent_type
+        env = {
+            **{k: v for k, v in os.environ.items() if not k.startswith("CLAUDE_")},
+            "HOME": self.tmp.name,
+            "USERPROFILE": self.tmp.name,
+            "CLAUDE_PROJECT_DIR": str(self.root),
+        }
+        err = io.StringIO()
+        with (
+            mock.patch.dict(os.environ, env, clear=True),
+            mock.patch("sys.stdin", io.StringIO(json.dumps(event))),
+            mock.patch("sys.stderr", err),
+            mock.patch("guard_git.current_branch", lambda _cwd: "feat/x"),
+            mock.patch("guard_git.checks_green_via_gh", lambda _cwd: always_green),
+            mock.patch("guard_git.description_via_gh", lambda _cwd: lambda *_target: ""),
+            mock.patch("guard_git.pr_files_via_gh", lambda _cwd: lambda *_args: []),
+            mock.patch("guard_git.changed_files_via_gh", lambda _cwd: lambda *_args: []),
+        ):
+            return guarded_main(), err.getvalue()
+
+    def test_the_method_of_the_key_goes_through_for_every_agent_name(self) -> None:
+        self.configure("- `merge-method` : `merge`\n")
+        for agent in ("forge:qc-conf", "forge:coder", "autre-agent", None):
+            with self.subTest(agent=agent):
+                self.assertEqual(self.run_hook("gh pr merge 7 --merge --delete-branch", agent)[0], 0)
+
+    def test_another_method_is_refused_for_every_agent_name(self) -> None:
+        self.configure("- `merge-method` : `merge`\n")
+        for agent in ("forge:qc-conf", "forge:coder", "autre-agent", None):
+            with self.subTest(agent=agent):
+                code, message = self.run_hook("gh pr merge 7 --squash", agent)
+                self.assertEqual(code, 2)
+                self.assertIn("merge-method", message)
+                self.assertNotIn("guard_git failed", message)
+
+    def test_a_project_without_the_key_refuses_the_merge(self) -> None:
+        self.configure("# Usine\n")
+        code, message = self.run_hook("gh pr merge 7 --squash")
+        self.assertEqual(code, 2)
+        self.assertIn("not declared", message)
+
+    def test_a_project_without_a_usine_file_refuses_the_merge(self) -> None:
+        code, message = self.run_hook("gh pr merge 7 --merge")
+        self.assertEqual(code, 2)
+        self.assertIn("not declared", message)
+
+    def test_an_unknown_value_refuses_the_merge_and_cites_its_line(self) -> None:
+        self.configure("- `merge-method` : `ff-only`\n")
+        code, message = self.run_hook("gh pr merge 7 --merge")
+        self.assertEqual(code, 2)
+        self.assertIn("- `merge-method` : `ff-only`", message)
 
 
 if __name__ == "__main__":
