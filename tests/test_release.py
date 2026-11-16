@@ -9,6 +9,7 @@ import io
 import json
 import tempfile
 import unittest
+from collections.abc import Callable
 from contextlib import redirect_stderr, redirect_stdout
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -27,6 +28,7 @@ class Base(unittest.TestCase):
         isolate(self, self.tmp.name, CLAUDE_CONFIG_DIR=str(Path(self.tmp.name) / "vide"))
         self.world = World(Path(self.tmp.name))
         self.world.answers = {"repo view": {"nameWithOwner": "o/r", "defaultBranchRef": {"name": "main"}}}
+        self.runner: Callable[[list[str], Path], str] = self.world.runner
 
     def configure(self, *lines: str) -> None:
         text = USINE + "".join(f"- {line}\n" for line in lines)
@@ -41,7 +43,7 @@ class Base(unittest.TestCase):
         else:
             argv = [command, str(self.world.root), *rest]
         with redirect_stdout(out), redirect_stderr(err):
-            code = main(argv, run=self.world.runner, now=NOW)
+            code = main(argv, run=self.runner, now=NOW)
         return code, out.getvalue(), err.getvalue()
 
     def state_file(self) -> Path:
@@ -198,6 +200,51 @@ class SloCondition(Base):
         self.configure(*SLO)
         self.write_state({})
         self.assertEqual(self.condition()[0], "non vérifiable")
+
+
+class Sev1Condition(Base):
+    """Aucun ticket `sev1` n'est ouvert."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.world.answers["label list"] = [{"name": "bug"}, {"name": "sev1"}]
+        self.world.answers["issue list"] = []
+
+    def condition(self) -> tuple[str, str]:
+        code, out, _ = self.run_main("condition", "sev1")
+        self.assertEqual(code, 0)
+        line = next(line for line in out.splitlines() if line.startswith("CONDITION: sev1"))
+        _, status, text = (part.strip() for part in line.split("|", 2))
+        return status, text
+
+    def test_no_open_sev1_holds(self) -> None:
+        """Ticket #71 : l'étiquette existe et aucun ticket ouvert ne la porte : condition tenue."""
+        self.assertEqual(self.condition()[0], "tenue")
+
+    def test_an_open_sev1_does_not_hold_and_is_named(self) -> None:
+        """Ticket #71 : un `sev1` ouvert manque la condition, son numéro dit."""
+        self.world.answers["issue list"] = [{"number": 12, "title": "Un garde contourné"}, {"number": 15, "title": "Perte"}]
+        status, text = self.condition()
+        self.assertEqual(status, "non tenue")
+        self.assertIn("#12", text)
+        self.assertIn("#15", text)
+
+    def test_a_repository_without_the_sev1_label_cannot_be_verified(self) -> None:
+        """Ticket #71 : sans l'étiquette `sev1`, « aucun ticket » ne prouve rien : non vérifiable."""
+        self.world.answers["label list"] = [{"name": "bug"}]
+        status, text = self.condition()
+        self.assertEqual(status, "non vérifiable")
+        self.assertIn("étiquette `sev1`", text)
+
+    def test_a_failing_gh_cannot_be_verified(self) -> None:
+        """Ticket #71 : `gh` qui échoue : non vérifiable, jamais « tenue »."""
+        def failing(cmd: list[str], cwd: Path) -> str:
+            raise RuntimeError("`gh issue list` a échoué : pas de réseau")
+
+        self.runner = failing
+        status, text = self.condition()
+        self.assertEqual(status, "non vérifiable")
+        self.assertIn("pas de réseau", text)
 
 
 class BudgetCondition(Base):

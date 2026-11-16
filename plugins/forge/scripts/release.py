@@ -36,6 +36,7 @@ TAG_KEY = "release-tag"
 REACHED, NOT_REACHED, ABSENT = "atteint", "non atteint", "sans objet"
 MET, NOT_MET, UNVERIFIABLE = "tenue", "non tenue", "non vérifiable"
 STATE_MAX_AGE = timedelta(hours=1)
+SEV1 = "sev1"
 WRONG_CALL = 2
 
 
@@ -224,9 +225,30 @@ def budget_condition(project: Path, run: Runner, now: datetime) -> Condition:
     return Condition("budget", MET, f"{plural(len(verdicts), 'action')} déclarée{'s' if len(verdicts) > 1 else ''}, aucune active")
 
 
+def sev1_condition(project: Path, run: Runner, now: datetime) -> Condition:
+    """No open ticket carries the `sev1` label.
+
+    A repository without that label proves nothing by an empty answer (the agent never creates it),
+    and a `gh` that fails says nothing: both are "non vérifiable".
+    """
+    try:
+        labels = factory_slo.parse_stream(run(["gh", "label", "list", "--limit", "1000", "--json", "name"], project))
+        if SEV1 not in {str(label.get("name")) for label in labels}:
+            return Condition("sev1", UNVERIFIABLE, f"l'étiquette `{SEV1}` n'existe pas sur le dépôt : un dépôt sans elle ne prouve rien (l'agent ne la crée pas)")
+        found = factory_slo.parse_stream(
+            run(["gh", "issue", "list", "--state", "open", "--label", SEV1, "--limit", "1000", "--json", "number,title"], project)
+        )
+    except (RuntimeError, ValueError) as error:
+        return Condition("sev1", UNVERIFIABLE, f"GitHub n'a pas répondu : {error}")
+    if found:
+        return Condition("sev1", NOT_MET, f"tickets `{SEV1}` ouverts : " + ", ".join(f"#{item['number']}" for item in found))
+    return Condition("sev1", MET, f"aucun ticket `{SEV1}` ouvert")
+
+
 CONDITIONS: dict[str, Callable[[Path, Runner, datetime], Condition]] = {
     "slo": slo_condition,
     "budget": budget_condition,
+    "sev1": sev1_condition,
 }
 
 
