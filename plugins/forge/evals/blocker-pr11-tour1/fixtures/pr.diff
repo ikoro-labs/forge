@@ -1,0 +1,477 @@
+diff --git a/README.md b/README.md
+index 16c88e2..068f57a 100644
+--- a/README.md
++++ b/README.md
+@@ -59,7 +59,7 @@ ne fusionne une PR rouge, ou ne sort de son rôle.
+ | `guard_coder` | le coder ne fusionne pas, ne relit pas, ne ferme pas de ticket |
+ | `guard_readonly` | les juges et les décideurs lisent, n'écrivent jamais |
+ | `guard_pause` | tant que `.claude/PAUSED` existe, aucun agent n'est lancé |
+-| `after_write` | pas de tiret cadratin au-delà de ce que le projet admet |
++| `after_write` | formate chaque fichier écrit avec les formateurs que le projet déclare (clé `format-on-write`), puis refuse le tiret cadratin au-delà de ce que le projet admet |
+ | `trim_output` | la longue sortie d'une commande de tests qui réussit est raccourcie, la sortie complète gardée dans un journal |
+ | `sessions_notice`, `handoff_*` | une seule session par dépôt, et la passation à une nouvelle session quand le contexte est plein |
+ 
+diff --git a/plugins/forge/hooks/after_write.py b/plugins/forge/hooks/after_write.py
+index 945be0f..ff2b8a1 100644
+--- a/plugins/forge/hooks/after_write.py
++++ b/plugins/forge/hooks/after_write.py
+@@ -1,26 +1,44 @@
+-"""PostToolUse hook: what an agent writes carries no em dash.
++"""PostToolUse hook: what an agent writes is formatted, and carries no em dash.
+ 
+-After an Edit or a Write, an em dash beyond the file's allowance is reported with exit code 2,
+-which Claude Code shows to the agent so it fixes the file before going on. The allowances are
+-the project's, in the file the `em-dash-allowances` key of `docs/agents/usine.md` names, one
++After an Edit or a Write, the commands of the `format-on-write` key of `docs/agents/usine.md`
++whose pattern matches the file run on it, in the file's order, then an em dash beyond the file's
++allowance is reported. Both report with exit code 2, which Claude Code shows to the agent so it
++fixes the file before going on; the write itself stays.
++
++A `format-on-write` line is `<pattern> | <command>`. The pattern is compared with the whole
++relative POSIX path, case included: `**/` (any directories, or none), `*` and `?` (not a `/`),
++`{a,b}` (alternatives, not nested); anything else is literal. The command is split like a POSIX
++shell would, run without a shell from the project root, with the file's absolute path as its last
++argument. Each command has `COMMAND_TIMEOUT` seconds, all of them together `TOTAL_TIMEOUT`.
++Without the key nothing is formatted and no formatter is guessed.
++
++The em dash allowances are the project's, in the file the `em-dash-allowances` key names, one
+ `<count> <path>` line per file; without that key no file has any.
+ 
+-Formatting (ruff, Prettier) is each project's own, in its `.claude/settings.json`. A file
+-written through a shell command (a heredoc, `sed`) does not come through here: the project's
+-commit hook is the net for those.
++A file written through a shell command (a heredoc, `sed`) does not come through here: the
++project's commit hook is the net for those.
+ """
+ 
+ from __future__ import annotations
+ 
+ import json
++import re
++import shlex
++import shutil
++import subprocess
+ import sys
++import tempfile
++import time
+ from collections.abc import Mapping
+ from pathlib import Path
+ 
+-from usine import load, project_root
++from usine import load, project_root, split_value
+ 
+ EM_DASH = chr(0x2014)
+ ALLOWANCES_KEY = "em-dash-allowances"
++FORMAT_KEY = "format-on-write"
++COMMAND_TIMEOUT = 30
++TOTAL_TIMEOUT = 120
+ 
+ 
+ def em_dash_problem(path: str, content: str, allowances: Mapping[str, int]) -> str | None:
+@@ -51,6 +69,82 @@ def load_allowances(root: Path) -> dict[str, int]:
+         return {}
+ 
+ 
++def pattern_regex(pattern: str) -> re.Pattern[str]:
++    """The regular expression of a path pattern: `**/`, `*`, `?` and `{a,b}`, the rest literal."""
++    out: list[str] = []
++    i = 0
++    while i < len(pattern):
++        char = pattern[i]
++        if pattern.startswith("**/", i) and (i == 0 or pattern[i - 1] == "/"):
++            out.append("(?:.*/)?")
++            i += 3
++            continue
++        end = pattern.find("}", i) if char == "{" else -1
++        if char == "{" and end != -1 and "{" not in pattern[i + 1 : end]:
++            choices = pattern[i + 1 : end].split(",")
++            out.append("(?:" + "|".join(re.escape(choice) for choice in choices) + ")")
++            i = end
++        elif char == "*":
++            out.append("[^/]*")
++        elif char == "?":
++            out.append("[^/]")
++        else:
++            out.append(re.escape(char))
++        i += 1
++    return re.compile("".join(out))
++
++
++def matches(pattern: str, relative: str) -> bool:
++    return pattern_regex(pattern).fullmatch(relative) is not None
++
++
++def run_formatter(command: str, path: Path, root: Path, timeout: float) -> str | None:
++    """Why the command failed on the file (`exit 3`, `timed out after 30s`...), or None."""
++    argv = shlex.split(command)
++    executable = shutil.which(argv[0])
++    if executable is None:
++        return "command not found"
++    try:
++        # The output goes to a file, not a pipe: a grandchild of `uv run` would hold a pipe open.
++        with tempfile.TemporaryFile() as sink:
++            done = subprocess.run(
++                [executable, *argv[1:], str(path)],
++                cwd=root,
++                stdin=subprocess.DEVNULL,
++                stdout=sink,
++                stderr=subprocess.STDOUT,
++                timeout=timeout,
++            )
++    except subprocess.TimeoutExpired:
++        return f"timed out after {int(timeout)}s"
++    except OSError:
++        return "command not found"
++    return None if done.returncode == 0 else f"exit {done.returncode}"
++
++
++def format_problems(
++    config: Mapping[str, list[str]], root: Path, path: Path, relative: str
++) -> list[str]:
++    problems: list[str] = []
++    started = time.monotonic()
++    for value in config.get(FORMAT_KEY, []):
++        parts = split_value(value, 2)
++        if parts is None or not shlex.split(parts[1]):
++            problems.append(f"{FORMAT_KEY}: `{value}` is not `<pattern> | <command>`, line ignored")
++            continue
++        pattern, command = parts
++        if not matches(pattern, relative):
++            continue
++        timeout = min(COMMAND_TIMEOUT, TOTAL_TIMEOUT - (time.monotonic() - started))
++        if timeout <= 0:
++            reason: str | None = f"timed out after {TOTAL_TIMEOUT}s"
++        else:
++            reason = run_formatter(command, path, root, timeout)
++        if reason:
++            problems.append(f"{FORMAT_KEY}: {command} failed on {relative} ({reason})")
++    return problems
++
++
+ def main() -> int:
+     event = json.load(sys.stdin)
+     file_path = event.get("tool_input", {}).get("file_path")
+@@ -64,11 +158,14 @@ def main() -> int:
+         return 0  # outside the project: not ours to judge
+     if not path.is_file():
+         return 0
++    config = load(root)
++    problems = format_problems(config, root, path.resolve(), relative)
+     content = path.read_text(encoding="utf-8", errors="replace")
+-    problem = em_dash_problem(relative, content, load_allowances(root))
+-    if problem is None:
++    if problem := em_dash_problem(relative, content, load_allowances(root)):
++        problems.append(problem)
++    if not problems:
+         return 0
+-    sys.stderr.write(problem + "\n")
++    sys.stderr.write("".join(line + "\n" for line in problems))
+     return 2
+ 
+ 
+diff --git a/plugins/forge/hooks/usine.py b/plugins/forge/hooks/usine.py
+index 67ed19b..fa41458 100644
+--- a/plugins/forge/hooks/usine.py
++++ b/plugins/forge/hooks/usine.py
+@@ -6,8 +6,8 @@ Each key is a Markdown list item, the key and its value in backticks:
+     - `install` : `uv sync --locked`
+     - `install` : `pnpm install --frozen-lockfile`
+ 
+-A repeated key is a list, in the file's order. Any other line is prose and is ignored. An absent
+-key has no default: whoever reads it says the step is "sans objet" and names the key.
++A repeated key is a list, in the file's order. A value of several parts is `<part> | <part>`,
++which `split_value` cuts. Any other line is prose and is ignored. An absent key has no default: whoever reads it says the step is "sans objet" and names the key.
+ """
+ 
+ from __future__ import annotations
+@@ -28,6 +28,18 @@ def parse(text: str) -> dict[str, list[str]]:
+     return config
+ 
+ 
++def split_value(value: str, parts: int) -> list[str] | None:
++    """A value of `parts` parts joined by ` | `, or None when one is missing or empty.
++
++    The cut is at the first separators only, so the last part keeps the rest (a command may hold
++    a `|`). A value short of a part is never completed: the caller reports it.
++    """
++    pieces = [piece.strip() for piece in value.split(" | ", parts - 1)]
++    if len(pieces) != parts or not all(pieces):
++        return None
++    return pieces
++
++
+ def project_root(event: dict[str, object] | None = None) -> Path:
+     """The project's directory: Claude Code's `CLAUDE_PROJECT_DIR`, else the event's cwd."""
+     root = os.environ.get("CLAUDE_PROJECT_DIR") or (event or {}).get("cwd") or "."
+diff --git a/plugins/forge/templates/usine.md b/plugins/forge/templates/usine.md
+index 6187762..654d1a0 100644
+--- a/plugins/forge/templates/usine.md
++++ b/plugins/forge/templates/usine.md
+@@ -166,3 +166,16 @@ Les commandes que ces agents en lecture seule peuvent lancer en plus des lecture
+ calculateur du projet, par exemple), chacune comme un préfixe. Une par ligne.
+ 
+ - `readonly-command` : `<uv run python -m scripts.calcul>`
++
++Les formateurs lancés après chaque écriture d'un agent (Edit, Write, MultiEdit) : une ligne
++`<motif> | <commande>` par formateur. Le motif se compare au chemin relatif entier, en POSIX, casse
++comprise : `**/` (des dossiers, ou aucun), `*` et `?` (jamais un `/`), `{a,b}` (non imbriqué), tout
++le reste est littéral. La commande est découpée comme par un shell POSIX, lancée sans shell depuis la
++racine du dépôt, le chemin absolu du fichier ajouté en dernier argument ; elle peut contenir `|`
++(la coupe se fait au premier ` | `). Plusieurs motifs qui correspondent : toutes les commandes,
++dans l'ordre du fichier, avant le contrôle du tiret cadratin. Chacune a 30 s, 120 s au total.
++Un échec ou un délai dépassé ne défait pas l'écriture : une ligne sur stderr, `format-on-write:
++<commande> failed on <chemin> (exit <n>)`, que l'agent voit. Sans la clé, rien n'est formaté.
++
++- `format-on-write` : `<**/*.py | uv run ruff format>`
++- `format-on-write` : `<apps/web/**/*.{ts,tsx} | pnpm --dir apps/web exec prettier --write>`
+diff --git a/tests/test_after_write.py b/tests/test_after_write.py
+index 8a909b1..eb7e13a 100644
+--- a/tests/test_after_write.py
++++ b/tests/test_after_write.py
+@@ -1,12 +1,22 @@
+ import io
+ import json
++import shlex
++import sys
+ import tempfile
+ import unittest
+ from pathlib import Path
+ from unittest import mock
+ 
+ import support  # noqa: F401
+-from after_write import EM_DASH, em_dash_problem, load_allowances, main, parse_allowances
++import after_write
++from after_write import (
++    EM_DASH,
++    em_dash_problem,
++    load_allowances,
++    main,
++    matches,
++    parse_allowances,
++)
+ 
+ 
+ class EmDash(unittest.TestCase):
+@@ -58,5 +68,187 @@ class EmDash(unittest.TestCase):
+                 self.assertEqual(run(outside), 0)
+ 
+ 
++class Pattern(unittest.TestCase):
++    """The path patterns of `format-on-write`: the whole relative POSIX path, case included."""
++
++    def test_double_star_slash_crosses_directories_or_none(self) -> None:
++        self.assertTrue(matches("**/*.py", "a.py"))
++        self.assertTrue(matches("**/*.py", "src/pkg/a.py"))
++        self.assertFalse(matches("**/*.py", "src/a.pyc"))
++
++    def test_star_stays_inside_one_directory(self) -> None:
++        self.assertTrue(matches("src/*.py", "src/a.py"))
++        self.assertFalse(matches("src/*.py", "src/pkg/a.py"))
++
++    def test_question_mark_is_one_character_but_not_a_slash(self) -> None:
++        self.assertTrue(matches("a?.py", "ab.py"))
++        self.assertFalse(matches("a?.py", "a.py"))
++        self.assertFalse(matches("a?b", "a/b"))
++
++    def test_braces_are_alternatives(self) -> None:
++        pattern = "apps/web/**/*.{ts,tsx}"
++        self.assertTrue(matches(pattern, "apps/web/src/a.ts"))
++        self.assertTrue(matches(pattern, "apps/web/a.tsx"))
++        self.assertFalse(matches(pattern, "apps/web/a.js"))
++        self.assertFalse(matches(pattern, "apps/api/a.ts"))
++
++    def test_the_case_counts(self) -> None:
++        self.assertFalse(matches("**/*.py", "A.PY"))
++
++    def test_everything_else_is_literal(self) -> None:
++        self.assertTrue(matches("a.b+c(d)[e].py", "a.b+c(d)[e].py"))
++        self.assertFalse(matches("a.py", "axpy"))
++        self.assertTrue(matches("a{b.py", "a{b.py"))
++
++
++def run_hook(root: Path, target: Path) -> tuple[int, str]:
++    event = json.dumps({"tool_input": {"file_path": str(target)}, "cwd": str(root)})
++    err = io.StringIO()
++    with (
++        mock.patch.dict("os.environ", {"CLAUDE_PROJECT_DIR": str(root)}),
++        mock.patch("sys.stdin", io.StringIO(event)),
++        mock.patch("sys.stderr", err),
++    ):
++        return main(), err.getvalue()
++
++
++class FormatOnWrite(unittest.TestCase):
++    def setUp(self) -> None:
++        folder = tempfile.TemporaryDirectory()
++        self.addCleanup(folder.cleanup)
++        self.root = Path(folder.name).resolve()
++        (self.root / "docs" / "agents").mkdir(parents=True)
++        self.python = shlex.quote(Path(sys.executable).as_posix())
++
++    def configure(self, *lines: str) -> None:
++        text = "".join(f"- `format-on-write` : `{line}`\n" for line in lines)
++        (self.root / "docs" / "agents" / "usine.md").write_text(text, encoding="utf-8")
++
++    def script(self, name: str, body: str) -> str:
++        path = self.root / name
++        path.write_text(body, encoding="utf-8")
++        return f"{self.python} {shlex.quote(path.as_posix())}"
++
++    def test_a_matching_pattern_runs_its_command_on_the_absolute_path_from_the_root(self) -> None:
++        """No F-NNNN: ticket #2. The path is the last argument, the command runs from the root."""
++        command = self.script(
++            "fmt.py",
++            "import os, sys\n"
++            "open(sys.argv[1], 'a').write('|' + os.getcwd() + '|' + sys.argv[1])\n",
++        )
++        self.configure(f"**/*.txt | {command}")
++        target = self.root / "sub" / "a.txt"
++        target.parent.mkdir()
++        target.write_text("x", encoding="utf-8")
++        self.assertEqual(run_hook(self.root, target), (0, ""))
++        self.assertEqual(
++            target.read_text(encoding="utf-8"), f"x|{self.root}|{target}"
++        )
++
++    def test_a_pattern_that_does_not_match_runs_nothing(self) -> None:
++        command = self.script("fmt.py", "import sys\nopen(sys.argv[1], 'a').write('!')\n")
++        self.configure(f"**/*.py | {command}")
++        target = self.root / "a.txt"
++        target.write_text("x", encoding="utf-8")
++        self.assertEqual(run_hook(self.root, target), (0, ""))
++        self.assertEqual(target.read_text(encoding="utf-8"), "x")
++
++    def test_without_the_key_nothing_runs(self) -> None:
++        target = self.root / "a.txt"
++        target.write_text("x", encoding="utf-8")
++        self.assertEqual(run_hook(self.root, target), (0, ""))
++
++    def test_several_patterns_run_every_command_in_the_file_order(self) -> None:
++        one = self.script("one.py", "import sys\nopen(sys.argv[1], 'a').write('1')\n")
++        two = self.script("two.py", "import sys\nopen(sys.argv[1], 'a').write('2')\n")
++        self.configure(f"**/*.txt | {one}", f"a.* | {two}", f"**/*.py | {one}")
++        target = self.root / "a.txt"
++        target.write_text("x", encoding="utf-8")
++        self.assertEqual(run_hook(self.root, target), (0, ""))
++        self.assertEqual(target.read_text(encoding="utf-8"), "x12")
++
++    def test_a_failing_formatter_is_reported_and_the_write_stays(self) -> None:
++        command = self.script("fmt.py", "import sys\nprint('boom')\nsys.exit(3)\n")
++        self.configure(f"**/*.txt | {command}")
++        target = self.root / "a.txt"
++        target.write_text("x", encoding="utf-8")
++        code, err = run_hook(self.root, target)
++        self.assertEqual(code, 2)
++        self.assertEqual(err, f"format-on-write: {command} failed on a.txt (exit 3)\n")
++        self.assertEqual(target.read_text(encoding="utf-8"), "x")
++
++    def test_a_formatter_past_its_delay_is_reported(self) -> None:
++        command = self.script("fmt.py", "import time\ntime.sleep(30)\n")
++        self.configure(f"**/*.txt | {command}")
++        target = self.root / "a.txt"
++        target.write_text("x", encoding="utf-8")
++        with mock.patch.object(after_write, "COMMAND_TIMEOUT", 1):
++            code, err = run_hook(self.root, target)
++        self.assertEqual(code, 2)
++        self.assertEqual(err, f"format-on-write: {command} failed on a.txt (timed out after 1s)\n")
++
++    def test_the_total_delay_bounds_the_commands_together(self) -> None:
++        slow = self.script("slow.py", "import time\ntime.sleep(30)\n")
++        quick = self.script("quick.py", "import sys\nopen(sys.argv[1], 'a').write('!')\n")
++        self.configure(f"**/*.txt | {slow}", f"**/*.txt | {quick}")
++        target = self.root / "a.txt"
++        target.write_text("x", encoding="utf-8")
++        with (
++            mock.patch.object(after_write, "COMMAND_TIMEOUT", 30),
++            mock.patch.object(after_write, "TOTAL_TIMEOUT", 1),
++        ):
++            code, err = run_hook(self.root, target)
++        self.assertEqual(code, 2)
++        self.assertIn("(timed out after 1s)", err)
++        self.assertEqual(err.count("format-on-write:"), 2)
++        self.assertEqual(target.read_text(encoding="utf-8"), "x")
++
++    def test_a_command_that_is_not_found_is_reported(self) -> None:
++        self.configure("**/*.txt | no-such-formatter-xyz --write")
++        target = self.root / "a.txt"
++        target.write_text("x", encoding="utf-8")
++        code, err = run_hook(self.root, target)
++        self.assertEqual(code, 2)
++        self.assertEqual(
++            err,
++            "format-on-write: no-such-formatter-xyz --write failed on a.txt (command not found)\n",
++        )
++
++    def test_a_line_missing_its_command_is_reported_not_completed(self) -> None:
++        self.configure("**/*.txt")
++        target = self.root / "a.txt"
++        target.write_text("x", encoding="utf-8")
++        code, err = run_hook(self.root, target)
++        self.assertEqual(code, 2)
++        self.assertEqual(
++            err, "format-on-write: `**/*.txt` is not `<pattern> | <command>`, line ignored\n"
++        )
++
++    def test_the_command_may_hold_a_pipe(self) -> None:
++        command = self.script("fmt.py", "import sys\nopen(sys.argv[2], 'a').write(sys.argv[1])\n")
++        self.configure(f"**/*.txt | {command} a|b {self.root.as_posix()}/log")
++        target = self.root / "a.txt"
++        target.write_text("x", encoding="utf-8")
++        self.assertEqual(run_hook(self.root, target)[0], 0)
++        self.assertEqual((self.root / "log").read_text(encoding="utf-8"), "a|b")
++
++    def test_the_formatters_run_before_the_em_dash_check(self) -> None:
++        command = self.script(
++            "fmt.py", f"import sys\nopen(sys.argv[1], 'w').write('clean')\n"
++        )
++        self.configure(f"**/*.txt | {command}")
++        target = self.root / "a.txt"
++        target.write_text(f"x {EM_DASH} y", encoding="utf-8")
++        self.assertEqual(run_hook(self.root, target), (0, ""))
++        target.write_text("x", encoding="utf-8")
++        failing = self.script("bad.py", "import sys\nsys.exit(1)\n")
++        self.configure(f"**/*.txt | {failing}")
++        target.write_text(f"x {EM_DASH} y", encoding="utf-8")
++        code, err = run_hook(self.root, target)
++        self.assertEqual(code, 2)
++        self.assertIn("failed on a.txt (exit 1)", err)
++        self.assertIn("a.txt holds 1 em dash", err)
++
++
+ if __name__ == "__main__":
+     unittest.main()
+diff --git a/tests/test_usine.py b/tests/test_usine.py
+index 36a9e6e..2518679 100644
+--- a/tests/test_usine.py
++++ b/tests/test_usine.py
+@@ -5,7 +5,7 @@ from pathlib import Path
+ from unittest import mock
+ 
+ import support
+-from usine import load, parse, project_root
++from usine import load, parse, project_root, split_value
+ 
+ TEMPLATE = support.PLUGIN / "templates" / "usine.md"
+ 
+@@ -37,6 +37,21 @@ class Config(unittest.TestCase):
+             self.assertEqual(project_root({"cwd": "/c"}), Path("/c"))
+             self.assertEqual(project_root(None), Path("."))
+ 
++    def test_a_value_is_cut_at_its_first_separators_and_the_last_part_keeps_the_rest(self) -> None:
++        self.assertEqual(
++            split_value("**/*.py | uv run ruff format", 2), ["**/*.py", "uv run ruff format"]
++        )
++        self.assertEqual(split_value("a | b | c | d", 2), ["a", "b | c | d"])
++        self.assertEqual(split_value("a | b | c | d", 3), ["a", "b", "c | d"])
++        self.assertEqual(split_value("solo", 1), ["solo"])
++
++    def test_a_value_missing_a_part_is_reported_never_completed(self) -> None:
++        self.assertIsNone(split_value("**/*.py", 2))
++        self.assertIsNone(split_value("a | b", 3))
++        self.assertIsNone(split_value("a |b", 2))
++        self.assertIsNone(split_value("a | ", 2))
++        self.assertIsNone(split_value(" | b", 2))
++
+     def test_the_template_documents_every_key_the_plugin_reads(self) -> None:
+         """The agents and skills cite a key as "clé `name`"; the hooks hold theirs in strings."""
+         documented = set(parse(TEMPLATE.read_text(encoding="utf-8")))

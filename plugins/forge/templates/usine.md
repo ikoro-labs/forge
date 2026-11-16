@@ -238,8 +238,17 @@ toutes deux nécessaires : sans l'une, la sonde se rend « sans objet (clé `tes
 
 `red-replay` : la commande qui lance la suite dans la copie, une seule. `{file}` y est remplacé par le
 fichier de test à rejouer (son chemin depuis la racine), `{name}` par son nom de fichier, tous deux
-protégés par des guillemets ; l'un des deux au moins est obligatoire. Un fichier est rejoué en entier,
-et il est rendu quand la commande sort à 0 sur la base. Chaque commande, celles de `install`
+protégés par des guillemets ; l'un des deux au moins est obligatoire. Par défaut, le grain est le
+fichier : il est rejoué en entier, et rendu quand la commande sort à 0 sur la base. `{report}`, facultatif
+et sans clé de plus, passe au grain du test : il est remplacé par le chemin d'un fichier où la commande
+écrit un rapport JUnit XML (`pytest {file} --junitxml={report}`). Le script repère alors les tests que
+la PR ajoute ou change dans le fichier, en confrontant les lignes du diff à la place de chaque nom de
+test dans le fichier de la tête (une lecture du texte, pas du langage, qui dans le doute compte un test
+comme changé : un test qu'il ne sait pas placer, ou un assistant changé sous un test, fait rendre ce
+test), et ne rend que ceux de ces tests
+qui passent sur la base, chacun sur sa ligne `PASSES` (`<fichier>::<test>`). Une commande qui sort à 0
+sans rapport est `NOT RUN`, jamais `PASSES`. Un projet dont le lanceur n'écrit pas de rapport JUnit
+reste au grain du fichier. Chaque commande, celles de `install`
 comprises, tourne sous une limite de mémoire (2000 Mo) et un délai (300 s) que le script pose lui-même,
 parce qu'elle exécute du code de test contre un code qui ne l'attend pas. Ces bornes sont éprouvées sous
 Linux seulement ; sous Windows elles reposent sur un objet de tâche (job object), écrit d'après la
@@ -247,6 +256,8 @@ documentation Win32, jamais vu hors de la CI, où sa première version a échou�
 version corrigée n'est pas encore vue verte.
 
 - `red-replay` : `<uv run pytest {file}>`
+
+Au grain du test, cette même ligne porte `{report}` : `<uv run pytest {file} --junitxml={report}>`.
 
 Le motif des tags de version, lu par `scripts/factory_slo.py` pour l'indicateur `release-lag` : `{version}`
 tient pour la version (`<plugin>--v{version}`). Une ligne par motif. Sans la clé, `release-lag` est
@@ -346,6 +357,18 @@ aucune valeur par défaut.
 - `budget-action` : `<accept-round-1 | feature-freeze>`
 - `budget-action` : `<lead-time p90 | alert>`
 
+Le dossier des revues sans blâme que le skill `incident` écrit, relatif à la racine du dépôt, un seul
+dossier sur une seule ligne. Chaque incident `sev1` ou `sev2`, et chaque incident de l'usine
+elle-même, y laisse une revue (`templates/incident.md`) : les faits datés, la cause, ce qui l'a
+laissé passer, et la classe du correctif, `mécanique` (le ticket d'un contrôle déterministe et de son
+test, ou un contrôle que le dépôt tient déjà) ou `jugement` (un cas ajouté au jeu de référence). Une
+revue sans correctif est refusée par `scripts/incident.py check`. `scripts/factory_slo.py incidents
+<projet>` compte les revues du dossier par classe. Sans la clé, l'étape est
+« sans objet (clé `incident-dir` absente) » : aucune revue n'est écrite ni comptée, et aucun dossier
+n'est deviné. Une valeur qui sort du dépôt, ou une clé répétée, fait échouer la lecture.
+
+- `incident-dir` : `<docs/incidents>`
+
 Le plafond de jetons d'agents par ticket, un nombre entier sur une seule ligne. `forge:feature-build`
 tient, pour chaque ticket, la somme des jetons de chaque agent lancé pour lui (coder, remise à jour,
 corrections, `forge:qc-gate`, `forge:qc-conf`, décideurs) plus la part de la session principale, et
@@ -377,6 +400,35 @@ en local, appelée avec `--title "<titre>" --body-file body.md`.
 
 - `trace-check` : `<trace>`
 - `trace-replay` : `<uv run python -m scripts.trace>`
+
+## Essai de bout en bout
+
+L'essai de l'usine avant une version, par `scripts/e2e_trial.py`. Les tests de `tests/` éprouvent chaque
+hook et chaque script seul ; l'essai éprouve l'enchaînement (un coder qui n'ouvre pas sa PR, un garde qui
+refuse un geste légitime) sur un dépôt d'essai que le projet désigne. Trois clés, chacune sur une seule
+ligne et sans valeur par défaut : une clé absente rend « sans objet (clé `<nom>` absente) » et le script
+n'écrit jamais `PASS`. La création du dépôt d'essai et de son jeton est un geste humain : le script ne la
+fait pas.
+
+`e2e-repo` : le dépôt d'essai sur GitHub, `<propriétaire>/<nom>`. Le script y crée un ticket fictif et y
+nettoie ensuite ce qu'il a créé, retrouvé par son numéro, rien d'autre. Sans la clé, l'étape est
+« sans objet (clé `e2e-repo` absente) ».
+
+- `e2e-repo` : `<propriétaire/depot-d-essai>`
+
+`e2e-command` : la commande lancée dans le projet jetable, un clone neuf du dépôt d'essai, découpée en mots
+comme le fait un shell puis lancée sans shell, sous le lanceur borné (`run-limits`, `run-budget`). Elle cite
+`{plugin}` (le plugin à essayer) et `{budget}` (la clé `e2e-budget-usd`), sans quoi l'essai ne tiendrait pas
+le plugin à essayer sous le plafond ; `{feature}`, `{ticket}` et `{base}` (la branche de base de l'essai)
+sont facultatives. Toute autre marque est refusée. Sans la clé, l'étape est
+« sans objet (clé `e2e-command` absente) ».
+
+- `e2e-command` : `<claude -p --plugin-dir {plugin} --max-budget-usd {budget} "/forge:feature-build {feature} --base {base}">`
+
+`e2e-budget-usd` : le plafond de l'essai en dollars, un nombre positif, que la commande passe à
+`--max-budget-usd` par `{budget}`. Sans la clé, l'étape est « sans objet (clé `e2e-budget-usd` absente) ».
+
+- `e2e-budget-usd` : `<2.50>`
 
 ## Libellés de l'écran
 

@@ -1,0 +1,6 @@
+schema_version: "1.0"
+name: blocker-pr51-tour1
+description: "Rejoue la PR 51 au tour 1 devant forge:qc-conf (un rejeu de tests sur la base qui assigne la borne après le démarrage de cmd.exe sous Windows et juge au grain du fichier). Verdict attendu, REJECT: un BLOCKER avéré est dans le diff."
+tags: [blocker, juge]
+context:
+  scaffold_script: scaffold.sh

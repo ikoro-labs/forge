@@ -1,0 +1,691 @@
+diff --git a/docs/agents/usine.md b/docs/agents/usine.md
+index 1239a5d..5327d7d 100644
+--- a/docs/agents/usine.md
++++ b/docs/agents/usine.md
+@@ -24,6 +24,12 @@ La configuration de l'usine qui développe le plugin `forge` dans ce dépôt. Le
+ - `ci-replay` : `claude plugin validate .`
+ - `ci-replay` : `claude plugin validate plugins/forge`
+ 
++Les tests que la PR ajoute, rejoués par `forge:qc-gate` sur une copie de la base, où chacun doit
++échouer. Le motif `-p {name}` choisit le fichier dans `tests/`.
++
++- `test-path` : `tests/`
++- `red-replay` : `uv run --no-project --quiet python -m unittest discover -s tests -p {name}`
++
+ Les jobs de `.github/workflows/tests.yml`.
+ 
+ - `required-contexts` : `tests (ubuntu-latest)`
+diff --git a/docs/installation.md b/docs/installation.md
+index 009e8fa..3225e49 100644
+--- a/docs/installation.md
++++ b/docs/installation.md
+@@ -99,6 +99,15 @@ une ligne retirée, un nombre relevé, un rang abaissé, mesurés sur le diff pa
+ `plugins/forge/scripts/never_weaken.py`), les tolérances des hooks, les commandes dont la sortie se
+ raccourcit. Le gabarit, `plugins/forge/templates/usine.md`, documente chaque clé.
+ 
++Deux clés, `test-path` (un préfixe de chemin des fichiers de test, une ligne par préfixe) et
++`red-replay` (la commande qui lance un fichier de test, avec `{file}` ou `{name}`), ouvrent la sonde
++de rejeu de `forge:qc-gate` : `plugins/forge/scripts/base_replay.py` pose les tests que la PR ajoute
++ou change dans une copie de la base et les y lance, et `forge:qc-conf` lit ceux qui y passent déjà,
++parce qu'un test qui ne peut pas échouer sur l'ancien code ne prouve rien du changement. Le script
++borne la mémoire (2000 Mo) et le délai (300 s) de chaque commande, puisqu'il exécute du code de test
++contre un code qui ne l'attend pas : éprouvé sous Linux seulement, le côté Windows (un objet de
++tâche) n'ayant tourné que dans la CI. Il juge au grain du fichier, qu'il rejoue en entier.
++
+ Le skill de découpage en tickets du projet se déclare avec `ticket-skill` : `/forge:feature-design`
+ l'utilise à son étape de découpage. Sans la clé, il découpe à la main, dans l'ordre du §7 du
+ design, et le dit.
+diff --git a/plugins/forge/agents/qc-conf.md b/plugins/forge/agents/qc-conf.md
+index 5a0c496..5998e34 100644
+--- a/plugins/forge/agents/qc-conf.md
++++ b/plugins/forge/agents/qc-conf.md
+@@ -94,6 +94,24 @@ sans changement de comportement qui le ferait casser.
+ Sévérité : `BLOCKER` quand ce test est la seule preuve d'un critère ; ce critère compte alors pour
+ absent dans `SPEC`. `MINOR` sinon.
+ 
++## Lecture du rejeu sur la base
++
++Le tableau de `forge:qc-gate` porte une sonde **Rejeu des tests sur la base** : les fichiers de test
++que la PR ajoute ou change y sont rejoués sur la base, et un test de changement doit y échouer. Tu
++ne refais pas sa mesure, tu lis ses lignes `PASSES` : un fichier de test qui passe déjà sur la base.
++Pour chacun, cherche dans le corps de la PR une justification (un test de caractérisation, une
++refonte à comportement égal). Sans justification, c'est un constat, parce que ce test ne prouve rien
++du changement : sur l'ancien code, il passait.
++
++Sévérité : `BLOCKER` quand il est la seule preuve d'un critère de comportement nouveau ; ce critère
++compte alors pour absent dans `SPEC`. `MINOR` sinon (un critère aussi prouvé par un test rouge sur la
++base, un critère qui ne change pas de comportement). Le scénario d'échec est l'ancien code : il
++satisfait déjà ce test.
++
++Une sonde `NOT RUN` ou `FAIL` se dit dans `GATES`, jamais lue comme « aucun test ne passe ». Une
++sonde « sans objet » (clé `test-path` ou `red-replay` absente) se dit aussi dans `GATES` et ne donne
++aucun constat. En une passe, il n'y a pas de tableau : dis dans `GATES` que le rejeu n'a pas eu lieu.
++
+ ## Forme d'un constat
+ 
+ Chaque constat porte trois éléments, sans quoi il est abandonné :
+diff --git a/plugins/forge/agents/qc-gate.md b/plugins/forge/agents/qc-gate.md
+index d8fa2eb..056150e 100644
+--- a/plugins/forge/agents/qc-gate.md
++++ b/plugins/forge/agents/qc-gate.md
+@@ -91,6 +91,19 @@ Le numéro de PR, et le numéro du tour (1 ou 2).
+     (`FAIL`, jamais `PASS`). Quand la base n'a pas `docs/agents/usine.md`, ou que le script rend
+     `sans objet (clé never-weaken absente)`, la sonde se rend `sans objet (clé never-weaken absente)`.
+     Tu ne juges pas l'entrée : tu rends ce que le script a mesuré.
++11. **Rejeu des tests sur la base.** Le rouge d'un test n'est qu'une déclaration tant que personne ne
++    le remesure : les fichiers de test que la PR ajoute ou change sont posés, tels que la tête les a,
++    dans une copie de la **base**, puis rejoués. Avec les clés de la base, déjà écrites à la sonde 10
++    dans `usine-base.md` :
++    `uv run --no-project --quiet python "${CLAUDE_PLUGIN_ROOT}/scripts/base_replay.py" --base origin/<base> --head <tête> --usine usine-base.md`,
++    lancé depuis un clone du projet (le script crée et supprime sa propre copie, et n'écrit rien dans
++    le dépôt). Recopie chaque ligne du script, verbatim, et son code de sortie : 0 aucun fichier ne
++    passe sur la base, 1 un fichier passe (rends chaque ligne `PASSES` avec son fichier, sans la
++    juger), 2 un rejeu n'a pas pu tourner ou l'appel a échoué (`NOT RUN` avec sa commande, jamais
++    `PASS`). Le script borne lui-même mémoire et délai de chaque commande : un rejeu qui dépasse l'un
++    des deux est `NOT RUN`. Quand le script rend `sans objet (clé test-path absente)` ou
++    `sans objet (clé red-replay absente)`, la sonde se rend ainsi. Un fichier `RED` est le cas
++    attendu : tu le comptes, tu ne le détailles pas.
+ 
+ Au tour 2, rejoue toutes les sondes : une correction peut casser ce qui passait.
+ 
+@@ -106,5 +119,5 @@ Un tableau, rien d'autre, au plus trente lignes :
+ | ... | ... | ... |
+ ```
+ 
+-Puis, sous le tableau, les éléments verbatim des sondes 2, 5, 6, 7 et 10. Une sonde que tu n'as pas
++Puis, sous le tableau, les éléments verbatim des sondes 2, 5, 6, 7, 10 et 11. Une sonde que tu n'as pas
+ pu exécuter s'écrit `NOT RUN` avec la commande et sa sortie d'erreur : jamais `PASS`.
+diff --git a/plugins/forge/scripts/base_replay.py b/plugins/forge/scripts/base_replay.py
+new file mode 100644
+index 0000000..000c988
+--- /dev/null
++++ b/plugins/forge/scripts/base_replay.py
+@@ -0,0 +1,274 @@
++"""Replay on a copy of the base the test files a PR adds or changes: each must fail there.
++
++    python base_replay.py --base <ref> --head <ref> [--usine FILE] [--memory-mb N] [--timeout S]
++
++Run from a clone of the project. The script takes the files the PR adds or changes under a
++`test-path` prefix (`git diff <base>...<head>`), extracts the merge base of the two refs into a
++temporary folder (`git archive`: nothing is written to the repository, its configuration included),
++lays those files there as the head has them, runs each `install` command, then the `red-replay`
++command once per file, and deletes the folder.
++
++`red-replay` is a command line in which `{file}` (the test file, relative to the root of the
++repository) or `{name}` (its base name) is replaced by the file to replay, quoted. A command exiting
++with 0 means the file passes on the base: its tests prove nothing of the change. One line per file
++is printed, the status, the file and a detail separated by tabs:
++
++    PASSES   the command exits 0 on the base (the detail is the end of its output)
++    RED      the command fails on the base, as a test of a change should (the detail is its code)
++    NOT RUN  the replay could not run (the detail is the command and why: delay, limit, install...)
++
++`PASSES` is judged at the grain of the file: the command runs on the whole file, so a file with a
++passing test beside a failing one is `RED`. A line `NONE` says no test file was added or changed.
++Exit code 0 when no file passes on the base, 1 when one does, 2 when a replay could not run or the
++call is wrong. Without the key `test-path` or `red-replay`, the step is "sans objet (clé <nom>
++absente)" and the exit code is 0.
++
++Bounds. Each command (install ones included) runs under a memory limit (`--memory-mb`, 2000 by
++default) and a delay (`--timeout`, 300 s by default), because it runs test code against code that
++does not expect it. On Linux the limit is `RLIMIT_AS` and the process group is killed at the delay;
++on Windows the command is put in a job object with a per-process memory limit that kills what is
++left when it closes. The Linux side was run on a Linux workstation; the Windows side is written from
++the Win32 documentation and runs in the CI of this repository only, and macOS is not covered. A
++command whose limit cannot be set is `NOT RUN`, never run unbounded.
++
++The entries are read from the base (`--usine`, `git show origin/<base>:docs/agents/usine.md`), so a
++PR cannot lift the guard it is judged by. The standard library only.
++"""
++
++from __future__ import annotations
++
++import argparse
++import io
++import os
++import shlex
++import subprocess
++import sys
++import tarfile
++import tempfile
++from pathlib import Path, PurePosixPath
++
++sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "hooks"))
++
++import usine  # noqa: E402
++
++PASSES, RED, NOT_RUN, NONE = "PASSES", "RED", "NOT RUN", "NONE"
++TAIL_LINES = 15
++
++
++def git(*args: str, cwd: Path | None = None) -> bytes:
++    done = subprocess.run(["git", "-c", "core.quotePath=false", *args], cwd=cwd, capture_output=True)
++    if done.returncode != 0:
++        raise RuntimeError(f"git {' '.join(args)}: {done.stderr.decode('utf-8', 'replace').strip()}")
++    return done.stdout
++
++
++def test_files(base: str, head: str, prefixes: list[str]) -> list[str]:
++    """The files added or changed between the merge base and the head, under a test path."""
++    raw = git("diff", "--name-only", "--no-renames", "--diff-filter=AM", "-z", f"{base}...{head}")
++    paths = [item.decode("utf-8") for item in raw.split(b"\0") if item]
++    return [path for path in paths if any(path.startswith(prefix) for prefix in prefixes)]
++
++
++def extract_base(base: str, root: Path) -> None:
++    """The files of `base` into `root`: regular files and folders only, nothing outside `root`."""
++    archive = git("archive", "--format=tar", base)
++    with tarfile.open(fileobj=io.BytesIO(archive), mode="r:") as tar:
++        for member in tar.getmembers():
++            name = PurePosixPath(member.name)
++            if name.is_absolute() or ".." in name.parts or not (member.isfile() or member.isdir()):
++                continue
++            target = root.joinpath(*name.parts)
++            if member.isdir():
++                target.mkdir(parents=True, exist_ok=True)
++                continue
++            target.parent.mkdir(parents=True, exist_ok=True)
++            source = tar.extractfile(member)
++            if source is not None:
++                target.write_bytes(source.read())
++                os.chmod(target, member.mode & 0o777 or 0o644)
++
++
++def lay_head_file(head: str, path: str, root: Path) -> None:
++    target = root.joinpath(*PurePosixPath(path).parts)
++    target.parent.mkdir(parents=True, exist_ok=True)
++    target.write_bytes(git("show", f"{head}:{path}"))
++
++
++def quote(value: str) -> str:
++    return subprocess.list2cmdline([value]) if os.name == "nt" else shlex.quote(value)
++
++
++def command_for(template: str, path: str) -> str:
++    return template.replace("{file}", quote(path)).replace("{name}", quote(PurePosixPath(path).name))
++
++
++def _limit_windows(process: subprocess.Popen, memory_mb: int) -> object:
++    """Put the process in a job object that caps the memory of each process and dies with its handle."""
++    import ctypes
++    from ctypes import wintypes
++
++    class Basic(ctypes.Structure):
++        _fields_ = [
++            ("PerProcessUserTimeLimit", ctypes.c_int64), ("PerJobUserTimeLimit", ctypes.c_int64),
++            ("LimitFlags", wintypes.DWORD), ("MinimumWorkingSetSize", ctypes.c_size_t),
++            ("MaximumWorkingSetSize", ctypes.c_size_t), ("ActiveProcessLimit", wintypes.DWORD),
++            ("Affinity", ctypes.c_size_t), ("PriorityClass", wintypes.DWORD), ("SchedulingClass", wintypes.DWORD),
++        ]
++
++    class Counters(ctypes.Structure):
++        _fields_ = [(name, ctypes.c_uint64) for name in (
++            "ReadOperationCount", "WriteOperationCount", "OtherOperationCount",
++            "ReadTransferCount", "WriteTransferCount", "OtherTransferCount")]
++
++    class Extended(ctypes.Structure):
++        _fields_ = [
++            ("BasicLimitInformation", Basic), ("IoInfo", Counters), ("ProcessMemoryLimit", ctypes.c_size_t),
++            ("JobMemoryLimit", ctypes.c_size_t), ("PeakProcessMemoryUsed", ctypes.c_size_t),
++            ("PeakJobMemoryUsed", ctypes.c_size_t),
++        ]
++
++    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
++    kernel.CreateJobObjectW.restype = wintypes.HANDLE
++    kernel.CreateJobObjectW.argtypes = [wintypes.LPVOID, wintypes.LPCWSTR]
++    kernel.SetInformationJobObject.argtypes = [wintypes.HANDLE, ctypes.c_int, wintypes.LPVOID, wintypes.DWORD]
++    kernel.AssignProcessToJobObject.argtypes = [wintypes.HANDLE, wintypes.HANDLE]
++    job = kernel.CreateJobObjectW(None, None)
++    if not job:
++        raise OSError(f"CreateJobObject: erreur {ctypes.get_last_error()}")
++    info = Extended()
++    # JOB_OBJECT_LIMIT_PROCESS_MEMORY | JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
++    info.BasicLimitInformation.LimitFlags = 0x0100 | 0x2000
++    info.ProcessMemoryLimit = memory_mb * 1024 * 1024
++    ok = kernel.SetInformationJobObject(job, 9, ctypes.byref(info), ctypes.sizeof(info))
++    ok = ok and kernel.AssignProcessToJobObject(job, int(process._handle))  # type: ignore[attr-defined]
++    if not ok:
++        kernel.CloseHandle(job)
++        raise OSError(f"limite de mémoire non posée: erreur {ctypes.get_last_error()}")
++    return lambda: kernel.CloseHandle(job)  # closing the job kills every process left in it
++
++
++def _limit_posix(memory_mb: int):
++    """A `preexec_fn` that caps the address space of the command and drops core dumps."""
++    import resource
++
++    def apply() -> None:
++        limit = memory_mb * 1024 * 1024
++        _, hard = resource.getrlimit(resource.RLIMIT_AS)
++        if hard != resource.RLIM_INFINITY:
++            limit = min(limit, hard)  # the session's own limit stays the ceiling
++        resource.setrlimit(resource.RLIMIT_AS, (limit, limit))
++        resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
++
++    return apply
++
++
++def run(command: str, cwd: Path, timeout: int, memory_mb: int) -> tuple[int | None, str, str]:
++    """The exit code (None when the command did not run), the end of its output, and why not.
++
++    The command runs under a memory limit and a delay, and its process group (a job object on
++    Windows) is killed when the delay passes. A limit that cannot be set is a command not run.
++    """
++    with tempfile.TemporaryFile() as log:
++        kill = None
++        try:
++            if os.name == "nt":
++                process = subprocess.Popen(command, shell=True, cwd=cwd, stdout=log, stderr=subprocess.STDOUT)
++                try:
++                    kill = _limit_windows(process, memory_mb)
++                except OSError:
++                    process.kill()
++                    raise
++            else:
++                process = subprocess.Popen(
++                    command, shell=True, cwd=cwd, stdout=log, stderr=subprocess.STDOUT,
++                    start_new_session=True, preexec_fn=_limit_posix(memory_mb),
++                )
++        except (OSError, subprocess.SubprocessError) as error:
++            return None, "", f"limite non posée ou commande non lancée ({error})"
++        try:
++            code = process.wait(timeout=timeout)
++        except subprocess.TimeoutExpired:
++            if kill:
++                kill()
++            elif os.name != "nt":
++                os.killpg(process.pid, 9)
++            process.kill()
++            process.wait()
++            return None, "", f"délai de {timeout} s dépassé"
++        finally:
++            if kill:
++                kill()
++            elif os.name != "nt":
++                try:
++                    os.killpg(process.pid, 9)  # what the command left running
++                except ProcessLookupError:
++                    pass
++        log.seek(0)
++        lines = log.read().decode("utf-8", errors="replace").splitlines()
++    return code, "\\n".join(lines[-TAIL_LINES:]), ""
++
++
++def replay(args: argparse.Namespace, config: dict[str, list[str]]) -> tuple[list[tuple[str, str, str]], int]:
++    prefixes, commands = config["test-path"], config["red-replay"]
++    if len(commands) != 1 or not ("{file}" in commands[0] or "{name}" in commands[0]):
++        return [(NOT_RUN, "-", "la clé red-replay est une seule commande qui contient {file} ou {name}")], 2
++    files = test_files(args.base, args.head, prefixes)
++    if not files:
++        return [(NONE, "-", "aucun fichier de test ajouté ou changé")], 0
++    merge_base = git("merge-base", args.base, args.head).decode().strip()
++    rows: list[tuple[str, str, str]] = []
++    with tempfile.TemporaryDirectory(prefix="forge-base-") as folder:
++        root = Path(folder)
++        extract_base(merge_base, root)
++        for path in files:
++            lay_head_file(args.head, path, root)
++        for install in config.get("install", []):
++            code, tail, why = run(install, root, args.timeout, args.memory_mb)
++            if code != 0:
++                reason = why or f"code {code}, {tail}"
++                return [(NOT_RUN, path, f"{install} : {reason}") for path in files], 2
++        for path in files:
++            command = command_for(commands[0], path)
++            code, tail, why = run(command, root, args.timeout, args.memory_mb)
++            if code is None:
++                rows.append((NOT_RUN, path, f"{command} : {why}"))
++            elif code == 0:
++                rows.append((PASSES, path, tail))
++            else:
++                rows.append((RED, path, f"code {code}"))
++    statuses = {row[0] for row in rows}
++    return rows, 2 if NOT_RUN in statuses else 1 if PASSES in statuses else 0
++
++
++def main(argv: list[str] | None = None) -> int:
++    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
++    parser.add_argument("--base", required=True, help="the base ref of the PR")
++    parser.add_argument("--head", required=True, help="the head ref of the PR")
++    parser.add_argument("--usine", help="the usine.md to read (default: docs/agents/usine.md)")
++    parser.add_argument("--memory-mb", type=int, default=2000, help="memory limit of each command, in MB")
++    parser.add_argument("--timeout", type=int, default=300, help="delay of each command, in seconds")
++    args = parser.parse_args(argv)
++    config_file = Path(args.usine) if args.usine else usine.project_root() / usine.CONFIG_PATH
++    try:
++        config = usine.parse(config_file.read_text(encoding="utf-8"))
++    except FileNotFoundError:
++        config = {}
++    except (OSError, UnicodeDecodeError) as error:
++        print(f"base_replay: {error}", file=sys.stderr)
++        return 2
++    for key in ("test-path", "red-replay"):
++        if not config.get(key):
++            print(f"sans objet (clé {key} absente)")
++            return 0
++    try:
++        rows, code = replay(args, config)
++    except (RuntimeError, OSError, tarfile.TarError) as error:
++        print(f"{NOT_RUN}\t-\t{error}")
++        return 2
++    for status, path, detail in rows:
++        print(f"{status}\t{path}\t{detail}")
++    return code
++
++
++if __name__ == "__main__":
++    sys.exit(main())
+diff --git a/plugins/forge/templates/usine.md b/plugins/forge/templates/usine.md
+index 4d94c9d..e1925c3 100644
+--- a/plugins/forge/templates/usine.md
++++ b/plugins/forge/templates/usine.md
+@@ -138,6 +138,28 @@ Les commandes qui rejouent la CI en local, une par ligne.
+ - `ci-replay` : `<uv run pytest>`
+ - `ci-replay` : `<pnpm -r test>`
+ 
++Le rejeu des tests d'une PR sur sa base, par `forge:qc-gate` : les fichiers de test que la PR ajoute
++ou change sont posés dans une copie de la base, puis rejoués, et chacun doit y échouer. Un test
++rouge sur la base prouve le changement ; un qui y passe déjà est rendu à `forge:qc-conf`. Deux clés,
++toutes deux nécessaires : sans l'une, la sonde se rend « sans objet (clé `test-path` absente) » ou
++« sans objet (clé `red-replay` absente) ».
++
++`test-path` : un préfixe de chemin des fichiers de test, une ligne par préfixe.
++
++- `test-path` : `<tests/>`
++- `test-path` : `<apps/web/src/__tests__/>`
++
++`red-replay` : la commande qui lance la suite dans la copie, une seule. `{file}` y est remplacé par le
++fichier de test à rejouer (son chemin depuis la racine), `{name}` par son nom de fichier, tous deux
++protégés par des guillemets ; l'un des deux au moins est obligatoire. Un fichier est rejoué en entier,
++et il est rendu quand la commande sort à 0 sur la base. Chaque commande, celles de `install`
++comprises, tourne sous une limite de mémoire (2000 Mo) et un délai (300 s) que le script pose lui-même,
++parce qu'elle exécute du code de test contre un code qui ne l'attend pas. Ces bornes sont éprouvées sous
++Linux seulement ; sous Windows elles reposent sur un objet de tâche (job object), écrit d'après la
++documentation Win32 et jamais vu hors de la CI.
++
++- `red-replay` : `<uv run pytest {file}>`
++
+ Les noms des checks obligatoires de la branche protégée, un par ligne, comparés par
+ `forge:qc-gate` aux check-runs de la PR et à la protection en place.
+ 
+diff --git a/tests/test_base_replay.py b/tests/test_base_replay.py
+new file mode 100644
+index 0000000..01470d3
+--- /dev/null
++++ b/tests/test_base_replay.py
+@@ -0,0 +1,183 @@
++"""Ticket #43: `base_replay.py` replays the tests a PR adds on a copy of the base, where each must fail."""
++
++import os
++import shutil
++import subprocess
++import sys
++import tempfile
++import unittest
++from pathlib import Path
++
++import support
++
++SCRIPT = support.PLUGIN / "scripts" / "base_replay.py"
++
++CODE_V1 = "def value():\n    return 1\n"
++CODE_V2 = "def value():\n    return 2\n"
++PASSING = (
++    "import unittest\nimport code_under_test\n\n\nclass T(unittest.TestCase):\n"
++    "    def test_value(self):\n        self.assertEqual(code_under_test.value(), 1)\n"
++)
++RED_ON_BASE = PASSING.replace("value(), 1", "value(), 2")
++# `-t .` keeps the copy's root on the import path, as the project's own suite would.
++REPLAY = f'"{sys.executable}" -m unittest discover -s tests -t . -p {{name}}'
++
++
++class Repo:
++    """A throwaway repository with a base commit and a head commit, isolated from the real HOME."""
++
++    def __init__(self, test: unittest.TestCase) -> None:
++        self.root = Path(tempfile.mkdtemp())
++        test.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
++        self.work = self.root / "work"
++        self.work.mkdir()
++        self.scratch = self.root / "tmp"
++        self.scratch.mkdir()
++        self.env = {
++            "PATH": os.environ.get("PATH", ""),
++            "SYSTEMROOT": os.environ.get("SYSTEMROOT", ""),
++            "HOME": str(self.root),
++            "USERPROFILE": str(self.root),
++            "TMPDIR": str(self.scratch),
++            "TEMP": str(self.scratch),
++            "TMP": str(self.scratch),
++            "GIT_CONFIG_NOSYSTEM": "1",
++        }
++        self.git("init", "-q")
++
++    def git(self, *args: str) -> str:
++        done = subprocess.run(
++            ["git", "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", *args],
++            cwd=self.work, env=self.env, capture_output=True, text=True, check=True,
++        )
++        return done.stdout.strip()
++
++    def commit(self, files: dict[str, str]) -> str:
++        for name, text in files.items():
++            target = self.work / name
++            target.parent.mkdir(parents=True, exist_ok=True)
++            target.write_text(text, encoding="utf-8")
++        self.git("add", "-A")
++        self.git("commit", "-q", "--allow-empty", "-m", "state")
++        return self.git("rev-parse", "HEAD")
++
++    def replay(self, base: str, head: str, usine: str, *extra: str) -> subprocess.CompletedProcess:
++        (self.root / "usine-base.md").write_text(usine, encoding="utf-8")
++        return subprocess.run(
++            [sys.executable, str(SCRIPT), "--base", base, "--head", head,
++             "--usine", str(self.root / "usine-base.md"), *extra],
++            cwd=self.work, env=self.env, capture_output=True, text=True, timeout=120,
++        )
++
++
++def usine(replay: str = REPLAY) -> str:
++    return f"- `test-path` : `tests/`\n- `red-replay` : `{replay}`\n"
++
++
++class RenderedWhenPassingOnTheBase(unittest.TestCase):
++    def test_a_test_that_passes_on_the_base_is_rendered(self) -> None:
++        """No F-NNNN: ticket #43, critère 1: un test qui passe sur la base est rendu."""
++        repo = Repo(self)
++        base = repo.commit({"code_under_test.py": CODE_V1, "tests/__init__.py": ""})
++        head = repo.commit({"tests/test_new.py": PASSING})
++        done = repo.replay(base, head, usine())
++        self.assertEqual(done.returncode, 1, done.stdout + done.stderr)
++        self.assertRegex(done.stdout, r"(?m)^PASSES\ttests/test_new\.py\t")
++
++    def test_a_test_that_is_red_on_the_base_is_not_rendered(self) -> None:
++        """No F-NNNN: ticket #43, critère 1: un test rouge sur la base ne l'est pas."""
++        repo = Repo(self)
++        base = repo.commit({"code_under_test.py": CODE_V1, "tests/__init__.py": ""})
++        head = repo.commit({"code_under_test.py": CODE_V2, "tests/test_new.py": RED_ON_BASE})
++        done = repo.replay(base, head, usine())
++        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
++        self.assertNotIn("PASSES", done.stdout)
++        self.assertRegex(done.stdout, r"(?m)^RED\ttests/test_new\.py\t")
++
++    def test_the_tests_come_from_the_head_and_the_code_from_the_base(self) -> None:
++        """No F-NNNN: ticket #43, critère 1: la copie est celle de la base, les tests posés sont ceux de la tête."""
++        repo = Repo(self)
++        base = repo.commit(
++            {"code_under_test.py": CODE_V1, "tests/__init__.py": "", "tests/test_old.py": PASSING}
++        )
++        head = repo.commit({"code_under_test.py": CODE_V2, "tests/test_old.py": RED_ON_BASE})
++        done = repo.replay(base, head, usine())
++        self.assertRegex(done.stdout, r"(?m)^RED\ttests/test_old\.py\t")
++
++    def test_only_files_under_a_test_path_are_replayed(self) -> None:
++        """No F-NNNN: ticket #43, critère 1: seuls les fichiers sous test-path sont rejoués."""
++        repo = Repo(self)
++        base = repo.commit({"code_under_test.py": CODE_V1, "tests/__init__.py": ""})
++        head = repo.commit({"tests/test_new.py": PASSING, "other/test_elsewhere.py": PASSING})
++        done = repo.replay(base, head, usine())
++        self.assertNotIn("test_elsewhere", done.stdout)
++
++    def test_no_test_added_or_changed_is_said_and_exits_zero(self) -> None:
++        """No F-NNNN: ticket #43, critère 1: aucun test ajouté ni changé se dit, sans PASS."""
++        repo = Repo(self)
++        base = repo.commit({"code_under_test.py": CODE_V1})
++        head = repo.commit({"code_under_test.py": CODE_V2})
++        done = repo.replay(base, head, usine())
++        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
++        self.assertIn("aucun fichier de test ajouté ou changé", done.stdout)
++
++
++class WithoutItsKeys(unittest.TestCase):
++    def test_an_absent_key_is_sans_objet_and_runs_nothing(self) -> None:
++        """No F-NNNN: ticket #43, critère 1: une clé absente rend « sans objet (clé <nom> absente) »."""
++        repo = Repo(self)
++        base = repo.commit({"code_under_test.py": CODE_V1, "tests/__init__.py": ""})
++        head = repo.commit({"tests/test_new.py": PASSING})
++        only_path = repo.replay(base, head, "- `test-path` : `tests/`\n")
++        self.assertEqual(only_path.returncode, 0)
++        self.assertEqual(only_path.stdout.strip(), "sans objet (clé red-replay absente)")
++        only_replay = repo.replay(base, head, f"- `red-replay` : `{REPLAY}`\n")
++        self.assertEqual(only_replay.returncode, 0)
++        self.assertEqual(only_replay.stdout.strip(), "sans objet (clé test-path absente)")
++        neither = repo.replay(base, head, "")
++        self.assertEqual(neither.stdout.strip(), "sans objet (clé test-path absente)")
++
++
++class BoundedReplay(unittest.TestCase):
++    """Ticket #43, critère 4: the replay runs test code against code that does not expect it."""
++
++    def fixture(self) -> tuple[Repo, str, str]:
++        repo = Repo(self)
++        base = repo.commit({"code_under_test.py": CODE_V1, "tests/__init__.py": ""})
++        return repo, base, repo.commit({"tests/test_new.py": PASSING})
++
++    def command(self, source: str) -> str:
++        # The file name is passed on so the command holds the `{name}` placeholder.
++        return f'"{sys.executable}" -c "{source}" {{name}}'
++
++    def test_a_command_over_its_delay_is_not_run_and_never_passes(self) -> None:
++        """No F-NNNN: ticket #43, critère 4: un délai dépassé se rend NOT RUN avec sa commande."""
++        repo, base, head = self.fixture()
++        done = repo.replay(base, head, usine(self.command("import time; time.sleep(60)")), "--timeout", "2")
++        self.assertEqual(done.returncode, 2, done.stdout + done.stderr)
++        self.assertRegex(done.stdout, r"(?m)^NOT RUN\ttests/test_new\.py\t.*time\.sleep.*délai de 2 s")
++        self.assertNotIn("PASSES", done.stdout)
++
++    @unittest.skipUnless(
++        sys.platform == "linux" or os.name == "nt",
++        "the memory limit is set with RLIMIT_AS on Linux and a job object on Windows; macOS is not covered",
++    )
++    def test_a_command_over_its_memory_limit_fails_instead_of_passing(self) -> None:
++        """No F-NNNN: ticket #43, critère 4: la mémoire est bornée, la commande qui la dépasse échoue."""
++        repo, base, head = self.fixture()
++        # 700 MB asked, 400 MB allowed: without the limit this command exits 0.
++        done = repo.replay(base, head, usine(self.command("bytearray(700 * 10**6)")), "--memory-mb", "400")
++        self.assertNotIn("PASSES", done.stdout, done.stdout + done.stderr)
++        self.assertRegex(done.stdout, r"(?m)^RED\ttests/test_new\.py\t")
++
++    def test_the_limits_have_defaults_and_are_documented(self) -> None:
++        """No F-NNNN: ticket #43, critère 4: mémoire et délai ont une valeur par défaut, dite dans le script."""
++        text = SCRIPT.read_text(encoding="utf-8")
++        self.assertIn('"--memory-mb", type=int, default=2000', text)
++        self.assertIn('"--timeout", type=int, default=300', text)
++        self.assertIn("Linux", text)
++        self.assertIn("Windows", text)
++
++
++if __name__ == "__main__":
++    unittest.main()
+diff --git a/tests/test_plugin_content.py b/tests/test_plugin_content.py
+index 49acd50..f9e4d69 100644
+--- a/tests/test_plugin_content.py
++++ b/tests/test_plugin_content.py
+@@ -250,6 +250,87 @@ class CitedNames(unittest.TestCase):
+                 self.assertTrue((support.PLUGIN / "agents" / f"{agent.removeprefix('forge:')}.md").is_file())
+ 
+ 
++class BaseReplayProbe(unittest.TestCase):
++    """Ticket #43: the gate replays the added tests on the base, where each must fail."""
++
++    @staticmethod
++    def read(*parts: str) -> str:
++        return " ".join(support.PLUGIN.joinpath(*parts).read_text(encoding="utf-8").split())
++
++    def test_the_gate_runs_the_script_with_the_keys_of_the_base(self) -> None:
++        """No F-NNNN: ticket #43, critère 1: une sonde lance le script du plugin, clés lues sur la base."""
++        gate = self.read("agents", "qc-gate.md")
++        section = gate[gate.index("**Rejeu des tests sur la base.**"):]
++        self.assertIn("${CLAUDE_PLUGIN_ROOT}/scripts/base_replay.py", section)
++        self.assertIn("--base origin/<base> --head <tête>", section)
++        self.assertIn("--usine usine-base.md", section)
++        self.assertIn("chaque ligne `PASSES`", section)
++        self.assertIn("verbatim", section)
++
++    def test_an_impossible_replay_is_not_run_with_its_command_and_never_pass(self) -> None:
++        """No F-NNNN: ticket #43, critère 1: un rejeu impossible se rend NOT RUN avec sa commande, jamais PASS."""
++        gate = self.read("agents", "qc-gate.md")
++        section = gate[gate.index("**Rejeu des tests sur la base.**"):]
++        self.assertIn("`NOT RUN` avec sa commande", section)
++        self.assertIn("jamais `PASS`", section)
++        self.assertIn("sans objet (clé test-path absente)", section)
++        self.assertIn("sans objet (clé red-replay absente)", section)
++
++    def test_the_output_hands_the_probe_lines_to_the_judge(self) -> None:
++        """No F-NNNN: ticket #43, critère 1: les lignes de la sonde figurent verbatim sous le tableau."""
++        gate = self.read("agents", "qc-gate.md")
++        self.assertIn("les éléments verbatim des sondes 2, 5, 6, 7, 10 et 11", gate)
++
++    def test_the_template_documents_the_two_keys(self) -> None:
++        """No F-NNNN: ticket #43, critère 3: test-path et red-replay sont documentées dans le gabarit."""
++        template = self.read("templates", "usine.md")
++        self.assertIn("- `test-path` : `<tests/>`", template)
++        self.assertIn("une ligne par préfixe", template)
++        self.assertIn("- `red-replay` : `<", template)
++        self.assertIn("{name}", template)
++        self.assertIn("{file}", template)
++        self.assertIn("sans objet (clé `test-path` absente)", template)
++        self.assertIn("mémoire", template)
++        self.assertIn("délai", template)
++
++    def test_the_configuration_page_names_the_keys_and_the_limits(self) -> None:
++        """No F-NNNN: ticket #43, critère 3: la page de docs qui décrit les clés cite les deux clés."""
++        page = " ".join((support.REPO_ROOT / "docs" / "installation.md").read_text(encoding="utf-8").split())
++        self.assertIn("`test-path`", page)
++        self.assertIn("`red-replay`", page)
++        self.assertIn("base_replay.py", page)
++        self.assertIn("éprouvé sous Linux seulement", page)
++
++    def test_this_repository_declares_the_two_keys(self) -> None:
++        """No F-NNNN: ticket #43, critère 4: docs/agents/usine.md déclare tests/ et la commande de la suite."""
++        from usine import load
++
++        config = load(support.REPO_ROOT)
++        self.assertEqual(config["test-path"], ["tests/"])
++        self.assertEqual(len(config["red-replay"]), 1)
++        self.assertIn("unittest discover -s tests", config["red-replay"][0])
++        self.assertIn("{name}", config["red-replay"][0])
++
++    def test_the_judge_reads_the_probe(self) -> None:
++        """No F-NNNN: ticket #43, critère 2: un test de critère qui passe sur la base sans justification est un constat."""
++        judge = self.read("agents", "qc-conf.md")
++        section = judge[judge.index("## Lecture du rejeu sur la base"):]
++        section = section[: section.index("## Forme d'un constat")]
++        self.assertIn("`PASSES`", section)
++        self.assertIn("test de caractérisation", section)
++        self.assertIn("refonte à comportement égal", section)
++        self.assertIn("`BLOCKER` quand il est la seule preuve d'un critère de comportement nouveau", section)
++        self.assertIn("`MINOR` sinon", section)
++        self.assertIn("`NOT RUN`", section)
++        self.assertIn("sans objet", section)
++
++    def test_the_judge_section_sits_apart_from_the_reading_of_the_tests(self) -> None:
++        """No F-NNNN: ticket #43, hors périmètre: la lecture de qualité des tests (#42) garde sa section."""
++        judge = self.read("agents", "qc-conf.md")
++        self.assertLess(judge.index("## Lecture des tests"), judge.index("## Lecture du rejeu sur la base"))
++        self.assertEqual(judge.count("## Lecture des tests"), 1)
++
++
+ class GateProbes(unittest.TestCase):
+     def test_the_gate_reads_the_protection_in_rulesets_and_in_branch_protection(self) -> None:
+         # A branch that only a ruleset protects has no contexts in its branch protection: the

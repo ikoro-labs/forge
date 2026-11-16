@@ -1,0 +1,16 @@
+| Sonde | Résultat | Détail |
+|---|---|---|
+| Base et diff | 9 fichier(s) dans pr.diff, +815 -8 | diff de la base à la tête |
+| Périmètre | à lire | fichiers de pr.diff : README.md, docs/installation.md, plugins/forge/agents/qc-conf.md, plugins/forge/agents/qc-gate.md, plugins/forge/scripts/never_weaken.py, plugins/forge/skills/qc/SKILL.md, plugins/forge/templates/usine.md, tests/test_never_weaken.py, tests/test_plugin_content.py ; la PR change aussi docs/architecture.excalidraw et docs/architecture.svg (export du schéma, retirés de pr.diff pour sa taille : ni lus ni jugés ici) |
+| CI | PASS | validate: success, tests (ubuntu-latest): success, tests (windows-latest): success |
+| Rejeu local | NOT RUN | sonde non rejouée : tableau figé du jeu de référence |
+| Tests sautés | NOT RUN | sonde non rejouée : tableau figé du jeu de référence |
+| Listes de référence | NOT RUN | sonde non rejouée : tableau figé du jeu de référence |
+| Échappatoires ajoutées | NOT RUN | sonde non rejouée : tableau figé du jeu de référence |
+| Taille | NOT RUN | sonde non rejouée : tableau figé du jeu de référence |
+| Trace | NOT RUN | sonde non rejouée : tableau figé du jeu de référence |
+| Règles never-weaken | NOT RUN | sonde non rejouée : tableau figé du jeu de référence |
+| Rejeu des tests sur la base | NOT RUN | sonde non rejouée : tableau figé du jeu de référence |
+| Libellés de l'écran | NOT RUN | sonde non rejouée : tableau figé du jeu de référence |
+| Preuves d'écran | NOT RUN | sonde non rejouée : tableau figé du jeu de référence |
+| Rejeu de chaque commit | NOT RUN | sonde non rejouée : tableau figé du jeu de référence |

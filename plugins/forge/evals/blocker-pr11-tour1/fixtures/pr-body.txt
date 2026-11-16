@@ -1,0 +1,52 @@
+PR #11: feat(hooks): formater chaque fichier écrit avec les formateurs de la clé format-on-write
+
+## Résumé
+
+Un projet qui formate son code devait garder son propre hook à côté de celui du plugin. `after_write` lit maintenant la clé répétable `format-on-write` et formate chaque fichier écrit, selon les recommandations de `forge:staff-engineer` retenues par l'humain sur le ticket.
+
+### `split_value`
+
+Nouveau helper de `plugins/forge/hooks/usine.py` : `split_value(value, parts)` coupe au premier ` | ` (au suivant si `parts` > 2), la dernière partie garde le reste, et rend `None` quand une partie manque ou est vide : une valeur n'est jamais complétée. Interface générique, pour #3, #5 et #6. Testé dans `tests/test_usine.py`.
+
+### `format-on-write`
+
+- Une ligne `<motif> | <commande>`. Le chemin absolu du fichier s'ajoute en dernier argument ; la commande est découpée par `shlex` (POSIX), lancée sans shell depuis la racine, `argv[0]` résolu par `shutil.which`.
+- Motif comparé au chemin relatif POSIX entier, casse comprise, par un traducteur écrit à la main : `**/`, `*`, `?`, `{a,b}` non imbriqué, le reste littéral. Un test par forme.
+- Plusieurs motifs : toutes les commandes, dans l'ordre du fichier, avant le contrôle du tiret cadratin.
+- Délai : constantes du hook `COMMAND_TIMEOUT` (30 s) et `TOTAL_TIMEOUT` (120 s). Sortie dans un fichier temporaire, pas dans des tubes.
+- Échec ou délai : `format-on-write: <commande> failed on <chemin> (exit <n> | timed out after <n>s)` sur stderr, code 2, l'écriture reste.
+- Clé absente : comportement inchangé. Clé documentée dans `templates/usine.md` (le test existant qui compare les clés lues au gabarit l'exigeait).
+
+### Retour sur un choix consigné
+
+Le `CHANGELOG.md` (ligne « ruff et Prettier après une écriture : chaque projet formate dans ses propres hooks ») dit le contraire de ce ticket. Corrigés : la docstring d'`after_write.py` et la ligne `after_write` du tableau du README. Le `CHANGELOG.md` n'est pas touché : la PR de version le dira dans la zone Hooks.
+
+### Schéma
+
+La boîte `after_write` du schéma dit « formate, puis signale un tiret cadratin », et l'en-tête PostToolUse « formatent, signalent ou observent ». Source `docs/architecture.excalidraw` et export `docs/architecture.svg` modifiés ensemble. Export : `exportToSvg` de `@excalidraw/excalidraw` 0.18.1 sous Node 22 et jsdom, outillage hors du dépôt (méthode de la PR #9). Contrôle : réexporter l'ancienne source `docs/architecture.excalidraw` de `main` redonne `docs/architecture.svg` de `main` à l'octet (`cmp` identique).
+
+## Ce qui ne change pas
+
+- `hooks.json` (protégé) : la description du fichier ne mentionne toujours que le tiret cadratin, et le matcher `Edit|Write|MultiEdit` de `after_write` est inchangé ; pas de `timeout` ajouté, les délais sont ceux du hook.
+- La version et le `CHANGELOG.md`.
+- Les autres hooks, la clé `em-dash-allowances` et son comportement.
+- `docs/agents/usine.md` de ce dépôt : il ne déclare pas `format-on-write`, ce dépôt ne formate rien.
+
+## Preuves
+
+- Avant (rouge), tests écrits d'abord : `ImportError: cannot import name 'split_value' from 'usine'`, puis `ImportError: cannot import name 'matches' from 'after_write'`, puis, le code posé, `test_the_template_documents_every_key_the_plugin_reads` rouge sur `{'format-on-write': 'hooks/after_write.py'}` jusqu'à l'ajout au gabarit.
+- `uv run --no-project --quiet python -m unittest discover -s tests` : `Ran 201 tests ... OK (skipped=3)` au tour 2 (199 au tour 1), en CI sous Linux et sous Windows.
+- `claude plugin validate .` et `claude plugin validate plugins/forge` : `Validation passed` les deux.
+- Essayé sur un vrai poste : pas encore. Les tests ont tourné sous Linux seulement, et lancent de vrais sous-processus (`sys.executable`), jamais un vrai formateur (ruff, Prettier) dans une vraie session Claude Code. Non éprouvé sous Windows : la résolution par `shutil.which` (PATHEXT) et le lancement sans shell d'un `.cmd` sont écrits d'après la documentation de Python.
+- Schéma : pas vérifié à l'œil dans Excalidraw ni dans un navigateur. Seul contrôle visuel : un rendu PNG de l'export par cairosvg, où la boîte `after_write` (quatre lignes) et l'en-tête allongé tiennent dans leur cadre, sans chevauchement. Ce rendu tronque par ailleurs la partie gauche du schéma et les étiquettes noires (« epingle », « OPEN ») : limite de cairosvg, que le SVG de `main` doit partager, non comparée.
+
+## Suite
+
+- #3, #5, #6 réutilisent `split_value`.
+- La PR de version : l'entrée du `CHANGELOG.md` (Hooks) qui revient sur la ligne « ruff et Prettier après une écriture ».
+
+Le « journal » du ticket n'existe pas : la ligne d'échec va sur stderr, que l'agent voit, et `coder.md` demande au coder de la recopier dans les NOTES de sa sortie (tour 2).
+
+Closes #2
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)

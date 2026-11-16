@@ -1,0 +1,16 @@
+| Sonde | Résultat | Détail |
+|---|---|---|
+| Base et diff | 6 fichier(s) dans pr.diff, +345 -16 | diff de la base à la tête |
+| Périmètre | à lire | fichiers de pr.diff : README.md, plugins/forge/hooks/after_write.py, plugins/forge/hooks/usine.py, plugins/forge/templates/usine.md, tests/test_after_write.py, tests/test_usine.py ; la PR change aussi docs/architecture.excalidraw et docs/architecture.svg (export du schéma, retirés de pr.diff pour sa taille : ni lus ni jugés ici) |
+| CI | PASS | tests (windows-latest): success, tests (ubuntu-latest): success, validate: success |
+| Rejeu local | NOT RUN | sonde non rejouée : tableau figé du jeu de référence |
+| Tests sautés | NOT RUN | sonde non rejouée : tableau figé du jeu de référence |
+| Listes de référence | NOT RUN | sonde non rejouée : tableau figé du jeu de référence |
+| Échappatoires ajoutées | NOT RUN | sonde non rejouée : tableau figé du jeu de référence |
+| Taille | NOT RUN | sonde non rejouée : tableau figé du jeu de référence |
+| Trace | NOT RUN | sonde non rejouée : tableau figé du jeu de référence |
+| Règles never-weaken | NOT RUN | sonde non rejouée : tableau figé du jeu de référence |
+| Rejeu des tests sur la base | NOT RUN | sonde non rejouée : tableau figé du jeu de référence |
+| Libellés de l'écran | NOT RUN | sonde non rejouée : tableau figé du jeu de référence |
+| Preuves d'écran | NOT RUN | sonde non rejouée : tableau figé du jeu de référence |
+| Rejeu de chaque commit | NOT RUN | sonde non rejouée : tableau figé du jeu de référence |

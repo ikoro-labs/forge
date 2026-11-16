@@ -58,6 +58,7 @@ ne fusionne une PR rouge, ou ne sort de son rôle.
 | `/forge:feature-review` | la revue de bout en bout : le parcours joué sur l'application réelle, jugé contre la source sur des captures |
 | `/forge:audit-jetons` | compter les jetons dépensés par chaque rôle |
 | `/forge:slo` | le rapport des objectifs de service : valeur, budget d'erreur restant, état, tendance |
+| `/forge:incident` | la revue sans blâme d'un incident `sev1`, `sev2` ou de l'usine : faits datés, cause, ce qui l'a laissé passer, correctif (un contrôle et son test, ou un cas du jeu de référence) |
 | `/forge:tdd` | ce qu'est un bon test, les coutures, les anti-patterns, la boucle et les mocks |
 | `/forge:codebase-design`, `/forge:domain-modeling`, `/forge:improve-codebase-architecture` | le vocabulaire de conception que partagent les rôles |
 
@@ -178,7 +179,9 @@ du front matter qu'un agent de plugin ignore : le détail est dans
 | [`docs/sessions.md`](docs/sessions.md) | une session par dépôt, la passation drainée, les variables et les codes du relais |
 | [`docs/modeles-et-jetons.md`](docs/modeles-et-jetons.md) | le modèle et l'effort de chaque rôle, un autre fournisseur, l'audit des jetons, les sorties raccourcies |
 | [`docs/indicateurs-de-service.md`](docs/indicateurs-de-service.md) | les indicateurs de service de l'usine (SLI), calculés sans modèle (revue de bout en bout comprise : écarts, délai, couverture de la matrice, retours), et leurs objectifs (SLO) avec leur budget d'erreur et les actions quand il est épuisé |
+| [`docs/jeu-de-reference.md`](docs/jeu-de-reference.md) | le jeu de référence du juge `forge:qc-conf` (`plugins/forge/evals/`) : les huit revues rejouées, les deux mesures `judge-recall` et `false-accept`, le lancement à la main sous un plafond de coût |
 | [`docs/gravite-et-sla.md`](docs/gravite-et-sla.md) | les classes de gravité (`sev1` à `sev3`), les engagements de délai de la clé `sla` et la file de `forge:feature-build` |
+| [`docs/incidents.md`](docs/incidents.md) | la revue sans blâme d'un incident (clé `incident-dir`), la classe de son correctif (`mécanique` ou `jugement`), son refus sans correctif et le décompte par classe |
 | [`docs/contribuer.md`](docs/contribuer.md) | modifier le plugin, publier une version, l'organisation du dépôt |
 | [`CHANGELOG.md`](CHANGELOG.md) | ce qui est entré dans chaque version, et ce qui en est resté dehors |
 

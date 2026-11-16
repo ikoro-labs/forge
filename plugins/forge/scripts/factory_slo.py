@@ -6,6 +6,7 @@
     python factory_slo.py report <project> [--json] [--reference FILE] [--publier]
     python factory_slo.py changelog <project> --depuis DATE [--le DATE] [--reference FILE]
     python factory_slo.py queue <project> <ticket> [<ticket> ...] [--json]
+    python factory_slo.py incidents <project> [--json]
 
 `status` reads the `slo` key (`<sli> | <comparator> <target> | <window in days>`, one per line), computes
 each objective on its sliding window, its error budget and its state (`tenu`, `menacé`, `épuisé`),
@@ -33,6 +34,12 @@ de service" of a release entry: the state of each objective at `--le` (now by de
 `queue` orders tickets (given in the order of the sub-issues) by severity class (`sev1`, `sev2`, `sev3`,
 then none), then by the nearest deadline to take them in charge according to the `sla` key, then in
 the order given. A key `sla` absent is "sans objet": the severity still sorts, no deadline is guessed.
+
+`incidents` counts the blameless reviews of the folder the key `incident-dir` names (see `incident.py`)
+by class of fix, `mécanique` and `jugement`, a class with no review counting 0. A review `incident.py`
+refuses (no fix, a fix that does not match its class, a path that does not exist) is counted in no
+class, listed with its faults, and the command exits 1. It reads the folder only, never GitHub. A key
+`incident-dir` absent is "sans objet": no count, never 0; a folder not created yet holds no review.
 
 The data come from GitHub (`gh ... --json`, run from the project folder, so `gh` finds the
 repository itself), from git, and from the logs `token_audit.py` reads. Prints a Markdown table, or
@@ -71,6 +78,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "hooks"))
 
 import budget  # noqa: E402  the hooks' reader of the `budget-action` key
+import incident  # noqa: E402  the reader of a blameless review and of the key `incident-dir`
 import revue_boucle  # noqa: E402  the journal of the end-to-end review loop
 import revue_indicateurs  # noqa: E402  the matrices and journals of that loop
 import sla  # noqa: E402  the hooks' reader of the `sla` key and the severity classes
@@ -1173,6 +1181,57 @@ def run_queue(args: argparse.Namespace, run: Runner, now: datetime) -> int:
     return 0
 
 
+def incidents(project: Path) -> dict | None:
+    """The reviews of the `incident-dir` folder counted by class, or None when the key is absent."""
+    folder = incident.incident_dir(project)
+    if folder is None:
+        return None
+    classes = {name: 0 for name in incident.CLASSES}
+    refused = []
+    for path in incident.review_files(folder):
+        try:
+            review, errors = incident.read(path.read_text(encoding="utf-8"), project)
+        except (OSError, UnicodeDecodeError) as error:
+            review, errors = incident.Review(), [f"lecture impossible : {error}"]
+        if errors or review.klass is None:
+            refused.append({"fichier": path.name, "erreurs": errors})
+        else:
+            classes[review.klass] += 1
+    return {
+        "projet": str(project), "dossier": folder.relative_to(project.resolve()).as_posix(),
+        "total": sum(classes.values()), "classes": classes, "refusees": refused,
+    }
+
+
+def incidents_markdown(document: dict) -> str:
+    total = document["total"]
+    lines = [
+        f"Revues d'incident de `{document['dossier']}` : {total} revue{'s' if total > 1 else ''}, par classe de correctif.",
+        "",
+        "| Classe | Revues |",
+        "|---|---|",
+        *[f"| {name} | {count} |" for name, count in document["classes"].items()],
+    ]
+    if document["refusees"]:
+        lines += ["", "Revues refusées, comptées dans aucune classe :"]
+        for item in document["refusees"]:
+            lines += [f"- {item['fichier']}"] + [f"  - {fault}" for fault in item["erreurs"]]
+    return "\n".join(lines)
+
+
+def run_incidents(args: argparse.Namespace, run: Runner, now: datetime) -> int:
+    try:
+        document = incidents(args.projet)
+    except incident.IncidentError as error:
+        raise RuntimeError(str(error)) from error
+    if document is None:
+        absent = {incident.KEY: incident.ABSENT}
+        print(json.dumps(absent, ensure_ascii=False, indent=2) if args.json else f"Revues d'incident : {incident.ABSENT}.")
+        return 0
+    print(json.dumps(document, ensure_ascii=False, indent=2) if args.json else incidents_markdown(document))
+    return 1 if document["refusees"] else 0
+
+
 def main(argv: list[str] | None = None, run: Runner = run_command, now: datetime | None = None) -> int:
     parser = argparse.ArgumentParser(prog="factory_slo.py", description=__doc__.splitlines()[0])
     commands = parser.add_subparsers(dest="commande", required=True)
@@ -1202,6 +1261,9 @@ def main(argv: list[str] | None = None, run: Runner = run_command, now: datetime
     file.add_argument("projet", type=Path, help="le dossier du projet")
     file.add_argument("tickets", type=int, nargs="+", help="les numéros de ticket, dans l'ordre des sous-issues")
     file.add_argument("--json", action="store_true", help="rend du JSON au lieu de lignes")
+    count = commands.add_parser("incidents", help="compte les revues d'incident du dossier de la clé `incident-dir`, par classe de correctif")
+    count.add_argument("projet", type=Path, help="le dossier du projet")
+    count.add_argument("--json", action="store_true", help="rend du JSON au lieu d'un tableau Markdown")
     sli = commands.add_parser("sli", help="calcule les indicateurs de service")
     sli.add_argument("projet", type=Path, help="le dossier du projet")
     sli.add_argument("--depuis", type=_date, required=True, help="début de la fenêtre, inclus")
@@ -1210,11 +1272,11 @@ def main(argv: list[str] | None = None, run: Runner = run_command, now: datetime
     sli.add_argument("--reference", type=Path, help="le dernier résultat du jeu de référence (JSON)")
     args = parser.parse_args(argv)
 
-    if args.commande in ("status", "budget", "report", "changelog", "queue", "sla"):
+    if args.commande in ("status", "budget", "report", "changelog", "queue", "sla", "incidents"):
         try:
             handler = {
                 "status": run_status, "budget": run_budget, "report": run_report, "changelog": run_changelog,
-                "queue": run_queue, "sla": run_sla,
+                "queue": run_queue, "sla": run_sla, "incidents": run_incidents,
             }[args.commande]
             return handler(args, run, now or datetime.now(tz=timezone.utc))
         except (RuntimeError, ValueError, KeyError, IndexError, OSError) as error:

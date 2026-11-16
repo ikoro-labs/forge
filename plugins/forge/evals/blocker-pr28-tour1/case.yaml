@@ -1,0 +1,6 @@
+schema_version: "1.0"
+name: blocker-pr28-tour1
+description: "Rejoue la PR 28 au tour 1 devant forge:qc-conf (un garde de commande qui prend le premier -X au lieu du dernier et ne reconnaît que - comme entrée standard). Verdict attendu, REJECT: un BLOCKER avéré est dans le diff."
+tags: [blocker, juge]
+context:
+  scaffold_script: scaffold.sh
