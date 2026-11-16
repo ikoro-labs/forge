@@ -192,6 +192,54 @@ class Trial:
         self.git("preparation", "push", "origin", f"HEAD:{self.base}")
 
 
+LAUNCHER = Path(__file__).resolve().with_name("bounded_run.py")
+# What `bounded_run.py` says with its own exit codes, in the words of a step that failed.
+LAUNCHER_CODES = {
+    bounded_run.BUDGET: "le budget du poste n'est pas tenu",
+    bounded_run.WRONG_CALL: "appel du lanceur borné refusé",
+    bounded_run.REFUSED: "la borne n'a pas pu être posée",
+    bounded_run.MEMORY: "la borne de mémoire est probablement atteinte",
+    bounded_run.DELAY: "le délai est dépassé et la commande tuée",
+    bounded_run.NOT_FOUND: "commande introuvable",
+}
+
+
+def launcher(usine_file: Path, args: argparse.Namespace, *rest: str) -> list[str]:
+    """The call of the bounded launcher: the project's keys, then the options that win over them."""
+    call = [sys.executable, str(LAUNCHER), "--usine", str(usine_file)]
+    if args.memory_mb:
+        call += ["--memory-mb", str(args.memory_mb)]
+    if args.timeout:
+        call += ["--timeout", str(args.timeout)]
+    return [*call, *rest]
+
+
+def check_budget(usine_file: Path, args: argparse.Namespace) -> None:
+    """Before anything is created: the post's budget (key `run-budget`), read by the launcher."""
+    done = subprocess.run(
+        launcher(usine_file, args, "--check"), capture_output=True, text=True, encoding="utf-8", errors="replace"
+    )
+    if done.returncode != 0:
+        raise Failure("budget", f"{LAUNCHER_CODES.get(done.returncode, 'lanceur borné')} : {done.stderr.strip()}")
+
+
+def launch(trial: Trial, settings: Settings, plugin: Path, usine_file: Path, args: argparse.Namespace) -> None:
+    """Run the command of the key in the throwaway project, under the bounded launcher (ticket #66)."""
+    marks = {
+        "plugin": str(plugin), "budget": settings.budget, "ticket": str(trial.ticket),
+        "feature": FEATURE, "base": trial.base,
+    }
+    words = [MARKER.sub(lambda found: marks[found.group(1)], word) for word in settings.command]
+    done = subprocess.run(
+        launcher(usine_file, args, "--", *words),
+        cwd=trial.clone, capture_output=True, text=True, encoding="utf-8", errors="replace",
+    )
+    if done.returncode != 0:
+        why = LAUNCHER_CODES.get(done.returncode)
+        tail = done.stderr.strip()[-300:] or done.stdout.strip()[-300:]
+        raise Failure("lancement", f"{why or f'`{words[0]}` a rendu le code {done.returncode}'} : {tail}")
+
+
 def origin_repo(project: Path) -> str | None:
     """The `owner/name` of the project's `origin` on GitHub, None when it has none or it is elsewhere."""
     try:
@@ -303,10 +351,13 @@ def main(argv: list[str] | None = None) -> int:
         )
         return WRONG_CALL
     name = args.id or f"{datetime.now(timezone.utc):%Y%m%d-%H%M%S}-{secrets.token_hex(2)}"
+    plugin = Path(args.plugin) if args.plugin else Path(__file__).resolve().parent.parent
     with tempfile.TemporaryDirectory(prefix="forge-e2e-", dir=scratch_root()) as folder:
         trial = Trial(settings.repo, name, Path(folder))
         try:
+            check_budget(usine_file, args)
             trial.prepare(f"{datetime.now(timezone.utc):%Y-%m-%d}")
+            launch(trial, settings, plugin, usine_file, args)
         except Failure as failure:
             print(f"RESULTAT: FAIL\nETAPE: {failure.stage}\nRAISON: {failure.reason}")
             return 1

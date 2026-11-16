@@ -54,7 +54,7 @@ def usine_text(**keys: str) -> str:
 FAKE_TOOL = textwrap.dedent(
     """\
     #!{python}
-    import json, os, shutil, sys
+    import json, os, shutil, sys, time
     from pathlib import Path
 
     state = Path(os.environ["E2E_FAKE_STATE"])
@@ -75,6 +75,7 @@ FAKE_TOOL = textwrap.dedent(
             stdout = stdout[min(seen, len(stdout) - 1)]
         if rule.get("mkdir"):
             Path(args[-1]).mkdir(parents=True, exist_ok=True)
+        time.sleep(rule.get("sleep", 0))
         if rule.get("snapshot"):
             target = state / "snapshot"
             shutil.rmtree(target, ignore_errors=True)
@@ -133,8 +134,9 @@ class Project:
             "TMPDIR": str(self.home),
             "TEMP": str(self.home),
         }
+        self.bin = Path(folder.name) / "bin"
         if tools is not None:
-            bin_dir = Path(folder.name) / "bin"
+            bin_dir = self.bin
             bin_dir.mkdir()
             for name in ("git", "gh", "claude"):
                 (bin_dir / name).write_text(FAKE_TOOL.format(python=sys.executable), encoding="utf-8")
@@ -317,6 +319,76 @@ class Preparation(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertIn(REPO, err)
         self.assertEqual(project.calls("gh"), [])
+
+
+@posix_only
+class Launch(unittest.TestCase):
+    def launch(self, *options: str, keys: dict[str, str] | None = None, **changes: list[dict]):
+        project = Project(self, keys or KEYS, scenario(**changes))
+        code, out, err = project.run(*options)
+        return project, code, out, err
+
+    def test_claude_runs_in_the_throwaway_project_with_the_plugin_under_test_and_the_ceiling(self) -> None:
+        """Ticket #70, critère 3 : `claude -p` tourne dans le clone, avec `--plugin-dir` et `--max-budget-usd`."""
+        project, _, _, _ = self.launch()
+        (call,) = project.calls("claude")
+        clone = next(c["args"][3] for c in project.calls("gh") if c["args"][:2] == ["repo", "clone"])
+        self.assertEqual(os.path.realpath(call["cwd"]), os.path.realpath(clone))
+        args = call["args"]
+        self.assertEqual(args[0], "-p")
+        self.assertEqual(args[args.index("--plugin-dir") + 1], str(support.PLUGIN))
+        self.assertEqual(args[args.index("--max-budget-usd") + 1], "2.5")
+
+    def test_the_markers_of_the_command_name_the_ticket_the_feature_and_the_base_of_the_trial(self) -> None:
+        """Ticket #70, critère 3 : `{ticket}`, `{feature}` et `{base}` valent ce que l'essai a préparé."""
+        project, _, _, _ = self.launch()
+        (call,) = project.calls("claude")
+        self.assertIn("Le ticket de l'essai est le #12.", call["args"])
+        self.assertEqual(call["args"][-1], "/forge:feature-build F-9999 --base e2e/essai1 --max 1")
+
+    def test_the_plugin_option_names_another_plugin_to_try(self) -> None:
+        """Ticket #70, critère 3 : `--plugin` désigne le plugin à essayer, celui d'un autre arbre par exemple."""
+        project, _, _, _ = self.launch("--plugin", "/un/autre/plugin")
+        (call,) = project.calls("claude")
+        self.assertEqual(call["args"][call["args"].index("--plugin-dir") + 1], "/un/autre/plugin")
+
+    def test_the_launch_is_bounded_by_the_launcher_of_ticket_66(self) -> None:
+        """Ticket #70, critère 3 : un `claude` qui dépasse le délai est tué par le lanceur borné : `FAIL` à `lancement`."""
+        _, code, out, _ = self.launch("--timeout", "1", claude=[{"has": ["-p"], "sleep": 20}])
+        self.assertEqual(code, 1)
+        self.assertRegex(out, r"(?m)^ETAPE: lancement$")
+        self.assertIn("délai", out)
+
+    def test_the_bound_comes_from_the_key_run_limits_when_no_option_is_given(self) -> None:
+        """Ticket #70, critère 3 : sans option, la borne est celle de la clé `run-limits` (ici 1 s)."""
+        _, code, out, _ = self.launch(keys={**KEYS, "run-limits": "500 | 1"}, claude=[{"has": ["-p"], "sleep": 20}])
+        self.assertEqual(code, 1)
+        self.assertIn("délai", out)
+
+    def test_a_claude_that_fails_is_a_fail_at_lancement_with_its_code(self) -> None:
+        """Ticket #70, critère 3 : un `claude` qui sort en 3 est `FAIL` à `lancement`, avec le code."""
+        _, code, out, _ = self.launch(claude=[{"has": ["-p"], "code": 3, "stderr": "budget épuisé"}])
+        self.assertEqual(code, 1)
+        self.assertRegex(out, r"(?m)^ETAPE: lancement$")
+        self.assertIn("3", out)
+        self.assertIn("budget épuisé", out)
+
+    def test_a_claude_that_is_not_installed_is_a_fail_at_lancement(self) -> None:
+        """Ticket #70, critère 3 : sans `claude` sur le `PATH`, `FAIL` à `lancement`, commande introuvable."""
+        project = Project(self, KEYS, scenario())
+        (project.bin / "claude").unlink()
+        code, out, _ = project.run()
+        self.assertEqual(code, 1)
+        self.assertRegex(out, r"(?m)^ETAPE: lancement$")
+        self.assertIn("introuvable", out)
+
+    def test_a_post_out_of_budget_creates_nothing_and_is_a_fail_at_budget(self) -> None:
+        """Ticket #70, critère 3 : hors du budget du poste (`run-budget`), rien n'est créé : `FAIL` à `budget`."""
+        project, code, out, _ = self.launch(keys={**KEYS, "run-budget": "99999999 | 1000 | 2 | 0"})
+        self.assertEqual(code, 1)
+        self.assertRegex(out, r"(?m)^ETAPE: budget$")
+        self.assertEqual((project.calls("gh"), project.calls("claude")), ([], []))
+        self.assertEqual([call for call in project.calls("git") if "push" in call["args"]], [])
 
 
 if __name__ == "__main__":
