@@ -108,6 +108,8 @@ La suite de tests de ce dépôt, dont la sortie se raccourcit quand elle passe.
 - `sla` : `sev2` n'a pas de délai de prise en charge, et l'étape où court le délai de 30 jours de
   `sev3` n'est pas dite ; aucun délai n'est deviné, la clé reste absente jusqu'à la décision de
   l'humain (ticket #76).
+- `release-trigger` : la publication reste un geste de l'humain tant qu'il n'a pas choisi le nombre de
+  fusions et le délai qui déclenchent une version ; aucune valeur n'est devinée, l'agent ne publie rien.
 - `decision-matrix` : aucune matrice encore ; `forge:staff-engineer` et `forge:product-owner`
   rendent tout en `RESERVED`, et chaque décision revient à l'humain qui accepte.
 - `domain-arbiter`, `domain-skill`, `glossary` : le plugin n'a pas de métier propre.
