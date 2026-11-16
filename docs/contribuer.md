@@ -26,18 +26,26 @@ Publier une version :
    `uv run --no-project --quiet python plugins/forge/scripts/factory_slo.py changelog . --depuis <date de la version précédente>`
    (voir `docs/indicateurs-de-service.md`). Le rapport est aussi réécrit dans l'issue de suivi par
    `/forge:slo --publier`.
-3. Essayer l'usine de bout en bout, avant de vérifier. Si ce dépôt déclare la clé `e2e-command`, lancer
-   cette commande depuis la racine du dépôt, la branche de la version extraite : elle lance
-   `scripts/e2e_trial.py`, qui prépare un projet jetable sur le dépôt d'essai (clé `e2e-repo`), y lance
-   `claude -p --plugin-dir` sur le plugin de la branche, sous le plafond de la clé `e2e-budget-usd` et sous
-   le lanceur borné, lit la PR que l'essai a laissée, puis nettoie ce qu'il a créé. La PR de version
+3. Essayer l'usine de bout en bout, avant de vérifier. Depuis la racine du dépôt, la branche de la version
+   extraite :
+
+   ```sh
+   uv run --no-project --quiet python plugins/forge/scripts/e2e_trial.py
+   ```
+
+   Le script lit lui-même ses trois clés, `e2e-repo`, `e2e-command` et `e2e-budget-usd` : la clé
+   `e2e-command` est la ligne `claude` que le script lance dans le clone du dépôt d'essai, avec `{plugin}`
+   (le plugin de la branche) et `{budget}` (le plafond de la clé `e2e-budget-usd`) ; on ne la lance pas à
+   la main. Le script prépare un projet jetable sur le dépôt d'essai, lance cette ligne sous le lanceur
+   borné, lit la PR que l'essai a laissée, puis nettoie ce qu'il a créé. La PR de version
    (`chore(release)`) recopie, dans ses **Preuves**, les lignes `RESULTAT`, `TETE` (le commit essayé, avec
    « arbre modifié » quand la branche porte des changements non commités) et, sur un `FAIL`, `ETAPE` et
    `RAISON`. Un `FAIL` bloque la version : la PR de version ne passe pas tant que l'étape qui a manqué
-   n'est pas corrigée. Sans la clé, l'étape est « sans objet (clé `e2e-command` absente) » : la PR de
-   version le dit, et ne l'écrit jamais comme un `PASS`. La création du dépôt d'essai, de ses étiquettes
-   et de son jeton est un geste humain. L'essai coûte de vrais appels de modèle : il ne se lance qu'à ce
-   geste de version, jamais depuis un test ni depuis un passage de l'usine.
+   n'est pas corrigée. Pour une clé absente, le script écrit `SANS-OBJET (clé `<nom>` absente)` : l'étape
+   est « sans objet (clé `e2e-command` absente) », ou le nom de la clé qui manque, la PR de version le dit,
+   et ne l'écrit jamais comme un `PASS`. La création du dépôt d'essai, de ses étiquettes et de son jeton
+   est un geste humain. L'essai coûte de vrais appels de modèle : il ne se lance qu'à ce geste de version,
+   jamais depuis un test ni depuis un passage de l'usine.
 4. Vérifier :
 
    ```sh

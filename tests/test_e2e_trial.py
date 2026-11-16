@@ -18,6 +18,8 @@ import contextlib
 import io
 import json
 import os
+import re
+import subprocess
 import sys
 import tempfile
 import textwrap
@@ -652,11 +654,58 @@ class Result(unittest.TestCase):
 
 
 class ReleaseInstruction(unittest.TestCase):
-    def test_the_release_procedure_runs_the_trial_and_copies_its_result_and_head(self) -> None:
-        """Ticket #70, critère 6 : `docs/contribuer.md` fait lancer l'essai avant la version, et recopier résultat et tête."""
+    COMMAND_LINE = "uv run --no-project --quiet python plugins/forge/scripts/e2e_trial.py"
+
+    def steps(self) -> str:
         text = (support.REPO_ROOT / "docs" / "contribuer.md").read_text(encoding="utf-8")
-        steps = text.split("Publier une version :", 1)[1].split("## Le dépôt", 1)[0]
-        for word in ("e2e-command", "e2e_trial.py", "RESULTAT", "TETE", "chore(release)"):
+        return text.split("Publier une version :", 1)[1].split("## Le dépôt", 1)[0]
+
+    def test_the_release_procedure_gives_the_command_that_runs_the_script(self) -> None:
+        """Ticket #70, critère 6 : la consigne cite la commande exacte, et cette commande lance bien le script.
+
+        Elle est lancée telle quelle depuis la racine (`uv run ... python` remplacé par l'interpréteur du test),
+        sur un projet sans `usine.md` : le script lit lui-même ses trois clés et répond `SANS-OBJET` pour chacune,
+        sans rien créer.
+        """
+        blocks = re.findall(r"```sh\n(.*?)```", self.steps(), re.DOTALL)
+        command = next((line.strip() for block in blocks for line in block.splitlines() if "e2e_trial.py" in line), "")
+        self.assertEqual(command, self.COMMAND_LINE)
+        prefix = "uv run --no-project --quiet python "
+        self.assertTrue(command.startswith(prefix))
+        with tempfile.TemporaryDirectory() as folder:
+            home = Path(folder) / "home"
+            home.mkdir()
+            project = Path(folder) / "projet"
+            project.mkdir()
+            env = {
+                "PATH": os.environ.get("PATH", ""),
+                "SYSTEMROOT": os.environ.get("SYSTEMROOT", ""),
+                "HOME": str(home),
+                "USERPROFILE": str(home),
+                "TMPDIR": str(home),
+                "TEMP": str(home),
+            }
+            done = subprocess.run(
+                [sys.executable, *command.removeprefix(prefix).split(), "--projet", str(project)],
+                cwd=support.REPO_ROOT, env=env, capture_output=True, text=True, encoding="utf-8",
+            )
+        self.assertEqual(done.returncode, 0, done.stderr)
+        for key in ("e2e-repo", "e2e-command", "e2e-budget-usd"):
+            self.assertIn(f"SANS-OBJET (clé `{key}` absente)", done.stdout)
+        self.assertNotIn("PASS", done.stdout)
+
+    def test_the_release_procedure_says_what_the_key_e2e_command_is(self) -> None:
+        """Ticket #70, critère 6 : la clé est la ligne `claude` lancée dans le clone, que la consigne ne fait pas lancer."""
+        steps = " ".join(self.steps().split())
+        self.assertIn("la clé `e2e-command` est la ligne `claude` que le script lance dans le clone", steps)
+        for marker in ("{plugin}", "{budget}"):
+            self.assertIn(marker, steps)
+        self.assertNotIn("lancer cette commande", steps)
+
+    def test_the_release_procedure_copies_the_result_the_script_prints(self) -> None:
+        """Ticket #70, critère 6 : la PR de version recopie les lignes que le script imprime, et le dit sans objet."""
+        steps = self.steps()
+        for word in ("RESULTAT", "TETE", "ETAPE", "RAISON", "chore(release)"):
             with self.subTest(word=word):
                 self.assertIn(word, steps)
         self.assertIn("sans objet (clé `e2e-command` absente)", steps)
