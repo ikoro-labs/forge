@@ -38,5 +38,30 @@ class MethodAgainstTheKey(unittest.TestCase):
                     self.assertIn(f"`{other}`", verdict)
 
 
+class NoMethod(unittest.TestCase):
+    def test_a_merge_without_a_method_is_refused(self) -> None:
+        # #63 : sans option de méthode, gh demande à un humain ; la méthode n'est pas celle de la clé.
+        for command in ("gh pr merge 5", "gh pr merge 5 --delete-branch --body-file b.md", "gh pr merge --auto"):
+            with self.subTest(command=command):
+                verdict = merge(command, ["merge"])
+                assert verdict is not None
+                self.assertIn("merge-method", verdict)
+                self.assertIn("--merge", verdict)
+
+    def test_two_methods_are_refused_even_when_one_is_the_key(self) -> None:
+        # #63 : gh refuse deux méthodes, mais le garde ne s'en remet pas à lui.
+        self.assertIsNotNone(merge("gh pr merge 5 --merge --squash", ["merge"]))
+        self.assertIsNotNone(merge("gh pr merge 5 -s -m", ["merge"]))
+
+    def test_the_same_method_twice_is_the_method(self) -> None:
+        self.assertIsNone(merge("gh pr merge 5 --merge -m", ["merge"]))
+
+    def test_cancelling_an_auto_merge_merges_nothing_and_needs_no_method(self) -> None:
+        self.assertIsNone(merge("gh pr merge 5 --disable-auto", ["merge"]))
+
+    def test_a_value_that_looks_like_a_method_option_is_not_one(self) -> None:
+        self.assertIsNone(merge("gh pr merge 5 --merge --body -s", ["merge"]))
+
+
 if __name__ == "__main__":
     unittest.main()

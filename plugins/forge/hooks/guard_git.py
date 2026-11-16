@@ -1386,6 +1386,7 @@ class PrMerge(NamedTuple):
     repository: str | None  # the last `-R`/`--repo`, as gh keeps it
     words: list[str]  # the words after `merge`
     methods: tuple[str, ...] = ()  # the method each of its options asks for, in order
+    cancels: bool = False  # `--disable-auto`: it cancels an auto-merge and merges nothing
 
 
 def pr_merge(words: list[ShellWord]) -> PrMerge | str:
@@ -1399,6 +1400,7 @@ def pr_merge(words: list[ShellWord]) -> PrMerge | str:
     rest = words[3:]
     numbers: list[str] = []
     methods: list[str] = []
+    cancels = False
     repository = None
     index = 0
     while index < len(rest):
@@ -1413,6 +1415,7 @@ def pr_merge(words: list[ShellWord]) -> PrMerge | str:
         if word.value in MERGE_FLAGS and word.literal:
             if word.value in METHOD_FLAGS:
                 methods.append(METHOD_FLAGS[word.value])
+            cancels = cancels or word.value == "--disable-auto"
             index += 1
             continue
         if equals and name.startswith("--") and name in MERGE_VALUED:
@@ -1432,7 +1435,7 @@ def pr_merge(words: list[ShellWord]) -> PrMerge | str:
             repository = value
     if len(numbers) > 1:
         return MERGE_ALONE
-    return PrMerge(numbers[0] if numbers else None, repository, [word.value for word in rest], tuple(methods))
+    return PrMerge(numbers[0] if numbers else None, repository, [word.value for word in rest], tuple(methods), cancels)
 
 
 def _substitutes(raw: str) -> bool:
@@ -1750,13 +1753,24 @@ def refusal(
     ) or commands_location_refusal(command)
 
 
-def method_refusal(key: Sequence[str] | None, methods: Iterable[str]) -> str | None:
+def method_refusal(
+    key: Sequence[str] | None, methods: Iterable[str], cancels: bool = False
+) -> str | None:
     """Why the method a merge asks for is not the one of the `merge-method` key, or None.
 
     `key` is None when the caller does not ask for the check; `methods` are those of the options.
+    A call that only cancels an auto-merge (`cancels`) merges nothing and names no method.
     """
     if key is None:
         return None
+    methods = list(methods)
+    if not methods:
+        if cancels:
+            return None
+        return (
+            f"the merge names no method: the `{METHOD_KEY}` key says `{key[0]}`, merge with"
+            f" `--{key[0]}`"
+        )
     for method in methods:
         if method != key[0]:
             return (
@@ -1795,6 +1809,7 @@ def merge_call_refusal(
     number: str | None
     repository: str | None
     methods: Iterable[str] = ()
+    cancels = False
     if [word.raw for word in words[:2]] == ["gh", "api"]:
         if not all(word.literal for word in words):
             return MERGE_ALONE
@@ -1808,7 +1823,7 @@ def merge_call_refusal(
         if isinstance(merge, str):
             return merge
         number = merge.number
-        methods = merge.methods
+        methods, cancels = merge.methods, merge.cancels
         message = _merge_message(merge.words, call.directory, read_text)
         if merge.repository is not None:
             repository = merge.repository
@@ -1817,7 +1832,7 @@ def merge_call_refusal(
         else:
             repository = call.repository
     target: Target = (number, repository, call.directory)
-    if wrong := method_refusal(merge_method, methods):
+    if wrong := method_refusal(merge_method, methods, cancels):
         return wrong
     if closed := closed_despite_refs(message + "\n" + description(*target)):
         ticket, phrase = closed
