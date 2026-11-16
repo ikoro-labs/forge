@@ -201,7 +201,33 @@ def slo_condition(project: Path, run: Runner, now: datetime) -> Condition:
     return Condition("slo", MET, f"{plural(len(objectives), 'objectif')} `tenu`, calculés dans l'heure")
 
 
-CONDITIONS: dict[str, Callable[[Path, Runner, datetime], Condition]] = {"slo": slo_condition}
+def budget_condition(project: Path, run: Runner, now: datetime) -> Condition:
+    """No action of the key `budget-action` is active in a state computed within the hour.
+
+    Every action counts, `alert` included: the condition says the error budget is held, not that
+    the agent is still allowed to merge.
+    """
+    values = usine.load(project).get(budget.KEY)
+    if not values:
+        return Condition("budget", UNVERIFIABLE, f"sans objet (clé `{budget.KEY}` absente) : aucune action à lire")
+    lines, errors = budget.parse_actions(values)
+    if errors:
+        return Condition("budget", UNVERIFIABLE, f"clé `{budget.KEY}` mal formée : " + " ; ".join(errors))
+    state, reason = state_of(project, run, now)
+    if state is None:
+        return Condition("budget", UNVERIFIABLE, str(reason))
+    verdicts = budget.evaluate(lines, state)
+    if unknown := [verdict for verdict in verdicts if verdict.unknown]:
+        return Condition("budget", UNVERIFIABLE, " ; ".join(f"{v.sli} | {v.action} : {v.reason}" for v in unknown))
+    if active := [verdict for verdict in verdicts if verdict.active]:
+        return Condition("budget", NOT_MET, "actions actives : " + " ; ".join(f"{v.sli} | {v.action} ({v.reason})" for v in active))
+    return Condition("budget", MET, f"{plural(len(verdicts), 'action')} déclarée{'s' if len(verdicts) > 1 else ''}, aucune active")
+
+
+CONDITIONS: dict[str, Callable[[Path, Runner, datetime], Condition]] = {
+    "slo": slo_condition,
+    "budget": budget_condition,
+}
 
 
 def run_condition(args: argparse.Namespace, run: Runner, now: datetime) -> int:

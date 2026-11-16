@@ -200,5 +200,62 @@ class SloCondition(Base):
         self.assertEqual(self.condition()[0], "non vérifiable")
 
 
+class BudgetCondition(Base):
+    """Aucune action de `budget-action` n'est active."""
+
+    def condition(self) -> tuple[str, str]:
+        code, out, _ = self.run_main("condition", "budget")
+        self.assertEqual(code, 0)
+        line = next(line for line in out.splitlines() if line.startswith("CONDITION: budget"))
+        _, status, text = (part.strip() for part in line.split("|", 2))
+        return status, text
+
+    def test_no_active_action_holds(self) -> None:
+        """Ticket #71 : un état frais où aucune action déclarée n'est active : condition tenue."""
+        self.configure(*SLO, "`budget-action` : `main-green | human-merge`", "`budget-action` : `accept-round-1 | alert`")
+        self.write_state({"main-green": "tenu", "accept-round-1": "tenu"})
+        self.assertEqual(self.condition()[0], "tenue")
+
+    def test_an_active_action_does_not_hold_even_when_it_is_only_an_alert(self) -> None:
+        """Ticket #71 : un objectif `épuisé` rend son action active ; `alert` compte comme les autres."""
+        for action in ("human-merge", "feature-freeze", "alert"):
+            with self.subTest(action=action):
+                self.configure(*SLO, f"`budget-action` : `main-green | {action}`")
+                self.write_state({"main-green": "épuisé", "accept-round-1": "tenu"})
+                status, text = self.condition()
+                self.assertEqual(status, "non tenue")
+                self.assertIn(f"main-green | {action}", text)
+
+    def test_an_action_held_in_memory_while_the_objective_is_menaced_does_not_hold(self) -> None:
+        """Ticket #71 : épuisé puis menacé, l'action reste active jusqu'au retour à `tenu` (mémoire `epuises`)."""
+        self.configure(*SLO, "`budget-action` : `main-green | human-merge`")
+        self.write_state({"main-green": "menacé", "accept-round-1": "tenu"}, epuises=["main-green / 30 j"])
+        status, text = self.condition()
+        self.assertEqual(status, "non tenue")
+        self.assertIn("reconstitution", text)
+
+    def test_without_the_key_or_a_usable_state_it_cannot_be_verified(self) -> None:
+        """Ticket #71 : clé absente, état périmé ou absent, ligne illisible, objectif inconnu : non vérifiable."""
+        self.configure(*SLO)
+        self.write_state({"main-green": "tenu", "accept-round-1": "tenu"})
+        status, text = self.condition()
+        self.assertEqual(status, "non vérifiable")
+        self.assertIn("clé `budget-action` absente", text)
+        self.configure(*SLO, "`budget-action` : `main-green | human-merge`")
+        self.write_state({"main-green": "tenu", "accept-round-1": "tenu"}, minutes=61)
+        self.assertEqual(self.condition()[0], "non vérifiable")
+        self.state_file().unlink()
+        self.assertEqual(self.condition()[0], "non vérifiable")
+        self.write_state({"main-green": "tenu"})
+        self.configure(*SLO, "`budget-action` : `accept-round-1 | alert`")
+        status, text = self.condition()
+        self.assertEqual(status, "non vérifiable")
+        self.assertIn("accept-round-1", text)
+        self.configure(*SLO, "`budget-action` : `main-green | geler`")
+        status, text = self.condition()
+        self.assertEqual(status, "non vérifiable")
+        self.assertIn("geler", text)
+
+
 if __name__ == "__main__":
     unittest.main()
