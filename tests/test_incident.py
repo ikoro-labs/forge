@@ -4,7 +4,8 @@ Chaque test nomme son ticket et son critère (`ticket #61, critère N`), le tick
 
 1. le gabarit de revue (`templates/incident.md`) et ses sections ;
 2. une revue sans correctif est refusée, une consigne seule n'est pas un correctif ;
-3. la classe du correctif, `mécanique` ou `jugement`, et la forme qu'elle exige.
+3. la classe du correctif, `mécanique` ou `jugement`, et la forme qu'elle exige ;
+4. la clé `incident-dir` : documentée dans le gabarit de `usine.md`, « sans objet » quand elle est absente.
 """
 
 import contextlib
@@ -17,6 +18,7 @@ import support
 from incident import CLASSES, SECTIONS, check, main
 
 TEMPLATE = support.PLUGIN / "templates" / "incident.md"
+USINE_TEMPLATE = support.PLUGIN / "templates" / "usine.md"
 
 
 def review(
@@ -210,6 +212,57 @@ class ClassOfTheFix(unittest.TestCase):
             for fix in ("existant : ../dehors.py ; ../dehors.py", f"existant : {outside} ; {outside}"):
                 with self.subTest(fix=fix):
                     self.assertTrue(check(review("mécanique", (fix,)), root))
+
+
+class IncidentDirKey(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+
+    def configure(self, text: str) -> None:
+        (self.root / "docs" / "agents").mkdir(parents=True, exist_ok=True)
+        (self.root / "docs" / "agents" / "usine.md").write_text(text, encoding="utf-8")
+
+    def test_the_template_of_the_factory_documents_the_key(self) -> None:
+        """Ticket #61, critère 4 : la clé est dans le gabarit de `usine.md`, avec sa règle sans valeur par défaut."""
+        text = USINE_TEMPLATE.read_text(encoding="utf-8")
+        self.assertRegex(text, r"(?m)^- `incident-dir` : `<[^`]+>`$")
+        self.assertIn("sans objet (clé `incident-dir` absente)", text)
+
+    def test_without_the_key_the_step_is_sans_objet_and_no_folder_is_guessed(self) -> None:
+        """Ticket #61, critère 4 : sans la clé, « sans objet (clé `incident-dir` absente) », aucune valeur par défaut."""
+        self.configure("- `merge-method` : `merge`\n")
+        (self.root / "docs" / "incidents").mkdir()
+        code, output = run("dir", str(self.root))
+        self.assertEqual(code, 0)
+        self.assertIn("sans objet (clé `incident-dir` absente)", output)
+        self.assertNotIn("docs/incidents", output)
+
+    def test_without_a_configuration_file_the_step_is_sans_objet_too(self) -> None:
+        """Ticket #61, critère 4 : un projet sans `usine.md` n'a pas la clé non plus."""
+        code, output = run("dir", str(self.root))
+        self.assertEqual(code, 0)
+        self.assertIn("sans objet (clé `incident-dir` absente)", output)
+
+    def test_the_key_names_the_folder_of_the_reviews(self) -> None:
+        """Ticket #61, critère 4 : la clé donne le dossier, relatif à la racine du projet."""
+        self.configure("- `incident-dir` : `docs/incidents`\n")
+        code, output = run("dir", str(self.root))
+        self.assertEqual((code, output.strip()), (0, "docs/incidents"))
+
+    def test_a_key_that_leaves_the_project_or_repeats_fails(self) -> None:
+        """Ticket #61, critère 4 : un dossier hors du projet, la racine elle-même ou deux lignes font échouer."""
+        for text in (
+            "- `incident-dir` : `../incidents`\n",
+            "- `incident-dir` : `/var/incidents`\n",
+            "- `incident-dir` : `.`\n",
+            "- `incident-dir` : `docs/a`\n- `incident-dir` : `docs/b`\n",
+        ):
+            with self.subTest(text=text):
+                self.configure(text)
+                code, _ = run("dir", str(self.root))
+                self.assertEqual(code, 1)
 
 
 if __name__ == "__main__":
