@@ -232,6 +232,77 @@ class PlacedByClassAndName(unittest.TestCase):
         self.assertEqual(junit_report.touched(cases, "def test_other():\n    pass\n", []), cases)
 
 
+class AMentionOfTheClassEndsNoTest(unittest.TestCase):
+    """Only a line that declares the class ends the test above it: its name in a test body does not."""
+
+    def changed_after_the_mention(self, text: str, changed: int, owner: str = "FooTest") -> list[str]:
+        import junit_report
+
+        cases = [junit_report.Case(f"tests.{owner}", "test_a", "pass"), junit_report.Case(f"tests.{owner}", "test_b", "pass")]
+        return [case.name for case in junit_report.touched(cases, text, [range(changed, changed + 1)])]
+
+    def test_a_junit_test_that_calls_its_class_and_changes_below_the_call_is_touched(self) -> None:
+        """No F-NNNN: ticket #43, grain du test: `FooTest.class.getResource(...)` dans `test_a` ne termine pas `test_a`."""
+        text = (
+            "public class FooTest {\n"
+            "    @Test\n"
+            "    void test_a() throws Exception {\n"
+            '        URL url = FooTest.class.getResource("data.txt");\n'
+            "        assertNotNull(url);\n"
+            "    }\n"
+            "\n"
+            "    @Test\n"
+            "    void test_b() {\n"
+            "    }\n"
+            "}\n"
+        )
+        self.assertEqual(self.changed_after_the_mention(text, 5), ["test_a"])
+
+    def test_a_python_test_that_calls_its_class_and_changes_below_the_call_is_touched(self) -> None:
+        """No F-NNNN: ticket #43, grain du test: un appel `FooTest.make()` dans `test_a` ne termine pas `test_a`."""
+        text = (
+            "class FooTest(unittest.TestCase):\n"
+            "    def test_a(self):\n"
+            "        made = FooTest.make()\n"
+            "        self.assertTrue(made)\n"
+            "\n"
+            "    def test_b(self):\n"
+            "        pass\n"
+        )
+        self.assertEqual(self.changed_after_the_mention(text, 4), ["test_a"])
+
+    def test_a_comment_or_a_string_naming_the_class_in_a_test_ends_nothing(self) -> None:
+        """No F-NNNN: ticket #43, grain du test: un commentaire ou une chaîne qui nomme la classe ne termine pas `test_a`."""
+        text = (
+            "class FooTest(unittest.TestCase):\n"
+            "    def test_a(self):\n"
+            "        # FooTest keeps its state between calls\n"
+            '        source = "class FooTest: pass"\n'
+            "        self.assertTrue(source)\n"
+            "\n"
+            "    def test_b(self):\n"
+            "        pass\n"
+        )
+        self.assertEqual(self.changed_after_the_mention(text, 5), ["test_a"])
+
+    def test_a_class_declared_between_two_tests_still_ends_the_test_above(self) -> None:
+        """No F-NNNN: ticket #43, grain du test: la ligne qui déclare une classe termine le test du dessus."""
+        import junit_report
+
+        text = (
+            "class A(unittest.TestCase):\n"
+            "    def test_a(self):\n"
+            "        pass\n"
+            "\n"
+            "\n"
+            "class B(unittest.TestCase):\n"
+            "    def test_b(self):\n"
+            "        pass\n"
+        )
+        cases = [junit_report.Case("tests.A", "test_a", "pass"), junit_report.Case("tests.B", "test_b", "pass")]
+        self.assertEqual([case.name for case in junit_report.touched(cases, text, [range(6, 7)])], [])
+
+
 class GrainIsDocumented(unittest.TestCase):
     """The consumers read the placeholder and the limits of the reading in the template, the page and the agents."""
 

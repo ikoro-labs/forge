@@ -15,8 +15,12 @@ by its class: at the first line with the name below the line that holds the last
 `classname`, provided that gives one line only. A case that cannot be placed, whether its name is not
 written in the file or it stays ambiguous after its class, counts as touched, so that the replay shows
 it rather than hides it. A placed case begins at the decorators, attributes and comments (`@`, `#`,
-`//`, `/*`, `*`, `[`) right above it and owns the lines up to the next placed case, or up to the line
-of its class when that sits between the two, less the blank lines that end them. It is touched when a changed range falls in them.
+`//`, `/*`, `*`, `[`) right above it. It owns the lines down to the next placed case, or down to a line
+that declares the class of a case (a keyword, `class`, `object`, `struct`, `interface`, `trait`, then
+the name, with only words before it), when that line is the only one of the file to declare it; the
+blank lines that end them belong to no case. A mere mention of a class (a call, a string, a comment)
+ends no case, so that a test is never cut short at it. A case is touched when a changed range falls in
+its lines.
 
 This is a reading of the text, not of the language. A helper or a fixture changed below a test, or at
 the end of the file, falls in the lines of the test above it, which is then taken for changed (a
@@ -36,6 +40,7 @@ MAX_BYTES = 20 * 1024 * 1024
 HUNK = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@", re.MULTILINE)
 PASS, FAIL, SKIPPED = "pass", "fail", "skipped"
 DECORATION = ("@", "#", "//", "/*", "*", "[")
+DECLARATION = r"^\s*(?:[\w@]+\s+)*(?:class|object|struct|interface|trait)\s+{}(?!\w)"
 
 
 class ReportError(Exception):
@@ -99,6 +104,15 @@ def holding(lines: list[str], name: str) -> list[int]:
     return [number for number, line in enumerate(lines, start=1) if word.search(line)]
 
 
+def declared_once(lines: list[str], owner: str) -> int | None:
+    """The line that declares the class `owner` with a keyword, when it is the only one; else None."""
+    if not owner:
+        return None
+    declaration = re.compile(DECLARATION.format(re.escape(owner)))
+    found = [number for number, line in enumerate(lines, start=1) if declaration.match(line)]
+    return found[0] if len(found) == 1 else None
+
+
 def place(lines: list[str], case: Case) -> int | None:
     """The line of the definition of a case, or None when the text does not say it with certainty."""
     found = holding(lines, case.bare_name)
@@ -114,14 +128,12 @@ def touched(cases: list[Case], text: str, ranges: list[range]) -> list[Case]:
     lines = text.splitlines()
     placed = {index: place(lines, case) for index, case in enumerate(cases)}
     starts = sorted({line for line in placed.values() if line is not None})
-    # The line of a class, when it sits between two tests, ends the test above it: a class added after
-    # a test is not a change of that test.
-    stops = set(starts)
-    for index, case in enumerate(cases):
-        start, owner = placed[index], case.classname.rsplit(".", 1)[-1]
-        if start is not None and owner:
-            before = max((line for line in starts if line < start), default=0)
-            stops.update(line for line in holding(lines, owner) if before < line < start)
+    # Only a line that surely ends a test ends one: the start of the next placed case, or the one line
+    # that declares a class of the report (a class added after a test is not a change of that test). A
+    # mention of a class inside a test (a call, a string, a comment) ends nothing.
+    owners = {case.classname.rsplit(".", 1)[-1] for case in cases}
+    declarations = {declared_once(lines, owner) for owner in owners}
+    stops = set(starts) | {line for line in declarations if line is not None}
     stops_sorted = sorted(stops)
     result = []
     for index, case in enumerate(cases):
