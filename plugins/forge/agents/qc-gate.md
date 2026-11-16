@@ -124,7 +124,13 @@ elles-mêmes leurs commandes.
     `sans objet (clé red-replay absente)`, la sonde se rend ainsi. Un fichier `RED` est le cas
     attendu : tu le comptes, tu ne le détailles pas. Le rejeu est au **grain du fichier** : la ligne
     `RED` le dit, et tu la recopies avec cette mention, parce qu'elle dit seulement que le fichier
-    sort non nul sur la base, pas que chaque test du fichier y est rouge.
+    sort non nul sur la base, pas que chaque test du fichier y est rouge. Quand la commande de la clé
+    `red-replay` porte `{report}`, le script juge au **grain du test** : il rend une ligne `PASSES`
+    (`<fichier>::<test>`) par test ajouté ou changé qui passe sur la base, une ligne `SKIPPED` par test
+    ignoré (sans effet sur le code), une ligne `RED` par fichier avec le compte `n test(s) rouge(s) sur m
+    ajouté(s) ou changé(s) (grain du test)`, et `NONE` pour un fichier changé sans qu'un de ses tests le
+    soit. Recopie-les de même, verbatim : le repérage des tests changés lit le texte du fichier, il peut
+    en placer un de travers, et tu ne le corriges pas.
 12. **Libellés de l'écran.** Les libellés que la PR ajoute ou change, confrontés aux mots refusés et
     au glossaire. Avec le `pr.diff` et le `usine-base.md` de la sonde 10, que tu as rangés dans le
     scratchpad **à côté** de la copie de la tête et non dedans, lancée **dans la copie de la tête**

@@ -21,9 +21,25 @@ The grain is the file, and a `RED` line says so (`code 1 (grain du fichier : un 
 côté n'est pas vu)`): the command runs on the whole file, so a file with a passing test beside a
 failing one is `RED`. A `RED` says only that the file, run on the base, exits non-zero; it does not
 say that each test of the file is red. A line `NONE` says no test file was added or changed.
-Exit code 0 when no file passes on the base, 1 when one does, 2 when a replay could not run or the
-call is wrong. Without the key `test-path` or `red-replay`, the step is "sans objet (clé <nom>
-absente)" and the exit code is 0.
+
+The grain is the test when `red-replay` also holds `{report}`, replaced by the path, quoted, of a file
+where the command writes a JUnit XML report (`pytest {file} --junitxml={report}`). The script reads it
+(`junit_report.py`), keeps the tests the PR adds or changes in the file (the lines of the diff against
+the position of each test name in the head file: a reading of the text, which `junit_report.py` says the
+limits of), and prints one line per test of them that passes or is skipped, and one `RED` line for the
+file when some are red:
+
+    PASSES   <file>::<test>   the test passes on the base
+    SKIPPED  <file>::<test>   the test is skipped on the base, it proves nothing (no effect on the code)
+    RED      <file>           n test(s) rouge(s) sur m ajouté(s) ou changé(s) (grain du test)
+    NONE     <file>           the file changed, no test of it did (a change above its first test, an import)
+
+A command that exits 0 without writing the report is `NOT RUN`, never `PASSES`; one that exits non-zero
+without a report is `RED` at the grain of the file (it fails before its tests); a report that declares a
+DOCTYPE or an entity, or is over 20 MB, is `NOT RUN`. Without `{report}` nothing changes: the grain is
+the file. Exit code 0 when nothing passes on the base, 1 when something does, 2 when a replay could not
+run or the call is wrong. Without the key `test-path` or `red-replay`, the step is "sans objet (clé
+<nom> absente)" and the exit code is 0.
 
 Bounds. Each command (install ones included) runs under a memory limit (`--memory-mb`, 2000 by
 default) and a delay (`--timeout`, 300 s by default), because it runs test code against code that
@@ -55,10 +71,11 @@ from pathlib import Path, PurePosixPath
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "hooks"))
 
+import junit_report  # noqa: E402
 import usine  # noqa: E402
 from bounded_run import run_bounded  # noqa: E402
 
-PASSES, RED, NOT_RUN, NONE = "PASSES", "RED", "NOT RUN", "NONE"
+PASSES, RED, NOT_RUN, NONE, SKIPPED = "PASSES", "RED", "NOT RUN", "NONE", "SKIPPED"
 TAIL_LINES = 15
 GRAIN = "(grain du fichier : un test qui passe à côté n'est pas vu)"
 
@@ -106,8 +123,9 @@ def quote(value: str) -> str:
     return subprocess.list2cmdline([value]) if os.name == "nt" else shlex.quote(value)
 
 
-def command_for(template: str, path: str) -> str:
-    return template.replace("{file}", quote(path)).replace("{name}", quote(PurePosixPath(path).name))
+def command_for(template: str, path: str, report: Path | None = None) -> str:
+    command = template.replace("{file}", quote(path)).replace("{name}", quote(PurePosixPath(path).name))
+    return command.replace("{report}", quote(str(report))) if report else command
 
 
 def run(command: str, cwd: Path, timeout: int, memory_mb: int) -> tuple[int | None, str, str]:
@@ -129,6 +147,41 @@ def run(command: str, cwd: Path, timeout: int, memory_mb: int) -> tuple[int | No
     return outcome.code, "\\n".join(lines[-TAIL_LINES:]), ""
 
 
+def replay_by_test(
+    args: argparse.Namespace, template: str, path: str, root: Path, report: Path
+) -> list[tuple[str, str, str]]:
+    """The rows of one file replayed at the grain of the test, from the JUnit report the command writes."""
+    command = command_for(template, path, report)
+    code, _tail, why = run(command, root, args.timeout, args.memory_mb)
+    if code is None:
+        return [(NOT_RUN, path, f"{command} : {why}")]
+    if not report.exists():
+        if code == 0:
+            return [(NOT_RUN, path, f"{command} : sortie 0 sans rapport JUnit à l'emplacement de {{report}}")]
+        return [(RED, path, f"code {code} {GRAIN}")]
+    try:
+        cases = junit_report.parse(report)
+    except junit_report.ReportError as error:
+        return [(NOT_RUN, path, f"{command} : {error}")]
+    diff = git("diff", "-U0", "--no-renames", f"{args.base}...{args.head}", "--", path).decode("utf-8", "replace")
+    text = git("show", f"{args.head}:{path}").decode("utf-8", "replace")
+    mine = junit_report.touched(cases, text, junit_report.changed_ranges(diff))
+    if not mine:
+        if code != 0 and not cases:
+            return [(RED, path, f"code {code} {GRAIN}")]
+        return [(NONE, path, "aucun test ajouté ou changé dans ce fichier (grain du test)")]
+    rows = []
+    for case in mine:
+        if case.status == junit_report.PASS:
+            rows.append((PASSES, f"{path}::{case.ident}", "passe sur la base (grain du test)"))
+        elif case.status == junit_report.SKIPPED:
+            rows.append((SKIPPED, f"{path}::{case.ident}", "ignoré sur la base : ne prouve rien (grain du test)"))
+    failed = sum(case.status == junit_report.FAIL for case in mine)
+    if failed:
+        rows.append((RED, path, f"{failed} test(s) rouge(s) sur {len(mine)} ajouté(s) ou changé(s) (grain du test)"))
+    return rows
+
+
 def replay(args: argparse.Namespace, config: dict[str, list[str]]) -> tuple[list[tuple[str, str, str]], int]:
     prefixes, commands = config["test-path"], config["red-replay"]
     if len(commands) != 1 or not ("{file}" in commands[0] or "{name}" in commands[0]):
@@ -140,7 +193,11 @@ def replay(args: argparse.Namespace, config: dict[str, list[str]]) -> tuple[list
     rows: list[tuple[str, str, str]] = []
     folder = tempfile.mkdtemp(prefix="forge-base-")
     try:
-        root = Path(folder)
+        # The copy and the JUnit reports are apart: a report is not a file of the project under test.
+        root = Path(folder) / "copy"
+        reports = Path(folder) / "reports"
+        root.mkdir()
+        reports.mkdir()
         extract_base(merge_base, root)
         for path in files:
             lay_head_file(args.head, path, root)
@@ -149,7 +206,10 @@ def replay(args: argparse.Namespace, config: dict[str, list[str]]) -> tuple[list
             if code != 0:
                 reason = why or f"code {code}, {tail}"
                 return [(NOT_RUN, path, f"{install} : {reason}") for path in files], 2
-        for path in files:
+        for number, path in enumerate(files):
+            if "{report}" in commands[0]:
+                rows.extend(replay_by_test(args, commands[0], path, root, reports / f"{number}.xml"))
+                continue
             command = command_for(commands[0], path)
             code, tail, why = run(command, root, args.timeout, args.memory_mb)
             if code is None:

@@ -131,8 +131,8 @@ rien à lire et aucun constat, et tu écris dans `GATES` « sans objet (clé `pr
 
 Le tableau de `forge:qc-gate` porte une sonde **Rejeu des tests sur la base** : les fichiers de test
 que la PR ajoute ou change y sont rejoués sur la base, et un test de changement doit y échouer. Tu
-ne refais pas sa mesure, tu lis ses lignes `PASSES` : un fichier de test qui passe déjà sur la base.
-Pour chacun, cherche dans le corps de la PR une justification (un test de caractérisation, une
+ne refais pas sa mesure, tu lis ses lignes `PASSES` : un fichier de test, ou un test (`<fichier>::<test>`
+quand la ligne le nomme), qui passe déjà sur la base. Pour chacun, cherche dans le corps de la PR une justification (un test de caractérisation, une
 refonte à comportement égal). Sans justification, c'est un constat, parce que ce test ne prouve rien
 du changement : sur l'ancien code, il passait.
 
@@ -140,6 +140,13 @@ Le rejeu est au **grain du fichier** : un `RED` ne prouve pas que chaque test aj
 rouge, il dit seulement que le fichier, lancé sur la base, sort non nul. Un test qui passe sur la base
 à côté d'un test rouge n'est pas vu : ne lis pas un fichier `RED` comme la preuve du rouge de chacun
 de ses tests.
+
+Quand les lignes portent `(grain du test)`, le rejeu a lu un rapport par test : une ligne `PASSES`
+nomme le test, et une ligne `RED` de fichier compte ses tests rouges sur ceux que la PR ajoute ou
+change. Ce repérage lit le texte du fichier et, dans le doute, compte un test comme changé : un test
+qu'il ne sait pas placer, ou qu'un changement voisin touche (un assistant sous lui, un décorateur
+au-dessus), a sa ligne même si la PR ne le change pas. Une chaîne écrite sur plusieurs lignes peut
+encore le tromper, et une ligne `NONE` ne prouve pas qu'aucun test du fichier ne change de comportement.
 
 Sévérité : `BLOCKER` quand il est la seule preuve d'un critère de comportement nouveau ; ce critère
 compte alors pour absent dans `SPEC`. `MINOR` sinon (un critère aussi prouvé par un test rouge sur la

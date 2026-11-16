@@ -229,8 +229,17 @@ toutes deux nécessaires : sans l'une, la sonde se rend « sans objet (clé `tes
 
 `red-replay` : la commande qui lance la suite dans la copie, une seule. `{file}` y est remplacé par le
 fichier de test à rejouer (son chemin depuis la racine), `{name}` par son nom de fichier, tous deux
-protégés par des guillemets ; l'un des deux au moins est obligatoire. Un fichier est rejoué en entier,
-et il est rendu quand la commande sort à 0 sur la base. Chaque commande, celles de `install`
+protégés par des guillemets ; l'un des deux au moins est obligatoire. Par défaut, le grain est le
+fichier : il est rejoué en entier, et rendu quand la commande sort à 0 sur la base. `{report}`, facultatif
+et sans clé de plus, passe au grain du test : il est remplacé par le chemin d'un fichier où la commande
+écrit un rapport JUnit XML (`pytest {file} --junitxml={report}`). Le script repère alors les tests que
+la PR ajoute ou change dans le fichier, en confrontant les lignes du diff à la place de chaque nom de
+test dans le fichier de la tête (une lecture du texte, pas du langage, qui dans le doute compte un test
+comme changé : un test qu'il ne sait pas placer, ou un assistant changé sous un test, fait rendre ce
+test), et ne rend que ceux de ces tests
+qui passent sur la base, chacun sur sa ligne `PASSES` (`<fichier>::<test>`). Une commande qui sort à 0
+sans rapport est `NOT RUN`, jamais `PASSES`. Un projet dont le lanceur n'écrit pas de rapport JUnit
+reste au grain du fichier. Chaque commande, celles de `install`
 comprises, tourne sous une limite de mémoire (2000 Mo) et un délai (300 s) que le script pose lui-même,
 parce qu'elle exécute du code de test contre un code qui ne l'attend pas. Ces bornes sont éprouvées sous
 Linux seulement ; sous Windows elles reposent sur un objet de tâche (job object), écrit d'après la
@@ -238,6 +247,8 @@ documentation Win32, jamais vu hors de la CI, où sa première version a échou�
 version corrigée n'est pas encore vue verte.
 
 - `red-replay` : `<uv run pytest {file}>`
+
+Au grain du test, cette même ligne porte `{report}` : `<uv run pytest {file} --junitxml={report}>`.
 
 Le motif des tags de version, lu par `scripts/factory_slo.py` pour l'indicateur `release-lag` : `{version}`
 tient pour la version (`<plugin>--v{version}`). Une ligne par motif. Sans la clé, `release-lag` est
