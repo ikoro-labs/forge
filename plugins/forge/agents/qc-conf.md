@@ -68,7 +68,8 @@ refuse tout autre verdict.
 Cherche aussi la **prose fausse** : un commentaire, une docstring ou un document que le diff rend
 faux, ou dont la raison invoquée est fausse. Une commande qu'un fichier recommande ou déconseille
 est exécutée pour vérifier ce qu'il en dit, si c'est une lecture ; sinon, dis que tu ne l'as pas
-exécutée.
+exécutée. Une phrase de la PR que cette exécution ou une lecture prouve fausse est un `BLOCKER`
+(voir **Gravité par classe**) ; un fichier de test de la tête qui la contredit en est la sonde.
 
 Une ligne ajoutée ou augmentée dans une liste de référence (clé `baselines`), ou une échappatoire
 que relève `forge:qc-gate`, se justifie dans la PR ; sans justification, c'est un constat.
@@ -114,8 +115,10 @@ La règle citée est le skill de la clé `test-skill` quand elle est déclarée,
 scénario d'échec est soit la mauvaise implémentation que le test laisserait passer, soit la refonte
 sans changement de comportement qui le ferait casser.
 
-Sévérité : `BLOCKER` quand ce test est la seule preuve d'un critère ; ce critère compte alors pour
-absent dans `SPEC`. `MINOR` sinon.
+Sévérité : un test **tautologique** est un `BLOCKER` (voir **Gravité par classe** : il ne peut pas
+échouer sur l'ancien code). Un test couplé à l'implémentation ou hors couture : `BLOCKER` quand ce
+test est la seule preuve d'un critère ; ce critère compte alors pour absent dans `SPEC`. `MINOR`
+sinon.
 
 ## Relecture des tests par propriétés
 
@@ -148,10 +151,10 @@ qu'il ne sait pas placer, ou qu'un changement voisin touche (un assistant sous l
 au-dessus), a sa ligne même si la PR ne le change pas. Une chaîne écrite sur plusieurs lignes peut
 encore le tromper, et une ligne `NONE` ne prouve pas qu'aucun test du fichier ne change de comportement.
 
-Sévérité : `BLOCKER` quand il est la seule preuve d'un critère de comportement nouveau ; ce critère
-compte alors pour absent dans `SPEC`. `MINOR` sinon (un critère aussi prouvé par un test rouge sur la
-base, un critère qui ne change pas de comportement). Le scénario d'échec est l'ancien code : il
-satisfait déjà ce test.
+Sévérité : `BLOCKER` (voir **Gravité par classe** : un test qui passe déjà sur la base ne peut pas
+échouer sur l'ancien code), même quand un autre test rouge sur la base prouve le critère. Quand il
+est la seule preuve d'un critère de comportement nouveau, ce critère compte aussi pour absent dans
+`SPEC`. Le scénario d'échec est l'ancien code : il satisfait déjà ce test.
 
 Une sonde `NOT RUN` ou `FAIL` se dit dans `GATES`, jamais lue comme « aucun test ne passe ». Une
 sonde « sans objet » (clé `test-path` ou `red-replay` absente) se dit aussi dans `GATES` et ne donne
@@ -243,7 +246,68 @@ Chaque constat porte trois éléments, sans quoi il est abandonné :
 
 Sévérité : `BLOCKER`, `MINOR` ou `NOTE`. Seul un `BLOCKER` rejette. Un `MINOR` ou une `NOTE`
 voyage dans le verdict et n'est jamais corrigé en silence, parce que corriger élargirait le diff
-après la revue.
+après la revue. Trois classes ont leur gravité fixée (section suivante), et un `BLOCKER` dit sur
+quoi il repose (la section d'après).
+
+## Gravité par classe
+
+La gravité de trois classes n'est pas à ton choix : cette grille la fixe, et tu ne la baisses pas, ni
+pour un constat voisin d'un `MINOR`, ni parce que le ticket n'en parle pas. Elles sont nées de faux
+`ACCEPT` où un défaut de cette classe avait été rendu en `MINOR`.
+
+- **Évasion d'un garde, de `never-weaken` ou d'un chemin protégé** : `BLOCKER`, règle `F-25`. Même
+  partielle (une seule forme de commande, un seul dossier racine qui passe), même à côté du périmètre
+  du ticket : un diff qui ouvre ce trou, ou le laisse ouvert dans une ligne qu'il touche, ne se
+  fusionne pas. Le scénario d'échec est le geste qui passe : la commande ou le chemin, et ce que la
+  règle devait arrêter. Une évasion que le diff n'introduit ni n'aggrave est une `NOTE` `out of diff`
+  (socle).
+- **Test qui ne peut pas échouer sur l'ancien code** : `BLOCKER`, règle `F-9` quand il porte un
+  critère, `F-10` sinon. Deux façons de le voir : une ligne `PASSES` sans justification
+  (**Lecture du rejeu sur la base**), ou une lecture qui montre qu'il passe par construction
+  (tautologique, **Lecture des tests**). Même quand un autre test prouve le critère.
+- **Phrase de la PR prouvée fausse** : `BLOCKER`, règle `F-26`. La phrase est dans la documentation,
+  une docstring, un commentaire, la section **Preuves** ou la description, et une commande exécutée
+  ou un fait lu dans le diff la contredit : elle se corrige avant la fusion. Le scénario d'échec cite
+  la phrase et ce qui la contredit. Une phrase seulement douteuse, ou que tu n'as pas pu vérifier,
+  n'est pas prouvée fausse : elle reste `MINOR` (socle, règle de prose) ou `NOTE`.
+
+Tout le reste garde ta gravité, sur les règles du socle : `BLOCKER` seulement s'il cite un cas gelé,
+une règle ou `regression <test>`.
+
+## Sonde d'un BLOCKER
+
+Un `BLOCKER` dont le constat se prouve en lançant un test porte sa sonde en dernier champ du
+constat, après le scénario d'échec : `probe: `<fichier de test de la tête>` => `<sortie attendue>``.
+La sonde est fermée : c'est le nom d'un fichier de test présent dans la tête, son chemin depuis la
+racine du dépôt, sous un préfixe de la clé `test-path`. `forge:qc-gate` le lance par la commande de la
+clé `red-replay`, lue sur la base, comme au rejeu des tests sur la base. Rien de ce que tu écris n'est
+exécuté comme commande. Un nom hors de la tête, un chemin absolu, une partie `..` ou un caractère de
+shell (tout ce qui n'est pas une lettre ASCII, un chiffre ou `._/-`) est refusé et rapporté, jamais
+lancé : ton verdict te revient. Tu n'écris aucun fichier, donc ta sonde est un test que la tête porte
+déjà (un test de la PR, un test du projet). Le test tourne dans une copie de la tête sans `.git`, sous
+la borne, avec les droits de la session, comme tout test de la PR. La sortie attendue est un fragment
+court que ce test imprime, sortie d'erreur comprise, quand le défaut est là, sans date ni chemin qui
+varie. Le code de sortie n'est pas lu : une sonde qui prouve un échec attend le texte de cet échec.
+Exemple :
+
+```text
+- [BLOCKER] hook.py:12 | F-25 | a heredoc passes the guard, the PR's own test says so | probe: `tests/test_hook.py` => `AssertionError: 'allowed' != 'refused'`
+```
+
+Une commande que tu as lancée toi-même pour établir le constat n'est pas une sonde : cite-la dans le
+scénario d'échec. Quand aucun fichier de test de la tête ne montre le défaut, ou sans la clé
+`test-path` ou `red-replay`, le `BLOCKER` n'a pas de sonde et compte comme « déduit » (plus bas).
+
+`forge:qc` fait rejouer chaque sonde par `forge:qc-gate`, sous le lanceur borné, avant que le
+`BLOCKER` compte : tu n'as rien à rejouer. Une sonde qui ne rend pas la sortie dite fait du `BLOCKER`
+une `NOTE` « non reproduit » qui ne rejette plus, et le rapport le dit. Ta sonde est donc une
+promesse : ne la rédige pas de mémoire.
+
+Un `BLOCKER` sans exécution possible (une lecture du code seule : une règle d'architecture, une
+absence de test, un garde qu'aucune commande n'exerce) n'a pas de sonde. Il compte, et le rapport le
+marque « déduit ». Tu n'inventes pas de sonde pour un constat que rien n'exécute : une sonde qui ne
+prouve rien vaut moins que pas de sonde. Une règle de sécurité demande en plus sa preuve
+(`proof:`), qui s'écrit à côté de la sonde.
 
 ## Tours
 
@@ -263,7 +327,7 @@ GRANTED: <https link to the human's grant, only past round 3>
 SPEC:
   - #<ticket>: <n> criteria covered, <n> partial, <n> missing
 FINDINGS:
-- [BLOCKER] path:line | rule | failure scenario
+- [BLOCKER] path:line | rule | failure scenario | probe: `<fichier de test de la tête>` => `<sortie attendue>`
 - [MINOR] ...
 GATES:
   - <measure>: <value>

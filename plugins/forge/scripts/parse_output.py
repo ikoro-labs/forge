@@ -2,12 +2,25 @@
 what is wrong with it.
 
     python parse_output.py result <file | ->
-    python parse_output.py verdict <file | ->
+    python parse_output.py verdict <file | -> [--replay <file>] [--rewrite <file>]
     python parse_output.py domain <file | ->
 
 On success, prints the block as JSON and exits 0. On failure, prints the first problem found
 and exits 1: the skill that launched the agent relaunches it once with that sentence, then
 reports FAILED. The standard library only, so it runs wherever the hooks run.
+
+The counting rule of a `[BLOCKER]`. A blocker that rests on an execution carries its probe as a last
+field, `probe: `<test file of the head>` => `<expected output>``, and `probe_replay.py` replays it by
+the command of the key `red-replay`. The probe is a name, never a command: a path from the root of the
+repository, made of ASCII letters, digits and `._/-`, that is not absolute, has no `..` part and does
+not start with `-` or `.`. Any other name is refused here (exit code 1) and nothing runs. A blocker with
+no probe rests on a reading of the code: it counts and is marked `déduit`. With `--replay <file>`
+(the lines `probe_replay.py` printed), a probed blocker counts only once its probe was replayed:
+`CONFIRMED` keeps it (`confirmé`), `NOT REPRODUCED` makes it a `[NOTE]` marked `non reproduit`, which
+no longer rejects, `REFUSED` (the name is not a test file of the head) sends the verdict back to its
+judge (exit code 1), and any other state (`NOT RUN`, no line) leaves it unsettled: exit code 3, the
+verdict does not stand yet. `--rewrite <file>` writes the verdict as it stands after the replay, the
+demoted blockers as notes and a `REJECT` left with no blocker as `ACCEPT`.
 """
 
 from __future__ import annotations
@@ -17,6 +30,7 @@ import re
 import sys
 from collections.abc import Callable, Mapping
 from pathlib import Path
+from typing import Any, cast
 
 KEY = re.compile(r"^([A-Z][A-Z_ ]*[A-Z]):[ \t]?(.*)$")
 FENCE = re.compile(r"^```[\w-]*\s*$")
@@ -54,6 +68,21 @@ DOMAIN_KEYS = {
 
 class OutputError(ValueError):
     """The block does not have the form its reader expects."""
+
+
+class ReplayError(OutputError):
+    """A probe of a blocker has no usable replay: the blocker cannot count yet (exit code 3)."""
+
+
+# A blocker's probe, its last field: a test file of the head, then the output its run must print.
+PROBE = re.compile(r"^probe:\s*`([^`]+)`\s*=>\s*`([^`]+)`$", re.IGNORECASE)
+PROBE_FORM = "`probe: `<test file of the head>` => `<expected output>``"
+# A probe name reaches a shell only as an argument of the `red-replay` command, quoted: still, only these
+# characters pass, so that no name can carry a shell character, an option or a way out of the head.
+PROBE_NAME = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_./-]*$")
+MARKS = {"deduced": "déduit", "confirmed": "confirmé", "demoted": "non reproduit"}
+# The lines `probe_replay.py` prints, one per blocker: `<status>\t<finding number>\t<detail>`.
+REPLAY_STATUSES = ("CONFIRMED", "NOT REPRODUCED", "REFUSED", "NOT RUN", "DEDUCED", "NONE")
 
 
 def _fields(text: str, first: str, known: set[str]) -> dict[str, list[str]]:
@@ -128,6 +157,75 @@ def _sub_lines(values: list[str]) -> list[str]:
     return items
 
 
+def split_fields(text: str) -> list[str]:
+    """The `|` fields of a finding; a `|` between backticks (a pipe in a command) does not split."""
+    fields: list[str] = []
+    current: list[str] = []
+    quoted = False
+    for char in text:
+        if char == "`":
+            quoted = not quoted
+        if char == "|" and not quoted:
+            fields.append("".join(current).strip())
+            current = []
+        else:
+            current.append(char)
+    fields.append("".join(current).strip())
+    return fields
+
+
+def probe_name_problem(name: str) -> str:
+    """Why `name` cannot be the test file a probe names, or `""` when it can.
+
+    The name runs nowhere by itself: `probe_replay.py` gives it to the command of the key `red-replay`.
+    Refused: an absolute path, a `..` part, and any character outside ASCII letters, digits and `._/-`
+    (a space, a quote, `;`, `|`, `$`, `\\`, `:`, `~`, a wildcard...), or a leading `-` or `.`.
+    """
+    if name.startswith(("/", "\\")) or re.match(r"^[A-Za-z]:", name):
+        return "an absolute path"
+    if PROBE_NAME.match(name) is None:
+        return "a character outside ASCII letters, digits and `._/-`, or a leading `-` or `.`"
+    if ".." in name.split("/"):
+        return "a `..` part"
+    return ""
+
+
+def probe_of(text: str) -> dict[str, str] | None:
+    """The probe a blocker carries, or None when it rests on a reading of the code."""
+    for field in split_fields(text):
+        if re.match(r"^probe:", field, re.IGNORECASE):
+            match = PROBE.match(field)
+            if match is None:
+                raise OutputError(
+                    f"finding `{text[:60]}`: a probe reads {PROBE_FORM}, the test file and the output in backticks"
+                )
+            problem = probe_name_problem(match.group(1))
+            if problem:
+                raise OutputError(
+                    f"finding `{text[:60]}`: probe `{match.group(1)[:60]}` refused, never run ({problem}): "
+                    f"a probe names a test file of the head, {PROBE_FORM}, never a command"
+                )
+            return {"file": match.group(1), "expect": match.group(2)}
+    return None
+
+
+def parse_replay(text: str) -> dict[int, str]:
+    """The replay lines of `probe_replay.py`, the status of each finding by its number."""
+    statuses: dict[int, str] = {}
+    for line in text.splitlines():
+        if not line.strip():
+            continue
+        parts = line.split("\t")
+        if parts[0] not in REPLAY_STATUSES:
+            raise OutputError(f"replay line `{line[:60]}`: the status must be one of {', '.join(REPLAY_STATUSES)}")
+        if parts[0] == "NONE":
+            continue
+        if len(parts) < 2 or not parts[1].isdigit():
+            raise OutputError(f"replay line `{line[:60]}`: the finding number is missing")
+        statuses[int(parts[1])] = parts[0]
+    return statuses
+
+
 def parse_verdict(text: str, extra: tuple[str, ...] = ()) -> dict[str, object]:
     """qc-conf's verdict; `extra` names the further optional keys a project's verdict writes."""
     fields = _fields(text, "VERDICT", {*VERDICT_KEYS, *VERDICT_OPTIONAL, *extra})
@@ -165,7 +263,7 @@ def parse_verdict(text: str, extra: tuple[str, ...] = ()) -> dict[str, object]:
             raise OutputError(
                 f"`SPEC: {spec}`: the line starts with neither `#<ticket>` nor `none`. " + SPEC_FORMS
             )
-    findings: list[dict[str, str]] = []
+    findings: list[dict[str, Any]] = []
     for line in fields["FINDINGS"][0].splitlines():
         line = line.strip()
         if not line or line.lower() in ("none", "aucun", "- none", "- aucun"):
@@ -173,7 +271,10 @@ def parse_verdict(text: str, extra: tuple[str, ...] = ()) -> dict[str, object]:
         match = FINDING.match(line)
         if match is None:
             raise OutputError(f"finding `{line}`: it must read `- [BLOCKER|MINOR|NOTE] ...`")
-        findings.append({"severity": match.group(1), "text": match.group(2)})
+        severity = match.group(1)
+        probe = probe_of(match.group(2)) if severity == "BLOCKER" else None
+        mark = MARKS["deduced"] if severity == "BLOCKER" and probe is None else ""
+        findings.append({"severity": severity, "text": match.group(2), "probe": probe, "mark": mark})
     socle = fields.get("SOCLE", [""])[0]
     if "SOCLE" in fields and not HEAD.match(socle):
         raise OutputError(f"`SOCLE: {socle}`: it must be the hexadecimal SHA, 7 to 40 characters, of the socle read")
@@ -188,6 +289,8 @@ def parse_verdict(text: str, extra: tuple[str, ...] = ()) -> dict[str, object]:
         raise OutputError(f"`VERDICT: ACCEPT` with {blockers} `[BLOCKER]` finding(s)")
     return {
         "VERDICT": verdict,
+        "JUDGED": verdict,
+        "DEMOTED": [],
         "ROUND": int(round_),
         "HEAD": head,
         "SPEC": specs,
@@ -198,6 +301,79 @@ def parse_verdict(text: str, extra: tuple[str, ...] = ()) -> dict[str, object]:
         "BATTERY CORRECTION": fields.get("BATTERY CORRECTION", [""])[0],
         "PROPOSAL": proposals,
     }
+
+
+def count_verdict(text: str, replay: Mapping[int, str]) -> dict[str, object]:
+    """The verdict as `parse_verdict` reads it, with the counting rule applied to its probes.
+
+    A probed blocker counts once its probe is confirmed, becomes a `[NOTE]` marked `non reproduit`
+    when it is not reproduced, and is unsettled otherwise (`ReplayError`). `VERDICT` is the verdict
+    that stands, `JUDGED` the judge's, `DEMOTED` the numbers of the findings made notes.
+    """
+    parsed = parse_verdict(text)
+    findings = cast("list[dict[str, Any]]", parsed["FINDINGS"])
+    parsed["DEMOTED"] = _settle(findings, replay)
+    parsed["VERDICT"] = "REJECT" if any(finding["severity"] == "BLOCKER" for finding in findings) else "ACCEPT"
+    return parsed
+
+
+def _settle(findings: list[dict[str, Any]], replay: Mapping[int, str]) -> list[int]:
+    """Apply the replay to the probed blockers; the numbers demoted to notes.
+
+    A probe the replay refused (`REFUSED`: its name is not a test file of the head) goes back to the
+    judge (`OutputError`). A probed blocker whose probe was not replayed (`NOT RUN`, no line) is
+    unsettled: it counts neither way, and the verdict does not stand yet.
+    """
+    demoted: list[int] = []
+    refused: list[str] = []
+    unsettled: list[str] = []
+    for number, finding in enumerate(findings, 1):
+        if finding["severity"] != "BLOCKER" or finding["probe"] is None:
+            continue
+        status = replay.get(number)
+        if status == "CONFIRMED":
+            finding["mark"] = MARKS["confirmed"]
+        elif status == "NOT REPRODUCED":
+            finding["severity"], finding["mark"] = "NOTE", MARKS["demoted"]
+            demoted.append(number)
+        elif status == "REFUSED":
+            refused.append(f"finding {number} (`{finding['probe']['file']}`)")
+        else:
+            unsettled.append(f"finding {number} ({status or 'no replay line'})")
+    if refused:
+        raise OutputError(
+            "probe refused, never run: " + ", ".join(refused) + ": a probe names a test file of the head, "
+            "under a prefix of the key `test-path`"
+        )
+    if unsettled:
+        raise ReplayError(
+            "unsettled probe: " + ", ".join(unsettled) + ": the blocker cannot count until its probe is replayed"
+        )
+    return demoted
+
+
+def apply_replay(text: str, replay: Mapping[int, str]) -> str:
+    """The verdict as it stands after the replay: demoted blockers become `[NOTE] non reproduit :`
+    notes, and a `REJECT` left with no blocker reads `ACCEPT`. A verdict nothing demotes is unchanged."""
+    parsed = count_verdict(text, replay)
+    demoted = set(cast("list[int]", parsed["DEMOTED"]))
+    if not demoted:
+        return text
+    lines = text.splitlines(keepends=True)
+    start = max(index for index, line in enumerate(lines) if line.startswith("VERDICT:"))
+    number = 0
+    in_findings = False
+    for index in range(start, len(lines)):
+        line = lines[index]
+        if KEY.match(line.rstrip()):
+            in_findings = line.startswith("FINDINGS:")
+            if line.startswith("VERDICT:") and parsed["VERDICT"] != parsed["JUDGED"]:
+                lines[index] = f"VERDICT: {parsed['VERDICT']}\n"
+        elif in_findings and FINDING.match(line.strip()):
+            number += 1
+            if number in demoted:
+                lines[index] = re.sub(r"\[BLOCKER\]\s*", f"[NOTE] {MARKS['demoted']} : ", line, count=1)
+    return "".join(lines)
 
 
 def parse_domain(text: str) -> dict[str, str]:
@@ -219,15 +395,45 @@ def parse_domain(text: str) -> dict[str, str]:
 PARSERS: dict[str, Callable[[str], Mapping[str, object]]] = {"result": parse_result, "verdict": parse_verdict, "domain": parse_domain}
 
 
+USAGE = (
+    "usage: parse_output.py result|verdict|domain <file | ->\n"
+    "       parse_output.py verdict <file | -> [--replay <file>] [--rewrite <file>]\n"
+)
+
+
 def main(argv: list[str]) -> int:
-    if len(argv) != 2 or argv[0] not in PARSERS:
-        sys.stderr.write("usage: parse_output.py result|verdict|domain <file | ->\n")
+    args = list(argv)
+    options: dict[str, str] = {}
+    for flag in ("--replay", "--rewrite"):
+        if flag in args:
+            index = args.index(flag)
+            if index + 1 >= len(args):
+                sys.stderr.write(USAGE)
+                return 2
+            options[flag] = args[index + 1]
+            del args[index : index + 2]
+    if (
+        len(args) != 2
+        or args[0] not in PARSERS
+        or (options and args[0] != "verdict")
+        or ("--rewrite" in options and "--replay" not in options)
+    ):
+        sys.stderr.write(USAGE)
         return 2
-    text = sys.stdin.read() if argv[1] == "-" else Path(argv[1]).read_text(encoding="utf-8")
+    text = sys.stdin.read() if args[1] == "-" else Path(args[1]).read_text(encoding="utf-8")
     try:
-        parsed = PARSERS[argv[0]](text)
+        if "--replay" in options:
+            replay = parse_replay(Path(options["--replay"]).read_text(encoding="utf-8"))
+            parsed: Mapping[str, object] = count_verdict(text, replay)
+            if "--rewrite" in options:
+                Path(options["--rewrite"]).write_text(apply_replay(text, replay), encoding="utf-8")
+        else:
+            parsed = PARSERS[args[0]](text)
+    except ReplayError as error:
+        print(f"invalid {args[0]}: {error}")
+        return 3
     except OutputError as error:
-        print(f"invalid {argv[0]}: {error}")
+        print(f"invalid {args[0]}: {error}")
         return 1
     print(json.dumps(parsed, ensure_ascii=False, indent=2))
     return 0

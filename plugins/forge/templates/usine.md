@@ -216,6 +216,20 @@ extraite par `git archive` et supprimée ensuite, sous la borne de `run-limits` 
 `ci-replay` absente) » ; sans `run-limits`, « sans objet (clé `run-limits` absente) » ; sans `run-budget`,
 la sonde le dit et ne l'attend pas. Elle dure la suite multipliée par le nombre de commits.
 
+Le rejeu de la sonde d'un `BLOCKER`, par `forge:qc-gate` en mode `MODE: probes` (`scripts/probe_replay.py`) :
+un `BLOCKER` du juge qui repose sur une exécution porte le nom d'un fichier de test de la tête et la
+sortie attendue. La sonde est fermée : le script lance ce fichier par la commande de la clé `red-replay`,
+comme au rejeu des tests sur la base, dans une copie de la tête sans `.git` (faite par `git archive`),
+sous la borne de `run-limits` et après le budget de `run-budget`, avant que le `BLOCKER` compte ; rien de
+ce que le juge écrit n'est exécuté comme commande. Un nom hors de la tête ou hors de `test-path`, un
+chemin absolu, une partie `..` ou un caractère de shell est refusé, jamais lancé, et le verdict revient
+au juge. Une sortie dite que le test n'imprime pas (ou qu'un délai interrompt) en fait une `NOTE`
+« non reproduit » ; un `BLOCKER` sans sonde compte et se marque « déduit ». Aucune clé de plus : sans
+`run-limits`, « sans objet (clé `run-limits` absente) », et de même sans `test-path` ou `red-replay` :
+aucune sonde ne tourne et le `BLOCKER` reste en suspens ; sans `run-budget`, la sonde le dit et ne
+l'attend pas. Le test tourne avec
+les droits de la session, comme tout test de la PR.
+
 Le rejeu des tests d'une PR sur sa base, par `forge:qc-gate` : les fichiers de test que la PR ajoute
 ou change sont posés dans une copie de la base, puis rejoués, et chacun doit y échouer. Un test
 rouge sur la base prouve le changement ; un qui y passe déjà est rendu à `forge:qc-conf`. Deux clés,

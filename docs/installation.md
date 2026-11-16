@@ -152,6 +152,38 @@ multipliée par le nombre de commits. Elle ne ramène pas le `-n` de pytest-xdis
 par un shell. Éprouvé sous Linux seulement : le côté Windows repose sur `run_bounded`, qui n'a tourné que dans la
 CI de ce dépôt, et cette sonde n'y a pas encore tourné ; macOS n'est pas couvert.
 
+La gravité d'un constat de `forge:qc-conf` n'est plus tout à fait au choix du juge, et un `BLOCKER`
+qui repose sur une exécution est confirmé par elle. Trois classes ont une gravité fixée dans le prompt
+du juge, parce que les faux `ACCEPT` connus venaient d'une gravité trop basse : une évasion d'un garde,
+de `never-weaken` ou d'un chemin protégé, même partielle (règle `F-25` du socle) ; un test qui ne peut
+pas échouer sur l'ancien code (`F-9` ou `F-10`) ; une phrase de la PR prouvée fausse (`F-26`, la seule
+règle de prose qui rejette). Un `BLOCKER` dont le constat se prouve en lançant un test porte sa sonde en
+dernier champ (`probe: `<fichier de test>` => `<sortie attendue>``). La sonde est fermée : c'est le nom
+d'un fichier de test de la tête, sous un préfixe de `test-path`, jamais une commande. Après le jugement,
+`forge:qc` fait rejouer chaque sonde par `forge:qc-gate` : `plugins/forge/scripts/probe_replay.py`
+lance ce fichier de test par la commande de la clé `red-replay` lue sur la base, comme au rejeu des tests sur la
+base, dans une copie de la tête faite par `git archive`, sans `.git` (une copie qui en porte un est
+refusée, `NOT RUN`), sous la borne de `run-limits` après le budget de `run-budget`, et cherche la sortie
+dite dans ce que le test imprime, sortie d'erreur comprise (le code de sortie n'est pas lu). Rien de ce
+que le juge écrit n'est exécuté comme commande, puisque la sonde n'est que le nom d'un fichier de test de
+la tête : un nom absent de la tête ou hors de `test-path` est
+refusé (`REFUSED`), un chemin absolu, une partie `..` ou un caractère de shell (tout ce qui n'est pas une
+lettre ASCII, un chiffre ou `._/-`) l'est dès la lecture du verdict ; rien ne tourne, et le verdict revient
+au juge. Une sortie absente, ou un test tué au délai, fait du `BLOCKER` une `NOTE` « non reproduit » qui
+ne rejette plus ; une sonde qui n'a pas pu tourner (budget du poste, borne, clé `run-limits`, `test-path`
+ou `red-replay` absente) laisse le `BLOCKER` en suspens et arrête la revue (`needs-your-attention`). Un
+`BLOCKER` sans exécution possible, ou dont aucun test de la tête ne montre le défaut, compte et le
+rapport le marque « déduit ». Aucune clé de plus. Ce qui tourne est un test de la PR, avec les droits de
+la session, comme au rejeu sur la base et dans la CI : la sonde n'isole pas ce test du poste (réseau,
+fichiers, trousseau de clés). Ce choix, une sonde fermée plutôt qu'une commande dans un bac à sable,
+vient de la revue de la PR #219 : vider l'environnement n'empêchait pas une commande du même
+utilisateur de retrouver le jeton de `gh` dans le trousseau. La borne, elle, ne protège que la mémoire
+et le délai. Elle ne ramène pas le `-n` de pytest-xdist (la commande passe par un shell). Éprouvé sous
+Linux seulement : le côté Windows repose sur `run_bounded`, qui n'a tourné que dans la CI de ce dépôt,
+et cette sonde n'y a pas encore tourné ; macOS n'est pas couvert. Le jeu de référence du juge
+(`docs/jeu-de-reference.md`) est celui qui mesurera l'effet de cette grille ; il n'a pas été lancé sur
+elle.
+
 Deux clés, `ui-labels` (les fichiers de libellés de l'interface, une ligne par fichier ou dossier) et
 `ui-forbidden-word` (un mot ou un motif refusé à l'écran, une ligne par mot), ouvrent la sonde des
 libellés de `forge:qc-gate` : `plugins/forge/scripts/ui_labels.py` lit les lignes que la PR ajoute

@@ -29,6 +29,9 @@ la première partie de l'entrée : seul `forge:qc-gate` les mesure), est revue e
 de `forge:qc-gate`,
 `forge:qc-conf` seul, qui relève lui-même les checks de la PR et `git merge-tree` avec la base. Le
 verdict, le rapport et la suite sont les mêmes. Tout le reste passe par les deux temps ci-dessous.
+Une seule chose de `forge:qc-gate` reste due en une passe : le rejeu des sondes des `BLOCKER` (étape
+4), qui est un mode (`MODE: probes`) et non le tableau. Une phrase prouvée fausse en est le cas
+habituel, et une PR de prose en rend souvent une.
 
 ## Étapes
 
@@ -54,6 +57,32 @@ verdict, le rapport et la suite sont les mêmes. Tout le reste passe par les deu
    relance `forge:qc-conf` une fois, avec la phrase que le script a rendue. Un second échec, ou un
    `HEAD` qui n'est pas la tête : la revue est `FAILED`, ne fusionne pas, pose
    `needs-your-attention` avec la raison, arrête-toi.
+
+   **Rejouer les sondes.** Un `[BLOCKER]` qui repose sur une exécution porte une sonde (`probe:` en
+   dernier champ), et il ne compte qu'une fois cette sonde rejouée. La sonde est le nom d'un fichier
+   de test de la tête, que `forge:qc-gate` lance par la commande de la clé `red-replay` de la base :
+   rien de ce que le juge écrit n'est exécuté comme commande. Quand le verdict en porte,
+   lance `forge:qc-gate` avec la ligne `MODE: probes`, la PR, le tour et le verdict recopié tel
+   quel ; il rend une ligne par `BLOCKER` (`CONFIRMED`, `NOT REPRODUCED`, `REFUSED`, `NOT RUN` ou
+   `DEDUCED`). Écris ces lignes dans un fichier, puis :
+
+   ```
+   uv run --no-project --quiet python "${CLAUDE_PLUGIN_ROOT}/scripts/parse_output.py" verdict <fichier du verdict> --replay <fichier des lignes> --rewrite <fichier du verdict qui tient>
+   ```
+
+   Code 0 : poste le verdict qui tient (le fichier de `--rewrite`) à l'étape 5, jamais l'original.
+   Il diffère de celui du juge quand une sonde ne s'est pas reproduite : ce `BLOCKER` est devenu
+   une `NOTE` « non reproduit », et un `REJECT` qui n'a plus de `BLOCKER` est devenu un `ACCEPT`.
+   Une sonde dont le test a été tué au délai compte parmi celles qui ne se reproduisent pas.
+   Code 3 : une sonde n'a pas tourné (`NOT RUN` : budget du poste, borne, copie, absence de la clé
+   `run-limits`, `test-path` ou `red-replay`) ou n'a pas de ligne. Le `BLOCKER` ne compte ni ne
+   tombe : ne fusionne pas, ne poste pas de verdict, pose `needs-your-attention` avec la raison de la
+   ligne `NOT RUN`, arrête-toi. Le test tourne dans une copie de la tête sans `.git`, avec les droits
+   de la session, comme tout test de la PR. Éprouvé sous Linux seulement.
+   Code 1 : une sonde est mal formée ou refusée (`REFUSED` : le nom n'est pas un fichier de test de
+   la tête ; un chemin absolu, une partie `..` ou un caractère de shell est refusé dès la lecture du
+   verdict), relance `forge:qc-conf` une fois comme ci-dessus. Un verdict sans sonde (aucun
+   `[BLOCKER]`, ou des `BLOCKER` « déduits ») ne passe pas par ce mode.
 5. **Poster.** Le verdict, tel quel, en commentaire de PR : `gh pr comment <n> --body-file
    <fichier>`. La trace sur la PR est le but : une revue qui n'y figure pas n'a pas eu lieu.
 6. **Rapporter.** Écris la section `Rapport d'agent` (forme plus bas). Sur une PR que tu as ouverte,
@@ -197,7 +226,10 @@ En français, six lignes, aucune vide :
 - **Verdict :** ACCEPT | REJECT au tour <n> ; fusionnée par l'agent : oui | non
 ```
 
-`REX` n'est jamais « rien à signaler » : dis au moins ce que tu as vérifié et comment.
+`REX` n'est jamais « rien à signaler » : dis au moins ce que tu as vérifié et comment. Il dit aussi
+chaque `BLOCKER` « déduit » (lecture du code seule, aucune sonde : il compte) et chaque `BLOCKER`
+« non reproduit » (sa sonde n'a pas rendu la sortie dite : il est devenu une `NOTE`, avec la fin de ce
+que la sonde a imprimé), pour que l'humain voie ce que personne n'a exécuté.
 `Reprise : reportée sur #n` nomme le ticket ouvert où les `MINOR` qui changent un comportement
 sont reportés ; sinon `Reprise : aucune`.
 
