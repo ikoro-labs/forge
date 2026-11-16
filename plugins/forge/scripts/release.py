@@ -14,6 +14,7 @@ The output is one fact per line, in French, on standard output. The standard lib
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -30,6 +31,8 @@ import usine  # noqa: E402  the reader of `usine.md`
 Runner = Callable[[list[str], Path], str]
 
 TRIGGER_KEY = "release-trigger"
+TAG_KEY = "release-tag"
+REACHED, NOT_REACHED, ABSENT = "atteint", "non atteint", "sans objet"
 WRONG_CALL = 2
 
 
@@ -70,12 +73,75 @@ def load_trigger(project: Path) -> Trigger | None:
     return parse_trigger(values) if values else None
 
 
-def run_trigger(args: argparse.Namespace, run: Runner, now: datetime) -> int:
-    trigger = load_trigger(args.projet)
+@dataclass(frozen=True)
+class Due:
+    """Whether a version is due: `atteint`, `non atteint` or `sans objet`, and the sentence that says why."""
+
+    status: str
+    text: str
+    waiting: int = 0
+    oldest: datetime | None = None
+
+    @property
+    def reached(self) -> bool:
+        return self.status == REACHED
+
+    def line(self) -> str:
+        return f"DECLENCHEUR: {self.text}"
+
+
+def plural(count: int, word: str) -> str:
+    return f"{count} {word}{'s' if count > 1 else ''}"
+
+
+def wait_text(delta: timedelta) -> str:
+    """A wait in the unit of the key: days from two days on, hours below."""
+    hours = int(delta.total_seconds() // 3600)
+    return f"{hours // 24} j" if hours >= 48 or (hours >= 24 and hours % 24 == 0) else f"{hours} h"
+
+
+def waiting_merges(f: factory_slo.Factory, patterns: list[re.Pattern[str]]) -> list[datetime]:
+    """The merge dates of the pull requests on the base whose merge commit is in no version tag.
+
+    A merge commit that git does not know (not fetched) is in no tag as far as git can say: it counts
+    as waiting, so a version may fall due early, never late.
+    """
+    fields = "number,mergedAt,mergeCommit"
+    merged = f.gh("pr", "list", "--state", "merged", "--base", f.base, "--limit", "1000", "--json", fields)
+    waiting = []
+    for item in merged:
+        moment = factory_slo.when(item, "mergedAt")
+        oid = (item.get("mergeCommit") or {}).get("oid")
+        if moment is not None and factory_slo.first_tag_date(f, patterns, oid) is None:
+            waiting.append(moment)
+    return sorted(waiting)
+
+
+def due(project: Path, run: Runner, now: datetime) -> Due:
+    """The trigger of the key `release-trigger` against the merges waiting for a tag of `release-tag`."""
+    trigger = load_trigger(project)
     if trigger is None:
-        print(f"DECLENCHEUR: sans objet (clé `{TRIGGER_KEY}` absente), aucune publication par l'agent")
-        return 0
-    print(f"DECLENCHEUR: déclaré, {trigger.merges} fusions ou {trigger.wait_text}")
+        return Due(ABSENT, f"sans objet (clé `{TRIGGER_KEY}` absente), aucune publication par l'agent")
+    f = factory_slo.Factory(project, now - timedelta(days=1), now, run)
+    templates = f.required(TAG_KEY)
+    if not templates:
+        return Due(ABSENT, f"sans objet (clé `{TAG_KEY}` absente), aucune publication par l'agent")
+    waiting = waiting_merges(f, [factory_slo.tag_pattern(template) for template in templates])
+    if not waiting:
+        return Due(NOT_REACHED, f"{NOT_REACHED} : aucune fusion n'attend de version")
+    elapsed = now - waiting[0]
+    count, wanted = plural(len(waiting), "fusion"), plural(trigger.merges, "demandée")
+    if len(waiting) >= trigger.merges:
+        return Due(REACHED, f"{REACHED} par le nombre : {count} en attente pour {wanted}", len(waiting), waiting[0])
+    if elapsed >= trigger.wait:
+        oldest = f"la plus ancienne attend depuis {wait_text(elapsed)} pour {trigger.wait_text}"
+        return Due(REACHED, f"{REACHED} par le délai : {oldest}", len(waiting), waiting[0])
+    oldest = f"la plus ancienne depuis {wait_text(elapsed)} pour {trigger.wait_text}"
+    return Due(NOT_REACHED, f"{NOT_REACHED} : {count} en attente pour {wanted}, {oldest}", len(waiting), waiting[0])
+
+
+def run_trigger(args: argparse.Namespace, run: Runner, now: datetime) -> int:
+    print(due(args.projet, run, now).line())
     return 0
 
 
@@ -86,7 +152,6 @@ def main(argv: list[str] | None = None, run: Runner | None = None, now: datetime
     commands = parser.add_subparsers(dest="command", required=True)
     trigger = commands.add_parser("trigger", help="whether a version is due")
     trigger.add_argument("projet", type=Path)
-    trigger.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
     run = run or factory_slo.run_command
     moment = now or datetime.now(timezone.utc)
