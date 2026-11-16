@@ -63,5 +63,41 @@ class NoMethod(unittest.TestCase):
         self.assertIsNone(merge("gh pr merge 5 --merge --body -s", ["merge"]))
 
 
+class TheKey(unittest.TestCase):
+    def test_an_absent_key_refuses_every_merge_and_says_the_merge_is_the_humans(self) -> None:
+        # #63 : sans clé, aucune méthode n'est celle du projet ; `/forge:qc` ne fusionne pas non plus.
+        for flag in ("--merge", "--squash", "--rebase"):
+            with self.subTest(flag=flag):
+                verdict = merge(f"gh pr merge 5 {flag}", [])
+                assert verdict is not None
+                self.assertIn("merge-method", verdict)
+                self.assertIn("not declared", verdict)
+                self.assertIn("human", verdict)
+
+    def test_an_unknown_value_refuses_and_gives_the_faulty_line(self) -> None:
+        # #63 : une faute de frappe ne se lit pas comme une méthode ; la ligne fautive est citée.
+        for value in ("ff-only", "Merge", "squash,merge", "", "--merge"):
+            with self.subTest(value=value):
+                verdict = merge("gh pr merge 5 --merge", [value])
+                assert verdict is not None
+                self.assertIn(f"- `merge-method` : `{value}`", verdict)
+                self.assertIn("merge, squash or rebase", verdict)
+
+    def test_two_lines_are_not_one_method(self) -> None:
+        # #63 : la clé tient en une seule ligne.
+        verdict = merge("gh pr merge 5 --merge", ["merge", "squash"])
+        assert verdict is not None
+        self.assertIn("one line", verdict)
+
+    def test_cancelling_an_auto_merge_needs_no_key(self) -> None:
+        self.assertIsNone(merge("gh pr merge 5 --disable-auto", []))
+        self.assertIsNone(merge("gh pr merge 5 --disable-auto", ["ff-only"]))
+
+    def test_other_commands_do_not_read_the_key(self) -> None:
+        self.assertIsNone(merge("gh pr view 5", []))
+        self.assertIsNone(merge("git status", []))
+        self.assertIsNone(merge("gh pr edit 5 --add-label agent-merged", []))
+
+
 if __name__ == "__main__":
     unittest.main()

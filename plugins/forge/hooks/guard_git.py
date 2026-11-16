@@ -110,6 +110,7 @@ OWNER_KEY = "owner-gesture"
 PROTECTED_KEY = "protected-path"
 # The one way the project merges a PR: `merge`, `squash` or `rebase`.
 METHOD_KEY = "merge-method"
+MERGE_METHODS = ("merge", "squash", "rebase")
 
 # Every external call has a timeout: a hook that hangs blocks the agent's command.
 TIMEOUT_SECONDS = 20
@@ -1756,26 +1757,42 @@ def refusal(
 def method_refusal(
     key: Sequence[str] | None, methods: Iterable[str], cancels: bool = False
 ) -> str | None:
-    """Why the method a merge asks for is not the one of the `merge-method` key, or None.
+    """Why a merge is refused for its method, or None: it is the one the `merge-method` key says.
 
-    `key` is None when the caller does not ask for the check; `methods` are those of the options.
-    A call that only cancels an auto-merge (`cancels`) merges nothing and names no method.
+    `key` is the lines of the key, None when the caller does not ask for the check. An absent key,
+    two lines, or a value that is not one of `MERGE_METHODS` refuses every merge, and a merge that
+    names no method, or another one, is refused too. A call that only cancels an auto-merge
+    (`cancels`) merges nothing: it names no method and reads no key.
     """
     if key is None:
         return None
     methods = list(methods)
-    if not methods:
-        if cancels:
-            return None
+    if cancels and not methods:
+        return None
+    if not key:
         return (
-            f"the merge names no method: the `{METHOD_KEY}` key says `{key[0]}`, merge with"
-            f" `--{key[0]}`"
+            f"the `{METHOD_KEY}` key is not declared in docs/agents/usine.md, so no method is the"
+            " project's: the merge is the human's, to list at the end of the report"
         )
-    for method in methods:
-        if method != key[0]:
+    if len(key) > 1:
+        lines = ", ".join(f"- `{METHOD_KEY}` : `{value}`" for value in key)
+        return f"the `{METHOD_KEY}` key takes one line, and has {len(key)}: {lines}"
+    method = key[0]
+    if method not in MERGE_METHODS:
+        return (
+            f"the line - `{METHOD_KEY}` : `{method}` names no method: the key says merge, squash"
+            " or rebase"
+        )
+    if not methods:
+        return (
+            f"the merge names no method: the `{METHOD_KEY}` key says `{method}`, merge with"
+            f" `--{method}`"
+        )
+    for asked in methods:
+        if asked != method:
             return (
-                f"the merge asks for `{method}` and the `{METHOD_KEY}` key says `{key[0]}`: merge"
-                f" with `--{key[0]}`"
+                f"the merge asks for `{asked}` and the `{METHOD_KEY}` key says `{method}`: merge"
+                f" with `--{method}`"
             )
     return None
 
