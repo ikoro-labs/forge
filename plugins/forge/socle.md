@@ -16,10 +16,11 @@ rules (see Local rules) and does not repeat these.
 - A breach, in the diff, of a `security`, `code`, `test` or `architecture` rule is a `BLOCKER`.
   A breach of a `prose` rule, F-18 and F-19 included wherever the text sits, is a `MINOR` and does
   not reject, except F-26 (a sentence of the PR proved false), which is a `BLOCKER`.
-- A `[BLOCKER]` that rests on an execution carries a last `probe:` field (the exact command and
-  the output it must print, each between backticks), which `forge:qc-gate` replays in a copy of the head under the bounded launcher before
-  the blocker counts: a probe that does not print the expected output makes it a `NOTE` marked
-  `non reproduit`. A `[BLOCKER]` with no probe rests on a reading of the code, counts, and is marked
+- A `[BLOCKER]` that rests on an execution carries a last `probe:` field (a test file of the head
+  and the output its run must print, each between backticks). The probe is a name, never a command:
+  `forge:qc-gate` runs that file by the command of the key `red-replay`, in a copy of the head under
+  the bounded launcher, before the blocker counts, and refuses a name that is not a test file of the
+  head. A probe that does not print the expected output makes it a `NOTE` marked `non reproduit`. A `[BLOCKER]` with no probe rests on a reading of the code, counts, and is marked
   `déduit` in the report.
 - A repository may raise the severity of an `F-n` by a local rule `L-n`.
 - A defect outside the diff is a `NOTE` that starts with `out of diff`, and never rejects.

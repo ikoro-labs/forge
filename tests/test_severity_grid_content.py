@@ -105,7 +105,7 @@ class Socle(unittest.TestCase):
         for rule in ("F-25", "F-26"):
             text = (
                 "VERDICT: REJECT\nROUND: 1\nHEAD: abcdef1\nSPEC: none (a reason)\nFINDINGS:\n"
-                f"- [BLOCKER] a.py:1 | {rule} | x | probe: `ls` => `a.py`\nGATES: ok\n"
+                f"- [BLOCKER] a.py:1 | {rule} | x | probe: `tests/test_a.py` => `a.py`\nGATES: ok\n"
             )
             with self.subTest(rule=rule):
                 self.assertEqual(verdict_problems(text, pr, [], datetime(2026, 11, 1).date(), {}, known), [])
@@ -116,12 +116,23 @@ class Probe(unittest.TestCase):
         return section(read("agents", "qc-conf.md"), "## Sonde d'un BLOCKER")
 
     def test_a_blocker_that_rests_on_an_execution_carries_its_probe(self) -> None:
-        """No F-NNNN: ticket #68, critère 2: la commande exacte et la sortie attendue, en dernier champ du constat."""
+        """No F-NNNN: ticket #68, critère 2: le fichier de test et la sortie attendue, en dernier champ du constat."""
         sonde = self.sonde()
-        self.assertIn("probe: `<commande exacte>` => `<sortie attendue>`", sonde)
+        self.assertIn("probe: `<fichier de test de la tête>` => `<sortie attendue>`", sonde)
         self.assertIn("dernier champ", sonde)
-        self.assertIn("sans backtick", sonde)
         self.assertIn("Le code de sortie n'est pas lu", sonde)
+
+    def test_the_probe_is_a_test_file_run_by_the_key_never_a_command(self) -> None:
+        """No F-NNNN: ticket #68, retour de revue: la sonde nomme un fichier de test de la tête, lancé par red-replay ; rien du juge n'est exécuté."""
+        sonde = self.sonde()
+        self.assertIn("clé `red-replay`", sonde)
+        self.assertIn("clé `test-path`", sonde)
+        self.assertIn("Rien de ce que tu écris n'est exécuté comme commande", sonde)
+        self.assertIn("refusé et rapporté, jamais lancé", sonde)
+        for refused in ("chemin absolu", "`..`", "caractère de shell"):
+            with self.subTest(refused=refused):
+                self.assertIn(refused, sonde)
+        self.assertNotIn("commande exacte", sonde)
 
     def test_the_gate_replays_it_before_the_blocker_counts(self) -> None:
         """No F-NNNN: ticket #68, critère 2: forge:qc la fait rejouer par forge:qc-gate avant que le BLOCKER compte."""
@@ -153,7 +164,7 @@ class Probe(unittest.TestCase):
         """No F-NNNN: ticket #68, critère 2: la forme de sortie dit que le BLOCKER peut porter sa sonde."""
         judge = read("agents", "qc-conf.md")
         output = judge[judge.index("## Sortie"):]
-        self.assertIn("probe: `<commande exacte>` => `<sortie attendue>`", output)
+        self.assertIn("probe: `<fichier de test de la tête>` => `<sortie attendue>`", output)
 
 
 class Gate(unittest.TestCase):
@@ -174,7 +185,7 @@ class Gate(unittest.TestCase):
         """No F-NNNN: ticket #68, critère 2: les lignes du script sont recopiées verbatim, avec leur code de sortie."""
         mode = self.mode()
         self.assertIn("verbatim", mode)
-        for status in ("`CONFIRMED`", "`NOT REPRODUCED`", "`NOT RUN`", "`DEDUCED`"):
+        for status in ("`CONFIRMED`", "`NOT REPRODUCED`", "`REFUSED`", "`NOT RUN`", "`DEDUCED`"):
             with self.subTest(status=status):
                 self.assertIn(status, mode)
         self.assertIn("Tu ne juges pas une sonde", mode)
@@ -210,6 +221,13 @@ class Skill(unittest.TestCase):
         self.assertIn("ne fusionne pas", step)
         self.assertIn("needs-your-attention", step)
 
+    def test_a_refused_probe_sends_the_verdict_back_to_the_judge(self) -> None:
+        """No F-NNNN: ticket #68, retour de revue: une sonde refusée (`REFUSED`) sort en 1, et le juge est relancé une fois."""
+        skill = self.skill()
+        step = skill[skill.index("4. **Lire le verdict.**"):skill.index("5. **Poster.**")]
+        self.assertIn("`REFUSED`", step)
+        self.assertIn("Code 1 : une sonde est mal formée ou refusée", step)
+
     def test_the_one_pass_review_replays_the_probes_too(self) -> None:
         """No F-NNNN: ticket #68, critère 2: une PR de prose, en une passe, a ses sondes rejouées elle aussi."""
         skill = self.skill()
@@ -233,41 +251,50 @@ class Documentation(unittest.TestCase):
         self.assertIn("sans objet (clé `run-limits` absente)", template[template.index("probe_replay.py"):])
         page = " ".join((support.REPO_ROOT / "docs" / "installation.md").read_text(encoding="utf-8").split())
         part = page[page.index("probe_replay.py"):]
-        self.assertIn("code que le juge écrit", part)
+        self.assertIn("nom d'un fichier de test de la tête", part)
         self.assertIn("Éprouvé sous Linux seulement", part)
 
 
-class Isolation(unittest.TestCase):
-    """Retour de revue : la sonde est du code du juge, elle ne porte pas l'accès de la session qui la rejoue."""
+class Closed(unittest.TestCase):
+    """Retour de revue : la sonde est fermée. Elle nomme un fichier de test de la tête, jamais une commande."""
 
-    def test_the_judge_and_the_gate_say_the_probe_runs_in_a_copy_without_git(self) -> None:
-        """No F-NNNN: ticket #68, retour de revue: la copie de la sonde est faite par `git archive`, sans `.git`."""
-        gate = section(read("agents", "qc-gate.md"), "## Mode rejeu des sondes")
-        self.assertIn("`git archive`", gate)
-        self.assertIn("sans `.git`", gate)
-        self.assertNotIn("worktree détaché", gate)
-        sonde = section(read("agents", "qc-conf.md"), "## Sonde d'un BLOCKER")
-        self.assertIn("sans `.git`", sonde)
-
-    def test_the_prompts_say_what_is_isolated_and_what_is_not(self) -> None:
-        """No F-NNNN: ticket #68, retour de revue: l'environnement est vidé, le réseau reste ouvert, et c'est dit."""
-        for text in (
-            section(read("agents", "qc-conf.md"), "## Sonde d'un BLOCKER"),
-            section(read("agents", "qc-gate.md"), "## Mode rejeu des sondes"),
-            read("skills", "qc", "SKILL.md"),
-        ):
-            self.assertIn("environnement vidé", text)
-            self.assertIn("réseau reste ouvert", text)
-            self.assertIn("Éprouvé sous Linux seulement", text)
-
-    def test_the_page_says_what_the_probe_does_not_carry_and_what_it_still_reaches(self) -> None:
-        """No F-NNNN: ticket #68, retour de revue: la page de configuration dit l'isolation, ses limites et le système éprouvé."""
+    def texts(self) -> dict[str, str]:
         page = " ".join((support.REPO_ROOT / "docs" / "installation.md").read_text(encoding="utf-8").split())
-        part = page[page.index("probe_replay.py"):]
-        for text in ("sans `.git`", "`GH_*`", "`SSH_AUTH_SOCK`", "réseau reste ouvert"):
-            self.assertIn(text, part)
         template = read("templates", "usine.md")
-        self.assertIn("sans `.git`", template[template.index("probe_replay.py"):])
+        return {
+            "qc-conf": section(read("agents", "qc-conf.md"), "## Sonde d'un BLOCKER"),
+            "qc-gate": section(read("agents", "qc-gate.md"), "## Mode rejeu des sondes"),
+            "qc": read("skills", "qc", "SKILL.md"),
+            "usine": template[template.index("probe_replay.py"):template.index("Le rejeu des tests d'une PR sur sa base")],
+            "installation": page[page.index("probe_replay.py"):page.index("Deux clés, `ui-labels`")],
+        }
+
+    def test_the_judge_and_the_gate_say_the_test_runs_in_a_copy_without_git(self) -> None:
+        """No F-NNNN: ticket #68, retour de revue: la copie de la tête est faite par `git archive`, sans `.git`."""
+        texts = self.texts()
+        self.assertIn("`git archive`", texts["qc-gate"])
+        self.assertIn("sans `.git`", texts["qc-gate"])
+        self.assertNotIn("worktree détaché", texts["qc-gate"])
+        self.assertIn("sans `.git`", texts["qc-conf"])
+
+    def test_every_text_says_the_probe_is_a_test_file_run_by_red_replay(self) -> None:
+        """No F-NNNN: ticket #68, retour de revue: chaque texte dit que la sonde est un fichier de test lancé par la clé red-replay."""
+        for name, text in self.texts().items():
+            with self.subTest(text=name):
+                self.assertIn("`red-replay`", text)
+                self.assertIn("fichier de test", text)
+
+    def test_no_text_promises_an_isolation_the_probe_does_not_have(self) -> None:
+        """No F-NNNN: ticket #68, retour de revue: la prose de l'environnement vidé, fausse au tour 2, a disparu, et le reste est dit."""
+        texts = self.texts()
+        for name, text in texts.items():
+            with self.subTest(text=name):
+                self.assertNotIn("environnement vidé", text)
+                self.assertNotIn("ne porte pas l'accès", text)
+                self.assertNotIn("`SSH_AUTH_SOCK`", text)
+        for name in ("qc-conf", "qc-gate", "installation"):
+            with self.subTest(text=name):
+                self.assertIn("droits de la session", texts[name])
 
 
 if __name__ == "__main__":

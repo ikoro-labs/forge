@@ -68,7 +68,7 @@ import subprocess
 import sys
 import threading
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, NamedTuple, NoReturn
 
@@ -142,20 +142,19 @@ def limit_posix(memory_mb: int):
 def run_bounded(
     args: str | list[str], *, timeout: int, memory_mb: int, shell: bool = False,
     cwd: Path | None = None, stdout: Any = None, stderr: Any = None, tail: Tail | None = None,
-    env: Mapping[str, str] | None = None,
 ) -> Outcome:
     """Run `args` under a memory limit and a delay, and kill its process group at the delay.
 
     A limit that cannot be set is a command not run. The group is `ProcessGroup` of
     `handoff_header`: on Windows the command starts suspended and runs only once its job object
     holds it with the limit, so nothing escapes; on Linux the limit is `RLIMIT_AS` and the group is
-    the command's own session, killed with `killpg`. With `tail`, stderr is piped through it. With
-    `env`, the command gets exactly that environment and not the caller's. Shared by `base_replay.py`.
+    the command's own session, killed with `killpg`. With `tail`, stderr is piped through it.
+    Shared by `base_replay.py`.
     """
     try:
         options: dict[str, Any] = {"preexec_fn": limit_posix(memory_mb)} if os.name != "nt" else {}
         process = subprocess.Popen(
-            args, shell=shell, cwd=cwd, stdout=stdout, stderr=subprocess.PIPE if tail else stderr, env=env,
+            args, shell=shell, cwd=cwd, stdout=stdout, stderr=subprocess.PIPE if tail else stderr,
             **group_options(suspended=True), **options,
         )
     except (OSError, subprocess.SubprocessError, OverflowError) as error:

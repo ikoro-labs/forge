@@ -1,4 +1,7 @@
-"""Ticket #68: a BLOCKER that rests on an execution carries its probe, and the replay decides if it counts."""
+"""Ticket #68: a BLOCKER that rests on an execution carries its probe, and the replay decides if it counts.
+
+The probe is closed: it names a test file of the head, never a command.
+"""
 
 import io
 import tempfile
@@ -16,11 +19,12 @@ from parse_output import (
     main,
     parse_replay,
     parse_verdict,
+    probe_name_problem,
 )
 
 HEAD = "VERDICT: REJECT\nROUND: 1\nHEAD: 3f2a9c1\nSPEC: #68: 0 criteria covered, 0 partial, 1 missing\nFINDINGS:\n"
 TAIL = "GATES: green\n"
-PROBED = "- [BLOCKER] hook.py:12 | F-25 | a heredoc passes the guard | probe: `sh -c 'echo ok | wc -l'` => `1`\n"
+PROBED = "- [BLOCKER] hook.py:12 | F-25 | a heredoc passes the guard | probe: `tests/test_hook.py` => `'allowed' != 'refused'`\n"
 DEDUCED = "- [BLOCKER] hook.py:30 | F-25 | the path is read twice, the second read is unchecked\n"
 
 
@@ -33,10 +37,10 @@ def findings_of(parsed: dict[str, object]) -> list[dict[str, Any]]:
 
 
 class Marks(unittest.TestCase):
-    def test_a_probe_is_read_with_its_command_and_its_expected_output(self) -> None:
-        """No F-NNNN: ticket #68, critère 2: un BLOCKER qui repose sur une exécution porte la commande exacte et la sortie attendue."""
+    def test_a_probe_is_read_with_its_test_file_and_its_expected_output(self) -> None:
+        """No F-NNNN: ticket #68, critère 2: un BLOCKER qui repose sur une exécution porte le fichier de test et la sortie attendue."""
         finding = findings_of(parse_verdict(verdict(PROBED)))[0]
-        self.assertEqual(finding["probe"], {"command": "sh -c 'echo ok | wc -l'", "expect": "1"})
+        self.assertEqual(finding["probe"], {"file": "tests/test_hook.py", "expect": "'allowed' != 'refused'"})
         self.assertEqual(finding["mark"], "")
 
     def test_a_blocker_without_probe_counts_and_is_marked_deduced(self) -> None:
@@ -54,10 +58,39 @@ class Marks(unittest.TestCase):
 
     def test_a_probe_missing_its_expected_output_is_refused(self) -> None:
         """No F-NNNN: ticket #68, critère 2: une sonde sans sortie attendue ne se rejoue pas, elle est refusée."""
-        text = verdict("- [BLOCKER] a.py:1 | F-25 | evasion | probe: `ls`\n")
+        text = verdict("- [BLOCKER] a.py:1 | F-25 | evasion | probe: `tests/test_a.py`\n")
         with self.assertRaises(OutputError) as raised:
             parse_verdict(text)
-        self.assertIn("probe: `<command>` => `<expected output>`", str(raised.exception))
+        self.assertIn("probe: `<test file of the head>` => `<expected output>`", str(raised.exception))
+
+
+class Closed(unittest.TestCase):
+    """Revue, tour 2 : la sonde n'est plus du shell, seulement le nom d'un fichier de test de la tête."""
+
+    def test_the_shell_probe_of_the_review_is_refused(self) -> None:
+        """No F-NNNN: ticket #68, retour de revue: une sonde écrite en commande shell est refusée, jamais lue comme un nom."""
+        line = (
+            "- [BLOCKER] a.py:1 | F-5 | leak | probe: "
+            "`sh -c 'HOME=$(getent passwd $(id -u) | cut -d: -f6) gh auth status 2>&1'` => `Logged in`\n"
+        )
+        with self.assertRaises(OutputError) as raised:
+            parse_verdict(verdict(line))
+        self.assertIn("refused", str(raised.exception))
+
+    def test_a_name_that_could_leave_the_head_or_reach_a_shell_is_refused(self) -> None:
+        """No F-NNNN: ticket #68, retour de revue: chemin absolu, `..`, caractère de shell : le nom est refusé."""
+        for name in (
+            "/etc/passwd", "C:/Windows/x.py", "tests/../../x.py", "..", "tests\\x.py", "tests/x.py;id",
+            "tests/$(id).py", "tests/x y.py", "tests/x.py|sh", "tests/x*.py", "-p", "tests/x.py&", "~/x.py",
+        ):
+            with self.subTest(name=name):
+                self.assertNotEqual(probe_name_problem(name), "")
+
+    def test_a_plain_relative_name_is_accepted(self) -> None:
+        """No F-NNNN: ticket #68, retour de revue: un chemin relatif fait de lettres, chiffres et `._/-` est un nom."""
+        for name in ("tests/test_hook.py", "apps/web/src/__tests__/guard.test.ts", "test-x.py"):
+            with self.subTest(name=name):
+                self.assertEqual(probe_name_problem(name), "")
 
 
 class Replay(unittest.TestCase):
@@ -96,11 +129,18 @@ class Replay(unittest.TestCase):
         with self.assertRaises(ReplayError):
             count_verdict(verdict(PROBED), parse_replay(""))
 
+    def test_a_refused_probe_sends_the_verdict_back_to_the_judge(self) -> None:
+        """No F-NNNN: ticket #68, retour de revue: un fichier refusé par le rejeu rend le verdict illisible (code 1), le juge est relancé."""
+        with self.assertRaises(OutputError) as raised:
+            count_verdict(verdict(PROBED), parse_replay("REFUSED\t1\ttests/test_hook.py : absent\n"))
+        self.assertNotIsInstance(raised.exception, ReplayError)
+        self.assertIn("finding 1", str(raised.exception))
+
     def test_the_replay_lines_are_read_by_finding_number(self) -> None:
         """No F-NNNN: ticket #68, critère 2: le rejeu rend une ligne `<statut>\\t<n>\\t<détail>` par BLOCKER."""
         self.assertEqual(
-            parse_replay("CONFIRMED\t2\tok\nDEDUCED\t3\t-\nNOT REPRODUCED\t1\tgot: 0\n"),
-            {1: "NOT REPRODUCED", 2: "CONFIRMED", 3: "DEDUCED"},
+            parse_replay("CONFIRMED\t2\tok\nDEDUCED\t3\t-\nNOT REPRODUCED\t1\tgot: 0\nREFUSED\t4\tx\n"),
+            {1: "NOT REPRODUCED", 2: "CONFIRMED", 3: "DEDUCED", 4: "REFUSED"},
         )
         with self.assertRaises(OutputError):
             parse_replay("FINE\t1\tok\n")
@@ -161,6 +201,16 @@ class Command(unittest.TestCase):
             code, out = self.run_main("verdict", str(root / "verdict.txt"), "--replay", str(root / "replay.txt"))
             self.assertEqual(code, 3, out)
             self.assertIn("unsettled", out)
+
+    def test_a_refused_probe_exits_like_a_verdict_to_relaunch(self) -> None:
+        """No F-NNNN: ticket #68, retour de revue: un fichier refusé sort en 1, et `forge:qc` relance le juge une fois."""
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / "verdict.txt").write_text(verdict(PROBED), encoding="utf-8")
+            (root / "replay.txt").write_text("REFUSED\t1\ttests/test_hook.py : absent\n", encoding="utf-8")
+            code, out = self.run_main("verdict", str(root / "verdict.txt"), "--replay", str(root / "replay.txt"))
+            self.assertEqual(code, 1, out)
+            self.assertIn("refused", out)
 
 
 if __name__ == "__main__":

@@ -10,11 +10,15 @@ and exits 1: the skill that launched the agent relaunches it once with that sent
 reports FAILED. The standard library only, so it runs wherever the hooks run.
 
 The counting rule of a `[BLOCKER]`. A blocker that rests on an execution carries its probe as a last
-field, `probe: `<command>` => `<expected output>``, and `probe_replay.py` replays it. A blocker with
+field, `probe: `<test file of the head>` => `<expected output>``, and `probe_replay.py` replays it by
+the command of the key `red-replay`. The probe is a name, never a command: a path from the root of the
+repository, made of ASCII letters, digits and `._/-`, that is not absolute, has no `..` part and does
+not start with `-` or `.`. Any other name is refused here (exit code 1) and nothing runs. A blocker with
 no probe rests on a reading of the code: it counts and is marked `déduit`. With `--replay <file>`
 (the lines `probe_replay.py` printed), a probed blocker counts only once its probe was replayed:
 `CONFIRMED` keeps it (`confirmé`), `NOT REPRODUCED` makes it a `[NOTE]` marked `non reproduit`, which
-no longer rejects, and any other state (`NOT RUN`, no line) leaves it unsettled: exit code 3, the
+no longer rejects, `REFUSED` (the name is not a test file of the head) sends the verdict back to its
+judge (exit code 1), and any other state (`NOT RUN`, no line) leaves it unsettled: exit code 3, the
 verdict does not stand yet. `--rewrite <file>` writes the verdict as it stands after the replay, the
 demoted blockers as notes and a `REJECT` left with no blocker as `ACCEPT`.
 """
@@ -70,12 +74,15 @@ class ReplayError(OutputError):
     """A probe of a blocker has no usable replay: the blocker cannot count yet (exit code 3)."""
 
 
-# A blocker's probe, its last field: the exact command, then the output it must print.
+# A blocker's probe, its last field: a test file of the head, then the output its run must print.
 PROBE = re.compile(r"^probe:\s*`([^`]+)`\s*=>\s*`([^`]+)`$", re.IGNORECASE)
-PROBE_FORM = "`probe: `<command>` => `<expected output>``"
+PROBE_FORM = "`probe: `<test file of the head>` => `<expected output>``"
+# A probe name reaches a shell only as an argument of the `red-replay` command, quoted: still, only these
+# characters pass, so that no name can carry a shell character, an option or a way out of the head.
+PROBE_NAME = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_./-]*$")
 MARKS = {"deduced": "déduit", "confirmed": "confirmé", "demoted": "non reproduit"}
 # The lines `probe_replay.py` prints, one per blocker: `<status>\t<finding number>\t<detail>`.
-REPLAY_STATUSES = ("CONFIRMED", "NOT REPRODUCED", "NOT RUN", "DEDUCED", "NONE")
+REPLAY_STATUSES = ("CONFIRMED", "NOT REPRODUCED", "REFUSED", "NOT RUN", "DEDUCED", "NONE")
 
 
 def _fields(text: str, first: str, known: set[str]) -> dict[str, list[str]]:
@@ -167,6 +174,22 @@ def split_fields(text: str) -> list[str]:
     return fields
 
 
+def probe_name_problem(name: str) -> str:
+    """Why `name` cannot be the test file a probe names, or `""` when it can.
+
+    The name runs nowhere by itself: `probe_replay.py` gives it to the command of the key `red-replay`.
+    Refused: an absolute path, a `..` part, and any character outside ASCII letters, digits and `._/-`
+    (a space, a quote, `;`, `|`, `$`, `\\`, `:`, `~`, a wildcard...), or a leading `-` or `.`.
+    """
+    if name.startswith(("/", "\\")) or re.match(r"^[A-Za-z]:", name):
+        return "an absolute path"
+    if PROBE_NAME.match(name) is None:
+        return "a character outside ASCII letters, digits and `._/-`, or a leading `-` or `.`"
+    if ".." in name.split("/"):
+        return "a `..` part"
+    return ""
+
+
 def probe_of(text: str) -> dict[str, str] | None:
     """The probe a blocker carries, or None when it rests on a reading of the code."""
     for field in split_fields(text):
@@ -174,9 +197,15 @@ def probe_of(text: str) -> dict[str, str] | None:
             match = PROBE.match(field)
             if match is None:
                 raise OutputError(
-                    f"finding `{text[:60]}`: a probe reads {PROBE_FORM}, the command and the output in backticks"
+                    f"finding `{text[:60]}`: a probe reads {PROBE_FORM}, the test file and the output in backticks"
                 )
-            return {"command": match.group(1), "expect": match.group(2)}
+            problem = probe_name_problem(match.group(1))
+            if problem:
+                raise OutputError(
+                    f"finding `{text[:60]}`: probe `{match.group(1)[:60]}` refused, never run ({problem}): "
+                    f"a probe names a test file of the head, {PROBE_FORM}, never a command"
+                )
+            return {"file": match.group(1), "expect": match.group(2)}
     return None
 
 
@@ -291,10 +320,12 @@ def count_verdict(text: str, replay: Mapping[int, str]) -> dict[str, object]:
 def _settle(findings: list[dict[str, Any]], replay: Mapping[int, str]) -> list[int]:
     """Apply the replay to the probed blockers; the numbers demoted to notes.
 
-    A probed blocker whose probe was not replayed (`NOT RUN`, no line) is unsettled: it counts
-    neither way, and the verdict does not stand yet.
+    A probe the replay refused (`REFUSED`: its name is not a test file of the head) goes back to the
+    judge (`OutputError`). A probed blocker whose probe was not replayed (`NOT RUN`, no line) is
+    unsettled: it counts neither way, and the verdict does not stand yet.
     """
     demoted: list[int] = []
+    refused: list[str] = []
     unsettled: list[str] = []
     for number, finding in enumerate(findings, 1):
         if finding["severity"] != "BLOCKER" or finding["probe"] is None:
@@ -305,8 +336,15 @@ def _settle(findings: list[dict[str, Any]], replay: Mapping[int, str]) -> list[i
         elif status == "NOT REPRODUCED":
             finding["severity"], finding["mark"] = "NOTE", MARKS["demoted"]
             demoted.append(number)
+        elif status == "REFUSED":
+            refused.append(f"finding {number} (`{finding['probe']['file']}`)")
         else:
             unsettled.append(f"finding {number} ({status or 'no replay line'})")
+    if refused:
+        raise OutputError(
+            "probe refused, never run: " + ", ".join(refused) + ": a probe names a test file of the head, "
+            "under a prefix of the key `test-path`"
+        )
     if unsettled:
         raise ReplayError(
             "unsettled probe: " + ", ".join(unsettled) + ": the blocker cannot count until its probe is replayed"

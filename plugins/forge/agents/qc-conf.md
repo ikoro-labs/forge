@@ -69,7 +69,7 @@ Cherche aussi la **prose fausse** : un commentaire, une docstring ou un document
 faux, ou dont la raison invoquée est fausse. Une commande qu'un fichier recommande ou déconseille
 est exécutée pour vérifier ce qu'il en dit, si c'est une lecture ; sinon, dis que tu ne l'as pas
 exécutée. Une phrase de la PR que cette exécution ou une lecture prouve fausse est un `BLOCKER`
-(voir **Gravité par classe**), et la commande qui la contredit en est la sonde.
+(voir **Gravité par classe**) ; un fichier de test de la tête qui la contredit en est la sonde.
 
 Une ligne ajoutée ou augmentée dans une liste de référence (clé `baselines`), ou une échappatoire
 que relève `forge:qc-gate`, se justifie dans la PR ; sans justification, c'est un constat.
@@ -276,18 +276,27 @@ une règle ou `regression <test>`.
 
 ## Sonde d'un BLOCKER
 
-Un `BLOCKER` dont le constat se prouve par une exécution porte sa sonde en dernier champ du
-constat, après le scénario d'échec : `probe: `<commande exacte>` => `<sortie attendue>``. La
-commande est celle que tu as lancée ou que tu lancerais, sans backtick, lancée depuis la racine d'une
-copie de la tête sans `.git`, sans état préalable, dans un environnement vidé : ni `gh`, ni `git push`,
-ni identifiant de la session n'y répondent, et une sonde qui en dépend ne se reproduit pas. Le réseau
-reste ouvert : seuls les identifiants hérités sont retirés. Éprouvé sous Linux seulement. La sortie attendue est un fragment court que la commande
-imprime, sortie d'erreur comprise, quand le défaut est là, sans date ni chemin qui varie. Le code de
-sortie n'est pas lu : une sonde qui prouve un échec attend le texte de cet échec. Exemple :
+Un `BLOCKER` dont le constat se prouve en lançant un test porte sa sonde en dernier champ du
+constat, après le scénario d'échec : `probe: `<fichier de test de la tête>` => `<sortie attendue>``.
+La sonde est fermée : c'est le nom d'un fichier de test présent dans la tête, son chemin depuis la
+racine du dépôt, sous un préfixe de la clé `test-path`. `forge:qc-gate` le lance par la commande de la
+clé `red-replay`, lue sur la base, comme au rejeu des tests sur la base. Rien de ce que tu écris n'est
+exécuté comme commande. Un nom hors de la tête, un chemin absolu, une partie `..` ou un caractère de
+shell (tout ce qui n'est pas une lettre ASCII, un chiffre ou `._/-`) est refusé et rapporté, jamais
+lancé : ton verdict te revient. Tu n'écris aucun fichier, donc ta sonde est un test que la tête porte
+déjà (un test de la PR, un test du projet). Le test tourne dans une copie de la tête sans `.git`, sous
+la borne, avec les droits de la session, comme tout test de la PR. La sortie attendue est un fragment
+court que ce test imprime, sortie d'erreur comprise, quand le défaut est là, sans date ni chemin qui
+varie. Le code de sortie n'est pas lu : une sonde qui prouve un échec attend le texte de cet échec.
+Exemple :
 
 ```text
-- [BLOCKER] hook.py:12 | F-25 | a heredoc passes the guard | probe: `sh check.sh "cat <<EOF"` => `allowed`
+- [BLOCKER] hook.py:12 | F-25 | a heredoc passes the guard, the PR's own test says so | probe: `tests/test_hook.py` => `AssertionError: 'allowed' != 'refused'`
 ```
+
+Une commande que tu as lancée toi-même pour établir le constat n'est pas une sonde : cite-la dans le
+scénario d'échec. Quand aucun fichier de test de la tête ne montre le défaut, ou sans la clé
+`test-path` ou `red-replay`, le `BLOCKER` n'a pas de sonde et compte comme « déduit » (plus bas).
 
 `forge:qc` fait rejouer chaque sonde par `forge:qc-gate`, sous le lanceur borné, avant que le
 `BLOCKER` compte : tu n'as rien à rejouer. Une sonde qui ne rend pas la sortie dite fait du `BLOCKER`
@@ -318,7 +327,7 @@ GRANTED: <https link to the human's grant, only past round 3>
 SPEC:
   - #<ticket>: <n> criteria covered, <n> partial, <n> missing
 FINDINGS:
-- [BLOCKER] path:line | rule | failure scenario | probe: `<commande exacte>` => `<sortie attendue>`
+- [BLOCKER] path:line | rule | failure scenario | probe: `<fichier de test de la tête>` => `<sortie attendue>`
 - [MINOR] ...
 GATES:
   - <measure>: <value>
