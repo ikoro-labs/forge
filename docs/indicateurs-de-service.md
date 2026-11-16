@@ -106,6 +106,13 @@ sortie est « sans objet (clé `slo` absente) », sans fichier.
 Un ratio ne dépasse pas 100 % : `>= 120 %` (ou `>= 800 %`, faute de frappe pour 80,0) est une ligne
 mal formée, qui fait échouer la commande, au lieu d'un objectif hors d'atteinte rendu `tenu`.
 
+La clé `slo-review-date` (`AAAA-MM-JJ`, une seule ligne) porte le jour où les cibles sont à réviser.
+`status` l'écrit sous le tableau (« Révision des objectifs : prévue le … », ou « passée » dès le
+lendemain de la date, en UTC) et dans `slo-status.json`, sous `revision` (`date`, `passee`). Elle ne
+change aucune cible : réviser reste une décision de l'humain. Sans la clé, la ligne dit « sans objet
+(clé `slo-review-date` absente) » ; une date illisible ou déclarée deux fois fait échouer la commande,
+sans écrire de fichier.
+
 ## Les actions du budget épuisé
 
 Un budget épuisé doit changer ce que l'usine fait. La clé `budget-action` de `docs/agents/usine.md`

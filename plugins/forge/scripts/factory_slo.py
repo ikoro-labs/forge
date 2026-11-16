@@ -11,7 +11,9 @@
 each objective on its sliding window, its error budget and its state (`tenu`, `menacé`, `épuisé`),
 and writes them to `<git-common-dir>/forge/slo-status.json` with the date and the head of the base.
 A line it cannot read, or that names an unknown SLI, fails the command and writes nothing. A key
-`slo` absent is "sans objet".
+`slo` absent is "sans objet". It also reads the key `slo-review-date` (`YYYY-MM-DD`, the day the
+targets are due for review): the output says whether that date is past (`revision` in the state file),
+an absent key is "sans objet", an unreadable or repeated date fails the command.
 
 `budget` recalculates `status`, then says which actions of the `budget-action` key are active
 (`human-merge`, `feature-freeze`, `alert`: an action is active once the objective of its SLI is
@@ -61,7 +63,7 @@ import subprocess
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import cast
 
@@ -632,12 +634,44 @@ def evaluate(slo: Slo, sli: Sli) -> dict:
     }
 
 
+REVISION_KEY = "slo-review-date"
+
+
+def revision_date(project: Path, now: datetime) -> dict:
+    """The review date of the objectives (key `slo-review-date`, `YYYY-MM-DD`), and whether it is past.
+
+    The date itself is not past yet: the review is due that day (UTC), late the day after. An absent
+    key is "sans objet", no date is guessed; an unreadable or repeated date fails like a bad `slo` line.
+    """
+    values = usine.load(project).get(REVISION_KEY)
+    if not values:
+        return {"statut": "sans objet", "raison": f"clé `{REVISION_KEY}` absente"}
+    if len(values) > 1:
+        raise SloError(f"`{REVISION_KEY}` : une seule date attendue, {len(values)} lignes déclarées")
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", values[0]):
+        raise SloError(f"`{REVISION_KEY}` : `{values[0]}` : attendu une date `AAAA-MM-JJ`")
+    try:
+        due = date.fromisoformat(values[0])
+    except ValueError:
+        raise SloError(f"`{REVISION_KEY}` : `{values[0]}` n'est pas une date du calendrier") from None
+    return {"date": values[0], "passee": due < now.astimezone(timezone.utc).date()}
+
+
+def revision_markdown(revision: dict) -> str:
+    if revision.get("statut") == "sans objet":
+        return f"Révision des objectifs : sans objet ({revision['raison']})."
+    if revision["passee"]:
+        return f"Révision des objectifs : passée, prévue le {revision['date']}. Les cibles sont à réviser."
+    return f"Révision des objectifs : prévue le {revision['date']}."
+
+
 def status(project: Path, now: datetime, run: Runner = run_command, ref: Path | None = None) -> dict | None:
     """The state of every `slo` objective of the project, or None when the key is absent."""
     lines = usine.load(project).get("slo")
     if not lines:
         return None
     objectives = parse_slo(lines)
+    revision = revision_date(project, now)
     windows: dict[int, dict[str, Sli]] = {}
     for days in sorted({slo.days for slo in objectives}):
         results = compute(project, now - timedelta(days=days), now, run, ref)
@@ -647,6 +681,7 @@ def status(project: Path, now: datetime, run: Runner = run_command, ref: Path | 
     head = run(["git", "rev-parse", "--verify", base_ref], project).strip()
     return {
         "projet": str(project), "calcule_le": now.isoformat(), "base": base.base, "tete_base": head,
+        "revision": revision,
         "objectifs": [evaluate(slo, windows[slo.days][slo.sli]) for slo in objectives],
     }
 
@@ -688,6 +723,8 @@ def status_markdown(document: dict) -> str:
             lines.append(f"{head} sans objet | {item['raison']} | sans objet |")
         else:
             lines.append(f"{head} {number(item['valeur'])}{unit} | {round(100 * item['consomme'])} % | {item['etat']} |")
+    if "revision" in document:
+        lines += ["", revision_markdown(document["revision"])]
     return "\n".join(lines)
 
 
