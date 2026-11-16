@@ -1,6 +1,6 @@
 """The output guard: every exchange follows its template, checked by `scripts/output_check.py`.
 
-One script for four declarations of `hooks.json`, told apart by `hook_event_name`:
+One script for the declarations of `hooks.json`, told apart by `hook_event_name`:
 
 - `SubagentStop`: the subagent's final text (`last_assistant_message`), checked against the format
   its `agent_type` declares (`forge:coder` or `coder`, `forge:qc-conf`...), else the generic rule
@@ -13,6 +13,10 @@ One script for four declarations of `hooks.json`, told apart by `hook_event_name
   directory a `cd` moved to). A ticket follows `ticket.md`, a pull request `pr.md`, a comment
   `comment.md`, and a comment that opens with `VERDICT:` follows `verdict.md`. A call to
   `api.github.com` by `curl` or `wget` is refused: its body would go unread.
+- `PreToolUse` on `SendMessage`: a message to another session (an address `uds:`, `bridge:` or
+  `did:`, or the name or id of a session of `~/.claude/sessions/`) must be a billet,
+  `templates/billet.md`. A message to an agent of the session (`main`, a teammate) is free prose, and
+  so is a structured message. A refused message does not leave, and is refused each time.
 - `Stop`: the session's reply to the human (`last_assistant_message`, else the last assistant
   entry of the transcript), checked against `templates/session-reply.md`.
 
@@ -60,6 +64,9 @@ REFUSED = 3
 AGENT_ID = re.compile(r"[A-Za-z0-9_-]+")
 HANDBACK = re.compile(r'"name"\s*:\s*"SubagentHandback"')
 TRANSCRIPT_TAIL = 2 * 1024 * 1024
+# What `SendMessage` accepts for a session other than the caller's: `uds:<socket>`, `bridge:<id>`,
+# `did:<id>`, or a bare socket path.
+SESSION_ADDRESS = re.compile(r"^(?:uds|bridge|did):|\.sock$")
 
 
 @dataclass(frozen=True)
@@ -225,6 +232,51 @@ def _gh(event: Mapping[str, object]) -> Outcome:
     return Outcome(0)
 
 
+# --- session to session -------------------------------------------------------------------------
+
+
+def _registered() -> set[str]:
+    """The names and ids of the sessions Claude Code lists in `~/.claude/sessions/<pid>.json`."""
+    known: set[str] = set()
+    for entry in (Path.home() / ".claude" / "sessions").glob("*.json"):
+        try:
+            fields = json.loads(entry.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if isinstance(fields, dict):
+            known |= {value for key in ("name", "sessionId") if isinstance(value := fields.get(key), str)}
+    return known
+
+
+def _other_session(to: object) -> bool:
+    """Whether `SendMessage` addresses another session: an explicit `uds:`, `bridge:` or `did:`
+    address or a socket path, or the name or id of a session of the registry. A name of the
+    session's own agents (`main`, a teammate) is not one."""
+    if not isinstance(to, str) or not to.strip():
+        return False
+    target = to.strip()
+    return SESSION_ADDRESS.search(target) is not None or target in _registered()
+
+
+def _send(event: Mapping[str, object]) -> Outcome:
+    """Refuse a message to another session that is not a billet; the message does not leave."""
+    tool_input = event.get("tool_input")
+    if not isinstance(tool_input, dict):
+        return Outcome(0)
+    message = tool_input.get("message")
+    if not isinstance(message, str) or not _other_session(tool_input.get("to")):
+        return Outcome(0)  # a structured message is a protocol object, not prose to hold to the billet
+    root = project_root(event)
+    found = deviations(message, "billet", load(root), root)
+    if not found:
+        return Outcome(0)
+    return Outcome(REFUSED, stderr=(
+        "Blocked by the output guard (forge plugin): a message to another session is a billet, and"
+        " this one does not follow `templates/billet.md`. The message was not sent; fix each point,"
+        f" then send it again:\n{_listing(found)}"
+    ))
+
+
 # --- session to human ---------------------------------------------------------------------------
 
 
@@ -306,6 +358,8 @@ def outcome(raw: str) -> Outcome:
         if tool == "SubagentHandback" and isinstance(tool_input, dict):
             message = tool_input.get("message")
             return _subagent(event, message) if isinstance(message, str) else Outcome(0)
+        if tool == "SendMessage":
+            return _send(event)
         if tool in ("Bash", "PowerShell"):
             return _gh(event)
         if isinstance(tool, str) and tool.startswith("mcp__"):

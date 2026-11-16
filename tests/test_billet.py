@@ -5,10 +5,14 @@ per deviation it names. `guard_output.outcome` on a `PreToolUse` event for `Send
 the hook adds: it judges a message to another session only, and a refused message does not leave.
 """
 
+import json
 import unittest
+from pathlib import Path
 
 import support
+from guard_output import REFUSED, outcome
 from output_check import deviations, required_fields
+from test_guard_output import guard_output_hooks, isolated
 
 TEMPLATE = support.PLUGIN / "templates" / "billet.md"
 BILLET = (
@@ -97,6 +101,130 @@ class Measure(unittest.TestCase):
         """#227 trial 1: `mesure` written in prose, with a decimal comma, instead of the three parts."""
         found = deviations(billet(measure="load is 1,25, memory fine, since 14h"), "billet")
         self.assertTrue(any("`measure` must be `load=" in line for line in found), found)
+
+
+class Format(unittest.TestCase):
+    def test_a3_227_each_missing_field_is_named(self) -> None:
+        """#227 A3: a field short of the six."""
+        for name in ("from", "type", "resource", "ticket", "measure", "awaits"):
+            with self.subTest(field=name):
+                found = deviations(billet(**{name: None}), "billet")
+                self.assertEqual(found, [f"the field `{name}` is missing (template `billet`)"])
+
+    def test_a3_227_an_empty_field_is_named(self) -> None:
+        """#227 A3: `ticket:` with nothing after it."""
+        self.assertEqual(deviations(billet(ticket=""), "billet"), ["the field `ticket` is empty"])
+
+    def test_a3_227_a_billet_without_the_separator_is_refused(self) -> None:
+        """#227 A3: no `---` line between the fields and the prose."""
+        found = deviations(BILLET.replace("---\n", ""), "billet")
+        self.assertEqual(len(found), 1, found)
+        self.assertIn("no `---` line", found[0])
+
+    def test_a3_227_a_value_outside_its_list_is_named_with_the_list(self) -> None:
+        """#227 A3: trial 1 wrote `attend: aucune` where the list says `nothing`."""
+        found = deviations(billet(awaits="none", type="grab"), "billet")
+        self.assertEqual(len(found), 2, found)
+        self.assertIn("`type: grab` is not one of claim, release, info, question, reply", found[0])
+        self.assertIn("`awaits: none` is not one of nothing, reply", found[1])
+
+    def test_a3_227_every_deviation_is_named_at_once(self) -> None:
+        """#227 A3: a missing field, a bad value and a long prose come back together."""
+        text = billet(type="grab", resource=None) + " ".join(["word"] * 61) + "\n"
+        found = deviations(text, "billet")
+        self.assertEqual(len(found), 3, found)
+
+    def test_a3_227_a_field_the_template_does_not_declare_is_refused(self) -> None:
+        """#227 A3: the set of fields is closed, so no session invents a variant."""
+        found = deviations(billet().replace("---\n", "mood: calm\n---\n"), "billet")
+        self.assertEqual(found, ["`mood` is not a field of the billet: from, type, resource, ticket, measure, awaits"])
+
+    def test_a3_227_a_field_given_twice_is_refused(self) -> None:
+        """#227 A3: the second `type` would be ignored in silence."""
+        found = deviations(billet().replace("---\n", "type: info\n---\n"), "billet")
+        self.assertEqual(found, ["the field `type` appears twice"])
+
+    def test_a3_227_a_line_that_is_no_field_before_the_separator_is_named(self) -> None:
+        """#227 A3: prose written where the fields go."""
+        found = deviations(billet().replace("---\n", "Hello there\n---\n"), "billet")
+        self.assertEqual(found, ["`Hello there` is not a `key: value` line"])
+
+
+def send(to: object, message: object) -> dict[str, object]:
+    return {
+        "hook_event_name": "PreToolUse",
+        "tool_name": "SendMessage",
+        "tool_input": {"to": to, "message": message, "summary": "a message"},
+    }
+
+
+def register(home: Path, pid: int, **fields: object) -> None:
+    """A session as Claude Code's registry lists it (`~/.claude/sessions/<pid>.json`)."""
+    folder = home / ".claude" / "sessions"
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / f"{pid}.json").write_text(json.dumps({"pid": pid, **fields}), encoding="utf-8")
+
+
+PROSE = "Hey, are you still using the worktree pool? I would like it for an hour."
+
+
+class Hook(unittest.TestCase):
+    def test_a3_227_a_message_to_a_session_that_is_no_billet_does_not_leave(self) -> None:
+        """#227 A3: exit REFUSED (the 2 that blocks), and every deviation on stderr."""
+        with isolated() as project:
+            register(project.parent / "home", 4242, sessionId="e1ae680a-d488", name="shipyard-f6", cwd="/x")
+            result = outcome(json.dumps(send("shipyard-f6", PROSE)))
+        self.assertEqual(result.code, REFUSED)
+        self.assertIn("`templates/billet.md`", result.stderr)
+        for name in ("from", "type", "resource", "ticket", "measure", "awaits"):
+            self.assertIn(f"the field `{name}` is missing", result.stderr)
+        self.assertIn("no `---` line", result.stderr)
+
+    def test_a3_227_a_conforming_billet_to_a_session_leaves(self) -> None:
+        """#227 A3: the same recipient, a billet in the template form."""
+        with isolated() as project:
+            register(project.parent / "home", 4242, sessionId="e1ae680a-d488", name="shipyard-f6", cwd="/x")
+            result = outcome(json.dumps(send("shipyard-f6", BILLET)))
+        self.assertEqual((result.code, result.stderr, result.stdout), (0, "", ""))
+
+    def test_a3_227_a_session_is_found_by_its_id_or_by_an_address(self) -> None:
+        """#227 A3: the registry's `sessionId`, a `uds:` socket and a `bridge:` id are sessions too."""
+        with isolated() as project:
+            register(project.parent / "home", 4242, sessionId="e1ae680a-d488-4e29", name="shipyard-f6", cwd="/x")
+            for target in ("e1ae680a-d488-4e29", "uds:/run/user/1000/cc-socks/4242.sock", "bridge:session_01abc"):
+                with self.subTest(to=target):
+                    self.assertEqual(outcome(json.dumps(send(target, PROSE))).code, REFUSED)
+
+    def test_a3_227_a_refused_message_is_refused_every_time(self) -> None:
+        """#227 A3: unlike a subagent's output, a message is not let through at the second try."""
+        with isolated() as project:
+            register(project.parent / "home", 4242, sessionId="e1ae680a", name="shipyard-f6", cwd="/x")
+            codes = [outcome(json.dumps(send("shipyard-f6", PROSE))).code for _ in range(3)]
+        self.assertEqual(codes, [REFUSED] * 3)
+
+    def test_a3_227_a_message_to_an_agent_of_the_session_is_free_prose(self) -> None:
+        """#227 A3: `researcher` and `main` are agents of this session, not another session."""
+        with isolated() as project:
+            register(project.parent / "home", 4242, sessionId="e1ae680a", name="shipyard-f6", cwd="/x")
+            for target in ("researcher", "main", "a1b2c3d4e5f6"):
+                with self.subTest(to=target):
+                    self.assertEqual(outcome(json.dumps(send(target, PROSE))).code, 0)
+
+    def test_a3_227_a_structured_message_is_not_judged(self) -> None:
+        """#227 A3: a protocol object (a shutdown answer) is no prose to hold to the billet."""
+        with isolated() as project:
+            register(project.parent / "home", 4242, sessionId="e1ae680a", name="shipyard-f6", cwd="/x")
+            answer = {"type": "shutdown_response", "request_id": "r1", "approve": True}
+            self.assertEqual(outcome(json.dumps(send("shipyard-f6", answer))).code, 0)
+
+
+class HooksJson(unittest.TestCase):
+    def test_a3_227_send_message_reaches_the_guard_that_blocks_on_exit_3(self) -> None:
+        """#227 A3: the `PreToolUse` entry of `guard_output` names `SendMessage`, in the command that
+        turns the refusal code 3 alone into the 2 that blocks (`test_only_the_refusal_code_blocks`)."""
+        pre = next(hook for hook in guard_output_hooks()["PreToolUse"] if "SendMessage" in str(hook["matcher"]))
+        self.assertIn("SendMessage", str(pre["matcher"]).split("|"))
+        self.assertIn("[ $? -eq 3 ] && exit 2", str(pre["command"]))
 
 
 if __name__ == "__main__":

@@ -115,6 +115,11 @@ DECIDER_KNOWN = frozenset({
 GATE_MOST_TABLE_LINES = 30
 BILLET_WORDS = 60
 BILLET_SEPARATOR = "---"
+# The fields of the billet that take a closed list of values; `templates/billet.md` shows the same.
+BILLET_VALUES = {
+    "type": ("claim", "release", "info", "question", "reply"),
+    "awaits": ("nothing", "reply"),
+}
 
 HEADER = re.compile(r"<!--\s*template:(.*?)-->", re.DOTALL)
 HTML_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
@@ -466,19 +471,27 @@ def _billet(text: str, template: str) -> list[str]:
     if cut is None:
         found.append(f"no `{BILLET_SEPARATOR}` line between the fields and the prose (template `billet`)")
     head, prose = (lines, []) if cut is None else (lines[:cut], lines[cut + 1 :])
+    declared = [labels[0] for labels in required_fields(template)]
     fields: dict[str, str] = {}
     for line in head:
         match = BILLET_FIELD.match(line.strip())
-        if match is not None:
-            fields.setdefault(match.group(1), match.group(2).strip())
-        elif line.strip() and cut is not None:
-            found.append(f"`{_quote(line.strip())}` is not a `key: value` line")
-    for labels in required_fields(template):
-        name = labels[0]
+        if match is None:
+            if line.strip() and cut is not None:
+                found.append(f"`{_quote(line.strip())}` is not a `key: value` line")
+        elif match.group(1) in fields:
+            found.append(f"the field `{match.group(1)}` appears twice")
+        elif declared and match.group(1) not in declared:
+            found.append(f"`{match.group(1)}` is not a field of the billet: {', '.join(declared)}")
+        else:
+            fields[match.group(1)] = match.group(2).strip()
+    for name in declared:
         if name not in fields:
             found.append(f"the field `{name}` is missing (template `billet`)")
         elif not fields[name]:
             found.append(f"the field `{name}` is empty")
+    for name, values in BILLET_VALUES.items():
+        if fields.get(name) and fields[name] not in values:
+            found.append(f"`{name}: {fields[name]}` is not one of {', '.join(values)}")
     if fields.get("measure"):
         found += _measure(fields["measure"])
     words = count_words(" ".join(prose))
