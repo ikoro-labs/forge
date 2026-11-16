@@ -751,7 +751,7 @@ Ce qu'aucun agent ne fait à la place d'un humain :
 ## Output structure
 
 `guard_output` (hooks `SubagentStop`, `Stop`, and `PreToolUse` on `Bash`, `PowerShell`,
-`SubagentHandback` and the GitHub tools of an MCP server) checks each output with `plugins/forge/scripts/output_check.py`, which a skill
+`SubagentHandback`, `SendMessage` and the GitHub tools of an MCP server) checks each output with `plugins/forge/scripts/output_check.py`, which a skill
 can also run on a body before it posts it:
 
 | Output | Checked against | Refused |
@@ -760,6 +760,7 @@ can also run on a body before it posts it:
 | final text of any other agent | `templates/subagent-return.md` | once, then logged |
 | body of `gh issue create\|edit\|comment\|close -c`, `gh pr create\|edit\|comment\|review\|merge\|close -c`, `gh api ... -f\|-F body=` or `--input`, `gh api graphql` mutations `addComment`, `createIssue`..., read by `hooks/gh_bodies.py` (the reader `guard_cases` shares: gh behind a wrapper, in `bash -c`, `eval` or a substitution, a file after a `cd`); the text of a GitHub MCP tool, by the words of its name | `ticket.md`, `pr.md`, `comment.md`, or `verdict.md` when it opens with `VERDICT:` | every time |
 | the session's reply to the human | `templates/session-reply.md` | once per stop (`stop_hook_active`), then logged |
+| a `SendMessage` to another session (an address `uds:`, `bridge:` or `did:`, or the name or id of a session of `~/.claude/sessions/`) | `templates/billet.md`, the billet | every time: the message does not leave |
 
 The reply carries five fields: `Done`, `Measured`, `Awaiting your decision`, `CI and runners` and
 `Features` (or `Fait`, `Mesure`, `Attend ta décision`, `CI et runners`, `Features`, the last being the
@@ -777,6 +778,17 @@ refuses a reply without the field, and a field that is neither the table (its he
 separator, a row per feature, the `In parallel:` line) nor one of those lines. The block comes from
 the script, so it counts neither in the 15 lines of the template nor in the words of the reply.
 The handoff of a session carries the same block (see [La passation](sessions.md#la-passation)).
+
+The billet is the message between two sessions of a host: the lines `from`, `type` (`claim`, `release`,
+`info`, `question`, `reply`), `resource`, `ticket`, `measure` (`load=1.25 memory=5200MB
+time=2026-11-16T14:13+01:00`, the time in ISO 8601 with its offset) and `awaits` (`nothing`, `reply`),
+a `---` line, then 60 words of prose at most, all in English. The guard names every deviation: a
+missing, empty, repeated or unknown field, a missing `---`, a value outside its list, a time without
+its offset. `resource` takes its values from the key `shared-resource` of `usine.md` (and `none`); without
+the key that check is sans objet and any non-empty value passes. A message to an agent of the session
+(`main`, a teammate) and a structured message are not judged. Not yet tried in a real session: the
+`SendMessage` input (`to`, `message`) was read in the strings of Claude Code 2.1.325, not captured from a
+real hook event, and the suite alone has run the guard.
 
 The word caps (ticket 150, comment 150, PR 200, session reply 150, subagent return 200), the
 `max-lines` of each template header (ticket 25, PR 40, comment 12, session reply 15, subagent

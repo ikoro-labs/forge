@@ -3,7 +3,7 @@
     python output_check.py <kind> [<file> | -]
 
 Kinds: the documents under `templates/` (`ticket`, `pr`, `comment`, `verdict`, `session-reply`,
-`subagent-return`, `report-mail`) and the declared outputs of the plugin's agents (`coder`, `decider`, `gate`).
+`subagent-return`, `report-mail`, `billet`) and the declared outputs of the plugin's agents (`coder`, `decider`, `gate`).
 `exempt` checks nothing. Prints one deviation per line and exits 1 when there is one, 0 when the
 text conforms, 2 on a usage error. The hook `guard_output.py` calls `deviations` for its three
 events; a skill can run this command on a body before it posts it.
@@ -24,7 +24,9 @@ The rules, the same for every kind that has them:
   the word cap and the paragraph cap, which hold for the rest of the reply;
 - a structured format (`verdict`, `coder`, `decider`) takes a closed set of keys: an unknown key is
   refused, unless the project names it with `output-extra-keys` (`<kind> | KEY, KEY`). The verdict
-  and the coder's block are read by `parse_output.py`, their one source of rules.
+  and the coder's block are read by `parse_output.py`, their one source of rules;
+- the `billet`, the message between two sessions of a host, is `key: value` lines, a `---` line,
+  then at most 60 words of prose; `_billet` holds its rules and `templates/billet.md` declares them.
 """
 
 from __future__ import annotations
@@ -33,6 +35,7 @@ import re
 import sys
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from datetime import datetime
 from html.parser import HTMLParser
 from pathlib import Path
 
@@ -80,6 +83,8 @@ KINDS = {
     "subagent-return": Kind("subagent-return.md", "subagent-return"),
     # The factory report mail is HTML: `_from_html` reads its headings, items and table rows.
     "report-mail": Kind("report-mail.md", "report-mail"),
+    # The billet has its own rules (`_billet`): its 60-word cap counts the prose after `---` only.
+    "billet": Kind("billet.md", None, paragraphs=False),
     "coder": Kind(None, "subagent-return"),
     "decider": Kind(None, "subagent-return"),
     # The gate's table and the verbatim elements under it have no word cap.
@@ -108,6 +113,14 @@ DECIDER_KNOWN = frozenset({
     "REFERENTIAL_UPDATE", "WRITE_TO", "READ",
 })
 GATE_MOST_TABLE_LINES = 30
+BILLET_WORDS = 60
+BILLET_SEPARATOR = "---"
+BILLET_RESOURCE_KEY = "shared-resource"
+# The fields of the billet that take a closed list of values; `templates/billet.md` shows the same.
+BILLET_VALUES = {
+    "type": ("claim", "release", "info", "question", "reply"),
+    "awaits": ("nothing", "reply"),
+}
 
 HEADER = re.compile(r"<!--\s*template:(.*?)-->", re.DOTALL)
 HTML_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
@@ -121,6 +134,9 @@ CODE_SPAN = re.compile(r"`[^`\n]+`")
 KEY_LINE = re.compile(r"^\s*[A-Z][A-Z_ ]*[A-Z]:")
 # The kinds made of `KEY:` lines, which an agent often wraps in a code fence as its role shows it.
 KEYED = frozenset({"verdict", "coder", "decider"})
+BILLET_FIELD = re.compile(r"^([a-z][a-z-]*):[ \t]*(.*)$")
+BILLET_MEASURE = re.compile(r"load=(\S+) memory=(\S+) time=(.*)")
+BILLET_TIME = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?(Z|[+-]\d{2}:\d{2})")
 
 
 def _integer(config: Mapping[str, list[str]], key: str, default: int) -> int:
@@ -418,6 +434,84 @@ def _quote(paragraph: str) -> str:
     return " ".join(words[:6]) + (" ..." if len(words) > 6 else "")
 
 
+def _instant(value: str) -> bool:
+    """Whether `value` is an ISO 8601 date and time with its offset (`Z` or `+HH:MM`)."""
+    if BILLET_TIME.fullmatch(value) is None:
+        return False
+    try:
+        datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    return True
+
+
+def _measure(value: str) -> list[str]:
+    """The deviations of the `measure` field: `load=<n> memory=<n>MB time=<ISO 8601 with offset>`."""
+    match = BILLET_MEASURE.fullmatch(value)
+    if match is None:
+        return [
+            "`measure` must be `load=<number> memory=<number>MB time=<ISO 8601 with its offset>`,"
+            f" not `{_quote(value)}`"
+        ]
+    load, memory, time = match.groups()
+    found = []
+    if re.fullmatch(r"\d+(\.\d+)?", load) is None:
+        found.append(f"`load={load}` is not a number with a dot, like `load=1.25`")
+    if re.fullmatch(r"\d+MB", memory) is None:
+        found.append(f"`memory={memory}` is not whole megabytes, like `memory=5200MB`")
+    if not _instant(time):
+        found.append(f"`time={time}` is not ISO 8601 with its offset, like `time=2026-11-16T14:13+01:00`")
+    return found
+
+
+def _billet(text: str, template: str, config: Mapping[str, list[str]]) -> list[str]:
+    """Every way `text` departs from the billet of `templates/billet.md`."""
+    lines = text.strip().splitlines()
+    cut = next((i for i, line in enumerate(lines) if line.strip() == BILLET_SEPARATOR), None)
+    found: list[str] = []
+    if cut is None:
+        found.append(f"no `{BILLET_SEPARATOR}` line between the fields and the prose (template `billet`)")
+    head, prose = (lines, []) if cut is None else (lines[:cut], lines[cut + 1 :])
+    declared = [labels[0] for labels in required_fields(template)]
+    fields: dict[str, str] = {}
+    for line in head:
+        match = BILLET_FIELD.match(line.strip())
+        if match is None:
+            if line.strip() and cut is not None:
+                found.append(f"`{_quote(line.strip())}` is not a `key: value` line")
+        elif match.group(1) in fields:
+            found.append(f"the field `{match.group(1)}` appears twice")
+        elif declared and match.group(1) not in declared:
+            found.append(f"`{match.group(1)}` is not a field of the billet: {', '.join(declared)}")
+        else:
+            fields[match.group(1)] = match.group(2).strip()
+    for name in declared:
+        if name not in fields:
+            found.append(f"the field `{name}` is missing (template `billet`)")
+        elif not fields[name]:
+            found.append(f"the field `{name}` is empty")
+    for name, values in BILLET_VALUES.items():
+        if fields.get(name) and fields[name] not in values:
+            found.append(f"`{name}: {fields[name]}` is not one of {', '.join(values)}")
+    # The values of `resource` are the project's own: no key, no list, and the check is not applicable.
+    resources = config.get(BILLET_RESOURCE_KEY, [])
+    if resources and fields.get("resource") and fields["resource"] not in (*resources, "none"):
+        found.append(
+            f"`resource: {fields['resource']}` is not a value of the key `{BILLET_RESOURCE_KEY}`:"
+            f" {', '.join((*resources, 'none'))}"
+        )
+    if fields.get("measure"):
+        found += _measure(fields["measure"])
+    written = sum(1 for line in lines if line.strip())
+    most_lines = line_cap(template)
+    if most_lines is not None and written > most_lines:
+        found.append(f"{written} lines, at most {most_lines} (template `billet`): blank lines do not count")
+    words = count_words(" ".join(prose))
+    if words > BILLET_WORDS:
+        found.append(f"{words} words of prose after `{BILLET_SEPARATOR}`, at most {BILLET_WORDS}")
+    return found
+
+
 def deviations(
     text: str, kind: str, config: Mapping[str, list[str]] | None = None, root: Path | None = None
 ) -> list[str]:
@@ -427,6 +521,8 @@ def deviations(
     config = config or {}
     if kind == "exempt":
         return []
+    if kind == "billet":
+        return _billet(text, _template_text(kind, config, root), config)
     if kind == "report-mail":
         text = _from_html(text)
     lines, prose = _structure(_unwrap(text) if kind in KEYED else text)

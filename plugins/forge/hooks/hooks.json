@@ -89,7 +89,7 @@
         ]
       },
       {
-        "matcher": "Bash|PowerShell|SubagentHandback|mcp__.*([Gg]it[Hh]ub|GITHUB).*",
+        "matcher": "Bash|PowerShell|SubagentHandback|SendMessage|mcp__.*([Gg]it[Hh]ub|GITHUB).*",
         "hooks": [
           {
             "type": "command",

@@ -799,6 +799,14 @@ A project agent checked against a declared format rather than the generic rule: 
 
 - `output-agent-format` : `<security-reviewer | exempt>`
 
+`shared-resource` : une ligne par ressource que deux sessions du poste peuvent se disputer (un pool de
+worktrees, un runner, une base de test). Le hook `guard_output` impose le billet (`templates/billet.md`)
+à tout message envoyé à une autre session, et le champ `resource` du billet prend ses valeurs dans cette
+clé, plus `none`. Sans la clé, le contrôle de `resource` est sans objet (clé `shared-resource` absente) :
+toute valeur non vide passe, le champ restant exigé. Aucune valeur n'est devinée.
+
+- `shared-resource` : `<worktree-pool>`
+
 The keys a project adds to a structured format (`verdict`, `coder`, `decider`): any other key is
 refused.
 

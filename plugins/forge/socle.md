@@ -102,7 +102,7 @@ in between applies from the next PR.
 ## Templates
 
 Each document an agent writes follows its template under `templates/`, and `features/` for feature
-documents. Eight hold a line cap at their head: `ticket.md`, `pr.md`, `verdict.md`, `adr.md`,
-`comment.md`, `subagent-return.md`, `session-reply.md`, `report-mail.md`; the feature templates hold none. The
-hook `guard_output` holds a ticket, a PR, a comment, a subagent return, a session reply and a report mail to
+documents. Nine hold a line cap at their head: `ticket.md`, `pr.md`, `verdict.md`, `adr.md`,
+`comment.md`, `subagent-return.md`, `session-reply.md`, `report-mail.md`, `billet.md`; the feature templates hold none. The
+hook `guard_output` holds a ticket, a PR, a comment, a subagent return, a session reply, a report mail and a billet to
 that cap, in written lines; a verdict keeps every finding.
