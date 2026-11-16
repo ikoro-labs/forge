@@ -202,6 +202,50 @@ class SloCondition(Base):
         self.assertEqual(self.condition()[0], "non vérifiable")
 
 
+class TagName(Base):
+    """Le nom du tag vient du motif de la clé `release-tag` ; l'agent ne l'écrit pas à la main."""
+
+    def tag(self, version: str) -> tuple[int, str, str]:
+        out, err = io.StringIO(), io.StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
+            code = main(["tag", str(self.world.root), version], run=self.runner, now=NOW)
+        return code, out.getvalue(), err.getvalue()
+
+    def test_the_version_fills_the_pattern_of_the_key(self) -> None:
+        """Ticket #71 : `forge--v{version}` avec `1.15.0` donne `forge--v1.15.0` ; un autre motif, un autre nom."""
+        code, out, _ = self.tag("1.15.0")
+        self.assertEqual((code, out), (0, "TAG: forge--v1.15.0\n"))
+        (self.world.root / "docs" / "agents" / "usine.md").write_text("- `release-tag` : `mon_plugin_{version}`\n", encoding="utf-8")
+        self.assertEqual(self.tag("2.0.1")[1], "TAG: mon_plugin_2.0.1\n")
+
+    def test_a_tag_that_exists_is_refused_because_a_tag_is_never_moved(self) -> None:
+        """Ticket #71 : le tag existe déjà : refus (code 2), jamais un déplacement."""
+        self.world.commit("feat: un", "2026-11-14T10:00:00Z")
+        self.world.git("tag", "-a", "-m", "v", "forge--v1.15.0")
+        code, out, err = self.tag("1.15.0")
+        self.assertEqual(code, 2)
+        self.assertNotIn("TAG:", out)
+        self.assertIn("existe déjà", err)
+
+    def test_an_unreadable_version_or_an_ambiguous_key_is_refused(self) -> None:
+        """Ticket #71 : une version qui n'est pas un numéro, deux motifs, un motif sans `{version}` : code 2."""
+        for version in ("v1.2", "1 2", "", "../1"):
+            with self.subTest(version=version):
+                self.assertEqual(self.tag(version)[0], 2)
+        (self.world.root / "docs" / "agents" / "usine.md").write_text("- `release-tag` : `a-{version}`\n- `release-tag` : `b-{version}`\n", encoding="utf-8")
+        self.assertEqual(self.tag("1.0.0")[0], 2)
+        (self.world.root / "docs" / "agents" / "usine.md").write_text("- `release-tag` : `fixe`\n", encoding="utf-8")
+        self.assertEqual(self.tag("1.0.0")[0], 2)
+
+    def test_without_the_release_tag_key_it_is_sans_objet(self) -> None:
+        """Ticket #71 : sans `release-tag`, aucun nom de tag n'est deviné."""
+        (self.world.root / "docs" / "agents" / "usine.md").write_text("", encoding="utf-8")
+        code, out, _ = self.tag("1.0.0")
+        self.assertEqual(code, 0)
+        self.assertIn("sans objet (clé `release-tag` absente)", out)
+        self.assertNotIn("TAG:", out)
+
+
 class EssaiCondition(Base):
     """L'essai de bout en bout passe sur la tête de la base : un faux script tient la place de l'essai."""
 

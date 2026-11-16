@@ -59,6 +59,7 @@ class ReleaseSkill(unittest.TestCase):
         text = prose(SKILL)
         self.assertIn("tag **annoté** sur le commit de fusion", text)
         self.assertIn("motif de la clé `release-tag`", text)
+        self.assertIn("release.py tag <projet> <version>", text)
         self.assertIn("**Un tag ne se déplace ni ne se supprime**", text)
         self.assertIn("ni `git tag -f`, ni `git push --force`, ni `git push --delete`", text)
         self.assertIn("Lance `/forge:qc` sur la PR de version : c'est lui qui juge et fusionne, jamais toi", text)

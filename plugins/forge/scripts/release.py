@@ -3,6 +3,7 @@
     python release.py trigger <project>
     python release.py condition <slo|budget|sev1|essai> <project> [--plugin DIR] [--essai SCRIPT]
     python release.py check <project> [--json] [--plugin DIR] [--essai SCRIPT]
+    python release.py tag <project> <version>
 
 `trigger` reads the key `release-trigger` of `docs/agents/usine.md`, one line
 `<merges> | <longest wait>` (`10 | 7 j`: the wait is a number followed by `h` or `j`, as in the key
@@ -30,6 +31,10 @@ four conditions `tenue`) or `humain` (due, one or more missing: `MANQUE:` names 
 three cheap conditions first and launches the trial, which costs real model calls, only when they all
 hold; otherwise the trial counts as not held and says it was not launched. It never publishes, tags or
 opens anything: the skill `release` does, on the decision. `--json` prints one document.
+
+`tag` prints the name of the tag of a version, the pattern of the key `release-tag` with `{version}` filled
+in, and refuses (code 2) a version that is not a number, a key with several patterns or none with
+`{version}`, and a tag that already exists: a tag is never moved or deleted. No key: "sans objet".
 
 The output is one fact per line, in French, on standard output. The standard library only.
 """
@@ -67,6 +72,8 @@ TRIAL_SCRIPT = Path(__file__).resolve().parent / "e2e_trial.py"
 TRIAL_TIMEOUT_SECONDS = 3600
 TRIAL_KEYS = ("RESULTAT", "TETE", "ETAPE", "RAISON")
 HEX_SHA = re.compile(r"[0-9a-f]{40}")
+VERSION_MARK = "{version}"
+VERSION = re.compile(r"[0-9][0-9A-Za-z.+-]*")
 WRONG_CALL = 2
 
 
@@ -340,6 +347,32 @@ def conditions_for(args: argparse.Namespace) -> dict[str, Callable[[Path, Runner
     return {**CONDITIONS, "essai": essai}
 
 
+def run_tag(args: argparse.Namespace, run: Runner, now: datetime) -> int:
+    """The tag name of a version: the pattern of the key `release-tag` with the version in it.
+
+    Never guessed: no key, or several patterns, or a pattern without `{version}`, or a version that is
+    not a number is refused (code 2) or "sans objet". A tag that already exists is refused too, because a
+    tag is never moved or deleted: the agent writes no tag name by hand.
+    """
+    templates = usine.load(args.projet).get(TAG_KEY)
+    if not templates:
+        print(f"sans objet (clé `{TAG_KEY}` absente), aucun nom de tag n'est deviné")
+        return 0
+    if len(templates) > 1:
+        raise ReleaseError(f"`{TAG_KEY}` : {len(templates)} motifs déclarés, l'agent n'en choisit pas : la publication revient à l'humain")
+    template = templates[0]
+    if VERSION_MARK not in template:
+        raise ReleaseError(f"`{TAG_KEY}` : `{template}` ne contient pas `{VERSION_MARK}`")
+    if not VERSION.fullmatch(args.version):
+        raise ReleaseError(f"la version `{args.version}` n'est pas un numéro de version (chiffres, lettres, `.`, `+`, `-`, en commençant par un chiffre)")
+    name = template.replace(VERSION_MARK, args.version)
+    f = factory_slo.Factory(args.projet, now - timedelta(days=1), now, run)
+    if f.git("rev-parse", "--verify", "--quiet", f"refs/tags/{name}") is not None:
+        raise ReleaseError(f"le tag `{name}` existe déjà : un tag ne se déplace ni ne se supprime")
+    print(f"TAG: {name}")
+    return 0
+
+
 def run_condition(args: argparse.Namespace, run: Runner, now: datetime) -> int:
     print(conditions_for(args)[args.name](args.projet, run, now).line())
     return 0
@@ -404,6 +437,9 @@ def main(argv: list[str] | None = None, run: Runner | None = None, now: datetime
     trigger.add_argument("projet", type=Path)
     condition = commands.add_parser("condition", help="one condition of the release")
     condition.add_argument("name", choices=CONDITION_NAMES)
+    named = commands.add_parser("tag", help="the tag name of a version, from the key `release-tag`")
+    named.add_argument("projet", type=Path)
+    named.add_argument("version")
     whole = commands.add_parser("check", help="the trigger, the four conditions and the decision")
     whole.add_argument("--json", action="store_true")
     for sub in (condition, whole):
@@ -413,7 +449,7 @@ def main(argv: list[str] | None = None, run: Runner | None = None, now: datetime
     args = parser.parse_args(argv)
     run = run or factory_slo.run_command
     moment = now or datetime.now(timezone.utc)
-    handlers = {"trigger": run_trigger, "condition": run_condition, "check": run_check}
+    handlers = {"trigger": run_trigger, "condition": run_condition, "check": run_check, "tag": run_tag}
     try:
         return handlers[args.command](args, run, moment)
     except ReleaseError as error:

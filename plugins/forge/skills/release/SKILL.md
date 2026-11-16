@@ -83,7 +83,8 @@ Une fois la PR fusionnée :
    `factory_slo.py status <projet>` puis `release.py condition slo|budget|sev1 <projet>`. Une condition qui
    ne tient plus : pas de tag, `needs-your-attention` avec la condition, l'humain décide.
 2. Pose le tag **annoté** sur le commit de fusion de la PR de version, nommé par le motif de la clé
-   `release-tag` avec la version de la PR, puis pousse-le par son nom : `git tag -a <tag> -m <message> <commit>`,
+   `release-tag` : le nom vient de `release.py tag <projet> <version>` (ligne `TAG:`), jamais écrit à la main, et
+   la commande refuse un tag qui existe déjà. Puis `git tag -a <tag> -m <message> <commit>` et
    `git push origin <tag>`. Vérifie que `git rev-parse <tag>^{commit}` est le commit de fusion.
 3. **Un tag ne se déplace ni ne se supprime**, même poussé par erreur : ni `git tag -f`, ni
    `git push --force`, ni `git push --delete`. Une erreur de tag se dit à l'humain.
