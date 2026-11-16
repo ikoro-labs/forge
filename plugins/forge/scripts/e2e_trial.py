@@ -48,8 +48,8 @@ the commit does not), `DEPOT:`, `TICKET:`, `PR:`, `CHECKS:`, then one `NETTOYAGE
 (`ECHEC` for one that failed, which turns a `PASS` into a `FAIL` at the step `nettoyage`). The pull
 request of a release copies `RESULTAT` and `TETE`.
 
-The trial costs real model calls and needs `gh` signed in on the trial repository: run it only by hand,
-for a release. Exit codes: 0 for `PASS` and for `SANS-OBJET`, 1 for `FAIL`, 2 for a wrong call (an
+The trial costs real model calls and needs `gh` signed in on the trial repository: run it only for a
+release, by hand or through `release.py` (the skill `release`), never from a test. Exit codes: 0 for `PASS` and for `SANS-OBJET`, 1 for `FAIL`, 2 for a wrong call (an
 ill-formed key, an unreadable file, the project's own repository named as the trial repository).
 
 The standard library only.

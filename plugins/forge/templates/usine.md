@@ -256,6 +256,17 @@ tient pour la version (`<plugin>--v{version}`). Une ligne par motif. Sans la cl�
 
 - `release-tag` : `<monplugin--v{version}>`
 
+Quand l'agent publie une version, lu par `scripts/release.py` et le skill `release`. Une seule
+ligne, `<N fusions> | <délai max>` : N est un entier au-dessus de 0, le délai un nombre suivi de `h` ou
+de `j`, comme dans la clé `sla`. Une version est due quand N fusions attendent un tag de la clé
+`release-tag`, ou quand la plus ancienne attend depuis plus que le délai : la première des deux bornes
+atteinte la déclenche. Sans la clé, « sans objet (clé `release-trigger` absente) » : l'agent ne publie
+rien, et aucune valeur n'est supposée. Une valeur illisible ou une clé répétée fait échouer la commande
+(code 2), sans publication. Sans la clé `release-tag`, le compte des fusions en attente est lui aussi
+« sans objet (clé `release-tag` absente) ».
+
+- `release-trigger` : `<10 | 7 j>`
+
 `factory_slo.py` lit aussi `required-contexts` (`main-green`) et `protected-path` (`human-touch`), et
 deux conventions du projet : l'étiquette `escaped-defect`, posée sur un ticket de défaut trouvé après la
 fusion, avec dans son corps la ligne `Échappé de #<pr>` qui nomme la PR en cause ; et, pour la gravité
@@ -337,7 +348,8 @@ L'état est celui de `slo-status.json`, que `forge:qc` et `forge:feature-build` 
 chaque passage par `scripts/factory_slo.py budget <projet>`. Une action devient active quand son objectif
 est `épuisé`, reste active tant qu'il est `menacé` ensuite, et cesse au calcul suivant qui le trouve
 revenu à `tenu` : le rapport dit alors « autonomie rendue », et pas avant. Le fichier d'état garde cette
-mémoire d'un calcul à l'autre. Un objectif « sans objet » qui n'a jamais été épuisé n'est pas épuisé. Quand la clé est déclarée avec
+mémoire d'un calcul à l'autre ; un fichier précédent qui existe sans se lire retient tout objectif qui
+n'est pas `tenu`, pour qu'une action ne cesse pas faute de mémoire. Un objectif « sans objet » qui n'a jamais été épuisé n'est pas épuisé. Quand la clé est déclarée avec
 `human-merge` et que le fichier d'état manque, est illisible ou date de plus de 24 h, `guard_git` refuse
 la fusion par précaution et donne la commande à lancer (`factory_slo.py status <projet>`). Une ligne
 mal formée, une action inconnue ou un objectif absent de la clé `slo` font échouer `budget` et refuser

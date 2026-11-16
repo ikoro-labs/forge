@@ -59,6 +59,7 @@ ne fusionne une PR rouge, ou ne sort de son rôle.
 | `/forge:audit-jetons` | compter les jetons dépensés par chaque rôle |
 | `/forge:slo` | le rapport des objectifs de service : valeur, budget d'erreur restant, état, tendance |
 | `/forge:incident` | la revue sans blâme d'un incident `sev1`, `sev2` ou de l'usine : faits datés, cause, ce qui l'a laissé passer, correctif (un contrôle et son test, ou un cas du jeu de référence) |
+| `/forge:release` | la publication continue : quand une version est due, l'agent la publie seul si les SLO, le budget, l'essai de bout en bout et les `sev1` le permettent, sinon la rend à l'humain |
 | `/forge:tdd` | ce qu'est un bon test, les coutures, les anti-patterns, la boucle et les mocks |
 | `/forge:codebase-design`, `/forge:domain-modeling`, `/forge:improve-codebase-architecture` | le vocabulaire de conception que partagent les rôles |
 

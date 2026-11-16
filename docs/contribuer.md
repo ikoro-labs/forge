@@ -44,8 +44,9 @@ Publier une version :
    n'est pas corrigée. Pour une clé absente, le script écrit `SANS-OBJET (clé `<nom>` absente)` : l'étape
    est « sans objet (clé `e2e-command` absente) », ou le nom de la clé qui manque, la PR de version le dit,
    et ne l'écrit jamais comme un `PASS`. La création du dépôt d'essai, de ses étiquettes et de son jeton
-   est un geste humain. L'essai coûte de vrais appels de modèle : il ne se lance qu'à ce geste de version,
-   jamais depuis un test ni depuis un passage de l'usine.
+   est un geste humain. L'essai coûte de vrais appels de modèle : il ne se lance qu'à un geste de version,
+   celui de l'humain ou celui de `/forge:release` (voir plus bas), jamais depuis un test ni depuis un autre
+   passage de l'usine.
 4. Vérifier :
 
    ```sh
@@ -58,6 +59,37 @@ Publier une version :
    la forme que Claude Code lit. Les anciens tags `forge-v<X.Y.Z>`, antérieurs à ce dépôt, ne changent pas.
 6. Une fois le tag poussé, deux PR : l'une monte l'épingle de ce dépôt (`.claude/settings.json`),
    l'autre le tag cité par l'installation, dans `README.md` et `docs/installation.md`.
+
+## La publication par l'agent
+
+Quand le projet déclare la clé `release-trigger` (`<N fusions> | <délai max>`), l'agent publie lui-même une
+version : `/forge:release`, lancé depuis la session principale, suit les étapes ci-dessus. Une version est
+due quand N fusions attendent un tag de la clé `release-tag`, ou quand la plus ancienne attend depuis plus
+que le délai ; la première des deux bornes atteinte la déclenche. Sans la clé, la publication reste un geste
+de l'humain, et l'agent ne publie rien (`sans objet`).
+
+L'agent publie seul si, et seulement si, ces quatre conditions tiennent, lues par
+`plugins/forge/scripts/release.py check` :
+
+- tous les SLO sont `tenu` dans `slo-status.json`, calculé il y a moins d'une heure ;
+- aucune action de `budget-action` n'est active (`alert` comprise) ;
+- l'essai de bout en bout passe sur la tête de la base : `RESULTAT: PASS` sur exactement ce commit, arbre
+  non modifié ;
+- aucun ticket `sev1` n'est ouvert, sur un dépôt qui porte l'étiquette (l'agent ne la crée pas).
+
+Une condition qui manque, parce qu'elle n'est pas tenue ou parce que le projet ne permet pas de la lire (une
+clé absente, un état périmé, une étiquette qui n'existe pas), vaut condition non remplie, jamais « tenue ».
+Sinon, l'agent ouvre quand même la PR de version, pose `needs-your-attention` avec la condition qui manque,
+et la revue, la fusion et le tag reviennent à l'humain. Il ne lance l'essai, qui coûte de vrais appels de
+modèle, que lorsque les trois autres conditions tiennent.
+
+Quand tout tient, la PR de version passe par `/forge:qc`, puis l'agent pose le tag annoté sur le commit de
+fusion, au motif de la clé `release-tag`, et le pousse. Un tag ne se déplace ni ne se supprime. L'agent ne
+monte pas l'épingle de ce dépôt, et ne pose aucune règle de tags côté serveur : ce sont des PR et des gestes
+de l'humain.
+
+Éprouvé sur des réponses `gh` fictives, des dépôts git jetables et un faux essai, sous Linux. Pas encore
+essayé sur un vrai poste : ni le skill dans une vraie session, ni un tag posé par l'agent.
 
 ## Le dépôt
 
@@ -75,7 +107,7 @@ plugins/forge/                    le plugin
   agents/                         coder, qc-gate, qc-conf, staff-engineer, product-owner,
                                   review-judge, review-recheck
   skills/                         qc, feature-build, feature-*, codebase-design, domain-modeling,
-                                  improve-codebase-architecture, tdd, audit-jetons, slo, incident
+                                  improve-codebase-architecture, tdd, audit-jetons, slo, incident, release
   hooks/                          hooks.json, les gardes, les sorties raccourcies, la passation
                                   drainée et l'avis des autres sessions du dépôt, en Python de la
                                   bibliothèque standard, sous Linux comme sous Windows
@@ -86,6 +118,7 @@ plugins/forge/                    le plugin
   scripts/incident.py             la lecture d'une revue d'incident et le refus de celle sans correctif
   scripts/completion.py           le tableau de complétion des features, compté comme le budget
   scripts/e2e_trial.py            l'essai de bout en bout de l'usine sur un dépôt d'essai, avant une version
+  scripts/release.py              le déclencheur d'une version et les quatre conditions de sa publication par l'agent
   socle.md                        le socle commun des critères de revue, règles F-n
   templates/                      usine.md, ticket.md, pr.md, verdict.md, adr.md, features/
 tests/                            tests des hooks, du parseur et du contenu
