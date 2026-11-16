@@ -7,7 +7,7 @@ from contextlib import redirect_stdout
 from pathlib import Path
 from typing import Any, cast
 
-import support  # noqa: F401
+import support  # noqa: F401  met le plugin sur le chemin d'import
 from parse_output import (
     OutputError,
     ReplayError,
