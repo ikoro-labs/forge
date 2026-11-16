@@ -36,7 +36,11 @@ The cleanup runs whatever happens: it closes the open pull requests aimed at the
 and the ticket the trial opened, and deletes those requests' branches and the base branch. It touches
 nothing it did not create: each object is found by its number or its name, every `gh` gesture names the
 trial repository, and the default branch is never deleted. The trial repository cannot be the
-repository of the project that runs the trial.
+repository of the project that runs the trial: before anything is created, every remote of the project
+(`git remote -v`, fetch and push, any host, an SSH alias included, `.git` or not) is read to an
+`owner/name`, compared with the key without regard to case, and a match is refused (exit 2). A remote
+the script cannot read, no remote, or a failing `git` is refused too: it cannot prove the repository is
+another one, so the trial does not run.
 
 The result, one fact per line on standard output: `RESULTAT: PASS` or `RESULTAT: FAIL` (with `ETAPE:`
 and `RAISON:`), `TETE:` (the commit of the plugin tried, "arbre modifié" when its tree holds changes
@@ -86,7 +90,12 @@ GREEN = ("pass", "skipping")  # the buckets of `gh pr checks` that do not fail t
 FEATURE = "F-9999"
 LABEL = "ready-for-agent"
 IDENTITY = ("-c", "user.name=forge-e2e", "-c", "user.email=forge-e2e@users.noreply.github.com", "-c", "commit.gpgsign=false")
-ORIGIN = re.compile(r"github\.com[:/]([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+?)(?:\.git)?/?$")
+# The two forms of a remote URL: `scheme://[user[:secret]@]host[:port]/path` and `[user@]host:path`. The host
+# is not read: an alias of `~/.ssh/config` is a host no one can resolve from here, and only the path says
+# which repository it is.
+SCHEME_URL = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*://(?:[^/@\s]*@)?[^/:@\s]+(?::\d+)?/(?P<path>\S+)")
+SCP_URL = re.compile(r"(?:[^/@:\s]+@)?[^/:@\s]+:(?!//)(?P<path>\S+)")
+NAME_PART = re.compile(r"[A-Za-z0-9_.-]+")
 ISSUE_URL = re.compile(r"/issues/(\d+)\s*$")
 
 # What the throwaway project holds: the smallest `usine.md`, a feature whose spec is accepted (the gate
@@ -418,16 +427,45 @@ def report(
     print("\n".join([*lines, *(cleanup or [])]))
 
 
-def origin_repo(project: Path) -> str | None:
-    """The `owner/name` of the project's `origin` on GitHub, None when it has none or it is elsewhere."""
+def remote_repo(url: str) -> str | None:
+    """The `owner/name` a remote URL names, in lower case (GitHub ignores the case); None when it cannot be read.
+
+    Any host, any form (`https`, `ssh`, `user@host:path`, an alias), a final `.git` or `/` or neither. A
+    path that is not exactly two names (a local path, a host with subgroups) is not read.
+    """
+    found = SCHEME_URL.fullmatch(url) or SCP_URL.fullmatch(url)
+    if not found:
+        return None
+    path = found.group("path").rstrip("/").removesuffix(".git").rstrip("/")
+    parts = path.split("/")
+    if len(parts) != 2 or not all(NAME_PART.fullmatch(part) for part in parts):
+        return None
+    return path.casefold()
+
+
+def project_repos(project: Path) -> list[str] | None:
+    """The repositories every remote of the project names (fetch and push), None as soon as one cannot be read.
+
+    No remote, a `git` that fails or is absent, a line with no URL: all unreadable. The caller refuses.
+    """
     try:
         done = subprocess.run(
-            ["git", "-C", str(project), "remote", "get-url", "origin"], capture_output=True, text=True, encoding="utf-8"
+            ["git", "-C", str(project), "remote", "-v"], capture_output=True, text=True, encoding="utf-8", errors="replace"
         )
     except OSError:
         return None
-    match = ORIGIN.search(done.stdout.strip()) if done.returncode == 0 else None
-    return match.group(1) if match else None
+    if done.returncode != 0:
+        return None
+    repos = []
+    for line in done.stdout.splitlines():
+        if not line.strip():
+            continue
+        words = line.split()
+        repo = remote_repo(words[1]) if len(words) >= 2 else None
+        if repo is None:
+            return None
+        repos.append(repo)
+    return repos or None
 
 
 def scratch_root() -> str | None:
@@ -521,7 +559,15 @@ def main(argv: list[str] | None = None) -> int:
     if isinstance(settings, list):
         print("\n".join(settings))
         return 0
-    if origin_repo(project) == settings.repo:
+    repos = project_repos(project)
+    if repos is None:
+        print(
+            f"e2e_trial: les remotes de {project} sont illisibles (aucun, `git` en échec, ou une URL que le script ne sait pas lire) : "
+            "il ne peut pas prouver que le dépôt d'essai n'est pas le dépôt du projet, et refuse de tourner",
+            file=sys.stderr,
+        )
+        return WRONG_CALL
+    if settings.repo.casefold() in repos:
         print(
             f"e2e_trial: le dépôt d'essai `{settings.repo}` est le dépôt de ce projet : "
             "l'essai crée et ferme des tickets, il ne tourne jamais sur le dépôt qu'il protège",

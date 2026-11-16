@@ -93,6 +93,14 @@ TICKET_URL = f"https://github.com/{REPO}/issues/12\n"
 posix_only = unittest.skipUnless(os.name == "posix", "les exécutables factices sont des scripts à shebang")
 
 
+OWN_URL = "https://github.com/ikoro-labs/forge.git"  # the repository of the project that runs the trial
+
+
+def remotes(*urls: str, name: str = "origin") -> str:
+    """What `git remote -v` prints: a fetch and a push line for each URL."""
+    return "".join(f"{name}\t{url} (fetch)\n{name}\t{url} (push)\n" for url in urls)
+
+
 def pr(number: int = 13, body: str = "Closes #12", state: str = "OPEN", branch: str = "feat/essai") -> dict:
     return {"number": number, "title": "feat: écrire le fichier", "body": body, "state": state, "headRefName": branch}
 
@@ -119,6 +127,7 @@ def scenario(**changes: list[dict]) -> dict[str, list[dict]]:
             {"has": ["pr", "checks"], "stdout": checks(("tests", "pass"), ("lint", "pass"))},
         ],
         "git": [
+            {"has": ["remote", "-v"], "stdout": remotes(OWN_URL)},
             {"has": ["commit"], "snapshot": True},
             {"has": ["rev-parse", "HEAD"], "stdout": "0123abc\n"},
         ],
@@ -332,14 +341,115 @@ class Preparation(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertRegex(out, r"(?m)^ETAPE: ticket$")
 
-    def test_the_trial_repository_cannot_be_the_repository_that_runs_it(self) -> None:
-        """Ticket #70, critère 5 : le dépôt d'essai n'est jamais le dépôt du projet qui lance l'essai."""
-        project, code, _, err = self.prepare(
-            git=[{"has": ["remote", "get-url"], "stdout": f"git@github.com:{REPO}.git\n"}]
-        )
-        self.assertEqual(code, 2)
-        self.assertIn(REPO, err)
-        self.assertEqual(project.calls("gh"), [])
+
+
+@posix_only
+class OwnRepositoryGuard(unittest.TestCase):
+    """Ticket #70, critère 5 : l'essai ne tourne jamais sur le dépôt du projet qui le lance.
+
+    Il y crée un ticket, y pousse une branche et y ferme des objets : le garde refuse (code 2, rien créé) tout
+    dépôt d'essai que les remotes du projet nomment, quelle que soit la forme de l'URL ou la casse, et refuse
+    aussi quand il ne sait pas lire les remotes.
+    """
+
+    def run_with(self, remote_output: str, repo: str = REPO, code: int = 0) -> tuple[Project, int, str]:
+        keys = {**KEYS, "e2e-repo": repo}
+        project = Project(self, keys, scenario(git=[{"has": ["remote", "-v"], "stdout": remote_output, "code": code}]))
+        exit_code, _, err = project.run()
+        return project, exit_code, err
+
+    def assert_refused(self, project: Project, code: int, err: str, *words: str) -> None:
+        self.assertEqual(code, 2, err)
+        for word in words:
+            self.assertIn(word, err)
+        self.assertEqual(project.calls("gh"), [], "rien n'est créé sur le dépôt")
+        self.assertEqual([c for c in project.calls("git") if "push" in c["args"]], [])
+        self.assertEqual(project.calls("claude"), [])
+
+    def test_the_exact_name_is_refused(self) -> None:
+        """Ticket #70, critère 5 : le nom exact du dépôt du projet est refusé."""
+        project, code, err = self.run_with(remotes(f"git@github.com:{REPO}.git"))
+        self.assert_refused(project, code, err, REPO)
+
+    def test_a_different_case_is_refused_on_either_side(self) -> None:
+        """Ticket #70, critère 5 : GitHub ignore la casse : `Essai-Labs/Forge-Essai` est le même dépôt."""
+        project, code, err = self.run_with(remotes("https://github.com/ESSAI-LABS/Forge-Essai.git"))
+        self.assert_refused(project, code, err)
+        project, code, err = self.run_with(remotes(f"https://github.com/{REPO}.git"), repo="Essai-Labs/FORGE-essai")
+        self.assert_refused(project, code, err)
+
+    def test_an_ssh_host_alias_is_refused(self) -> None:
+        """Ticket #70, critère 5 : un alias d'hôte SSH (`github-perso`) ne cache pas le dépôt."""
+        for url in (
+            f"git@github-perso:{REPO}.git",
+            f"github-perso:{REPO}",
+            f"ssh://git@github-perso/{REPO}.git",
+            f"ssh://git@github.com:22/{REPO}.git",
+        ):
+            with self.subTest(url=url):
+                project, code, err = self.run_with(remotes(url))
+                self.assert_refused(project, code, err)
+
+    def test_the_trailing_dot_git_and_slash_do_not_matter(self) -> None:
+        """Ticket #70, critère 5 : `.git` final, `/` final ou aucun des deux : le même dépôt."""
+        for url in (
+            f"https://github.com/{REPO}.git",
+            f"https://github.com/{REPO}",
+            f"https://github.com/{REPO}/",
+            f"https://github.com/{REPO}.git/",
+        ):
+            with self.subTest(url=url):
+                project, code, err = self.run_with(remotes(url))
+                self.assert_refused(project, code, err)
+
+    def test_an_https_url_with_credentials_or_a_port_is_refused(self) -> None:
+        """Ticket #70, critère 5 : une URL https avec identifiants ou port nomme le même dépôt."""
+        for url in (
+            f"https://user:jeton@github.com/{REPO}.git",
+            f"https://github.com:443/{REPO}.git",
+            f"HTTPS://GitHub.com/{REPO}.git",
+        ):
+            with self.subTest(url=url):
+                project, code, err = self.run_with(remotes(url))
+                self.assert_refused(project, code, err)
+
+    def test_the_push_url_and_the_other_remotes_count_too(self) -> None:
+        """Ticket #70, critère 5 : l'URL de poussée et un autre remote que `origin` nomment aussi le dépôt."""
+        pushing = f"origin\t{OWN_URL} (fetch)\norigin\thttps://github.com/{REPO}.git (push)\n"
+        project, code, err = self.run_with(pushing)
+        self.assert_refused(project, code, err)
+        project, code, err = self.run_with(remotes(OWN_URL) + remotes(f"git@github.com:{REPO}.git", name="upstream"))
+        self.assert_refused(project, code, err)
+
+    def test_a_remote_that_cannot_be_read_is_a_refusal(self) -> None:
+        """Ticket #70, critère 5 : une origine illisible vaut refus, jamais passage."""
+        cases = {
+            "aucun remote": ("", 0),
+            "git en échec": ("", 128),
+            "chemin local": (remotes("/home/quelquun/forge"), 0),
+            "chemin relatif": (remotes("../forge"), 0),
+            "mot seul": (remotes("n-importe-quoi"), 0),
+            "trop de niveaux": (remotes("https://gitlab.example/a/b/c.git"), 0),
+            "ligne sans URL": ("origin\n", 0),
+            "un remote lisible et un illisible": (remotes(OWN_URL) + remotes("?!", name="autre"), 0),
+        }
+        for label, (output, code) in cases.items():
+            with self.subTest(case=label):
+                project, exit_code, err = self.run_with(output, code=code)
+                self.assert_refused(project, exit_code, err, "illisible")
+
+    def test_another_repository_passes_whatever_its_form(self) -> None:
+        """Ticket #70, critère 5 : un autre dépôt, lu sans doute, laisse l'essai tourner."""
+        for url in (OWN_URL, "git@github-perso:ikoro-labs/forge.git", "https://tok@github.com/ikoro-labs/forge/"):
+            with self.subTest(url=url):
+                project, code, err = self.run_with(remotes(url))
+                self.assertEqual(code, 0, err)
+                self.assertTrue(project.calls("gh"))
+
+    def test_a_prefix_of_the_name_is_not_the_same_repository(self) -> None:
+        """Ticket #70, critère 5 : `essai-labs/forge-essai-2` n'est pas `essai-labs/forge-essai`."""
+        project, code, err = self.run_with(remotes(f"https://github.com/{REPO}-2.git"))
+        self.assertEqual(code, 0, err)
 
 
 @posix_only
