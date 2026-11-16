@@ -391,9 +391,17 @@ MERGE_TEXT_OPTIONS = frozenset({"--subject", "-t", "--body", "-b"})
 MERGE_FILE_OPTIONS = frozenset({"--body-file", "-F"})
 
 
-def closed_despite_refs(message: str) -> tuple[str, str] | None:
-    """The ticket cited with `Refs` and closed anyway, with the phrase that closes it."""
-    cited = {number for group in REFS.findall(message) for number in re.findall(r"\d+", group)}
+def closed_despite_refs(message: str, context: str = "") -> tuple[str, str] | None:
+    """The ticket cited with `Refs` and closed anyway, with the phrase that closes it.
+
+    The closing phrase is looked for in `message` alone; the `Refs` of `context` (the rest of what
+    GitHub reads with it) cite tickets too.
+    """
+    cited = {
+        number
+        for group in REFS.findall(message + "\n" + context)
+        for number in re.findall(r"\d+", group)
+    }
     for match in CLOSING.finditer(message):
         if match.group(1) in cited:
             return match.group(1), match.group(0)
@@ -1084,6 +1092,8 @@ MERGE_MUTATION = re.compile(r"\b(?:mergePullRequest|enablePullRequestAutoMerge)\
 Target = tuple[str | None, str | None, str | None]
 # The files of a PR by its target, or None when they cannot be read.
 PrFiles = Callable[[str | None, str | None, str | None], list[str] | None]
+# The commits of a merged PR, `(oid, full message)` in order, or None when `gh` could not tell.
+CommitMessages = Callable[[str | None, str | None, str | None], list[tuple[str, str]] | None]
 # Why a merge whose PR the guard cannot tell is the owner's.
 UNREADABLE_MERGE = (
     "the guard cannot tell which PR is merged ({}), so it may change the infra guard: only the"
@@ -1678,6 +1688,7 @@ def refusal(
     gh_aliases: GhAliases = dict,
     subagent: bool = False,
     merge_method: Sequence[str] | None = None,
+    commit_messages: CommitMessages = lambda *_target: [],
 ) -> str | None:
     """Why the command is refused, or None when it may run.
 
@@ -1779,6 +1790,7 @@ def refusal(
         pr_files,
         gh_aliases,
         merge_method,
+        commit_messages,
     ) or commands_location_refusal(command)
 
 
@@ -1830,6 +1842,23 @@ def method_refusal(
     return None
 
 
+def commits_refusal(commits: list[tuple[str, str]] | None, cited_in: str) -> str | None:
+    """Why the commit messages of a PR refuse its merge, or None.
+
+    GitHub reads a closing keyword in the message of every commit of the branch, whatever the
+    merge method, so a commit that closes a ticket the PR cites with `Refs` closes it at merge.
+    """
+    for oid, text in commits or []:
+        if closed := closed_despite_refs(text, cited_in):
+            ticket, phrase = closed
+            return (
+                f"commit {oid[:7]} of the PR closes #{ticket} (`{phrase}`) and the PR cites it with"
+                f" Refs: rewrite the commit message, or drop #{ticket} from the Refs if the PR"
+                " delivers it whole"
+            )
+    return None
+
+
 def merge_call_refusal(
     command: str,
     cwd: str | None,
@@ -1842,6 +1871,7 @@ def merge_call_refusal(
     pr_files: PrFiles,
     gh_aliases: GhAliases,
     merge_method: Sequence[str] | None = None,
+    commit_messages: CommitMessages = lambda *_target: [],
 ) -> str | None:
     """Why a command that merges is refused, or None: run alone, its PR read where it runs."""
     call = merge_call(command, cwd)
@@ -1884,12 +1914,15 @@ def merge_call_refusal(
     target: Target = (number, repository, call.directory)
     if wrong := method_refusal(merge_method, methods, cancels):
         return wrong
-    if closed := closed_despite_refs(message + "\n" + description(*target)):
+    cited_in = message + "\n" + description(*target)
+    if closed := closed_despite_refs(cited_in):
         ticket, phrase = closed
         return (
             f"the merge message or PR description cites #{ticket} with Refs and closes it"
             f" (`{phrase}`): the first PR of a split ticket must leave it open"
         )
+    if reason := commits_refusal(commit_messages(*target), cited_in):
+        return reason
     if exhausted := budget():
         return exhausted
     if infra := infra_guard_refusal(target, pr_files):
