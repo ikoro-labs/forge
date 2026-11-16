@@ -27,7 +27,9 @@ Quand GraphQL est bloqué (sessions d'agent), `gh pr view`, `gh pr checks` et `g
 
 ## Entrée
 
-Le numéro de PR, et le numéro du tour (1 à 3, au-delà seulement avec `GRANTED:`).
+Le numéro de PR, et le numéro du tour (1 à 3, au-delà seulement avec `GRANTED:`). Avec la ligne
+`MODE: probes` et le verdict de `forge:qc-conf` recopié tel quel, tu suis la section **Mode rejeu des
+sondes** et seulement elle.
 
 ## Le lanceur borné
 
@@ -183,6 +185,35 @@ elles-mêmes leurs commandes.
     temps de la suite multiplié par le nombre de commits ; un délai atteint est un `NOT RUN`.
 
 Aux tours 2 et 3, rejoue toutes les sondes : une correction peut casser ce qui passait.
+
+## Mode rejeu des sondes
+
+Un `[BLOCKER]` qui repose sur une exécution porte sa sonde (`probe: `<commande>` => `<sortie
+attendue>``), et il ne compte qu'une fois cette sonde rejouée. Lancé avec la ligne `MODE: probes`, la
+PR, le tour et le verdict, tu ne refais aucune autre sonde : ni les sondes 1 à 14, ni le tableau. Tu
+rejoues seulement celles du verdict, pour que `forge:qc` sache quels `BLOCKER` comptent.
+
+1. Écris le verdict dans le scratchpad (`verdict.md`) et la configuration de la **base** à côté
+   (`git show origin/<base>:docs/agents/usine.md > usine-base.md`) : une PR ne lève pas la borne qui
+   la juge.
+2. Fais, dans le scratchpad, la copie de la tête que le verdict a jugée (la ligne `HEAD:` : worktree
+   détaché ou `git archive`, supprimée ensuite) et installe-la par chaque commande de la clé `install`,
+   comme à la sonde 4. La sonde tourne dans la copie de la tête, jamais dans le répertoire courant, qui
+   n'est pas la PR.
+3. Lance, avec le chemin absolu du scratchpad à la place de `<scratchpad>` :
+   `uv run --no-project --quiet python "${CLAUDE_PLUGIN_ROOT}/scripts/probe_replay.py" "<scratchpad>/verdict.md" --root "<copie de la tête>" --usine "<scratchpad>/usine-base.md"`.
+   Le script lit `run-limits` et `run-budget` de la base, attend le budget du poste puis lance chaque
+   commande sous la borne du lanceur (`bounded_run.py` : mémoire, délai, groupe de processus tué au
+   délai) ; aucune sonde ne tourne sans la clé `run-limits`.
+4. Recopie chaque ligne du script, verbatim, et son code de sortie : 0 rien n'est à relever, 1 une
+   sonde ne s'est pas reproduite, 2 une sonde n'a pas tourné ou l'appel a échoué. Les statuts sont
+   `CONFIRMED` (la sortie dite est dans la sortie de la sonde), `NOT REPRODUCED` (elle n'y est pas,
+   ou le délai a tué la sonde), `NOT RUN` (budget du poste, borne, copie absente, verdict illisible)
+   et `DEDUCED` (le `BLOCKER` n'a pas de sonde). Une sonde que tu n'as pas pu lancer s'écrit `NOT RUN`
+   avec sa commande et sa sortie d'erreur, jamais `CONFIRMED`. Tu ne juges pas une sonde : tu rends
+   ce que le script a mesuré.
+
+Rends ces lignes, rien d'autre : pas de tableau. La copie de la tête est supprimée après.
 
 ## Sortie
 

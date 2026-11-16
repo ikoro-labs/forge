@@ -216,6 +216,14 @@ extraite par `git archive` et supprimée ensuite, sous la borne de `run-limits` 
 `ci-replay` absente) » ; sans `run-limits`, « sans objet (clé `run-limits` absente) » ; sans `run-budget`,
 la sonde le dit et ne l'attend pas. Elle dure la suite multipliée par le nombre de commits.
 
+Le rejeu de la sonde d'un `BLOCKER`, par `forge:qc-gate` en mode `MODE: probes` (`scripts/probe_replay.py`) :
+un `BLOCKER` du juge qui repose sur une exécution porte sa commande et la sortie attendue, que le script
+rejoue dans une copie de la tête, sous la borne de `run-limits` et après le budget de `run-budget`, avant
+que le `BLOCKER` compte. Une sortie dite que la sonde n'imprime pas (ou qu'un délai interrompt) en fait
+une `NOTE` « non reproduit » ; un `BLOCKER` sans sonde compte et se marque « déduit ». Aucune clé de plus :
+sans `run-limits`, « sans objet (clé `run-limits` absente) », aucune sonde ne tourne et le `BLOCKER` reste en
+suspens ; sans `run-budget`, la sonde le dit et ne l'attend pas.
+
 Le rejeu des tests d'une PR sur sa base, par `forge:qc-gate` : les fichiers de test que la PR ajoute
 ou change sont posés dans une copie de la base, puis rejoués, et chacun doit y échouer. Un test
 rouge sur la base prouve le changement ; un qui y passe déjà est rendu à `forge:qc-conf`. Deux clés,

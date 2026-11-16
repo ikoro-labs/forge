@@ -142,6 +142,27 @@ multipliée par le nombre de commits. Elle ne ramène pas le `-n` de pytest-xdis
 par un shell. Éprouvé sous Linux seulement : le côté Windows repose sur `run_bounded`, qui n'a tourné que dans la
 CI de ce dépôt, et cette sonde n'y a pas encore tourné ; macOS n'est pas couvert.
 
+La gravité d'un constat de `forge:qc-conf` n'est plus tout à fait au choix du juge, et un `BLOCKER`
+qui repose sur une exécution est confirmé par elle. Trois classes ont une gravité fixée dans le prompt
+du juge, parce que les faux `ACCEPT` connus venaient d'une gravité trop basse : une évasion d'un garde,
+de `never-weaken` ou d'un chemin protégé, même partielle (règle `F-25` du socle) ; un test qui ne peut
+pas échouer sur l'ancien code (`F-9` ou `F-10`) ; une phrase de la PR prouvée fausse (`F-26`, la seule
+règle de prose qui rejette). Un `BLOCKER` dont le constat se prouve par une commande la porte en dernier
+champ (`probe: `<commande>` => `<sortie attendue>``). Après le jugement, `forge:qc` fait rejouer chaque
+sonde par `forge:qc-gate` : `plugins/forge/scripts/probe_replay.py` lance la commande dans une copie de
+la tête, sous la borne de `run-limits` après le budget de `run-budget`, et cherche la sortie dite dans
+ce qu'elle imprime, sortie d'erreur comprise (le code de sortie n'est pas lu). Une sortie absente, ou
+une sonde tuée au délai, fait du `BLOCKER` une `NOTE` « non reproduit » qui ne rejette plus ; une sonde
+qui n'a pas pu tourner (budget du poste, borne, clé `run-limits` absente) laisse le `BLOCKER` en suspens
+et arrête la revue (`needs-your-attention`). Un `BLOCKER` sans exécution possible compte et le rapport
+le marque « déduit ». Aucune clé de plus. La sonde est du code que le juge écrit à partir du contenu
+d'une PR : elle tourne comme les tests de cette PR, dans une copie, sous la borne, mais la borne ne
+protège que la mémoire et le délai, pas le réseau ni les fichiers du poste hors de la copie. Elle ne
+ramène pas le `-n` de pytest-xdist (la commande passe par un shell). Éprouvé sous Linux seulement : le
+côté Windows repose sur `run_bounded`, qui n'a tourné que dans la CI de ce dépôt, et cette sonde n'y a
+pas encore tourné ; macOS n'est pas couvert. Le jeu de référence qui mesure l'effet de cette grille
+n'est pas livré avec elle.
+
 Deux clés, `ui-labels` (les fichiers de libellés de l'interface, une ligne par fichier ou dossier) et
 `ui-forbidden-word` (un mot ou un motif refusé à l'écran, une ligne par mot), ouvrent la sonde des
 libellés de `forge:qc-gate` : `plugins/forge/scripts/ui_labels.py` lit les lignes que la PR ajoute

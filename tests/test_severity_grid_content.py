@@ -156,5 +156,86 @@ class Probe(unittest.TestCase):
         self.assertIn("probe: `<commande exacte>` => `<sortie attendue>`", output)
 
 
+class Gate(unittest.TestCase):
+    def mode(self) -> str:
+        return section(read("agents", "qc-gate.md"), "## Mode rejeu des sondes")
+
+    def test_the_gate_replays_the_probes_under_the_bounded_launcher_in_a_copy_of_the_head(self) -> None:
+        """No F-NNNN: ticket #68, critère 2: le mode sondes lance probe_replay.py dans une copie de la tête, bornes lues sur la base."""
+        mode = self.mode()
+        self.assertIn("`MODE: probes`", mode)
+        self.assertIn("${CLAUDE_PLUGIN_ROOT}/scripts/probe_replay.py", mode)
+        self.assertIn('--usine "<scratchpad>/usine-base.md"', mode)
+        self.assertIn("--root", mode)
+        self.assertIn("copie de la tête", mode)
+        self.assertIn("bounded_run.py", mode)
+
+    def test_the_gate_copies_the_lines_and_judges_nothing(self) -> None:
+        """No F-NNNN: ticket #68, critère 2: les lignes du script sont recopiées verbatim, avec leur code de sortie."""
+        mode = self.mode()
+        self.assertIn("verbatim", mode)
+        for status in ("`CONFIRMED`", "`NOT REPRODUCED`", "`NOT RUN`", "`DEDUCED`"):
+            with self.subTest(status=status):
+                self.assertIn(status, mode)
+        self.assertIn("Tu ne juges pas une sonde", mode)
+        self.assertIn("jamais `CONFIRMED`", mode)
+
+    def test_the_other_probes_do_not_run_in_that_mode(self) -> None:
+        """No F-NNNN: ticket #68, critère 2: ce mode ne refait aucune des autres sondes, il ne rend aucun tableau."""
+        mode = self.mode()
+        self.assertIn("aucune autre sonde", mode)
+        self.assertIn("pas de tableau", mode)
+
+
+class Skill(unittest.TestCase):
+    def skill(self) -> str:
+        return read("skills", "qc", "SKILL.md")
+
+    def test_qc_has_the_gate_replay_the_probes_then_counts_the_blockers(self) -> None:
+        """No F-NNNN: ticket #68, critère 2 et 4: forge:qc rejoue les sondes par forge:qc-gate, puis applique la règle de comptage."""
+        skill = self.skill()
+        step = skill[skill.index("4. **Lire le verdict.**"):skill.index("5. **Poster.**")]
+        self.assertIn("`probe:`", step)
+        self.assertIn("`MODE: probes`", step)
+        self.assertIn("parse_output.py", step)
+        self.assertIn("--replay", step)
+        self.assertIn("--rewrite", step)
+        self.assertIn("poste le verdict qui tient", step)
+
+    def test_an_unsettled_probe_stops_the_review_without_a_verdict(self) -> None:
+        """No F-NNNN: ticket #68, critère 2: un code 3 (sonde NOT RUN) ne fusionne pas et ne poste pas : needs-your-attention."""
+        skill = self.skill()
+        step = skill[skill.index("4. **Lire le verdict.**"):skill.index("5. **Poster.**")]
+        self.assertIn("Code 3", step)
+        self.assertIn("ne fusionne pas", step)
+        self.assertIn("needs-your-attention", step)
+
+    def test_the_one_pass_review_replays_the_probes_too(self) -> None:
+        """No F-NNNN: ticket #68, critère 2: une PR de prose, en une passe, a ses sondes rejouées elle aussi."""
+        skill = self.skill()
+        passes = section(skill, "## Une passe ou deux")
+        self.assertIn("`MODE: probes`", passes)
+
+    def test_the_report_marks_deduced_and_not_reproduced_blockers(self) -> None:
+        """No F-NNNN: ticket #68, critère 2 et 3: le rapport dit chaque BLOCKER déduit et chaque BLOCKER non reproduit."""
+        skill = self.skill()
+        report = skill[skill.index("## Rapport d'agent"):]
+        self.assertIn("« déduit »", report)
+        self.assertIn("« non reproduit »", report)
+        self.assertIn("`REX`", report)
+
+
+class Documentation(unittest.TestCase):
+    def test_the_template_and_the_page_document_the_replay_and_what_was_not_tried(self) -> None:
+        """No F-NNNN: ticket #68, critère 2: le gabarit et la page de configuration disent la sonde, sa borne et ce qui n'est pas éprouvé."""
+        template = read("templates", "usine.md")
+        self.assertIn("probe_replay.py", template)
+        self.assertIn("sans objet (clé `run-limits` absente)", template[template.index("probe_replay.py"):])
+        page = " ".join((support.REPO_ROOT / "docs" / "installation.md").read_text(encoding="utf-8").split())
+        part = page[page.index("probe_replay.py"):]
+        self.assertIn("code que le juge écrit", part)
+        self.assertIn("Éprouvé sous Linux seulement", part)
+
+
 if __name__ == "__main__":
     unittest.main()
