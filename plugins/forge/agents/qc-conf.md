@@ -143,8 +143,10 @@ de ses tests.
 
 Quand les lignes portent `(grain du test)`, le rejeu a lu un rapport par test : une ligne `PASSES`
 nomme le test, et une ligne `RED` de fichier compte ses tests rouges sur ceux que la PR ajoute ou
-change. Ce repérage lit le texte du fichier : un test changé que la sonde n'a pas placé n'a pas de
-ligne, et une ligne `NONE` ne prouve pas qu'aucun test du fichier ne change de comportement.
+change. Ce repérage lit le texte du fichier et, dans le doute, compte un test comme changé : un test
+qu'il ne sait pas placer, ou qu'un changement voisin touche (un assistant sous lui, un décorateur
+au-dessus), a sa ligne même si la PR ne le change pas. Une chaîne écrite sur plusieurs lignes peut
+encore le tromper, et une ligne `NONE` ne prouve pas qu'aucun test du fichier ne change de comportement.
 
 Sévérité : `BLOCKER` quand il est la seule preuve d'un critère de comportement nouveau ; ce critère
 compte alors pour absent dans `SPEC`. `MINOR` sinon (un critère aussi prouvé par un test rouge sur la
