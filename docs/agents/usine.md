@@ -58,16 +58,26 @@ réviser à la date de `slo-review-date`, sur le rapport des SLO ; changer une v
 décision de l'humain. `tokens-per-merge` n'a pas de ligne : sa cible n'est pas fixée.
 
 - `release-tag` : `forge--v{version}`
+- `slo` : `accept-round-1 | >= 80 % | 30`
+- `slo` : `lead-time p90 | <= 24 h | 30`
 - `slo` : `release-lag p90 | <= 24 h | 30`
 - `slo` : `escaped-defects | <= 10 % | 30`
-- `slo` : `false-accept | <= 0 % | 30`
+- `slo` : `change-failure | <= 10 % | 30`
+- `slo` : `human-touch | <= 10 % | 30`
 - `slo` : `main-green | >= 100 % | 30`
+- `slo` : `judge-recall | >= 95 % | 30`
+- `slo` : `false-accept | <= 0 % | 30`
 - `slo-review-date` : `2026-12-16`
 - `slo-issue` : `55`
+- `budget-action` : `accept-round-1 | alert`
+- `budget-action` : `lead-time p90 | alert`
 - `budget-action` : `release-lag p90 | alert`
 - `budget-action` : `escaped-defects | alert`
-- `budget-action` : `false-accept | alert`
+- `budget-action` : `change-failure | alert`
+- `budget-action` : `human-touch | alert`
 - `budget-action` : `main-green | alert`
+- `budget-action` : `judge-recall | alert`
+- `budget-action` : `false-accept | alert`
 
 ## Revue
 

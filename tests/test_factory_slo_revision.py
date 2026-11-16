@@ -13,6 +13,10 @@ from factory_slo import main
 from test_factory_slo import USINE, build, isolate
 
 NOW = datetime(2026, 11, 1, 12, 0, tzinfo=timezone.utc)
+NINE = {
+    "accept-round-1", "lead-time p90", "release-lag p90", "escaped-defects", "change-failure",
+    "human-touch", "main-green", "judge-recall", "false-accept",
+}
 SLO = "- `slo` : `accept-round-1 | >= 5 % | 31`\n"
 
 
@@ -108,7 +112,7 @@ class DepotConfiguration(unittest.TestCase):
         self.assertNotIn("sans objet (clé `slo` absente)", out)
         document = json.loads(out)
         labels = {f"{item['sli']} {item['statistique']}" if item["statistique"] else item["sli"] for item in document["objectifs"]}
-        self.assertEqual(labels, {"release-lag p90", "escaped-defects", "false-accept", "main-green"})
+        self.assertEqual(labels, NINE)
         self.assertEqual(document["revision"], {"date": "2026-12-16", "passee": False})
 
     def test_budget_reads_this_repository_actions_on_declared_objectives(self) -> None:
@@ -116,7 +120,9 @@ class DepotConfiguration(unittest.TestCase):
         code, out, err = self.run_command("budget")
         self.assertEqual((code, err), (0, ""))
         self.assertNotIn("sans objet (clé `budget-action` absente)", out)
-        self.assertEqual(len(json.loads(out)["actions"]), 4)
+        actions = json.loads(out)["actions"]
+        self.assertEqual({action["sli"] for action in actions}, NINE)
+        self.assertEqual({action["action"] for action in actions}, {"alert"})
 
 
 if __name__ == "__main__":
