@@ -349,6 +349,32 @@ class ANameInsideATestPlacesNoCase(unittest.TestCase):
         self.assertEqual(self.names(cases, text, 4), ["tests.T.test_a", "tests.T.test_made_by_a_loop"])
 
 
+class TheLinesJustAboveATestAreItsOwn(unittest.TestCase):
+    """What sits right above a test, removed or written over several lines, is a change of that test."""
+
+    TOP = "class T(unittest.TestCase):\n    def test_a(self):\n        pass\n\n"
+
+    def names(self, text: str, ranges: list[range]) -> list[str]:
+        import junit_report
+
+        cases = [junit_report.Case("tests.T", "test_a", "pass"), junit_report.Case("tests.T", "test_b", "pass")]
+        return [case.name for case in junit_report.touched(cases, text, ranges)]
+
+    def test_a_decorator_removed_above_a_test_touches_that_test(self) -> None:
+        """No F-NNNN: ticket #43, grain du test: retirer `@unittest.skip` au-dessus de `test_b` touche `test_b`."""
+        import junit_report
+
+        text = self.TOP + "    def test_b(self):\n        pass\n"
+        ranges = junit_report.changed_ranges("@@ -5 +4,0 @@\n-    @unittest.skip('later')\n")
+        self.assertEqual(self.names(text, ranges), ["test_b"])
+
+    def test_a_change_inside_a_decorator_written_over_several_lines_touches_its_test(self) -> None:
+        """No F-NNNN: ticket #43, grain du test: un paramètre changé dans un décorateur sur plusieurs lignes touche son test."""
+        decorator = "    @parameterized.expand([\n        (1,),\n        (2,),\n    ])\n"
+        text = self.TOP + decorator + "    def test_b(self, n):\n        pass\n"
+        self.assertIn("test_b", self.names(text, [range(7, 8)]))
+
+
 class GrainIsDocumented(unittest.TestCase):
     """The consumers read the placeholder and the limits of the reading in the template, the page and the agents."""
 

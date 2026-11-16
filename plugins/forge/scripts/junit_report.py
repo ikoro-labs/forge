@@ -23,13 +23,18 @@ it rather than hides it.
 A placed case begins at the decorators, attributes and comments (`@`, `#`, `//`, `/*`, `*`, `[`) right
 above it, and owns the lines down to the next placed case or the next declaration, less the blank lines
 that end them. Nothing else ends it: a mention of a class (a call, a string, a comment) ends no case. A
-case is touched when a changed range falls in its lines.
+case is touched when a changed range falls in its lines, or in the lines joined to its first line with
+no blank line between, up to the previous start or declaration (a decorator written over several lines;
+those lines then count for the test above too). A pure deletion counts for the lines on both sides of
+it, so that a decorator removed right above a test touches that test.
 
 This is a reading of the text, not of the language. A helper or a fixture changed below a test, or at
 the end of the file, falls in the lines of the test above it, which is then taken for changed (a
-passing, unchanged test can be shown); only a line above the first test touches no case. A name
-written once, at the indentation of the tests or less, is taken for the definition, even in a comment
-or a string; a line that declares a class inside a multiline string is read as a declaration.
+passing, unchanged test can be shown); a line above the first test touches no case unless it is joined
+to it. Two readings can still mislead it, both in a string written over several lines, at the
+indentation of the tests or less: a name written once there is taken for a definition, and a line there
+that declares a class of the report is taken for its declaration when the class itself is not declared
+with a keyword.
 """
 
 from __future__ import annotations
@@ -84,13 +89,13 @@ def parse(path: Path) -> list[Case]:
 
 
 def changed_ranges(diff: str) -> list[range]:
-    """The line ranges of the new side of a `git diff -U0`; a pure deletion points at the line before it."""
+    """The line ranges of the new side of a `git diff -U0`; a pure deletion points at the lines on both sides of it."""
     ranges = []
     for match in HUNK.finditer(diff):
         start = int(match.group(1))
         length = 1 if match.group(2) is None else int(match.group(2))
         start = max(start, 1)
-        ranges.append(range(start, start + max(length, 1)))
+        ranges.append(range(start, start + (length or 2)))
     return ranges
 
 
@@ -168,6 +173,11 @@ def touched(cases: list[Case], text: str, ranges: list[range]) -> list[Case]:
         end = (later[0] - 1) if later else max(len(lines), start)
         while end > start and not lines[end - 1].strip():
             end -= 1  # the blank lines that separate two tests belong to neither
-        if any(r.start <= end and r.stop - 1 >= start for r in ranges):
+        # The lines joined to the start with no blank line between (a decorator written over several
+        # lines) are read as part of the test too, even when they also end the test above.
+        reach = start
+        while reach > 1 and lines[reach - 2].strip() and reach - 1 not in stops:
+            reach -= 1
+        if any(r.start <= end and r.stop - 1 >= reach for r in ranges):
             result.append(case)
     return result
