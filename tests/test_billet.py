@@ -192,11 +192,13 @@ class Hook(unittest.TestCase):
         self.assertIn("no `---` line", result.stderr)
 
     def test_a3_227_a_conforming_billet_to_a_session_leaves(self) -> None:
-        """#227 A3: the same recipient, a billet in the template form."""
+        """#227 A3: the same recipient, the prose is refused and the billet in the template form leaves."""
         with isolated() as project:
             register(project.parent / "home", 4242, sessionId="e1ae680a-d488", name="shipyard-f6", cwd="/x")
-            result = outcome(json.dumps(send("shipyard-f6", BILLET)))
-        self.assertEqual((result.code, result.stderr, result.stdout), (0, "", ""))
+            refused = outcome(json.dumps(send("shipyard-f6", PROSE)))
+            sent = outcome(json.dumps(send("shipyard-f6", BILLET)))
+        self.assertEqual(refused.code, REFUSED)
+        self.assertEqual((sent.code, sent.stderr, sent.stdout), (0, "", ""))
 
     def test_a3_227_a_session_is_found_by_its_id_or_by_an_address(self) -> None:
         """#227 A3: the registry's `sessionId`, a `uds:` socket and a `bridge:` id are sessions too."""
@@ -214,18 +216,22 @@ class Hook(unittest.TestCase):
         self.assertEqual(codes, [REFUSED] * 3)
 
     def test_a3_227_a_message_to_an_agent_of_the_session_is_free_prose(self) -> None:
-        """#227 A3: `researcher` and `main` are agents of this session, not another session."""
+        """#227 A3: `researcher` and `main` are agents of this session: the prose a session would
+        be refused for goes through to them."""
         with isolated() as project:
             register(project.parent / "home", 4242, sessionId="e1ae680a", name="shipyard-f6", cwd="/x")
+            self.assertEqual(outcome(json.dumps(send("shipyard-f6", PROSE))).code, REFUSED)
             for target in ("researcher", "main", "a1b2c3d4e5f6"):
                 with self.subTest(to=target):
                     self.assertEqual(outcome(json.dumps(send(target, PROSE))).code, 0)
 
     def test_a3_227_a_structured_message_is_not_judged(self) -> None:
-        """#227 A3: a protocol object (a shutdown answer) is no prose to hold to the billet."""
+        """#227 A3: a protocol object (a shutdown answer) is no prose to hold to the billet, though
+        the same recipient is refused a prose message."""
         with isolated() as project:
             register(project.parent / "home", 4242, sessionId="e1ae680a", name="shipyard-f6", cwd="/x")
             answer = {"type": "shutdown_response", "request_id": "r1", "approve": True}
+            self.assertEqual(outcome(json.dumps(send("shipyard-f6", PROSE))).code, REFUSED)
             self.assertEqual(outcome(json.dumps(send("shipyard-f6", answer))).code, 0)
 
 
