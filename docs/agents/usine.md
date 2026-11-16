@@ -79,6 +79,13 @@ décision de l'humain. `tokens-per-merge` n'a pas de ligne : sa cible n'est pas 
 - `budget-action` : `judge-recall | alert`
 - `budget-action` : `false-accept | alert`
 
+## Incidents
+
+Les revues sans blâme que `/forge:incident` écrit (ticket #61), une par incident `sev1`, `sev2` ou
+de l'usine, avec la classe de leur correctif. `factory_slo.py incidents` les compte par classe.
+
+- `incident-dir` : `docs/incidents`
+
 ## Revue
 
 Ce qu'aucun agent ne fusionne, même sur ACCEPT : la CI, l'épingle de l'usine de ce dépôt, le

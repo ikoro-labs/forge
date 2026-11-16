@@ -348,6 +348,18 @@ aucune valeur par défaut.
 - `budget-action` : `<accept-round-1 | feature-freeze>`
 - `budget-action` : `<lead-time p90 | alert>`
 
+Le dossier des revues sans blâme que le skill `incident` écrit, relatif à la racine du dépôt, un seul
+dossier sur une seule ligne. Chaque incident `sev1` ou `sev2`, et chaque incident de l'usine
+elle-même, y laisse une revue (`templates/incident.md`) : les faits datés, la cause, ce qui l'a
+laissé passer, et la classe du correctif, `mécanique` (le ticket d'un contrôle déterministe et de son
+test, ou un contrôle que le dépôt tient déjà) ou `jugement` (un cas ajouté au jeu de référence). Une
+revue sans correctif est refusée par `scripts/incident.py check`. `scripts/factory_slo.py incidents
+<projet>` compte les revues du dossier par classe. Sans la clé, l'étape est
+« sans objet (clé `incident-dir` absente) » : aucune revue n'est écrite ni comptée, et aucun dossier
+n'est deviné. Une valeur qui sort du dépôt, ou une clé répétée, fait échouer la lecture.
+
+- `incident-dir` : `<docs/incidents>`
+
 Le plafond de jetons d'agents par ticket, un nombre entier sur une seule ligne. `forge:feature-build`
 tient, pour chaque ticket, la somme des jetons de chaque agent lancé pour lui (coder, remise à jour,
 corrections, `forge:qc-gate`, `forge:qc-conf`, décideurs) plus la part de la session principale, et
