@@ -1848,7 +1848,12 @@ def commits_refusal(commits: list[tuple[str, str]] | None, cited_in: str) -> str
     GitHub reads a closing keyword in the message of every commit of the branch, whatever the
     merge method, so a commit that closes a ticket the PR cites with `Refs` closes it at merge.
     """
-    for oid, text in commits or []:
+    if commits is None:
+        return (
+            "the commits of the PR cannot be read (`gh pr view --json commits`): GitHub reads their"
+            " messages at merge, and the guard refuses what it cannot check"
+        )
+    for oid, text in commits:
         if closed := closed_despite_refs(text, cited_in):
             ticket, phrase = closed
             return (
@@ -2071,6 +2076,48 @@ def pr_files_via_gh(cwd: str | None) -> PrFiles:
     return files
 
 
+def parse_commits(text: str) -> list[tuple[str, str]] | None:
+    """The `(oid, message)` of each commit in `gh pr view --json commits`, None for any other text.
+
+    `gh` splits a message into a headline and a body, and cuts a headline longer than a line with
+    a `…` that the body takes up again: the two are joined where they were cut, so a keyword that
+    straddles the cut is read whole.
+    """
+    try:
+        document = json.loads(text)
+    except ValueError:
+        return None
+    entries = document.get("commits") if isinstance(document, dict) else None
+    if not isinstance(entries, list):
+        return None
+    commits: list[tuple[str, str]] = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            return None
+        oid, headline, body = (entry.get(key) for key in ("oid", "messageHeadline", "messageBody"))
+        if not (isinstance(oid, str) and oid and isinstance(headline, str) and isinstance(body, str)):
+            return None
+        if headline.endswith("…") and body.startswith("…"):
+            message = headline[:-1] + body[1:]
+        else:
+            message = headline + ("\n\n" + body if body else "")
+        commits.append((oid, message))
+    return commits
+
+
+def commits_via_gh(cwd: str | None) -> CommitMessages:
+    """`gh pr view <n> -R <repo> --json commits` where the target says, None when unreadable."""
+
+    def commits(pr: str | None, repository: str | None, directory: str | None) -> list[tuple[str, str]] | None:
+        completed = _gh_pr(cwd, "view", (pr, repository, directory), "--json", "commits")
+        # No gh, a failure or a timeout: the messages are unknown, and the caller refuses.
+        if completed is None or completed.returncode != 0:
+            return None
+        return parse_commits(completed.stdout)
+
+    return commits
+
+
 def parse_gh_aliases(text: str) -> dict[str, str] | None:
     """The aliases of `gh alias list` (`name: expansion` per line), or None for anything else."""
     aliases: dict[str, str] = {}
@@ -2124,6 +2171,7 @@ def main() -> int:
         gh_aliases=gh_aliases_via_gh(cwd),
         subagent=bool(event.get("agent_id")),
         merge_method=config.get(METHOD_KEY, []),
+        commit_messages=commits_via_gh(cwd),
     )
     if reason is None:
         return 0

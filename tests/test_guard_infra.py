@@ -1043,6 +1043,7 @@ class MergeOfTheGuard(unittest.TestCase):
                     mock.patch("guard_git.current_branch", lambda _cwd: "feat/x"),
                     mock.patch("guard_git.checks_green_via_gh", lambda _cwd: always_green),
                     mock.patch("guard_git.description_via_gh", lambda _cwd: lambda *_target: ""),
+                    mock.patch("guard_git.commits_via_gh", lambda _cwd: lambda *_target: []),
                     mock.patch("guard_git.pr_files_via_gh", lambda _cwd: pr_files),
                 ):
                     return git_guarded_main(), err.getvalue()
