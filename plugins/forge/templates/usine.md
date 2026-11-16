@@ -117,7 +117,9 @@ Les règles git du projet : nommage des branches, format des commits, ligne d'at
 
 La méthode de fusion d'une PR par `/forge:qc` : `squash` ou `merge` (commit de fusion), celle
 que le dépôt GitHub autorise et que ses règles git demandent. Sans la clé, `/forge:qc` ne fusionne
-pas : l'étape est sans objet et la PR reste ouverte sur son ACCEPT.
+pas : l'étape est sans objet et la PR reste ouverte sur son ACCEPT. Le hook `guard_git` tient la
+même clé pour tout agent : une fusion dont la méthode diffère de la clé ou n'en donne aucune, une
+clé absente, sur deux lignes ou d'une valeur autre que `merge`, `squash` ou `rebase` valent refus.
 
 - `merge-method` : `<squash>`
 

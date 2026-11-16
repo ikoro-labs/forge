@@ -23,6 +23,16 @@ Refused, with the reason on stderr and exit code 2 so Claude Code blocks the cal
   guard refuses nothing on that account and reads nothing. `/forge:qc` keeps its own rule, which
   stops before the merge: the guard is the net, the rule avoids the refusal.
 
+- `gh pr merge`, for every agent whatever its name, whose method is not the one of the project's
+  `merge-method` key: another option than the key's (`--merge`, `--squash`, `--rebase`, or `-m`,
+  `-s`, `-r`), none at all (gh would ask a human), or two. A `gh api` merge is read the same way, by
+  its `merge_method` field (or query string), and refused without one, as GitHub then merges by
+  merge commit whatever the key says, or when the method sits in a file (`--input`, `@file`).
+  Closed by default: an absent key, two lines, or a value that is not `merge`, `squash` or
+  `rebase` refuses every merge, and the refusal cites the faulty line. `--disable-auto` alone
+  cancels an auto-merge, merges nothing and reads no key. A caller of `refusal` that passes no
+  `merge_method` (None) does not ask for the check; `main` always passes the key's lines.
+
 The command is parsed, not grepped: a commit message that says "push --force" is data. Heredoc
 bodies are dropped first, then the command is split on shell operators with `shlex`. A wrapper
 hides no refusal: assignments, `env`, `sudo`, `command`, `timeout`, `nice`, `nohup`, `xargs` and
@@ -96,7 +106,7 @@ import shutil
 import stat
 import subprocess
 import sys
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Sequence
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import NamedTuple
@@ -108,6 +118,9 @@ from usine import load, project_root, split_value
 OWNER_KEY = "owner-gesture"
 # The paths and prefixes no agent merges, one per line.
 PROTECTED_KEY = "protected-path"
+# The one way the project merges a PR: `merge`, `squash` or `rebase`.
+METHOD_KEY = "merge-method"
+MERGE_METHODS = ("merge", "squash", "rebase")
 
 # Every external call has a timeout: a hook that hangs blocks the agent's command.
 TIMEOUT_SECONDS = 20
@@ -1126,12 +1139,29 @@ def _may_become_merge(endpoint: str, words: list[str]) -> bool:
     )
 
 
+def _api_methods(call: ApiCall) -> tuple[str, ...]:
+    """The `merge_method` a REST merge sends, as typed, in its fields and its query string.
+
+    A body read from a file (`--input`) is returned as the option itself: whatever it holds, the
+    guard does not read it, and that is no method.
+    """
+    found = [f"--input {value}" for name, value in call.options if name == "input"]
+    fields = [value for name, value in call.options if name in ("field", "raw-field")]
+    fields += call.endpoint.partition("?")[2].split("&")
+    for field in fields:
+        name, equals, value = field.partition("=")
+        if equals and name == "merge_method":
+            found.append(value)
+    return tuple(found)
+
+
 def _api_merge(
     args: list[str], here: str | None, bodies: str, read_text: Callable[[str], str | None]
-) -> tuple[str, str | None] | str | None:
-    """The merge a `gh api` call makes (the words after `api`): `(number, owner/repo)`, or None.
+) -> tuple[str, str | None, tuple[str, ...]] | str | None:
+    """The merge a `gh api` call makes (the words after `api`): `(number, owner/repo, methods)`.
 
-    `owner/repo` is None for gh's `{owner}/{repo}`, which it fills from `GH_REPO` or the
+    `methods` are the `merge_method` values it sends (see `_api_methods`), None when it is no
+    merge. `owner/repo` is None for gh's `{owner}/{repo}`, which it fills from `GH_REPO` or the
     directory. A merge the guard cannot read is its refusal instead: a GraphQL merge, which names
     its PR by node id, or a write whose endpoint the shell may change into a merge. A query that
     cannot be read is refused before, as an owner gesture.
@@ -1149,7 +1179,8 @@ def _api_merge(
         if _may_become_merge(call.endpoint, words):
             return UNREADABLE_MERGE.format("the shell may change its endpoint")
         if (merge := MERGE_ENDPOINT.match(endpoint)) is not None:
-            return merge.group(2), None if "{" in merge.group(1) else merge.group(1)
+            named = None if "{" in merge.group(1) else merge.group(1)
+            return merge.group(2), named, _api_methods(call)
     return None
 
 
@@ -1366,6 +1397,11 @@ MERGE_VALUED = frozenset(
     {"-R", "--repo", "-b", "--body", "-F", "--body-file", "-t", "--subject", "-A",
      "--author-email", "--match-head-commit"}
 )
+# The method each option of `gh pr merge` asks for.
+METHOD_FLAGS = {
+    "-s": "squash", "--squash": "squash", "-m": "merge", "--merge": "merge",
+    "-r": "rebase", "--rebase": "rebase",
+}
 # Those whose value may hold a variable in double quotes: one word, which changes no PR.
 QUOTABLE_OPTIONS = frozenset(
     {"--body-file", "-F", "--body", "-b", "--subject", "-t", "--match-head-commit"}
@@ -1378,6 +1414,8 @@ class PrMerge(NamedTuple):
     number: str | None  # None for the current branch's PR
     repository: str | None  # the last `-R`/`--repo`, as gh keeps it
     words: list[str]  # the words after `merge`
+    methods: tuple[str, ...] = ()  # the method each of its options asks for, in order
+    cancels: bool = False  # `--disable-auto`: it cancels an auto-merge and merges nothing
 
 
 def pr_merge(words: list[ShellWord]) -> PrMerge | str:
@@ -1390,6 +1428,8 @@ def pr_merge(words: list[ShellWord]) -> PrMerge | str:
         return MERGE_ALONE
     rest = words[3:]
     numbers: list[str] = []
+    methods: list[str] = []
+    cancels = False
     repository = None
     index = 0
     while index < len(rest):
@@ -1402,6 +1442,9 @@ def pr_merge(words: list[ShellWord]) -> PrMerge | str:
             index += 1
             continue
         if word.value in MERGE_FLAGS and word.literal:
+            if word.value in METHOD_FLAGS:
+                methods.append(METHOD_FLAGS[word.value])
+            cancels = cancels or word.value == "--disable-auto"
             index += 1
             continue
         if equals and name.startswith("--") and name in MERGE_VALUED:
@@ -1421,7 +1464,7 @@ def pr_merge(words: list[ShellWord]) -> PrMerge | str:
             repository = value
     if len(numbers) > 1:
         return MERGE_ALONE
-    return PrMerge(numbers[0] if numbers else None, repository, [word.value for word in rest])
+    return PrMerge(numbers[0] if numbers else None, repository, [word.value for word in rest], tuple(methods), cancels)
 
 
 def _substitutes(raw: str) -> bool:
@@ -1634,6 +1677,7 @@ def refusal(
     *,
     gh_aliases: GhAliases = dict,
     subagent: bool = False,
+    merge_method: Sequence[str] | None = None,
 ) -> str | None:
     """Why the command is refused, or None when it may run.
 
@@ -1734,7 +1778,56 @@ def refusal(
         changed_files,
         pr_files,
         gh_aliases,
+        merge_method,
     ) or commands_location_refusal(command)
+
+
+def method_refusal(
+    key: Sequence[str] | None, methods: Iterable[str], cancels: bool = False
+) -> str | None:
+    """Why a merge is refused for its method, or None: it is the one the `merge-method` key says.
+
+    `key` is the lines of the key, None when the caller does not ask for the check. An absent key,
+    two lines, or a value that is not one of `MERGE_METHODS` refuses every merge, and a merge that
+    names no method, or another one, is refused too. A call that only cancels an auto-merge
+    (`cancels`) merges nothing: it names no method and reads no key.
+    """
+    if key is None:
+        return None
+    methods = list(methods)
+    if cancels and not methods:
+        return None
+    if not key:
+        return (
+            f"the `{METHOD_KEY}` key is not declared in docs/agents/usine.md, so no method is the"
+            " project's: the merge is the human's, to list at the end of the report"
+        )
+    if len(key) > 1:
+        lines = ", ".join(f"- `{METHOD_KEY}` : `{value}`" for value in key)
+        return f"the `{METHOD_KEY}` key takes one line, and has {len(key)}: {lines}"
+    method = key[0]
+    if method not in MERGE_METHODS:
+        return (
+            f"the line - `{METHOD_KEY}` : `{method}` names no method: the key says merge, squash"
+            " or rebase"
+        )
+    if not methods:
+        return (
+            f"the merge names no method: the `{METHOD_KEY}` key says `{method}`, merge with"
+            f" `--{method}`"
+        )
+    for asked in methods:
+        if asked not in MERGE_METHODS:
+            return (
+                f"the merge names its method as `{asked}`, which the guard cannot read: the"
+                f" `{METHOD_KEY}` key says `{method}`, send `merge_method={method}` as a field"
+            )
+        if asked != method:
+            return (
+                f"the merge asks for `{asked}` and the `{METHOD_KEY}` key says `{method}`: merge"
+                f" with `--{method}`"
+            )
+    return None
 
 
 def merge_call_refusal(
@@ -1748,6 +1841,7 @@ def merge_call_refusal(
     changed_files: PrFiles,
     pr_files: PrFiles,
     gh_aliases: GhAliases,
+    merge_method: Sequence[str] | None = None,
 ) -> str | None:
     """Why a command that merges is refused, or None: run alone, its PR read where it runs."""
     call = merge_call(command, cwd)
@@ -1764,19 +1858,22 @@ def merge_call_refusal(
     message = ""
     number: str | None
     repository: str | None
+    methods: Iterable[str] = ()
+    cancels = False
     if [word.raw for word in words[:2]] == ["gh", "api"]:
         if not all(word.literal for word in words):
             return MERGE_ALONE
         found = _api_merge([word.value for word in words[2:]], call.directory, "", read_text)
         if found is None or isinstance(found, str):
             return found or MERGE_ALONE
-        number, named = found
+        number, named, methods = found
         repository = named or call.repository
     else:
         merge = pr_merge(words)
         if isinstance(merge, str):
             return merge
         number = merge.number
+        methods, cancels = merge.methods, merge.cancels
         message = _merge_message(merge.words, call.directory, read_text)
         if merge.repository is not None:
             repository = merge.repository
@@ -1785,6 +1882,8 @@ def merge_call_refusal(
         else:
             repository = call.repository
     target: Target = (number, repository, call.directory)
+    if wrong := method_refusal(merge_method, methods, cancels):
+        return wrong
     if closed := closed_despite_refs(message + "\n" + description(*target)):
         ticket, phrase = closed
         return (
@@ -1991,6 +2090,7 @@ def main() -> int:
         pr_files=pr_files_via_gh(cwd),
         gh_aliases=gh_aliases_via_gh(cwd),
         subagent=bool(event.get("agent_id")),
+        merge_method=config.get(METHOD_KEY, []),
     )
     if reason is None:
         return 0

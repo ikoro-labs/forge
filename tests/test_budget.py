@@ -259,7 +259,8 @@ class TheHook(unittest.TestCase):
         self.state = self.root / ".git" / "forge" / "slo-status.json"
 
     def configure(self, *lines: str) -> None:
-        text = "".join(f"- `budget-action` : `{line}`\n" for line in lines)
+        # La méthode de fusion est une clé que `guard_git` exige de toute fusion (ticket #63).
+        text = "- `merge-method` : `squash`\n" + "".join(f"- `budget-action` : `{line}`\n" for line in lines)
         (self.root / "docs" / "agents" / "usine.md").write_text(text, encoding="utf-8")
 
     def put(self, etat: str, at: datetime | None = None) -> None:
@@ -316,7 +317,7 @@ class TheHook(unittest.TestCase):
         self.assertIn("24 h", message)
 
     def test_without_the_key_the_merge_is_not_a_budget_matter(self) -> None:
-        (self.root / "docs" / "agents" / "usine.md").write_text("# Usine\n", encoding="utf-8")
+        (self.root / "docs" / "agents" / "usine.md").write_text("- `merge-method` : `squash`\n", encoding="utf-8")
         self.assertEqual(self.run_hook("gh pr merge 7 --squash")[0], 0)
 
 

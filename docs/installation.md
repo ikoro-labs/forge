@@ -103,6 +103,16 @@ Depuis la 1.7.0, `/forge:qc` ne fusionne que si la clé `merge-method` dit comme
 `merge` (commit de fusion), selon ce que le dépôt GitHub autorise. Un projet qui monte de version
 sans la poser voit ses PR rester ouvertes sur leur ACCEPT, avec la raison dans le compte rendu.
 
+Le hook `guard_git` tient la même clé pour tout agent, quel que soit son nom : un `gh pr merge` dont
+la méthode (`--merge`, `--squash` ou `--rebase`, ou leurs formes courtes) diffère de la clé, ou qui
+n'en donne aucune, est refusé, comme une fusion par `gh api` dont le champ `merge_method` diffère ou
+manque (GitHub fusionnerait sinon par commit de fusion). Une clé absente, sur deux lignes ou d'une
+valeur autre que `merge`, `squash` ou `rebase` refuse toute fusion, et le refus cite la ligne fautive.
+Seul `--disable-auto`, qui annule une fusion automatique, ne lit pas la clé. Un projet qui laisse un
+agent fusionner doit donc poser la clé, sans quoi la fusion lui revient. Éprouvé par les tests de
+`tests/test_guard_git_merge_method.py` ; la lecture de la méthode d'une fusion par `gh api` n'a pas
+été jouée sur un vrai dépôt GitHub.
+
 Deux clés, `test-path` (un préfixe de chemin des fichiers de test, une ligne par préfixe) et
 `red-replay` (la commande qui lance un fichier de test, avec `{file}` ou `{name}`), ouvrent la sonde
 de rejeu de `forge:qc-gate` : `plugins/forge/scripts/base_replay.py` pose les tests que la PR ajoute
