@@ -15,6 +15,10 @@ Refused, with the reason on stderr and exit code 2 so Claude Code blocks the cal
   included, in the squash message as in the description. The message is read from `--subject`,
   `--body` and `--body-file`, the description from `gh pr view`; a body built by a shell
   substitution cannot be read here, which is why `/forge:qc` writes it to a file;
+- `gh pr merge` when the message of a commit of the PR closes a ticket the message or the PR
+  description cites with `Refs`: GitHub reads the commits of the branch under every merge method.
+  The commits come from `gh pr view --json commits`, through the same keyword rule; a list `gh`
+  cannot give refuses the merge;
 - `gh pr merge`, for every agent whatever its name, when a file of the PR's diff starts with a
   line of the project's `protected-path` key (a path or a prefix, compared word for word on the
   POSIX path): the merge is the human's. The files come from `gh pr view --json files`, under
