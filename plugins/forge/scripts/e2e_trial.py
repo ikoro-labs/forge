@@ -33,9 +33,14 @@ The standard library only.
 from __future__ import annotations
 
 import argparse
+import os
 import re
+import secrets
 import shlex
+import subprocess
 import sys
+import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import NamedTuple, NoReturn
 
@@ -52,6 +57,70 @@ REQUIRED_MARKERS = ("plugin", "budget")
 MARKERS = (*REQUIRED_MARKERS, "feature", "ticket", "base")
 WRONG_CALL = 2
 
+FEATURE = "F-9999"
+LABEL = "ready-for-agent"
+IDENTITY = ("-c", "user.name=forge-e2e", "-c", "user.email=forge-e2e@users.noreply.github.com", "-c", "commit.gpgsign=false")
+ORIGIN = re.compile(r"github\.com[:/]([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+?)(?:\.git)?/?$")
+ISSUE_URL = re.compile(r"/issues/(\d+)\s*$")
+
+# What the throwaway project holds: the smallest `usine.md`, a feature whose spec is accepted (the gate
+# `forge:feature-build` reads without the key `feature-gate`), and a ticket with one simple criterion.
+USINE_MD = """# Usine du dépôt d'essai
+
+Écrite par `e2e_trial.py` pour un essai de bout en bout : deux clés, les autres sont absentes.
+
+- `feature-dir` : `docs/features`
+- `merge-method` : `merge`
+"""
+IDEE_MD = f"""---
+feature: {FEATURE}
+document: idee
+titre: essai de bout en bout
+porteur: forge-e2e
+etat: active
+demande_par: interne, l'essai de bout en bout de l'usine
+issue: {{ticket}}
+date: {{date}}
+---
+
+# {FEATURE} : essai de bout en bout
+
+Un fichier à écrire, pour éprouver l'enchaînement de l'usine.
+"""
+SPEC_MD = f"""---
+feature: {FEATURE}
+document: spec
+statut: accepte
+destinataires: forge:coder
+base: {{base}}
+date: {{date}}
+---
+
+# {FEATURE} : spécification
+
+Le dépôt contient un fichier `essai.txt` à sa racine, dont la seule ligne est `essai de bout en bout`.
+"""
+TICKET_MD = f"""Motif: to-tickets {FEATURE} essai de bout en bout {{id}}
+Feature: {FEATURE}
+
+L'essai de bout en bout de l'usine a besoin d'un ticket qu'un coder prenne seul : un fichier à écrire.
+
+## Criteria
+
+- A1: le fichier `essai.txt` existe à la racine du dépôt et sa seule ligne est `essai de bout en bout`.
+
+## Validation cases
+
+A1.1 | lire `essai.txt` | la ligne `essai de bout en bout`
+AGREED: test-author, coder, qc-conf
+
+## Out of scope
+
+- tout autre fichier.
+
+Refs: docs/features/{FEATURE}/spec.md
+"""
+
 
 class Settings(NamedTuple):
     """The keys of the trial, read and checked."""
@@ -59,6 +128,85 @@ class Settings(NamedTuple):
     repo: str
     command: list[str]
     budget: str
+
+
+class Failure(Exception):
+    """A step of the trial that did not hold: its name, and why."""
+
+    def __init__(self, stage: str, reason: str) -> None:
+        super().__init__(reason)
+        self.stage = stage
+        self.reason = " ".join(reason.split())[:400] or "sans détail"
+
+
+class Trial:
+    """What a trial created on the trial repository, found again by its number: nothing else is touched."""
+
+    def __init__(self, repo: str, name: str, scratch: Path) -> None:
+        self.repo = repo
+        self.name = name
+        self.base = f"e2e/{name}"
+        self.scratch = scratch
+        self.clone = scratch / "projet"
+        self.ticket: int | None = None
+
+    def tool(self, stage: str, argv: list[str], *, cwd: Path | None = None) -> str:
+        """Run `git` or `gh` and give its standard output; a failure is a `Failure` of `stage`."""
+        try:
+            done = subprocess.run(argv, cwd=cwd, capture_output=True, text=True, encoding="utf-8", errors="replace")
+        except OSError as error:
+            raise Failure(stage, f"{argv[0]} ne se lance pas ({error})") from None
+        if done.returncode != 0:
+            raise Failure(stage, f"`{' '.join(argv[:3])}` a rendu {done.returncode} : {done.stderr.strip() or done.stdout.strip()}")
+        return done.stdout
+
+    def gh(self, stage: str, *args: str) -> str:
+        """A `gh` gesture, always aimed at the trial repository."""
+        return self.tool(stage, ["gh", *args, "--repo", self.repo])
+
+    def git(self, stage: str, *args: str) -> str:
+        return self.tool(stage, ["git", "-C", str(self.clone), *args])
+
+    def prepare(self, today: str) -> None:
+        """A fresh clone, the fictitious ticket, then the base branch of the trial with the project's files."""
+        self.tool("preparation", ["gh", "repo", "clone", self.repo, str(self.clone)])
+        self.gh("ticket", "label", "create", LABEL, "--force", "--description", "Prêt pour un agent")
+        body = self.scratch / "ticket.md"
+        body.write_text(TICKET_MD.format(id=self.name), encoding="utf-8")
+        title = f"Essai de bout en bout {self.name}"
+        created = self.gh("ticket", "issue", "create", "--title", title, "--body-file", str(body), "--label", LABEL)
+        if not (match := ISSUE_URL.search(created)):
+            raise Failure("ticket", f"`gh issue create` n'a pas rendu l'adresse du ticket : {created.strip()[:120]}")
+        self.ticket = int(match.group(1))
+        self.git("preparation", "switch", "-c", self.base)
+        files = {
+            Path("docs") / "agents" / "usine.md": USINE_MD,
+            Path("docs") / "features" / FEATURE / "idee.md": IDEE_MD.format(ticket=self.ticket, date=today),
+            Path("docs") / "features" / FEATURE / "spec.md": SPEC_MD.format(base=self.base, date=today),
+        }
+        for relative, text in files.items():
+            (self.clone / relative).parent.mkdir(parents=True, exist_ok=True)
+            (self.clone / relative).write_text(text, encoding="utf-8")
+        self.git("preparation", "add", "-A")
+        self.git("preparation", *IDENTITY, "commit", "-m", f"chore(e2e): le projet de l'essai {self.name}")
+        self.git("preparation", "push", "origin", f"HEAD:{self.base}")
+
+
+def origin_repo(project: Path) -> str | None:
+    """The `owner/name` of the project's `origin` on GitHub, None when it has none or it is elsewhere."""
+    try:
+        done = subprocess.run(
+            ["git", "-C", str(project), "remote", "get-url", "origin"], capture_output=True, text=True, encoding="utf-8"
+        )
+    except OSError:
+        return None
+    match = ORIGIN.search(done.stdout.strip()) if done.returncode == 0 else None
+    return match.group(1) if match else None
+
+
+def scratch_root() -> str | None:
+    """Where the throwaway folder goes: the session's `TMPDIR` or `TEMP`, read when the trial runs."""
+    return os.environ.get("TMPDIR") or os.environ.get("TEMP") or None
 
 
 class Call(argparse.ArgumentParser):
@@ -147,6 +295,21 @@ def main(argv: list[str] | None = None) -> int:
     if isinstance(settings, list):
         print("\n".join(settings))
         return 0
+    if origin_repo(project) == settings.repo:
+        print(
+            f"e2e_trial: le dépôt d'essai `{settings.repo}` est le dépôt de ce projet : "
+            "l'essai crée et ferme des tickets, il ne tourne jamais sur le dépôt qu'il protège",
+            file=sys.stderr,
+        )
+        return WRONG_CALL
+    name = args.id or f"{datetime.now(timezone.utc):%Y%m%d-%H%M%S}-{secrets.token_hex(2)}"
+    with tempfile.TemporaryDirectory(prefix="forge-e2e-", dir=scratch_root()) as folder:
+        trial = Trial(settings.repo, name, Path(folder))
+        try:
+            trial.prepare(f"{datetime.now(timezone.utc):%Y-%m-%d}")
+        except Failure as failure:
+            print(f"RESULTAT: FAIL\nETAPE: {failure.stage}\nRAISON: {failure.reason}")
+            return 1
     return 0
 
 
