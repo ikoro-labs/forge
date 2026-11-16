@@ -75,6 +75,9 @@ habituel, et une PR de prose en rend souvent une.
    Code 3 : une sonde n'a pas tourné (`NOT RUN` : budget du poste, borne, copie, absence de la clé
    `run-limits`) ou n'a pas de ligne. Le `BLOCKER` ne compte ni ne tombe : ne fusionne pas, ne poste
    pas de verdict, pose `needs-your-attention` avec la raison de la ligne `NOT RUN`, arrête-toi.
+   Une sonde est du code que le juge a écrit : elle tourne dans une copie de la tête sans `.git`, dans
+   un environnement vidé (ni jeton `GH_*`, ni `SSH_AUTH_SOCK`, ni session). Le réseau reste ouvert :
+   seuls les identifiants hérités sont retirés. Éprouvé sous Linux seulement.
    Code 1 : la sonde est mal formée, relance `forge:qc-conf` une fois comme ci-dessus. Un verdict sans
    sonde (aucun `[BLOCKER]`, ou des `BLOCKER` « déduits ») ne passe pas par ce mode.
 5. **Poster.** Le verdict, tel quel, en commentaire de PR : `gh pr comment <n> --body-file

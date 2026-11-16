@@ -222,7 +222,8 @@ rejoue dans une copie de la tête, sous la borne de `run-limits` et après le bu
 que le `BLOCKER` compte. Une sortie dite que la sonde n'imprime pas (ou qu'un délai interrompt) en fait
 une `NOTE` « non reproduit » ; un `BLOCKER` sans sonde compte et se marque « déduit ». Aucune clé de plus :
 sans `run-limits`, « sans objet (clé `run-limits` absente) », aucune sonde ne tourne et le `BLOCKER` reste en
-suspens ; sans `run-budget`, la sonde le dit et ne l'attend pas.
+suspens ; sans `run-budget`, la sonde le dit et ne l'attend pas. La sonde est du code du juge : elle tourne
+dans une copie sans `.git` (faite par `git archive`) et dans un environnement vidé, sans identifiants.
 
 Le rejeu des tests d'une PR sur sa base, par `forge:qc-gate` : les fichiers de test que la PR ajoute
 ou change sont posés dans une copie de la base, puis rejoués, et chacun doit y échouer. Un test

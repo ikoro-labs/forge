@@ -26,7 +26,16 @@ wins over a `NOT REPRODUCED`: the verdict cannot stand yet).
 A delay passed is `NOT REPRODUCED`, not `NOT RUN`: the probe was launched and did not print what the
 judge said it prints. A probe a hung command cannot settle must not hold a merge for ever.
 
-Bounds. A probe is code the judge wrote from a PR's content, run like the tests of that PR, so it
+Isolation. A probe is code the judge wrote from a PR's content, so it must not carry the access of the
+session that replays it (`gh pr merge`, `git push`). It runs in a copy of the head made by `git archive`:
+a copy with a `.git` (a folder, or the file of a linked worktree) is refused, `NOT RUN`. Its
+environment is emptied: only `PATH`, the locale and the Windows system variables are kept; `HOME`,
+`USERPROFILE`, `XDG_*`, `APPDATA` and the temporary folders point to an empty throwaway folder, and
+no `GH_*`, `GITHUB_*`, `GIT_*`, `SSH_AUTH_SOCK` or `CLAUDE_*` variable passes. The network stays open and
+the files of the post that the user can read stay readable: only the credentials the process would
+inherit are taken away, not the access the host gives any command. Tried on Linux only.
+
+Bounds. A probe is run like the tests of that PR, so it
 runs as they do: in a copy, under the memory limit and the delay of the key `run-limits` by
 `run_bounded` of `bounded_run.py`, after the budget of the post (key `run-budget`) is held, waiting for
 it up to the delay the key gives. Without `run-limits` (and without `--memory-mb` and `--timeout`),
@@ -42,6 +51,7 @@ this repository only. macOS is not covered. The standard library only.
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
 import sys
 import tempfile
@@ -64,6 +74,24 @@ from parse_output import OutputError, parse_verdict  # noqa: E402  the grammar o
 CONFIRMED, NOT_REPRODUCED, NOT_RUN, DEDUCED, NONE = "CONFIRMED", "NOT REPRODUCED", "NOT RUN", "DEDUCED", "NONE"
 READ_BYTES = 2_000_000
 TAIL_CHARS = 400
+# What a probe keeps of the caller's environment: where to find programs and how to print. Nothing else
+# passes, so a credential variable (`GH_*`, `GITHUB_*`, `GIT_*`, `SSH_AUTH_SOCK`, `CLAUDE_*`, a cloud
+# key...) never reaches it, whatever its name.
+KEPT = ("PATH", "LANG", "LC_ALL", "SYSTEMROOT", "WINDIR", "COMSPEC", "PATHEXT")
+HOME_LIKE = ("HOME", "USERPROFILE", "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME",
+             "APPDATA", "LOCALAPPDATA", "TMPDIR", "TEMP", "TMP")
+
+
+def probe_env(empty: Path) -> dict[str, str]:
+    """The environment of a probe: the programs path, and every home and temporary folder is `empty`."""
+    env = {name: os.environ[name] for name in KEPT if name in os.environ}
+    env.update({name: str(empty) for name in HOME_LIKE})
+    return env
+
+
+def linked_to_a_repository(root: Path) -> bool:
+    """A `.git` folder, or the `.git` file of a linked worktree, would give the probe the real repository."""
+    return (root / ".git").exists() or (root / ".git").is_symlink()
 
 
 def one_line(text: str) -> str:
@@ -72,10 +100,10 @@ def one_line(text: str) -> str:
 
 def run_probe(command: str, root: Path, timeout: int, memory_mb: int) -> tuple[int | None, str, str, str]:
     """The exit code (None when it did not finish), what it printed, why not, and the kind of stop."""
-    with tempfile.TemporaryFile() as log:
+    with tempfile.TemporaryFile() as log, tempfile.TemporaryDirectory() as empty:
         outcome = run_bounded(
             command, shell=True, cwd=root, timeout=timeout, memory_mb=memory_mb,
-            stdout=log, stderr=subprocess.STDOUT,
+            stdout=log, stderr=subprocess.STDOUT, env=probe_env(Path(empty)),
         )
         log.seek(0)
         printed = log.read(READ_BYTES).decode("utf-8", errors="replace")
@@ -159,6 +187,8 @@ def main(argv: list[str] | None = None) -> int:
             rows = not_run(findings, "sans objet (clé `run-limits` absente) : aucune sonde ne tourne sans borne")
         elif not root.is_dir():
             rows = not_run(findings, f"copie de la tête absente ({root})")
+        elif linked_to_a_repository(root):
+            rows = not_run(findings, f"la copie de la tête porte un `.git` ({root}) : faire la copie par `git archive`")
         else:
             rows = replay(findings, root, memory_mb, timeout, budget)
     for status, number, detail in rows:

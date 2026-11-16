@@ -156,8 +156,15 @@ une sonde tuée au délai, fait du `BLOCKER` une `NOTE` « non reproduit » qui 
 qui n'a pas pu tourner (budget du poste, borne, clé `run-limits` absente) laisse le `BLOCKER` en suspens
 et arrête la revue (`needs-your-attention`). Un `BLOCKER` sans exécution possible compte et le rapport
 le marque « déduit ». Aucune clé de plus. La sonde est du code que le juge écrit à partir du contenu
-d'une PR : elle tourne comme les tests de cette PR, dans une copie, sous la borne, mais la borne ne
-protège que la mémoire et le délai, pas le réseau ni les fichiers du poste hors de la copie. Elle ne
+d'une PR, donc elle ne porte pas l'accès de la session qui la rejoue (`gh pr merge`, `git push`) :
+`probe_replay.py` la lance dans une copie de la tête faite par `git archive`, sans `.git` (une copie
+qui en porte un est refusée, `NOT RUN`), et dans un environnement vidé. Seuls `PATH`, la langue et les
+variables système de Windows passent ; `HOME`, `USERPROFILE`, `XDG_*` et les dossiers temporaires
+pointent vers un dossier vide et jetable ; aucune variable `GH_*`, `GITHUB_*`, `GIT_*`, `SSH_AUTH_SOCK`
+ni `CLAUDE_*` ne passe. Ce qui n'est pas isolé : le réseau reste ouvert, et les fichiers que
+l'utilisateur du poste peut lire hors de la copie le restent. Seuls les identifiants hérités sont
+retirés, et un jeton que la commande saurait trouver ailleurs (un trousseau de clés, un fichier hors de
+`HOME`) n'est pas couvert. La borne, elle, ne protège que la mémoire et le délai. Elle ne
 ramène pas le `-n` de pytest-xdist (la commande passe par un shell). Éprouvé sous Linux seulement : le
 côté Windows repose sur `run_bounded`, qui n'a tourné que dans la CI de ce dépôt, et cette sonde n'y a
 pas encore tourné ; macOS n'est pas couvert. Le jeu de référence qui mesure l'effet de cette grille

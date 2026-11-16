@@ -1,6 +1,7 @@
 """Ticket #68: `probe_replay.py` replays the probe of each BLOCKER in a copy of the head, under the bound."""
 
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -163,6 +164,63 @@ class WithoutProbe(Probe):
         done = self.replay("- [BLOCKER] hook.py:9 | F-25 | the second read is unchecked\n")
         self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
         self.assertEqual([row[:2] for row in self.rows(done)], [["DEDUCED", "1"]])
+
+
+class Isolation(Probe):
+    """The probe is a command the judge wrote from a PR: it must not carry the session's access."""
+
+    SECRETS = {
+        "GH_TOKEN": "ghp_secret123", "GITHUB_TOKEN": "ghp_secret456", "GIT_ASKPASS": "/bin/askpass",
+        "SSH_AUTH_SOCK": "/tmp/agent.sock", "CLAUDE_CODE_OAUTH_TOKEN": "sk-secret", "AWS_SECRET_ACCESS_KEY": "aws-secret",
+    }
+
+    def test_the_credential_variables_of_the_session_do_not_reach_the_probe(self) -> None:
+        """No F-NNNN: ticket #68, retour de revue: la sonde ne voit aucune variable d'identifiants de la session."""
+        self.env.update(self.SECRETS)
+        code = (
+            f"import os; print('leak', sorted(k for k in os.environ if k in {tuple(self.SECRETS)!r} "
+            "or k.startswith(('GH_', 'GITHUB_', 'GIT_', 'CLAUDE'))))"
+        )
+        done = self.replay(blocker(code, "leak []"))
+        self.assertEqual([row[:2] for row in self.rows(done)], [["CONFIRMED", "1"]], done.stdout + done.stderr)
+
+    def test_home_and_the_config_folders_point_to_an_empty_throwaway_folder(self) -> None:
+        """No F-NNNN: ticket #68, retour de revue: HOME est un dossier vide et jetable, pas celui de la session."""
+        self.env["XDG_CONFIG_HOME"] = str(self.dir)
+        (self.dir / "gh-hosts.yml").write_text("token: leaked", encoding="utf-8")
+        code = (
+            "import os; h = os.environ['HOME']; "
+            f"print('home', os.listdir(h), h == r'{self.dir}', os.environ.get('XDG_CONFIG_HOME') == r'{self.dir}', "
+            "os.environ['USERPROFILE'] == h, os.environ['TMPDIR'] == h)"
+        )
+        done = self.replay(blocker(code, "home [] False False True True"))
+        self.assertEqual([row[:2] for row in self.rows(done)], [["CONFIRMED", "1"]], done.stdout + done.stderr)
+
+    @unittest.skipUnless(
+        shutil.which("gh") and shutil.which("grep") and os.name != "nt", "needs the `gh` and `grep` programs on a POSIX shell",
+    )
+    def test_gh_auth_token_finds_nothing(self) -> None:
+        """No F-NNNN: ticket #68, retour de revue: `gh auth token` lancé par la sonde ne rend pas le jeton de la session."""
+        self.env.update({"GH_TOKEN": "ghp_secret123", "GITHUB_TOKEN": "ghp_secret456"})
+        line = "- [BLOCKER] hook.py:1 | F-25 | leak | probe: `sh -c 'gh auth token 2>&1 | grep -c ghp_secret; true'` => `0`\n"
+        done = self.replay(line)
+        self.assertEqual([row[:2] for row in self.rows(done)], [["CONFIRMED", "1"]], done.stdout + done.stderr)
+
+    def test_a_copy_that_has_a_git_folder_is_not_run(self) -> None:
+        """No F-NNNN: ticket #68, retour de revue: une copie qui porte un `.git` partagerait le vrai dépôt, la sonde ne part pas."""
+        marker = self.dir / "ran.txt"
+        (self.copy / ".git").mkdir()
+        done = self.replay(blocker(f"open(r'{marker}', 'w').write('x'); print('1')", "1"))
+        self.assertEqual(done.returncode, 2, done.stdout + done.stderr)
+        self.assertEqual([row[:2] for row in self.rows(done)], [["NOT RUN", "1"]])
+        self.assertIn(".git", self.rows(done)[0][2])
+        self.assertFalse(marker.exists())
+
+    def test_a_git_file_of_a_linked_worktree_is_refused_too(self) -> None:
+        """No F-NNNN: ticket #68, retour de revue: le fichier `.git` d'un worktree lié renvoie au vrai dépôt, il est refusé."""
+        (self.copy / ".git").write_text("gitdir: /somewhere/.git/worktrees/x\n", encoding="utf-8")
+        done = self.replay(blocker("print(1)", "1"))
+        self.assertEqual([row[:2] for row in self.rows(done)], [["NOT RUN", "1"]], done.stdout + done.stderr)
 
 
 class WithTheCountingRule(Probe):

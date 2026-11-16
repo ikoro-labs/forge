@@ -237,5 +237,38 @@ class Documentation(unittest.TestCase):
         self.assertIn("Éprouvé sous Linux seulement", part)
 
 
+class Isolation(unittest.TestCase):
+    """Retour de revue : la sonde est du code du juge, elle ne porte pas l'accès de la session qui la rejoue."""
+
+    def test_the_judge_and_the_gate_say_the_probe_runs_in_a_copy_without_git(self) -> None:
+        """No F-NNNN: ticket #68, retour de revue: la copie de la sonde est faite par `git archive`, sans `.git`."""
+        gate = section(read("agents", "qc-gate.md"), "## Mode rejeu des sondes")
+        self.assertIn("`git archive`", gate)
+        self.assertIn("sans `.git`", gate)
+        self.assertNotIn("worktree détaché", gate)
+        sonde = section(read("agents", "qc-conf.md"), "## Sonde d'un BLOCKER")
+        self.assertIn("sans `.git`", sonde)
+
+    def test_the_prompts_say_what_is_isolated_and_what_is_not(self) -> None:
+        """No F-NNNN: ticket #68, retour de revue: l'environnement est vidé, le réseau reste ouvert, et c'est dit."""
+        for text in (
+            section(read("agents", "qc-conf.md"), "## Sonde d'un BLOCKER"),
+            section(read("agents", "qc-gate.md"), "## Mode rejeu des sondes"),
+            read("skills", "qc", "SKILL.md"),
+        ):
+            self.assertIn("environnement vidé", text)
+            self.assertIn("réseau reste ouvert", text)
+            self.assertIn("Éprouvé sous Linux seulement", text)
+
+    def test_the_page_says_what_the_probe_does_not_carry_and_what_it_still_reaches(self) -> None:
+        """No F-NNNN: ticket #68, retour de revue: la page de configuration dit l'isolation, ses limites et le système éprouvé."""
+        page = " ".join((support.REPO_ROOT / "docs" / "installation.md").read_text(encoding="utf-8").split())
+        part = page[page.index("probe_replay.py"):]
+        for text in ("sans `.git`", "`GH_*`", "`SSH_AUTH_SOCK`", "réseau reste ouvert"):
+            self.assertIn(text, part)
+        template = read("templates", "usine.md")
+        self.assertIn("sans `.git`", template[template.index("probe_replay.py"):])
+
+
 if __name__ == "__main__":
     unittest.main()

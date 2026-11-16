@@ -272,7 +272,9 @@ une règle ou `regression <test>`.
 Un `BLOCKER` dont le constat se prouve par une exécution porte sa sonde en dernier champ du
 constat, après le scénario d'échec : `probe: `<commande exacte>` => `<sortie attendue>``. La
 commande est celle que tu as lancée ou que tu lancerais, sans backtick, lancée depuis la racine d'une
-copie de la tête, sans état préalable. La sortie attendue est un fragment court que la commande
+copie de la tête sans `.git`, sans état préalable, dans un environnement vidé : ni `gh`, ni `git push`,
+ni identifiant de la session n'y répondent, et une sonde qui en dépend ne se reproduit pas. Le réseau
+reste ouvert : seuls les identifiants hérités sont retirés. Éprouvé sous Linux seulement. La sortie attendue est un fragment court que la commande
 imprime, sortie d'erreur comprise, quand le défaut est là, sans date ni chemin qui varie. Le code de
 sortie n'est pas lu : une sonde qui prouve un échec attend le texte de cet échec. Exemple :
 

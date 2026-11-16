@@ -196,10 +196,11 @@ rejoues seulement celles du verdict, pour que `forge:qc` sache quels `BLOCKER` c
 1. Écris le verdict dans le scratchpad (`verdict.md`) et la configuration de la **base** à côté
    (`git show origin/<base>:docs/agents/usine.md > usine-base.md`) : une PR ne lève pas la borne qui
    la juge.
-2. Fais, dans le scratchpad, la copie de la tête que le verdict a jugée (la ligne `HEAD:` : worktree
-   détaché ou `git archive`, supprimée ensuite) et installe-la par chaque commande de la clé `install`,
-   comme à la sonde 4. La sonde tourne dans la copie de la tête, jamais dans le répertoire courant, qui
-   n'est pas la PR.
+2. Fais, dans le scratchpad, la copie de la tête que le verdict a jugée (la ligne `HEAD:`) par
+   `git archive`, sans `.git`, et supprime-la ensuite : un worktree ou un clone partagerait le vrai
+   dépôt avec une commande que le juge a écrite, et le script refuse une copie qui porte un `.git`.
+   Installe-la par chaque commande de la clé `install`, comme à la sonde 4. La sonde tourne dans la
+   copie de la tête, jamais dans le répertoire courant, qui n'est pas la PR.
 3. Lance, avec le chemin absolu du scratchpad à la place de `<scratchpad>` :
    `uv run --no-project --quiet python "${CLAUDE_PLUGIN_ROOT}/scripts/probe_replay.py" "<scratchpad>/verdict.md" --root "<copie de la tête>" --usine "<scratchpad>/usine-base.md"`.
    Le script lit `run-limits` et `run-budget` de la base, attend le budget du poste puis lance chaque
@@ -212,6 +213,12 @@ rejoues seulement celles du verdict, pour que `forge:qc` sache quels `BLOCKER` c
    et `DEDUCED` (le `BLOCKER` n'a pas de sonde). Une sonde que tu n'as pas pu lancer s'écrit `NOT RUN`
    avec sa commande et sa sortie d'erreur, jamais `CONFIRMED`. Tu ne juges pas une sonde : tu rends
    ce que le script a mesuré.
+
+Une sonde est du code que le juge a écrit : le script la lance dans un environnement vidé (seuls
+`PATH` et la langue passent ; `HOME`, `XDG_*` et les dossiers temporaires pointent vers un dossier vide
+et jetable ; aucun `GH_*`, `GITHUB_*`, `GIT_*`, `SSH_AUTH_SOCK` ni `CLAUDE_*`), pour qu'elle ne porte
+ni ton accès à GitHub ni ta session. Le réseau reste ouvert et les fichiers que ton utilisateur lit
+restent lisibles : seuls les identifiants hérités sont retirés. Éprouvé sous Linux seulement.
 
 Rends ces lignes, rien d'autre : pas de tableau. La copie de la tête est supprimée après.
 
