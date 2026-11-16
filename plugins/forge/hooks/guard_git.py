@@ -1129,12 +1129,29 @@ def _may_become_merge(endpoint: str, words: list[str]) -> bool:
     )
 
 
+def _api_methods(call: ApiCall) -> tuple[str, ...]:
+    """The `merge_method` a REST merge sends, as typed, in its fields and its query string.
+
+    A body read from a file (`--input`) is returned as the option itself: whatever it holds, the
+    guard does not read it, and that is no method.
+    """
+    found = [f"--input {value}" for name, value in call.options if name == "input"]
+    fields = [value for name, value in call.options if name in ("field", "raw-field")]
+    fields += call.endpoint.partition("?")[2].split("&")
+    for field in fields:
+        name, equals, value = field.partition("=")
+        if equals and name == "merge_method":
+            found.append(value)
+    return tuple(found)
+
+
 def _api_merge(
     args: list[str], here: str | None, bodies: str, read_text: Callable[[str], str | None]
-) -> tuple[str, str | None] | str | None:
-    """The merge a `gh api` call makes (the words after `api`): `(number, owner/repo)`, or None.
+) -> tuple[str, str | None, tuple[str, ...]] | str | None:
+    """The merge a `gh api` call makes (the words after `api`): `(number, owner/repo, methods)`.
 
-    `owner/repo` is None for gh's `{owner}/{repo}`, which it fills from `GH_REPO` or the
+    `methods` are the `merge_method` values it sends (see `_api_methods`), None when it is no
+    merge. `owner/repo` is None for gh's `{owner}/{repo}`, which it fills from `GH_REPO` or the
     directory. A merge the guard cannot read is its refusal instead: a GraphQL merge, which names
     its PR by node id, or a write whose endpoint the shell may change into a merge. A query that
     cannot be read is refused before, as an owner gesture.
@@ -1152,7 +1169,8 @@ def _api_merge(
         if _may_become_merge(call.endpoint, words):
             return UNREADABLE_MERGE.format("the shell may change its endpoint")
         if (merge := MERGE_ENDPOINT.match(endpoint)) is not None:
-            return merge.group(2), None if "{" in merge.group(1) else merge.group(1)
+            named = None if "{" in merge.group(1) else merge.group(1)
+            return merge.group(2), named, _api_methods(call)
     return None
 
 
@@ -1789,6 +1807,11 @@ def method_refusal(
             f" `--{method}`"
         )
     for asked in methods:
+        if asked not in MERGE_METHODS:
+            return (
+                f"the merge names its method as `{asked}`, which the guard cannot read: the"
+                f" `{METHOD_KEY}` key says `{method}`, send `merge_method={method}` as a field"
+            )
         if asked != method:
             return (
                 f"the merge asks for `{asked}` and the `{METHOD_KEY}` key says `{method}`: merge"
@@ -1833,7 +1856,7 @@ def merge_call_refusal(
         found = _api_merge([word.value for word in words[2:]], call.directory, "", read_text)
         if found is None or isinstance(found, str):
             return found or MERGE_ALONE
-        number, named = found
+        number, named, methods = found
         repository = named or call.repository
     else:
         merge = pr_merge(words)

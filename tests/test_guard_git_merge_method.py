@@ -99,5 +99,61 @@ class TheKey(unittest.TestCase):
         self.assertIsNone(merge("gh pr edit 5 --add-label agent-merged", []))
 
 
+REST = "gh api -X PUT repos/o/r/pulls/5/merge"
+
+
+class RestMerge(unittest.TestCase):
+    """La fusion par l'API REST porte sa méthode dans le champ `merge_method`, que GitHub lit."""
+
+    def test_the_field_of_the_key_is_accepted_in_every_form_of_a_field(self) -> None:
+        # #63 : `-f`, `-F`, `--field`, `--raw-field`, accolé ou avec `=`, comme gh les lit.
+        for fields in (
+            "-f merge_method=squash", "-F merge_method=squash", "--field merge_method=squash",
+            "--raw-field merge_method=squash", "-fmerge_method=squash", "--raw-field=merge_method=squash",
+        ):
+            with self.subTest(fields=fields):
+                self.assertIsNone(merge(f"{REST} {fields}", ["squash"]))
+
+    def test_a_field_other_than_the_key_is_refused(self) -> None:
+        verdict = merge(f"{REST} -f merge_method=merge", ["squash"])
+        assert verdict is not None
+        self.assertIn("`merge`", verdict)
+        self.assertIn("`squash`", verdict)
+
+    def test_the_method_in_the_query_string_counts(self) -> None:
+        self.assertIsNone(merge("gh api -X PUT 'repos/o/r/pulls/5/merge?merge_method=squash'", ["squash"]))
+        self.assertIsNotNone(merge("gh api -X PUT 'repos/o/r/pulls/5/merge?merge_method=merge'", ["squash"]))
+
+    def test_a_rest_merge_without_a_method_is_refused(self) -> None:
+        # GitHub fusionnerait alors par commit de fusion, quelle que soit la clé : le garde ne le suppose pas.
+        for command in (REST, f"{REST} -f commit_title=x", f"{REST} -f merge_method_other=merge"):
+            with self.subTest(command=command):
+                verdict = merge(command, ["squash"])
+                assert verdict is not None
+                self.assertIn("names no method", verdict)
+
+    def test_two_fields_that_disagree_are_refused(self) -> None:
+        self.assertIsNotNone(merge(f"{REST} -f merge_method=squash -f merge_method=merge", ["squash"]))
+
+    def test_a_method_the_guard_cannot_read_is_refused(self) -> None:
+        # Un corps lu dans un fichier, une valeur lue dans un fichier : la méthode n'est pas lisible.
+        for command in (
+            f"{REST} --input body.json",
+            f"{REST} -F merge_method=@method.txt",
+            f"{REST} -f merge_method=squash --input body.json",
+        ):
+            with self.subTest(command=command):
+                verdict = merge(command, ["squash"])
+                assert verdict is not None
+                self.assertIn("cannot read", verdict)
+
+    def test_the_key_is_judged_before_the_method_of_a_rest_merge(self) -> None:
+        self.assertIn("not declared", merge(f"{REST} -f merge_method=squash", []) or "")
+        self.assertIn("names no method", merge(f"{REST} -f merge_method=ff-only", ["ff-only"]) or "")
+
+    def test_a_read_of_the_merge_endpoint_is_not_a_merge(self) -> None:
+        self.assertIsNone(merge("gh api repos/o/r/pulls/5/merge", ["squash"]))
+
+
 if __name__ == "__main__":
     unittest.main()
