@@ -9,6 +9,66 @@ Ce dépôt a été recréé le 2026-10-23 ; l'ancien est `ikoro-labs/forge-archi
 numéros de PR et de ticket nus (`#38`) renvoient à l'ancien dépôt ; un renvoi au nouveau dépôt
 porte son nom (`ikoro-labs/forge#7`).
 
+## [1.15.0] - 2026-11-16
+
+La revue rejoue chaque commit, sonde ses BLOCKER et se mesure sur un jeu de référence ; l'usine
+publie seule sous conditions ; les messages entre sessions prennent la forme d'un billet. Version
+mineure : sept clés nouvelles, sans valeur par défaut, et un garde de fusion plus strict.
+
+- Hooks : `guard_git` refuse, pour tout agent, une fusion (`gh pr merge`, `gh api`) dont la méthode
+  diffère de `merge-method` ou n'en donne aucune ; une clé absente, sur deux lignes ou inconnue
+  refuse toute fusion (ikoro-labs/forge#224, ikoro-labs/forge#63).
+- Hooks : `guard_output` impose le gabarit `billet` à tout `SendMessage` vers une autre session ;
+  le champ `resource` prend ses valeurs dans la clé `shared-resource` (ikoro-labs/forge#233,
+  points A1 à A4 de ikoro-labs/forge#227).
+- Agents : `forge:qc-gate` rejoue `install` puis `ci-replay` sur chaque commit de la PR
+  (`commit_replay.py`) ; un commit rouge est un `BLOCKER` (règle `F-24`) (ikoro-labs/forge#216,
+  ikoro-labs/forge#69).
+- Agents : `forge:qc-conf` classe la gravité par une grille fixe (`F-25`, `F-26`) ; un `BLOCKER`
+  sondé ne compte qu'une fois rejoué par `probe_replay.py`, sinon il est « déduit »
+  (ikoro-labs/forge#219, ikoro-labs/forge#68).
+- Scripts : `red-replay` peut porter `{report}` ; `junit_report.py` rejoue la base au grain du test
+  ajouté ou changé (ikoro-labs/forge#220, ikoro-labs/forge#43).
+- Scripts : `eval_reference.py` et huit cas sous `plugins/forge/evals/` mesurent `judge-recall` et
+  `false-accept` (ikoro-labs/forge#221, ikoro-labs/forge#67).
+- Skills : `forge:incident`, son gabarit et `incident.py check` ; `factory_slo.py incidents`
+  compte les incidents par classe (clé `incident-dir`) (ikoro-labs/forge#222, ikoro-labs/forge#61).
+- Skills : `forge:release` et `release.py` : l'agent publie seul si tous les SLO sont `tenu`, aucune
+  `budget-action` n'est active, l'essai de bout en bout passe et aucun `sev1` n'est ouvert (clé
+  `release-trigger`) (ikoro-labs/forge#225, ikoro-labs/forge#71).
+- Scripts : `e2e_trial.py` essaie l'usine sur un dépôt jetable (clés `e2e-repo`, `e2e-command`,
+  `e2e-budget-usd`) (ikoro-labs/forge#223, ikoro-labs/forge#70).
+- Scripts : `factory_slo.py status` signale la date de révision passée (clé `slo-review-date`)
+  (ikoro-labs/forge#218).
+- Gabarits : `billet.md`, `incident.md` ; `usine.md` documente les sept clés nouvelles.
+- Tests : un fichier par script nouveau, plus les cas de `guard_git`, `guard_output` et du contenu.
+- Gestes humains : un projet dont un agent fusionne déclare `merge-method`, sans quoi toute fusion
+  par un agent est refusée. Les autres clés sont facultatives ; sans elles, l'étape est sans objet.
+  Ce dépôt déclare `slo`, `budget-action`, `slo-review-date` et `incident-dir`.
+- Resté dehors : le jeu de référence n'a jamais tourné (aucun appel de modèle permis), donc ni
+  `judge-recall` ni `false-accept` ne sont mesurés ; l'essai de bout en bout est sans objet ici
+  (clé `e2e-repo` absente) ; les points A5 et A6 de ikoro-labs/forge#227 viennent dans une PR à
+  part ; le grain du test reste ouvert sur ikoro-labs/forge#43. Rien d'éprouvé sous Windows en
+  local.
+
+### Objectifs de service
+
+État de chaque objectif au 2026-11-16.
+
+| Objectif | Cible | Fenêtre | Valeur | Budget restant | État |
+|---|---|---|---|---|---|
+| `accept-round-1` | >= 80 % | 30 j | 60 % | 0 % sur 20 % | épuisé |
+| `lead-time p90` | <= 24 h | 30 j | 534.3 h | 0 h sur 24 h | épuisé |
+| `release-lag p90` | <= 24 h | 30 j | 506.4 h | 0 h sur 24 h | épuisé |
+| `escaped-defects` | <= 10 % | 30 j | 0.98 % | 9.02 % sur 10 % | tenu |
+| `change-failure` | <= 10 % | 30 j | 0.98 % | 9.02 % sur 10 % | tenu |
+| `human-touch` | <= 10 % | 30 j | 14.02 % | 0 % sur 10 % | épuisé |
+| `main-green` | >= 100 % | 30 j | 94.83 % | 0 % sur 0 % | épuisé |
+| `judge-recall` | >= 95 % | 30 j | sans objet | aucun résultat du jeu de référence (option `--reference` absente) | sans objet |
+| `false-accept` | <= 0 % | 30 j | sans objet | aucun résultat du jeu de référence (option `--reference` absente) | sans objet |
+
+Aucun `escaped-defect` ouvert depuis le 2026-11-16.
+
 ## [1.14.0] - 2026-11-16
 
 Tout test lancé par un agent passe par un lanceur borné, qui tient aussi le budget du poste entier.
