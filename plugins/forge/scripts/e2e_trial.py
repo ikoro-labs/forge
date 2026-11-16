@@ -42,7 +42,9 @@ import subprocess
 import sys
 import tempfile
 import time
+from collections.abc import Callable
 from datetime import datetime, timezone
+from functools import partial
 from pathlib import Path
 from typing import NamedTuple, NoReturn
 
@@ -152,6 +154,9 @@ class Trial:
         self.scratch = scratch
         self.clone = scratch / "projet"
         self.ticket: int | None = None
+        self.base_pushed = False
+        self.default_branch = ""
+        self.failed = False  # a gesture of the cleanup did not hold
         self.prs: list[int] = []  # every pull request aimed at the base branch of the trial
         self.pr: int | None = None  # the one that is judged
 
@@ -183,6 +188,7 @@ class Trial:
         if not (match := ISSUE_URL.search(created)):
             raise Failure("ticket", f"`gh issue create` n'a pas rendu l'adresse du ticket : {created.strip()[:120]}")
         self.ticket = int(match.group(1))
+        self.default_branch = self.git("preparation", "rev-parse", "--abbrev-ref", "HEAD").strip()
         self.git("preparation", "switch", "-c", self.base)
         files = {
             Path("docs") / "agents" / "usine.md": USINE_MD,
@@ -195,6 +201,66 @@ class Trial:
         self.git("preparation", "add", "-A")
         self.git("preparation", *IDENTITY, "commit", "-m", f"chore(e2e): le projet de l'essai {self.name}")
         self.git("preparation", "push", "origin", f"HEAD:{self.base}")
+        self.base_pushed = True
+
+    def delete_branch(self, branch: str) -> None:
+        """Delete a branch of the trial repository; one that is already gone is not a failure."""
+        endpoint = f"repos/{self.repo}/git/refs/heads/{branch}"
+        try:
+            self.tool("nettoyage", ["gh", "api", "--method", "DELETE", endpoint])
+        except Failure as failure:
+            if not re.search(r"does not exist|Not Found|HTTP (404|422)", failure.reason):
+                raise
+
+    def clean_up(self) -> list[str]:
+        """Close what the trial created and delete its branches, found again by number; one line per gesture.
+
+        Only the ticket the trial opened, the pull requests aimed at its own base branch, those requests'
+        branches (never the base of the clone, `main` or `master`) and the base branch itself are touched.
+        A gesture that fails is told (`ECHEC`) and the others go on; `failed` then says the cleanup did not hold.
+        """
+        lines: list[str] = []
+
+        def step(label: str, gesture: Callable[[], object]) -> None:
+            try:
+                gesture()
+                lines.append(f"NETTOYAGE: {label}")
+            except Failure as failure:
+                self.failed = True
+                lines.append(f"NETTOYAGE: ECHEC {label} : {failure.reason}")
+
+        found: list[dict] = []
+        if self.base_pushed:
+            try:
+                found = self.list_prs("nettoyage")
+            except Failure as failure:
+                self.failed = True
+                lines.append(f"NETTOYAGE: ECHEC lecture des PR vers {self.base} : {failure.reason}")
+        for item in found:
+            if item["state"] == "OPEN":
+                step(f"PR #{item['number']} fermée", partial(self.gh, "nettoyage", "pr", "close", str(item["number"])))
+        protected = {self.base, self.default_branch, "main", "master", ""}
+        for branch in sorted({item["headRefName"] for item in found} - protected):
+            step(f"branche {branch} supprimée", partial(self.delete_branch, branch))
+        if self.ticket is not None:
+            step(
+                f"ticket #{self.ticket} fermé",
+                lambda: self.gh("nettoyage", "issue", "close", str(self.ticket), "--reason", "not planned"),
+            )
+        if self.base_pushed:
+            step(f"branche {self.base} supprimée", lambda: self.delete_branch(self.base))
+        return lines
+
+    def list_prs(self, stage: str) -> list[dict]:
+        """Every pull request aimed at the base branch of the trial, in any state."""
+        listing = self.gh(
+            stage, "pr", "list", "--state", "all", "--base", self.base, "--limit", "100",
+            "--json", "number,title,body,state,headRefName",
+        )
+        try:
+            return json.loads(listing)
+        except ValueError:
+            raise Failure(stage, f"`gh pr list` n'a pas rendu du JSON : {listing.strip()[:120]}") from None
 
     def find_pr(self) -> int:
         """The pull request the run left: the latest one aimed at the base of the trial that cites the ticket.
@@ -203,14 +269,7 @@ class Trial:
         (`forge:qc` merges on ACCEPT). None is a `pr` failure, none that cites the ticket a `citation`
         failure, a closed one a `pr` failure.
         """
-        listing = self.gh(
-            "pr", "pr", "list", "--state", "all", "--base", self.base, "--limit", "100",
-            "--json", "number,title,body,state,headRefName",
-        )
-        try:
-            found = json.loads(listing)
-        except ValueError:
-            raise Failure("pr", f"`gh pr list` n'a pas rendu du JSON : {listing.strip()[:120]}") from None
+        found = self.list_prs("pr")
         self.prs = sorted(item["number"] for item in found)
         if not found:
             raise Failure("pr", f"aucune PR n'a été ouverte vers la base {self.base}")
@@ -321,8 +380,10 @@ def head_tried(plugin: Path) -> str:
         return "inconnue (git ne se lance pas)"
 
 
-def report(trial: Trial, head: str, failure: Failure | None = None, checks: int = 0) -> None:
-    """The result, one fact per line: what the pull request of the release copies."""
+def report(
+    trial: Trial, head: str, failure: Failure | None = None, checks: int = 0, cleanup: list[str] | None = None
+) -> None:
+    """The result, one fact per line: what the pull request of the release copies, then the cleanup."""
     lines = ["RESULTAT: FAIL" if failure else "RESULTAT: PASS"]
     if failure:
         lines += [f"ETAPE: {failure.stage}", f"RAISON: {failure.reason}"]
@@ -333,7 +394,7 @@ def report(trial: Trial, head: str, failure: Failure | None = None, checks: int 
         lines.append(f"PR: #{trial.pr}")
     if not failure:
         lines.append(f"CHECKS: {checks} verts")
-    print("\n".join(lines))
+    print("\n".join([*lines, *(cleanup or [])]))
 
 
 def origin_repo(project: Path) -> str | None:
@@ -451,17 +512,23 @@ def main(argv: list[str] | None = None) -> int:
     with tempfile.TemporaryDirectory(prefix="forge-e2e-", dir=scratch_root()) as folder:
         trial = Trial(settings.repo, name, Path(folder))
         head = head_tried(plugin)
+        failure: Failure | None = None
+        checks = 0
         try:
-            check_budget(usine_file, args)
-            trial.prepare(f"{datetime.now(timezone.utc):%Y-%m-%d}")
-            launch(trial, settings, plugin, usine_file, args)
-            trial.find_pr()
-            checks = trial.wait_green(args.wait_checks, args.poll_seconds)
-        except Failure as failure:
-            report(trial, head, failure)
-            return 1
-        report(trial, head, checks=checks)
-    return 0
+            try:
+                check_budget(usine_file, args)
+                trial.prepare(f"{datetime.now(timezone.utc):%Y-%m-%d}")
+                launch(trial, settings, plugin, usine_file, args)
+                trial.find_pr()
+                checks = trial.wait_green(args.wait_checks, args.poll_seconds)
+            except Failure as error:
+                failure = error
+        finally:
+            cleanup = trial.clean_up()  # whatever happened, including an interruption
+        if failure is None and trial.failed:
+            failure = Failure("nettoyage", "le nettoyage de l'essai n'a pas tenu : voir les lignes NETTOYAGE")
+        report(trial, head, failure, checks, cleanup)
+    return 1 if failure else 0
 
 
 if __name__ == "__main__":

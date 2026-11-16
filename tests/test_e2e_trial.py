@@ -445,9 +445,11 @@ class Result(unittest.TestCase):
     def test_the_pull_requests_are_looked_up_by_the_base_branch_of_the_trial(self) -> None:
         """Ticket #70, critère 4 : les PR de l'essai sont celles qui visent sa branche de base, ouvertes ou non."""
         project, _, _ = self.trial()
-        (call,) = [c["args"] for c in project.calls("gh") if c["args"][:2] == ["pr", "list"]]
-        self.assertEqual(call[call.index("--base") + 1], "e2e/essai1")
-        self.assertEqual(call[call.index("--state") + 1], "all")
+        listings = [c["args"] for c in project.calls("gh") if c["args"][:2] == ["pr", "list"]]
+        self.assertEqual(len(listings), 2, "une lecture pour le résultat, une pour le nettoyage")
+        for call in listings:
+            self.assertEqual(call[call.index("--base") + 1], "e2e/essai1")
+            self.assertEqual(call[call.index("--state") + 1], "all")
 
     def test_no_pull_request_is_a_fail_at_pr(self) -> None:
         """Ticket #70, critère 4 : aucune PR vers la base de l'essai : `FAIL` à l'étape `pr`."""
@@ -537,6 +539,118 @@ class Result(unittest.TestCase):
         """Ticket #70, critère 4 : un `FAIL` porte aussi la tête essayée, que la PR de version recopie."""
         _, _, out = self.trial(gh=[{"has": ["pr", "list"], "stdout": "[]"}])
         self.assertRegex(out, r"(?m)^TETE: 0123abc$")
+
+
+def deleted(project: Project) -> list[str]:
+    """The branches the trial deleted, from the `gh api -X DELETE` calls."""
+    refs = [
+        word.split("/git/refs/heads/", 1)[1]
+        for call in project.calls("gh")
+        if "DELETE" in call["args"]
+        for word in call["args"]
+        if "/git/refs/heads/" in word
+    ]
+    return sorted(refs)
+
+
+def closed(project: Project, kind: str) -> list[str]:
+    """The numbers of the pull requests (`pr`) or issues (`issue`) the trial closed."""
+    return [call["args"][2] for call in project.calls("gh") if call["args"][:2] == [kind, "close"]]
+
+
+@posix_only
+class Cleanup(unittest.TestCase):
+    def trial(self, *options: str, **changes: list[dict]) -> tuple[Project, int, str]:
+        project = Project(self, KEYS, scenario(**changes))
+        code, out, _ = project.run(*options)
+        return project, code, out
+
+    def test_the_open_pull_request_the_ticket_and_both_branches_are_cleaned_up_by_number(self) -> None:
+        """Ticket #70, critère 5 : après l'essai, la PR ouverte et le ticket sont fermés, leur branche et la base supprimées."""
+        project, code, out = self.trial()
+        self.assertEqual(code, 0)
+        self.assertEqual(closed(project, "pr"), ["13"])
+        self.assertEqual(closed(project, "issue"), ["12"])
+        self.assertEqual(deleted(project), ["e2e/essai1", "feat/essai"])
+        self.assertRegex(out, r"(?m)^NETTOYAGE: .*#13")
+        self.assertRegex(out, r"(?m)^NETTOYAGE: .*#12")
+
+    def test_a_merged_pull_request_is_not_closed_but_its_branch_is_deleted(self) -> None:
+        """Ticket #70, critère 5 : une PR fusionnée n'est pas refermée ; sa branche part avec l'essai."""
+        project, _, _ = self.trial(gh=[{"has": ["pr", "list"], "stdout": prs(pr(state="MERGED"))}])
+        self.assertEqual(closed(project, "pr"), [])
+        self.assertEqual(deleted(project), ["e2e/essai1", "feat/essai"])
+
+    def test_a_failed_trial_is_cleaned_up_too_and_finds_the_pull_request_the_run_left(self) -> None:
+        """Ticket #70, critère 5 : un `claude` en échec laisse peut-être une PR : elle est fermée avec le ticket."""
+        project, code, out = self.trial(claude=[{"has": ["-p"], "code": 3}])
+        self.assertEqual(code, 1)
+        self.assertRegex(out, r"(?m)^ETAPE: lancement$")
+        self.assertEqual(closed(project, "pr"), ["13"])
+        self.assertEqual(closed(project, "issue"), ["12"])
+        self.assertIn("e2e/essai1", deleted(project))
+
+    def test_nothing_is_cleaned_when_nothing_was_created(self) -> None:
+        """Ticket #70, critère 5 : un clone refusé ne crée rien : aucun geste de nettoyage."""
+        project, _, _ = self.trial(gh=[{"has": ["repo", "clone"], "code": 1, "stderr": "not found"}])
+        gestures = [call for call in project.calls("gh") if call["args"][:2] != ["repo", "clone"]]
+        self.assertEqual(gestures, [])
+
+    def test_a_base_branch_that_was_never_pushed_is_not_deleted(self) -> None:
+        """Ticket #70, critère 5 : si la poussée a échoué, le ticket est fermé et aucune branche n'est supprimée."""
+        project, _, out = self.trial(git=[{"has": ["push"], "code": 1, "stderr": "denied"}])
+        self.assertRegex(out, r"(?m)^ETAPE: preparation$")
+        self.assertEqual(closed(project, "issue"), ["12"])
+        self.assertEqual(deleted(project), [])
+
+    def test_only_the_branches_of_the_trial_pull_requests_are_deleted_never_the_default_branch(self) -> None:
+        """Ticket #70, critère 5 : une PR dont la tête est la branche par défaut ne fait supprimer que la base de l'essai."""
+        for head in ("main", "master", "e2e/essai1"):
+            with self.subTest(head=head):
+                project, _, _ = self.trial(gh=[{"has": ["pr", "list"], "stdout": prs(pr(branch=head))}])
+                self.assertEqual(deleted(project), ["e2e/essai1"])
+
+    def test_the_default_branch_read_in_the_clone_is_never_deleted(self) -> None:
+        """Ticket #70, critère 5 : la branche par défaut du clone, quel que soit son nom, n'est jamais supprimée."""
+        project, _, _ = self.trial(
+            git=[{"has": ["rev-parse", "--abbrev-ref"], "stdout": "develop\n"}],
+            gh=[{"has": ["pr", "list"], "stdout": prs(pr(branch="develop"))}],
+        )
+        self.assertEqual(deleted(project), ["e2e/essai1"])
+
+    def test_a_branch_already_gone_is_not_a_failure(self) -> None:
+        """Ticket #70, critère 5 : une branche déjà supprimée (fusion, suppression automatique) n'est pas un échec."""
+        gone = {"has": ["api"], "code": 1, "stderr": "Reference does not exist (HTTP 422)"}
+        _, code, out = self.trial(gh=[gone])
+        self.assertEqual(code, 0)
+        self.assertRegex(out, r"(?m)^RESULTAT: PASS$")
+
+    def test_a_cleanup_that_fails_turns_a_pass_into_a_fail_at_nettoyage_and_goes_on(self) -> None:
+        """Ticket #70, critère 5 : un nettoyage en échec est dit (`ETAPE: nettoyage`) et le reste est tout de même fait."""
+        project, code, out = self.trial(gh=[{"has": ["issue", "close"], "code": 1, "stderr": "forbidden"}])
+        self.assertEqual(code, 1)
+        self.assertRegex(out, r"(?m)^RESULTAT: FAIL$")
+        self.assertRegex(out, r"(?m)^ETAPE: nettoyage$")
+        self.assertRegex(out, r"(?m)^NETTOYAGE: ECHEC .*forbidden")
+        self.assertIn("e2e/essai1", deleted(project))
+
+    def test_a_cleanup_that_fails_does_not_hide_the_step_that_failed_first(self) -> None:
+        """Ticket #70, critère 5 : l'étape qui a manqué reste celle que le résultat nomme."""
+        _, _, out = self.trial(
+            gh=[{"has": ["pr", "list"], "stdout": "[]"}, {"has": ["issue", "close"], "code": 1, "stderr": "forbidden"}]
+        )
+        self.assertRegex(out, r"(?m)^ETAPE: pr$")
+        self.assertRegex(out, r"(?m)^NETTOYAGE: ECHEC .*forbidden")
+
+    def test_the_cleanup_never_touches_anything_the_trial_did_not_name(self) -> None:
+        """Ticket #70, critère 5 : chaque fermeture vise le ticket ou une PR de l'essai, chaque suppression une branche de l'essai."""
+        project, _, _ = self.trial()
+        for call in project.calls("gh"):
+            args = call["args"]
+            if args[1:2] == ["close"]:
+                self.assertIn(args[2], ("12", "13"))
+            if "DELETE" in args:
+                self.assertTrue(any(word.startswith(f"repos/{REPO}/git/refs/heads/") for word in args), args)
 
 
 if __name__ == "__main__":
