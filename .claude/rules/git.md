@@ -25,3 +25,11 @@ C'est la session forge qui publie, en suivant `docs/contribuer.md` :
    `plugins/forge/.claude-plugin/plugin.json` et ouvre l'entrée du `CHANGELOG.md`.
 2. Une fois fusionnée, le tag annoté `forge--v<X.Y.Z>` (deux tirets) est posé sur le commit de
    fusion de `main`, puis poussé. Un tag ne se déplace ni ne se supprime une fois poussé.
+
+Quand ce dépôt déclare la clé `release-trigger`, l'agent publie lui-même, par `/forge:release` (voir
+`docs/contribuer.md`). L'agent publie seul si, et seulement si, tous les SLO sont `tenu` (état calculé dans
+l'heure), aucune action de `budget-action` n'est active, l'essai de bout en bout passe sur la tête de `main`
+et aucun `sev1` n'est ouvert. Une condition qui manque, ou qu'on ne peut pas lire, vaut condition non
+remplie : l'agent ouvre alors la PR de version, pose `needs-your-attention` avec la condition manquante, et
+la publication revient à l'humain. Sans la clé, il ne publie rien. Les règles de tags côté serveur et la
+montée de l'épingle restent des gestes de l'humain.
