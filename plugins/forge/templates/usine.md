@@ -285,6 +285,14 @@ commande. Sans la clé, les objectifs sont « sans objet (clé `slo` absente) »
 - `slo` : `<accept-round-1 | >= 80 % | 30>`
 - `slo` : `<lead-time p90 | <= 24 h | 30>`
 
+La date à laquelle les cibles de la clé `slo` sont à réviser, une seule ligne, `AAAA-MM-JJ`. `status` la
+rend sous le tableau et, dans `slo-status.json`, sous `revision` (`date`, `passee`) : elle est signalée
+« passée » dès le lendemain de cette date (UTC). Elle ne change aucune cible : réviser reste une
+décision de l'humain. Sans la clé, « sans objet (clé `slo-review-date` absente) », aucune date n'est
+supposée. Une date illisible ou déclarée deux fois fait échouer `status`.
+
+- `slo-review-date` : `<2026-12-16>`
+
 The indicators of the end-to-end review (`matrix-coverage`, `review-regressions`) are computed from the
 `matrice.md` and the `revue/boucle.tsv` of the features under the folder of the key `feature-dir`; without
 it, they are « sans objet (clé `feature-dir` absente) ». Both ratios are declared like the others. The
