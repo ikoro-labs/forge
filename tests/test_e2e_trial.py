@@ -684,6 +684,9 @@ class ReleaseInstruction(unittest.TestCase):
                 "USERPROFILE": str(home),
                 "TMPDIR": str(home),
                 "TEMP": str(home),
+                # La page de code d'un tube sous Windows : sans la sortie en UTF-8 du script, ses accents
+                # ne se lisent pas (échec vu en CI sous Windows, rejoué ici sous Linux).
+                "PYTHONIOENCODING": "cp1252",
             }
             done = subprocess.run(
                 [sys.executable, *command.removeprefix(prefix).split(), "--projet", str(project)],

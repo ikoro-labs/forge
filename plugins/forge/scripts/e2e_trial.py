@@ -536,6 +536,10 @@ def read_settings(config: dict[str, list[str]], *, bounded: bool) -> Settings | 
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Sous Windows, un tube sort en page de code locale (cp1252) : les accents des lignes `RAISON` et
+    # `SANS-OBJET` seraient illisibles pour qui lit la sortie en UTF-8.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     parser = Call(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument("--projet", default=".", help="the project that runs the trial (default: .)")
     parser.add_argument("--plugin", help="the plugin to try (default: the one that holds this script)")
