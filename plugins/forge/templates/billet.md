@@ -1,4 +1,4 @@
-<!-- template: billet | required: from, type, resource, ticket, measure, awaits | rules: socle.md -->
+<!-- template: billet | max-lines: 16, this comment excluded | required: from, type, resource, ticket, measure, awaits | rules: socle.md -->
 from: <your session name, as the registry of the host lists it>
 type: <claim | release | info | question | reply>
 resource: <the shared resource the billet is about, or none>

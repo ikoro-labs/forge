@@ -75,6 +75,17 @@ def measure(**parts: str) -> str:
     return " ".join(f"{key}={value}" for key, value in values.items())
 
 
+class Lines(unittest.TestCase):
+    def test_a1_227_the_line_cap_of_the_template_header_holds(self) -> None:
+        """#227 A1: `max-lines` of `billet.md` (16) counts the written lines, blank ones excluded."""
+        short_lines = "\n".join(["five words on a line"] * 10)
+        found = deviations(BILLET.split("---")[0] + f"---\n{short_lines}\n", "billet")
+        self.assertEqual(len(found), 1, found)
+        self.assertIn("17 lines, at most 16", found[0])
+        sixteen = "\n".join(["five words on a line"] * 9)
+        self.assertEqual(deviations(BILLET.split("---")[0] + f"---\n\n{sixteen}\n", "billet"), [])
+
+
 class Measure(unittest.TestCase):
     def test_a2_227_time_in_iso_8601_with_its_offset_passes(self) -> None:
         """#227 A2: an offset, a `Z`, with or without seconds."""

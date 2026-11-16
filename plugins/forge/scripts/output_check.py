@@ -502,6 +502,10 @@ def _billet(text: str, template: str, config: Mapping[str, list[str]]) -> list[s
         )
     if fields.get("measure"):
         found += _measure(fields["measure"])
+    written = sum(1 for line in lines if line.strip())
+    most_lines = line_cap(template)
+    if most_lines is not None and written > most_lines:
+        found.append(f"{written} lines, at most {most_lines} (template `billet`): blank lines do not count")
     words = count_words(" ".join(prose))
     if words > BILLET_WORDS:
         found.append(f"{words} words of prose after `{BILLET_SEPARATOR}`, at most {BILLET_WORDS}")
