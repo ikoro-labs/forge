@@ -32,7 +32,7 @@ file when some are red:
     PASSES   <file>::<test>   the test passes on the base
     SKIPPED  <file>::<test>   the test is skipped on the base, it proves nothing (no effect on the code)
     RED      <file>           n test(s) rouge(s) sur m ajouté(s) ou changé(s) (grain du test)
-    NONE     <file>           the file changed, no test of it did (a helper, an import)
+    NONE     <file>           the file changed, no test of it did (a change above its first test, an import)
 
 A command that exits 0 without writing the report is `NOT RUN`, never `PASSES`; one that exits non-zero
 without a report is `RED` at the grain of the file (it fails before its tests); a report that declares a

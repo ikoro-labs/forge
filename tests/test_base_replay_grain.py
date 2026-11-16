@@ -196,6 +196,42 @@ class LocatingTheTestsAPrChanged(unittest.TestCase):
         self.assertEqual([case.name for case in touched], ["test_x[1]"])
 
 
+class PlacedByClassAndName(unittest.TestCase):
+    """Two classes can hold a test of the same name: a case is placed by its class and its name."""
+
+    BODY = "    def {name}(self):\n        self.assertEqual(code_under_test.other(), 10)\n"
+
+    def classes(self, *names: str) -> str:
+        """A module with class A (test_x, test_y) and the extra classes asked for, each with a test_x."""
+        a = "class A(unittest.TestCase):\n" + self.BODY.format(name="test_x") + "\n" + self.BODY.format(name="test_y")
+        extra = "".join("\n\nclass " + name + "(unittest.TestCase):\n" + self.BODY.format(name="test_x") for name in names)
+        return "import unittest\nimport code_under_test\n\n\n" + a + extra
+
+    def test_a_test_added_beside_a_homonym_is_rendered_and_the_untouched_one_is_not(self) -> None:
+        """No F-NNNN: ticket #43, grain du test: `B.test_x` ajouté à côté de `A.test_x` est rendu, `A.test_y` non."""
+        repo, base = base_repo(self, self.classes())
+        head = repo.commit({"tests/test_mod.py": self.classes("B")})
+        done = repo.replay(base, head, usine())
+        self.assertEqual(done.returncode, 1, done.stdout + done.stderr)
+        self.assertRegex(done.stdout, r"(?m)^PASSES\ttests/test_mod\.py::tests\.test_mod\.B\.test_x\t")
+        self.assertNotIn("test_mod.A", done.stdout)
+
+    def test_a_case_whose_class_cannot_be_found_among_homonyms_counts_as_touched(self) -> None:
+        """No F-NNNN: ticket #43, grain du test: un nom répété dont la classe ne se trouve pas est ambigu, donc touché."""
+        import junit_report
+
+        text = "def test_x():\n    pass\n\n\ndef test_x_again():\n    pass\n\n\n# test_x\n"
+        cases = [junit_report.Case("tests.test_mod", "test_x", "pass")]
+        self.assertEqual(junit_report.touched(cases, text, []), cases)
+
+    def test_a_case_whose_name_is_not_written_in_the_file_counts_as_touched(self) -> None:
+        """No F-NNNN: ticket #43, grain du test: un test dont le nom n'est pas dans le fichier est montré, pas caché."""
+        import junit_report
+
+        cases = [junit_report.Case("tests.test_mod", "test_made_by_a_loop", "pass")]
+        self.assertEqual(junit_report.touched(cases, "def test_other():\n    pass\n", []), cases)
+
+
 class GrainIsDocumented(unittest.TestCase):
     """The consumers read the placeholder and the limits of the reading in the template, the page and the agents."""
 
