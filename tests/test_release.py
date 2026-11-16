@@ -258,6 +258,7 @@ class EssaiCondition(Base):
         """Écrit le faux essai : il note ses arguments à côté de lui, imprime et sort avec `code`."""
         self.script.write_text(
             "import json\nimport sys\nfrom pathlib import Path\n"
+            "sys.stdout.reconfigure(encoding='utf-8')\nsys.stderr.reconfigure(encoding='utf-8')\n"
             "Path(__file__).with_name('arguments.json').write_text(json.dumps(sys.argv[1:]))\n"
             f"print({stdout!r})\nprint({stderr!r}, file=sys.stderr)\nsys.exit({code})\n",
             encoding="utf-8",
@@ -335,6 +336,7 @@ class Check(Base):
     def trial(self, stdout: str, code: int = 0) -> None:
         self.script.write_text(
             "import json\nimport sys\nfrom pathlib import Path\n"
+            "sys.stdout.reconfigure(encoding='utf-8')\n"
             "Path(__file__).with_name('arguments.json').write_text(json.dumps(sys.argv[1:]))\n"
             f"print({stdout!r})\nsys.exit({code})\n",
             encoding="utf-8",
