@@ -35,6 +35,7 @@ import re
 import sys
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from datetime import datetime
 from html.parser import HTMLParser
 from pathlib import Path
 
@@ -128,6 +129,8 @@ KEY_LINE = re.compile(r"^\s*[A-Z][A-Z_ ]*[A-Z]:")
 # The kinds made of `KEY:` lines, which an agent often wraps in a code fence as its role shows it.
 KEYED = frozenset({"verdict", "coder", "decider"})
 BILLET_FIELD = re.compile(r"^([a-z][a-z-]*):[ \t]*(.*)$")
+BILLET_MEASURE = re.compile(r"load=(\S+) memory=(\S+) time=(.*)")
+BILLET_TIME = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?(Z|[+-]\d{2}:\d{2})")
 
 
 def _integer(config: Mapping[str, list[str]], key: str, default: int) -> int:
@@ -425,6 +428,36 @@ def _quote(paragraph: str) -> str:
     return " ".join(words[:6]) + (" ..." if len(words) > 6 else "")
 
 
+def _instant(value: str) -> bool:
+    """Whether `value` is an ISO 8601 date and time with its offset (`Z` or `+HH:MM`)."""
+    if BILLET_TIME.fullmatch(value) is None:
+        return False
+    try:
+        datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    return True
+
+
+def _measure(value: str) -> list[str]:
+    """The deviations of the `measure` field: `load=<n> memory=<n>MB time=<ISO 8601 with offset>`."""
+    match = BILLET_MEASURE.fullmatch(value)
+    if match is None:
+        return [
+            "`measure` must be `load=<number> memory=<number>MB time=<ISO 8601 with its offset>`,"
+            f" not `{_quote(value)}`"
+        ]
+    load, memory, time = match.groups()
+    found = []
+    if re.fullmatch(r"\d+(\.\d+)?", load) is None:
+        found.append(f"`load={load}` is not a number with a dot, like `load=1.25`")
+    if re.fullmatch(r"\d+MB", memory) is None:
+        found.append(f"`memory={memory}` is not whole megabytes, like `memory=5200MB`")
+    if not _instant(time):
+        found.append(f"`time={time}` is not ISO 8601 with its offset, like `time=2026-11-16T14:13+01:00`")
+    return found
+
+
 def _billet(text: str, template: str) -> list[str]:
     """Every way `text` departs from the billet of `templates/billet.md`."""
     lines = text.strip().splitlines()
@@ -446,6 +479,8 @@ def _billet(text: str, template: str) -> list[str]:
             found.append(f"the field `{name}` is missing (template `billet`)")
         elif not fields[name]:
             found.append(f"the field `{name}` is empty")
+    if fields.get("measure"):
+        found += _measure(fields["measure"])
     words = count_words(" ".join(prose))
     if words > BILLET_WORDS:
         found.append(f"{words} words of prose after `{BILLET_SEPARATOR}`, at most {BILLET_WORDS}")

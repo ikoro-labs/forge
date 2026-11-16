@@ -65,5 +65,39 @@ class Prose(unittest.TestCase):
         self.assertIn("at most 60", found[0])
 
 
+def measure(**parts: str) -> str:
+    """A `measure` value: the three parts of the template, one replaced at a time."""
+    values = {"load": "1.25", "memory": "5200MB", "time": "2026-11-16T14:13+01:00", **parts}
+    return " ".join(f"{key}={value}" for key, value in values.items())
+
+
+class Measure(unittest.TestCase):
+    def test_a2_227_time_in_iso_8601_with_its_offset_passes(self) -> None:
+        """#227 A2: an offset, a `Z`, with or without seconds."""
+        for value in ("2026-11-16T14:13+01:00", "2026-11-16T13:13:07Z", "2026-11-16T08:13-05:00"):
+            with self.subTest(time=value):
+                self.assertEqual(deviations(billet(measure=measure(time=value)), "billet"), [])
+
+    def test_a2_227_time_without_its_offset_is_refused(self) -> None:
+        """#227 A2: the second trial wrote `13:12` in UTC while the other session wrote CET."""
+        for value in ("13:12", "2026-11-16T14:13", "2026-11-16 14:13+01:00", "14h13", "2026-11-16T14:13+0100"):
+            with self.subTest(time=value):
+                found = deviations(billet(measure=measure(time=value)), "billet")
+                self.assertEqual(len(found), 1, found)
+                self.assertIn(f"`time={value}`", found[0])
+                self.assertIn("ISO 8601 with its offset", found[0])
+
+    def test_a2_227_an_impossible_date_is_refused(self) -> None:
+        """#227 A2: a well-shaped time that is no instant (month 13)."""
+        found = deviations(billet(measure=measure(time="2026-13-16T14:13+01:00")), "billet")
+        self.assertEqual(len(found), 1, found)
+        self.assertIn("ISO 8601 with its offset", found[0])
+
+    def test_a2_227_a_measure_in_prose_names_what_it_lacks(self) -> None:
+        """#227 trial 1: `mesure` written in prose, with a decimal comma, instead of the three parts."""
+        found = deviations(billet(measure="load is 1,25, memory fine, since 14h"), "billet")
+        self.assertTrue(any("`measure` must be `load=" in line for line in found), found)
+
+
 if __name__ == "__main__":
     unittest.main()
