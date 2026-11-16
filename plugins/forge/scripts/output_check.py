@@ -3,7 +3,7 @@
     python output_check.py <kind> [<file> | -]
 
 Kinds: the documents under `templates/` (`ticket`, `pr`, `comment`, `verdict`, `session-reply`,
-`subagent-return`, `report-mail`) and the declared outputs of the plugin's agents (`coder`, `decider`, `gate`).
+`subagent-return`, `report-mail`, `billet`) and the declared outputs of the plugin's agents (`coder`, `decider`, `gate`).
 `exempt` checks nothing. Prints one deviation per line and exits 1 when there is one, 0 when the
 text conforms, 2 on a usage error. The hook `guard_output.py` calls `deviations` for its three
 events; a skill can run this command on a body before it posts it.
@@ -24,7 +24,9 @@ The rules, the same for every kind that has them:
   the word cap and the paragraph cap, which hold for the rest of the reply;
 - a structured format (`verdict`, `coder`, `decider`) takes a closed set of keys: an unknown key is
   refused, unless the project names it with `output-extra-keys` (`<kind> | KEY, KEY`). The verdict
-  and the coder's block are read by `parse_output.py`, their one source of rules.
+  and the coder's block are read by `parse_output.py`, their one source of rules;
+- the `billet`, the message between two sessions of a host, is `key: value` lines, a `---` line,
+  then at most 60 words of prose; `_billet` holds its rules and `templates/billet.md` declares them.
 """
 
 from __future__ import annotations
@@ -80,6 +82,8 @@ KINDS = {
     "subagent-return": Kind("subagent-return.md", "subagent-return"),
     # The factory report mail is HTML: `_from_html` reads its headings, items and table rows.
     "report-mail": Kind("report-mail.md", "report-mail"),
+    # The billet has its own rules (`_billet`): its 60-word cap counts the prose after `---` only.
+    "billet": Kind("billet.md", None, paragraphs=False),
     "coder": Kind(None, "subagent-return"),
     "decider": Kind(None, "subagent-return"),
     # The gate's table and the verbatim elements under it have no word cap.
@@ -108,6 +112,8 @@ DECIDER_KNOWN = frozenset({
     "REFERENTIAL_UPDATE", "WRITE_TO", "READ",
 })
 GATE_MOST_TABLE_LINES = 30
+BILLET_WORDS = 60
+BILLET_SEPARATOR = "---"
 
 HEADER = re.compile(r"<!--\s*template:(.*?)-->", re.DOTALL)
 HTML_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
@@ -121,6 +127,7 @@ CODE_SPAN = re.compile(r"`[^`\n]+`")
 KEY_LINE = re.compile(r"^\s*[A-Z][A-Z_ ]*[A-Z]:")
 # The kinds made of `KEY:` lines, which an agent often wraps in a code fence as its role shows it.
 KEYED = frozenset({"verdict", "coder", "decider"})
+BILLET_FIELD = re.compile(r"^([a-z][a-z-]*):[ \t]*(.*)$")
 
 
 def _integer(config: Mapping[str, list[str]], key: str, default: int) -> int:
@@ -418,6 +425,33 @@ def _quote(paragraph: str) -> str:
     return " ".join(words[:6]) + (" ..." if len(words) > 6 else "")
 
 
+def _billet(text: str, template: str) -> list[str]:
+    """Every way `text` departs from the billet of `templates/billet.md`."""
+    lines = text.strip().splitlines()
+    cut = next((i for i, line in enumerate(lines) if line.strip() == BILLET_SEPARATOR), None)
+    found: list[str] = []
+    if cut is None:
+        found.append(f"no `{BILLET_SEPARATOR}` line between the fields and the prose (template `billet`)")
+    head, prose = (lines, []) if cut is None else (lines[:cut], lines[cut + 1 :])
+    fields: dict[str, str] = {}
+    for line in head:
+        match = BILLET_FIELD.match(line.strip())
+        if match is not None:
+            fields.setdefault(match.group(1), match.group(2).strip())
+        elif line.strip() and cut is not None:
+            found.append(f"`{_quote(line.strip())}` is not a `key: value` line")
+    for labels in required_fields(template):
+        name = labels[0]
+        if name not in fields:
+            found.append(f"the field `{name}` is missing (template `billet`)")
+        elif not fields[name]:
+            found.append(f"the field `{name}` is empty")
+    words = count_words(" ".join(prose))
+    if words > BILLET_WORDS:
+        found.append(f"{words} words of prose after `{BILLET_SEPARATOR}`, at most {BILLET_WORDS}")
+    return found
+
+
 def deviations(
     text: str, kind: str, config: Mapping[str, list[str]] | None = None, root: Path | None = None
 ) -> list[str]:
@@ -427,6 +461,8 @@ def deviations(
     config = config or {}
     if kind == "exempt":
         return []
+    if kind == "billet":
+        return _billet(text, _template_text(kind, config, root))
     if kind == "report-mail":
         text = _from_html(text)
     lines, prose = _structure(_unwrap(text) if kind in KEYED else text)
