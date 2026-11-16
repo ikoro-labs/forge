@@ -1,0 +1,32 @@
+PR #23: fix(qc): un renommage ne contourne plus une entrée never-weaken
+
+## Résumé
+
+Suite du juge de #13 : un renommage contournait une entrée `never-weaken`. Les corrections sont celles que recommandait le juge, décidées par l'humain (`accepting-human`, 2026-10-24).
+
+- `rename from` et `rename to` sont décodés par `_unquote` seul. Avant, `_path` retirait un préfixe `a/` ou `b/` que ces lignes n'ont pas : `a/seuils/ref.txt` déplacé vers `archive/ref.txt` rendait `NONE` sous l'entrée `a/seuils/ | removed-line`.
+- `raised-number` et `lowered-rank` lisent l'ancien chemin comme le nouveau (`_scoped`) : un fichier qui sort du chemin en changeant, ou qui y entre, est lu sous l'entrée.
+- La docstring dit vrai : un diff illisible rend `APPLIES` (code 1), pas `INVALID`.
+- Le helper `real_diff` isole `HOME` et `USERPROFILE` dans un dossier privé (`tempfile.mkdtemp`), supprimé ensuite.
+- Tests sur de vrais `git diff` : dossiers racine `a/` et `b/` déplacés, fichier renommé vers `b/`, renommage avec relèvement de nombre, avec abaissement de rang, entrée par renommage, renommage sans relèvement.
+
+Décision que la spec ne fixait pas : quand les deux chemins sont sous l'entrée, le nouveau chemin est cité dans le détail.
+
+Closes #16
+
+## Ce qui ne change pas
+
+Aucune entrée `never-weaken` n'est ajoutée à `docs/agents/usine.md`. Ni la version ni le `CHANGELOG.md` (suivi par #19).
+
+## Preuves
+
+- Rouge avant correction : 2 échecs sur les tests de dossier racine `a/` et `b/` (`NONE` au lieu de `APPLIES`), puis 2 échecs sur les renommages avec relèvement et abaissement. Les tests ont été écrits avant le code.
+- `uv run --no-project --quiet python -m unittest discover -s tests` : 263 tests, OK (skipped=3).
+- `claude plugin validate .` et `claude plugin validate plugins/forge` : Validation passed.
+- Essayé sur un vrai poste (système, version de Claude Code) : Linux seulement, avec le `git` du poste ; pas essayé sous Windows ni dans une session Claude Code réelle. La clé `size-check` est absente de `usine.md` : mesure de taille sans objet (diff : 81 ajouts, 19 retraits sur 2 fichiers).
+
+## Suite
+
+Rien de prévu.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)

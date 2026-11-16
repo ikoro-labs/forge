@@ -1,0 +1,26 @@
+Ticket #43: forge:qc-gate rejoue les tests ajoutés sur la base : chacun doit y échouer
+
+## Constat
+
+Le rouge d'un test n'est aujourd'hui qu'une déclaration : `forge:coder` recopie une sortie rouge dans **Preuves**, et personne ne la remesure. Un test ajouté qui passe déjà sur le code de la base ne prouve rien du changement (le cas de #25 : un test qui ne pouvait pas échouer sur l'ancien code).
+
+## Ce qui est attendu
+
+- Une sonde de `forge:qc-gate` : dans une copie de la **base**, les fichiers de test ajoutés ou changés par la PR sont posés depuis la tête, puis la suite est lancée. La sonde rend, verbatim, chaque test ajouté ou changé qui **passe** sur la base. Un rejeu impossible se rend `NOT RUN` avec sa commande ; jamais `PASS`.
+- La mesure est faite par un script du plugin (comme `scripts/never_weaken.py`), pour que le mesureur recopie un résultat au lieu de l'interpréter.
+- Deux clés nouvelles, documentées dans `plugins/forge/templates/usine.md` et dans la page de `docs/` qui décrit les clés :
+  - `test-path` : un préfixe de chemin des fichiers de test, une ligne par préfixe ;
+  - `red-replay` : la commande qui lance la suite dans la copie.
+  Une clé absente rend la sonde `sans objet (clé <nom> absente)`.
+- Le rejeu exécute du code de test contre un code qui ne l'attend pas : il tourne sous une limite de mémoire et un délai, sous Linux et sous Windows. Ce qui n'a été éprouvé que sous un système le dit.
+- `forge:qc-conf` lit la sonde : un test de critère qui passe sur la base sans justification dans la PR (test de caractérisation, refonte à comportement égal) est un constat ; `BLOCKER` quand il est la seule preuve d'un critère de comportement nouveau, `MINOR` sinon.
+- `docs/agents/usine.md` de ce dépôt déclare les deux clés (`tests/`, et la commande de la suite).
+- Des tests : le script sur un dépôt temporaire (un test qui passe sur la base est rendu, un test rouge sur la base ne l'est pas, une clé absente rend « sans objet »), et des tests de contenu pour la sonde, les clés et la lecture du juge.
+
+## Hors périmètre
+
+- La lecture de la qualité des tests par le juge (tautologique, couplé) : ticket à part. Les deux touchent `qc-conf.md`, dans des sections différentes.
+
+## Décision
+
+Demande de l'humain (`accepting-human`, 2026-10-24) : une sonde qui lance les tests ajoutés contre le code de la base, chacun devant y échouer, au lieu d'un rouge déclaré par le coder.

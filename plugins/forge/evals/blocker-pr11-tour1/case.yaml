@@ -1,0 +1,6 @@
+schema_version: "1.0"
+name: blocker-pr11-tour1
+description: "Rejoue la PR 11 au tour 1 devant forge:qc-conf (un hook qui meurt sur une valeur de configuration mal formée au lieu d'échouer ouvert). Verdict attendu, REJECT: un BLOCKER avéré est dans le diff."
+tags: [blocker, juge]
+context:
+  scaffold_script: scaffold.sh

@@ -1,0 +1,45 @@
+Ticket #5: qc : des changements que l'agent ne fait jamais passer (never-weaken)
+
+## Constat
+
+`protected-path` fait attendre une fusion humaine à toute PR qui touche un chemin listé, mais rien ne dit quels changements l'agent ne doit jamais faire passer : abaisser un statut, retirer une vérification de la CI, élargir une tolérance de comparaison, changer une référence d'étalonnage.
+
+Ce ticket a été recentré au tri : la publication par l'agent d'un chemin délégué est passée dans #8.
+
+## Ce qui est attendu
+
+- Une clé `never-weaken` dans `docs/agents/usine.md`, répétable : `<chemin> | <type> [| <paramètre>]`, avec un jeu fermé de types déterministes sur le diff :
+  - `removed-line` : toute ligne retirée sous le chemin arrête la fusion (une ligne modifiée compte) ; exemple `.github/workflows/ | removed-line` ;
+  - `raised-number` : la valeur capturée par l'expression augmente ; exemple `config/tolerances.toml | raised-number | ^rel_tol = (\S+)` ;
+  - `lowered-rank` : le rang d'un champ baisse selon l'ordre donné ; exemple `docs/fonctions/ | lowered-rank | statut | certifie > valide > brouillon`.
+- La vérification est un script de la bibliothèque standard sous `plugins/forge/scripts/`, que `forge:qc-gate` lance et dont il donne la ligne ; `forge:qc-conf` dit dans son verdict quelle entrée s'applique. Une entrée qui s'applique arrête toujours la fusion par l'agent, même sur ACCEPT : `needs-your-attention`, la raison dans `Attention`.
+- Les valeurs se coupent au premier ` | ` par le helper `split_value` de `plugins/forge/hooks/usine.py` (le réutiliser s'il existe déjà sur `main`).
+- Clé absente : comportement inchangé. Le gabarit `templates/usine.md` documente la clé.
+- Des tests sur des diffs fictifs : un par type qui affaiblit, un qui n'affaiblit pas.
+
+--- Commentaire du 2026-10-23T20:58:35Z
+## Tri : avis de forge:staff-engineer (RESERVED, décision à `accepting-human`)
+
+Élargir ce qu'un agent fusionne seul est une décision de gouvernance et de sécurité. Recommandation : découper le ticket.
+
+- **(a) `never-weaken`**, prêt une fois la forme fixée (ne retire que des droits) : `<chemin> | <type> [| <paramètre>]`, types fermés et déterministes sur le diff : `removed-line` (`.github/workflows/ | removed-line`), `raised-number` (`config/tolerances.toml | raised-number | ^rel_tol = (\S+)`), `lowered-rank` (`docs/fonctions/ | lowered-rank | statut | certifie > valide > brouillon`). Un script stdlib sous `scripts/`, lancé par `forge:qc-gate`, cité par `forge:qc-conf`. Tests sur des diffs fictifs.
+- **(b) `delegated-path`**, bloqué : le contenu se vérifie (la PR ne touche que le chemin délégué ; `qc-gate` relance la commande sur la tête et le chemin ressort identique), mais l'acteur non : l'agent agit sous le compte de l'humain, et un trailer ou une étiquette se falsifient. Seule preuve : une signature de commit par une identité réservée à l'agent (GitHub App, compte machine ou clé SSH vérifiée par `git verify-commit`), geste du propriétaire. Forme ensuite : `<chemin> | <check1>, <check2> | <commande>`. Un chemin délégué et protégé reste protégé.
+
+### Points communs aux tickets #2, #3, #5 et #6
+
+- **Valeur à plusieurs parties** : le parseur (`plugins/forge/hooks/usine.py:20`) ne lit qu'une valeur entre backticks. Recommandation : ne pas toucher au parseur, couper la valeur au premier ` | ` (puis au suivant s'il faut plus de deux parties), la dernière partie gardant le reste (une commande peut contenir `|`). Un seul helper `split_value(value, parts)` dans `usine.py`, testé dans `tests/test_usine.py` ; une valeur à qui il manque une partie est signalée, jamais complétée.
+- **« Aucune valeur par défaut »** : la règle vise les clés. Un comportement intégré au hook, qu'une clé complète, la respecte (comme le refus de `--force` par `guard_git`), tant que la doc ne présente pas la liste intégrée comme la valeur de la clé.
+
+Statut : `ready-for-human`, en attente de la décision.
+
+--- Commentaire du 2026-10-23T21:01:15Z
+## Décision de l'humain (`accepting-human`, 2026-10-23)
+
+Ticket découpé comme recommandé : il garde `never-weaken`, réécrit ci-dessus, et `delegated-path` passe dans #8, en attente du geste d'identité de l'agent. Le corps d'origine reste dans l'historique des modifications.
+
+Statut : `ready-for-agent`.
+
+--- Commentaire du 2026-10-23T21:02:26Z
+## Consigne de l'humain (2026-10-23)
+
+La PR met à jour le schéma du README : sa source `docs/architecture.excalidraw` et son export `docs/architecture.svg`, cohérents entre eux (`docs/contribuer.md`, « Le schéma et le logo »). Ce qui doit y paraître : la revue `/forge:qc` : un changement `never-weaken` arrête la fusion par l'agent, comme un chemin protégé. La PR dit comment l'export a été produit et ce qui n'a pas été vérifié à l'œil.

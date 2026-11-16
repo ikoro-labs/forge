@@ -1,0 +1,46 @@
+Ticket #3: guard_git refuse à un agent les gestes du propriétaire du dépôt (runners, protection, collaborateurs, secrets, visibilité)
+
+## Constat
+
+`guard_git` refuse à un agent les commandes git qui détruisent ou réécrivent l'historique. Rien, en revanche, n'empêche un agent de faire un geste qui revient au propriétaire du dépôt : enregistrer ou retirer un runner auto-hébergé, changer la protection d'une branche ou un ruleset, ajouter ou retirer un collaborateur, écrire un secret ou une variable d'Actions, changer la visibilité du dépôt ou le supprimer. Un projet qui veut cette garde doit la maintenir dans sa propre copie de `guard_git`, à côté du plugin.
+
+## Ce qui est attendu
+
+- `guard_git` refuse par défaut, à tout agent, une liste de gestes du propriétaire : les écritures (`POST`, `PUT`, `PATCH`, `DELETE`) de `gh api` sur `/collaborators`, `/invitations`, `/branches/<b>/protection`, `/rulesets`, `/actions/runners`, `/actions/secrets`, `/actions/variables` ; `gh secret set` et `delete`, `gh variable set` et `delete` ; `gh repo edit --visibility`, `gh repo delete`, `gh repo rename` ; `config.sh` et `svc.sh` d'un runner.
+- Le refus nomme le geste et dit qu'il revient à l'humain, à lister en fin de compte rendu.
+- La lecture (`GET`) reste toujours permise : un agent peut constater, jamais changer.
+- Une clé `owner-gesture` dans `docs/agents/usine.md`, répétable, ajoute des gestes propres au projet (motif de commande et raison).
+- Des tests par geste refusé, et pour une lecture permise.
+
+--- Commentaire du 2026-10-23T20:58:28Z
+## Tri : avis de forge:staff-engineer (RESERVED, décision à `accepting-human`)
+
+Sans clé `decision-matrix`, la forme revient à l'humain ; la PR touche `plugins/forge/hooks/guard_` (`protected-path`) : un humain la fusionne. Recommandation :
+
+- Ligne : `owner-gesture` : `<préfixe de commande> | <raison>`, comparé mot à mot comme `readonly-command`, après retrait des affectations d'environnement et des options globales de gh (`gh -R o/r secret set` doit correspondre). Une valeur sans raison refuse quand même, en le disant.
+- Le refus intégré est compatible avec la règle sur les clés (comportement du hook, que la clé complète). Il resserre le comportement des projets consommateurs : à dire dans le CHANGELOG (Gestes humains) et dans la page de `docs/` qui décrit `guard_git`.
+- Méthode HTTP : reprendre `_gh_api_reads` (`guard_readonly.py:111-123`) : sans `-X`, `-f`/`-F`/`--input` font un POST ; seuls GET et HEAD passent.
+- Trous à ajouter à la liste : PATCH/DELETE sur `repos/<o>/<r>` lui-même, `/transfer`, `/keys`, `/hooks`, `/environments`, `/actions/permissions`, `gh repo archive`, `config.cmd` (runner Windows, y compris derrière `sudo`/`bash`/`sh`), les mutations GraphQL de protection, ruleset, collaborateur et dépôt (pas toutes les mutations : le plugin s'en sert pour les sous-issues).
+- Refus : « <geste> : geste du propriétaire du dépôt, à lister pour l'humain en fin de compte rendu », suivi de la raison déclarée.
+- Tests : `guard_git` dans le tuple de `tests/test_usine.py:48`, constante `OWNER_KEY = "owner-gesture"` ; un test par geste refusé, un pour un GET, un pour `gh -R ... secret set`.
+- Revient sur un choix consigné (`CHANGELOG.md:388`, docstring de `guard_git.py`).
+- Hors ticket : `hooks.json` lance `guard_git` sans `|| exit 2`, un plantage laisse passer la commande ; décision séparée.
+
+### Points communs aux tickets #2, #3, #5 et #6
+
+- **Valeur à plusieurs parties** : le parseur (`plugins/forge/hooks/usine.py:20`) ne lit qu'une valeur entre backticks. Recommandation : ne pas toucher au parseur, couper la valeur au premier ` | ` (puis au suivant s'il faut plus de deux parties), la dernière partie gardant le reste (une commande peut contenir `|`). Un seul helper `split_value(value, parts)` dans `usine.py`, testé dans `tests/test_usine.py` ; une valeur à qui il manque une partie est signalée, jamais complétée.
+- **« Aucune valeur par défaut »** : la règle vise les clés. Un comportement intégré au hook, qu'une clé complète, la respecte (comme le refus de `--force` par `guard_git`), tant que la doc ne présente pas la liste intégrée comme la valeur de la clé.
+
+Statut : `ready-for-human`, en attente de la décision.
+
+--- Commentaire du 2026-10-23T21:00:44Z
+## Décision de l'humain (`accepting-human`, 2026-10-23)
+
+Les recommandations du commentaire de tri ci-dessus sont retenues telles quelles et font partie du ticket. Les valeurs à plusieurs parties se coupent au premier ` | `, par le helper `split_value` de `plugins/forge/hooks/usine.py`, testé dans `tests/test_usine.py` ; si ce helper existe déjà sur `main`, le réutiliser. Ce ticket revient sur le choix consigné dans le CHANGELOG : la PR le dit dans la zone concernée et corrige la docstring du hook. Chemin protégé : la PR est fusionnée par un humain.
+
+Statut : `ready-for-agent`.
+
+--- Commentaire du 2026-10-23T21:02:24Z
+## Consigne de l'humain (2026-10-23)
+
+La PR met à jour le schéma du README : sa source `docs/architecture.excalidraw` et son export `docs/architecture.svg`, cohérents entre eux (`docs/contribuer.md`, « Le schéma et le logo »). Ce qui doit y paraître : la boîte `guard_git` des hooks PreToolUse, qui refuse désormais les gestes du propriétaire. La PR dit comment l'export a été produit et ce qui n'a pas été vérifié à l'œil.

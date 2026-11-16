@@ -1,0 +1,31 @@
+Ticket #18: guard_git : gestes du propriétaire lus dans un heredoc, GET avec champs permis, scripts de runner seuls refusés
+
+## Constat
+
+Relevé par le juge de #14 (MINOR et NOTE) dans `plugins/forge/hooks/guard_git.py`, gestes du propriétaire :
+
+- Une mutation GraphQL de protection, de ruleset, de collaborateur ou de dépôt écrite dans un heredoc passe sans être lue (`gh api graphql -f query="$(cat <<'EOF' ...)"`, `--input - <<EOF`) : `without_heredoc_bodies` retire le corps avant la recherche. `docs/installation.md` laisse croire la forme couverte.
+- `gh api -X GET repos/o/r/collaborators -f per_page=100` est une lecture et elle est refusée, avec un message qui se contredit.
+- Tout fichier nommé `config.sh` est refusé, pas seulement le script d'un runner : un `scripts/config.sh` de projet devient un « geste du propriétaire ».
+- `gh repo deploy-key -R o/r add` passe (options globales non retirées avant la sous-commande) ; `sudo -iu runner ./svc.sh install`, `bash <<'EOF'` puis `./config.sh`, `env ./config.sh` et `nohup ./svc.sh start` passent sans être déclarés comme limites.
+
+## Ce qui est attendu
+
+- Le nom d'une mutation de propriétaire est cherché aussi dans le corps d'un heredoc relié à `gh api graphql` (stdin ou substitution), et dans un `-F query=@fichier` ou `--input fichier` quand le fichier est lisible ; sinon la forme est refusée par prudence si elle vise `graphql`, ou déclarée comme limite dans `docs/installation.md` qui ne la dit plus couverte.
+- Un `-X GET` explicite (ou `--method GET`) reste une lecture même avec `-f`/`-F` : seuls `GET` et `HEAD` explicites ou implicites sans champs passent, et le message de refus ne dit plus « GET ».
+- Les scripts de runner ne sont refusés que s'ils sont ceux d'un runner : `config.sh`, `config.cmd` ou `svc.sh` dans un dossier qui contient aussi `run.sh`/`run.cmd` et `bin/Runner.Listener`, ou appelés avec un argument propre au runner (`--url`, `--token`, `install`, `uninstall`, `start`, `stop`) ; sinon ils passent.
+- Les options globales de gh sont retirées avant la sous-commande de `deploy-key` ; les wrappers `sudo` avec option collée, `env`, `nohup` et un heredoc vers un shell sont lus, ou déclarés comme limites.
+- Un test par cas, dans les deux sens (refusé, permis).
+
+Chemin protégé (`plugins/forge/hooks/guard_`) : un humain fusionne.
+
+## Décision
+
+Décision de l'humain (`accepting-human`, 2026-10-24) : corriger comme le juge le recommande, en préférant refuser une forme non lue qui vise `graphql` plutôt que la laisser passer.
+
+--- Commentaire du 2026-10-23T23:01:39Z
+Reporté depuis le verdict de #22 (`guard_git` échoue fermé), MINOR et NOTE qui touchent le même code :
+
+- **Message d'un échec avant `guarded_main`** (`plugins/forge/hooks/hooks.json`) : quand `uv` manque ou qu'un import casse, la commande est bien refusée par `|| exit 2`, mais l'agent ne voit que `uv: command not found` ou une trace, sans « refused as a precaution ». Une forme `|| { echo "guard_git failed ..." >&2; exit 2; }` le couvrirait (chemin protégé, fusion humaine).
+- **Test non isolé** (`tests/test_guard_git.py`, `test_a_refusal_of_a_rule_is_not_reworded_as_a_failure`) : il appelle le vrai `main()`, qui lance `git rev-parse` avec le `HOME` réel et, après #14, lit `CLAUDE_PROJECT_DIR`. À isoler comme le veut `.claude/rules/forge.md` §Tests.
+- **Prose** (`.claude/rules/forge.md`) : « Un garde (`guard_git`, `guard_coder`, `guard_readonly`) vaut refus quand il échoue » laisse croire que tout `guard_*` échoue fermé ; `guard_pause` échoue ouvert. À dire.

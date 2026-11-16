@@ -1,0 +1,666 @@
+diff --git a/README.md b/README.md
+index 861098d..251134c 100644
+--- a/README.md
++++ b/README.md
+@@ -56,7 +56,7 @@ ne fusionne une PR rouge, ou ne sort de son rôle.
+ 
+ | Hook | Ce qu'il garde |
+ | --- | --- |
+-| `guard_git` | pas de commit ni de push sur `main`, pas de `--force`, pas de fusion d'une PR dont un check n'est pas vert |
++| `guard_git` | pas de commit ni de push sur `main`, pas de `--force`, pas de fusion d'une PR dont un check n'est pas vert, pas de geste du propriétaire du dépôt (runners, protection, collaborateurs, secrets, visibilité) |
+ | `guard_coder` | le coder ne fusionne pas, ne relit pas, ne ferme pas de ticket |
+ | `guard_readonly` | les juges et les décideurs lisent, n'écrivent jamais |
+ | `guard_pause` | tant que `.claude/PAUSED` existe, aucun agent n'est lancé |
+diff --git a/docs/installation.md b/docs/installation.md
+index 8669ff9..65249a6 100644
+--- a/docs/installation.md
++++ b/docs/installation.md
+@@ -103,6 +103,29 @@ sans ses commandes de porte ni sa grille, `/forge:qc` rend des sondes « sans ob
+ qu'une revue configurée, et une clé qui pointe un chemin disparu donne un `NOT RUN` à chaque PR
+ jusqu'à sa correction.
+ 
++## Les gestes du propriétaire du dépôt
++
++`guard_git` refuse à tout agent les gestes qui reviennent au propriétaire du dépôt, et le refus
++dit que l'humain les fait et que l'agent les liste en fin de compte rendu. La liste intégrée :
++
++- les écritures de `gh api` (toute méthode sauf `GET` et `HEAD`, comme `guard_readonly` les lit) sur
++  les collaborateurs, les invitations, la protection d'une branche, les rulesets, les runners, les
++  secrets et variables d'Actions, ses permissions, les clés de déploiement, les webhooks, les
++  environnements, le transfert, et sur le dépôt lui-même (`PATCH`, `DELETE`) ;
++- les mutations GraphQL de protection de branche, de ruleset, de collaborateur et de dépôt, mais
++  pas les autres : le plugin s'en sert pour les sous-issues ;
++- `gh secret` et `gh variable` (`set`, `delete`), `gh repo` (`delete`, `rename`, `archive`,
++  `edit --visibility`, `deploy-key add` et `delete`) ;
++- `config.sh`, `config.cmd` et `svc.sh` d'un runner, aussi derrière `sudo`, `bash`, `sh` ou
++  `cmd /c` (`svc.sh status` reste une lecture).
++
++La lecture passe toujours. Un projet ajoute ses gestes avec la clé `owner-gesture` de
++`docs/agents/usine.md`, une ligne `<préfixe de commande> | <raison>` chacune ; sans la clé, la liste
++intégrée s'applique seule. Ce comportement resserre celui des projets qui gardaient ces gestes dans
++leurs propres hooks : ceux-ci peuvent rester, ils tournent à côté. Cette garde protège d'un
++accident, pas d'une intention : un wrapper (`env gh`, `/usr/bin/gh`) et une mutation GraphQL lue
++dans un fichier (`--input`, `query=@fichier`) ne sont pas lus.
++
+ ## Compléter ou remplacer, sans éditer le plugin
+ 
+ - **Un complément** est un fichier du projet : ses skills de domaine, son arbitre du métier, ses
+diff --git a/plugins/forge/hooks/guard_git.py b/plugins/forge/hooks/guard_git.py
+index f0bdf00..d10e853 100644
+--- a/plugins/forge/hooks/guard_git.py
++++ b/plugins/forge/hooks/guard_git.py
+@@ -21,8 +21,18 @@ on purpose.
+ The branch that matters is the one of the directory git acts on: `cd <dir> &&` and `git -C
+ <dir>` move it, so each command is judged against the branch checked out there.
+ 
+-A project's own gestures (runners, protection, labels reserved to a human) are not here: the
+-project keeps them in its own `.claude/settings.json` hooks, which run beside this one.
++Also refused, to every agent, are the gestures of the owner of the repository: a write by
++`gh api` (any method but GET and HEAD) on collaborators, invitations, branch protection,
++rulesets, runners, secrets, variables, Actions permissions, keys, webhooks, environments, a
++transfer or the repository itself; the GraphQL mutations of protection, rulesets, collaborators
++and the repository (the sub-issue mutations the plugin uses are not among them); `gh secret` and
++`gh variable` `set` and `delete`; `gh repo` `delete`, `rename`, `archive`, `edit --visibility`
++and `deploy-key add` and `delete`; the runner scripts `config.sh`, `config.cmd` and `svc.sh`,
++also behind `sudo`, `bash`, `sh` and `cmd /c`. A reading is always allowed. The refusal names the
++gesture and says it is the human's, to list at the end of the report. A project adds its own with
++the `owner-gesture` key of `docs/agents/usine.md`, one `<command prefix> | <reason>` per line;
++the built-in list holds without it. This replaces the earlier choice to leave every owner gesture
++to the project's own hooks.
+ """
+ 
+ from __future__ import annotations
+@@ -33,9 +43,14 @@ import shlex
+ import shutil
+ import subprocess
+ import sys
+-from collections.abc import Callable
++from collections.abc import Callable, Iterable
+ from pathlib import Path, PurePosixPath, PureWindowsPath
+ 
++from usine import load, project_root, split_value
++
++# The project's own owner gestures, one per line: `<command prefix> | <reason>`.
++OWNER_KEY = "owner-gesture"
++
+ # Every external call has a timeout: a hook that hangs blocks the agent's command.
+ TIMEOUT_SECONDS = 20
+ 
+@@ -293,6 +308,195 @@ def read_text_or_none(path: str) -> str | None:
+         return None
+ 
+ 
++# The fields and bodies of `gh api`: any of them makes gh send a POST unless `-X` says otherwise.
++API_FIELDS = frozenset({"-f", "-F", "--field", "--raw-field", "--input"})
++
++
++def _gh_api_reads(args: list[str]) -> bool:
++    """A `gh api` call that gh sends as a GET: no `-X` other than GET, no field, no `--input`."""
++    for index, word in enumerate(args):
++        name, _, value = word.partition("=")
++        if name in API_FIELDS or (name.startswith("-f") or name.startswith("-F")) and len(name) > 2:
++            return False
++        if name in ("-X", "--method"):
++            method = value or (args[index + 1] if index + 1 < len(args) else "")
++            if method.upper() not in ("GET", "HEAD"):
++                return False
++        elif name.startswith("-X") and name[2:].lstrip("=").upper() not in ("GET", "HEAD"):
++            return False
++    return True
++
++
++# The options of `gh api` that take their value as the next word (`--flag=value` is one word).
++API_OPTIONS_WITH_VALUE = frozenset(
++    {"-X", "--method", "-H", "--header", "-f", "-F", "--field", "--raw-field", "--input"}
++    | {"-q", "--jq", "-t", "--template", "--cache", "--hostname", "-p", "--preview"}
++)
++# What follows `repos/<owner>/<repo>/` or `orgs/<org>/` that belongs to the owner: a write there
++# is a human's. Anchored at the start, so a file named `hooks` under `contents/` is not one.
++OWNER_ENDPOINT = re.compile(
++    r"(?:collaborators|invitations|rulesets|hooks|keys|environments|transfer"
++    r"|branches/.+/protection|actions/(?:runners|secrets|variables|permissions)"
++    r"|dependabot/secrets)(?:/|$)"
++)
++OWNER_SCOPE = re.compile(r"^(?:repos/[^/]+/[^/]+|orgs/[^/]+)(?:/(.*))?$")
++# GraphQL mutations that change protection, rulesets, collaborators or the repository itself. The
++# sub-issue mutations the plugin uses (`addSubIssue`...) are not among them.
++OWNER_MUTATION = re.compile(
++    r"\b(?:(?:create|update|delete)(?:BranchProtectionRule|RepositoryRuleset)"
++    r"|(?:update|delete|archive|unarchive|transfer)Repository"
++    r"|\w*(?:add|remove|update|invite|create|delete)\w*Collaborator\w*)\b",
++    re.IGNORECASE,
++)
++
++
++def _api_endpoint(args: list[str]) -> str:
++    index = 0
++    while index < len(args):
++        word = args[index]
++        if word.startswith("-"):
++            index += 2 if word in API_OPTIONS_WITH_VALUE else 1
++            continue
++        return word
++    return ""
++
++
++def _api_method(args: list[str]) -> str:
++    for index, word in enumerate(args):
++        name, _, value = word.partition("=")
++        if name in ("-X", "--method"):
++            return (value or (args[index + 1] if index + 1 < len(args) else "")).upper()
++        if name.startswith("-X") and len(name) > 2:
++            return name[2:].lstrip("=").upper()
++    return "POST"
++
++
++def _api_gesture(args: list[str]) -> str | None:
++    """The owner gesture of a `gh api` call (the words after `api`), or None."""
++    endpoint = _api_endpoint(args).split("?", 1)[0].strip("/")
++    if endpoint.lower() == "graphql":
++        if OWNER_MUTATION.search(" ".join(args)):
++            return "gh api graphql (mutation de protection, de ruleset, de collaborateur ou du dépôt)"
++        return None
++    if _gh_api_reads(args):
++        return None
++    scope = OWNER_SCOPE.match(endpoint)
++    if scope is not None and (
++        (scope.group(1) is None and endpoint.startswith("repos/"))
++        or (scope.group(1) and OWNER_ENDPOINT.match(scope.group(1)))
++    ):
++        return f"gh api {_api_method(args)} {endpoint}"
++    return None
++
++
++# The gestures that belong to the owner of the repository, which no agent makes: a human does,
++# and the agent lists them at the end of its report. `(group, verb)` of a gh call.
++OWNER_GH_GESTURES = frozenset(
++    {("secret", "set"), ("secret", "delete"), ("secret", "remove")}
++    | {("variable", "set"), ("variable", "delete"), ("variable", "remove")}
++    | {("repo", "delete"), ("repo", "rename"), ("repo", "archive")}
++    | {("repo", "deploy-key")}
++)
++
++
++def _gh_gesture(words: list[str]) -> str | None:
++    """The owner gesture of a gh call, named as the agent typed it, or None."""
++    act = gh_act(words)
++    if act is None:
++        return None
++    group, verb, rest = act
++    if (group, verb) == ("repo", "deploy-key"):
++        action = next((word for word in rest if not word.startswith("-")), "")
++        return f"gh repo deploy-key {action}" if action in ("add", "delete") else None
++    if (group, verb) in OWNER_GH_GESTURES:
++        return f"gh {group} {verb}"
++    if (group, verb) == ("repo", "edit") and any(
++        word == "--visibility" or word.startswith("--visibility=") for word in rest
++    ):
++        return "gh repo edit --visibility"
++    return None
++
++
++# The scripts of a self-hosted runner: `config` registers or removes it, `svc` installs and starts
++# it as a service. The wrappers they are run behind, and the options of those that take a value.
++RUNNER_SCRIPT = re.compile(r"(?:^|[/\\])(config\.(?:sh|cmd)|svc\.sh)$", re.IGNORECASE)
++# shlex reads a backslash as an escape, so `.\config.cmd` and `C:\runner\config.cmd` reach the hook
++# with their separators gone: a word that starts with `.` or a drive letter still names the script.
++MANGLED_RUNNER_SCRIPT = re.compile(r"^(?:\.|[A-Za-z]:).*?(config\.(?:sh|cmd)|svc\.sh)$", re.IGNORECASE)
++SHELLS = frozenset({"bash", "sh", "zsh", "dash"})
++WRAPPERS = SHELLS | {"sudo", "cmd", "cmd.exe", "powershell", "pwsh", "powershell.exe", "pwsh.exe"}
++SUDO_OPTIONS_WITH_VALUE = frozenset({"-u", "-g", "-h", "-p", "-C", "-D", "-R", "-T", "-U"})
++
++
++def _runner_gesture(words: list[str]) -> str | None:
++    index = 0
++    while index < len(words):
++        word = words[index]
++        if word in WRAPPERS:
++            if word in SHELLS and "-c" in words[index + 1 :]:
++                position = words.index("-c", index + 1) + 1
++                if position < len(words):
++                    return _commands_gesture(words[position])
++            index += 1
++            while index < len(words) and (
++                words[index].startswith("-") or (word.startswith("cmd") and words[index] == "/c")
++            ):
++                index += 2 if word == "sudo" and words[index] in SUDO_OPTIONS_WITH_VALUE else 1
++            continue
++        match = RUNNER_SCRIPT.search(word) or MANGLED_RUNNER_SCRIPT.match(word)
++        if match is None:
++            return None
++        script = match.group(1).lower()
++        if script == "svc.sh" and words[index + 1 : index + 2] == ["status"]:
++            return None
++        return script
++    return None
++
++
++def _commands_gesture(command: str) -> str | None:
++    """The owner gesture of the first simple command of `command` that makes one."""
++    for words in segments(command):
++        if gesture := owner_gesture(words):
++            return gesture
++    return None
++
++
++def owner_gesture(words: list[str]) -> str | None:
++    """The owner gesture a simple command makes, named for the refusal, or None."""
++    call = gh_command(words)
++    if call and call[0] == "api":
++        return _api_gesture(call[1:])
++    return _gh_gesture(words) or _runner_gesture(words)
++
++
++def _owner_refusal(gesture: str) -> str:
++    return (
++        f"{gesture} : geste du propriétaire du dépôt, à lister pour l'humain en fin de compte rendu"
++    )
++
++
++def _declared_gesture(words: list[str], declared: Iterable[str]) -> str | None:
++    """The refusal of the first `owner-gesture` line whose prefix opens the command, or None.
++
++    Compared word by word, after the environment assignments and gh's global options, so that
++    `gh -R o/r label delete` matches `gh label delete`. A line without a reason still refuses,
++    and says so: it is never completed.
++    """
++    call = gh_command(words)
++    normalised = ["gh", *call] if call is not None else words
++    for value in declared:
++        parts = split_value(value, 2)
++        prefix_text = parts[0] if parts else re.sub(r"\s*\|\s*$", "", value).strip()
++        try:
++            prefix = shlex.split(prefix_text)
++        except ValueError:
++            prefix = prefix_text.split()
++        if prefix and normalised[: len(prefix)] == prefix:
++            reason = parts[1] if parts else "la ligne `owner-gesture` de ce geste est sans raison"
++            return f"{_owner_refusal(prefix_text)} : {reason}"
++    return None
++
++
+ def refusal(
+     command: str,
+     branch: str | Callable[[str | None], str],
+@@ -300,13 +504,16 @@ def refusal(
+     cwd: str | None = None,
+     read_text: Callable[[str], str | None] = read_text_or_none,
+     description: Callable[[str | None], str] = lambda _pr: "",
++    owner_gestures: Iterable[str] = (),
+ ) -> str | None:
+     """Why the command is refused, or None when it may run.
+ 
+     `branch` is the branch of a directory: a callable is asked about the directory each git
+     command acts on (after `cd` and `-C`); a string is that branch wherever git runs.
+     `description` is the body of a PR, by its number (None for the current branch's PR).
++    `owner_gestures` are the values of the project's `owner-gesture` key, beside the built-in list.
+     """
++    declared = list(owner_gestures)
+     branch_of = branch if callable(branch) else (lambda _directory: branch)
+ 
+     def branch_where(directory: str | None) -> str:
+@@ -341,6 +548,10 @@ def refusal(
+                 switched = True
+             if reason := _git_refusal(args, branch_where(_directory_of(args, here)), switched):
+                 return reason
++        if gesture := owner_gesture(words):
++            return _owner_refusal(gesture)
++        if declared_refusal := _declared_gesture(words, declared):
++            return declared_refusal
+         act = gh_act(words)
+         if act is not None and act[:2] == ("pr", "merge"):
+             rest = act[2]
+@@ -417,10 +628,13 @@ def main() -> int:
+     event = json.load(sys.stdin)
+     command = str(event.get("tool_input", {}).get("command", ""))
+     cwd = event.get("cwd")
+-    if "git" not in command and "gh" not in command:
+-        return 0
+     reason = refusal(
+-        command, current_branch, checks_green_via_gh(cwd), cwd, description=description_via_gh(cwd)
++        command,
++        current_branch,
++        checks_green_via_gh(cwd),
++        cwd,
++        description=description_via_gh(cwd),
++        owner_gestures=load(project_root(event)).get(OWNER_KEY, []),
+     )
+     if reason is None:
+         return 0
+diff --git a/plugins/forge/hooks/guard_readonly.py b/plugins/forge/hooks/guard_readonly.py
+index 71e3555..facd7d9 100644
+--- a/plugins/forge/hooks/guard_readonly.py
++++ b/plugins/forge/hooks/guard_readonly.py
+@@ -27,6 +27,7 @@ from guard_git import (
+     GLOBAL_OPTIONS_WITH_VALUE,
+     UNKNOWN,
+     _commands,
++    _gh_api_reads,
+     _moved,
+     _subcommand_and_args,
+     gh_act,
+@@ -70,7 +71,6 @@ BRANCH_LIST_MODE = frozenset(
+     {"-a", "-r", "--all", "--remotes", "--list", "-l", "--points-at"}
+     | {"--contains", "--no-contains", "--merged", "--no-merged"}
+ )
+-API_FIELDS = frozenset({"-f", "-F", "--field", "--raw-field", "--input"})
+ 
+ 
+ def _words(item: list[str]) -> list[str]:
+@@ -108,21 +108,6 @@ def split_redirections(words: list[str]) -> tuple[list[str], list[str]]:
+     return plain, written
+ 
+ 
+-def _gh_api_reads(args: list[str]) -> bool:
+-    """A `gh api` call that gh sends as a GET: no `-X` other than GET, no field, no `--input`."""
+-    for index, word in enumerate(args):
+-        name, _, value = word.partition("=")
+-        if name in API_FIELDS or (name.startswith("-f") or name.startswith("-F")) and len(name) > 2:
+-            return False
+-        if name in ("-X", "--method"):
+-            method = value or (args[index + 1] if index + 1 < len(args) else "")
+-            if method.upper() not in ("GET", "HEAD"):
+-                return False
+-        elif name.startswith("-X") and name[2:].lstrip("=").upper() not in ("GET", "HEAD"):
+-            return False
+-    return True
+-
+-
+ def _gh_reads(words: list[str]) -> bool:
+     call = gh_command(words)
+     if call is None:
+diff --git a/plugins/forge/templates/usine.md b/plugins/forge/templates/usine.md
+index dd91fad..b865401 100644
+--- a/plugins/forge/templates/usine.md
++++ b/plugins/forge/templates/usine.md
+@@ -211,6 +211,18 @@ calculateur du projet, par exemple), chacune comme un préfixe. Une par ligne.
+ 
+ - `readonly-command` : `<uv run python -m scripts.calcul>`
+ 
++Les gestes du propriétaire du dépôt propres au projet, que `guard_git` refuse à tout agent en plus
++de sa liste intégrée (écritures de `gh api` sur les collaborateurs, protections de branche,
++rulesets, runners, secrets, variables, clés, webhooks et dépôt ; `gh secret`, `gh variable`,
++`gh repo` ; les scripts d'un runner ; les mutations GraphQL de protection, de ruleset, de
++collaborateur et de dépôt). Une ligne `<préfixe de commande> | <raison>` par geste. Le préfixe se
++compare mot à mot au début de la commande, après les affectations d'environnement et les options
++globales de gh (`gh -R o/r label delete` correspond à `gh label delete`) ; la raison est reprise
++dans le refus. Une ligne sans raison refuse quand même, et le dit. La lecture (`GET`, `HEAD`)
++passe toujours. Sans la clé, seule la liste intégrée s'applique. Une par ligne.
++
++- `owner-gesture` : `<gh label delete | les étiquettes sont posées par le propriétaire>`
++
+ Les formateurs lancés après chaque écriture d'un agent (Edit, Write, MultiEdit) : une ligne
+ `<motif> | <commande>` par formateur. Le motif se compare au chemin relatif entier, en POSIX, casse
+ comprise : `**/` (des dossiers, ou aucun), `*` et `?` (jamais un `/`), `{a,b}` (non imbriqué), tout
+diff --git a/tests/test_guard_git.py b/tests/test_guard_git.py
+index e352947..1778118 100644
+--- a/tests/test_guard_git.py
++++ b/tests/test_guard_git.py
+@@ -1,3 +1,5 @@
++import io
++import json
+ import sys
+ import tempfile
+ import unittest
+@@ -6,7 +8,7 @@ from pathlib import Path
+ from unittest import mock
+ 
+ import support  # noqa: F401
+-from guard_git import description_via_gh, native_directory, refusal
++from guard_git import OWNER_KEY, description_via_gh, main, native_directory, refusal
+ 
+ 
+ def never_green(_pr: str | None) -> bool:
+@@ -234,5 +236,239 @@ class SplitTicket(unittest.TestCase):
+         self.assertIn("closes #322", verdict or "")
+ 
+ 
++OWNER_REFUSAL = "geste du propriétaire du dépôt, à lister pour l'humain en fin de compte rendu"
++OWNER_KEY_VALUE = "gh label delete | les étiquettes sont au propriétaire"
++
++
++def owner_refused(command: str, lines: list[str]) -> str | None:
++    return refusal(command, "feat/x", always_green, owner_gestures=lines)
++
++
++class OwnerGestures(unittest.TestCase):
++    """Les gestes du propriétaire du dépôt, refusés à tout agent."""
++
++    def test_the_gh_commands_of_the_owner_are_refused_and_named(self) -> None:
++        cases = [
++            ("gh secret set TOKEN --body x", "gh secret set"),
++            ("gh secret delete TOKEN", "gh secret delete"),
++            ("gh variable set NAME --body x", "gh variable set"),
++            ("gh variable delete NAME", "gh variable delete"),
++            ("gh repo edit --visibility public", "gh repo edit --visibility"),
++            ("gh repo edit o/r --visibility=private --accept-visibility-change-consequences",
++             "gh repo edit --visibility"),
++            ("gh repo delete o/r --yes", "gh repo delete"),
++            ("gh repo rename new-name", "gh repo rename"),
++            ("gh repo archive o/r --yes", "gh repo archive"),
++            ("gh repo deploy-key add key.pub", "gh repo deploy-key add"),
++            ("cd /work && gh secret set X", "gh secret set"),
++            ("echo ok; gh variable set X --body 1", "gh variable set"),
++        ]
++        for command, gesture in cases:
++            with self.subTest(command=command):
++                verdict = refused(command)
++                self.assertIn(gesture, verdict or "")
++                self.assertIn(OWNER_REFUSAL, verdict or "")
++
++    def test_gh_global_options_and_environment_do_not_hide_a_gesture(self) -> None:
++        for command in (
++            "gh -R o/r secret set TOKEN --body x",
++            "gh --repo=o/r secret set TOKEN",
++            "GH_TOKEN=x gh -R o/r variable delete NAME",
++            "gh secret -R o/r set TOKEN",
++        ):
++            with self.subTest(command=command):
++                self.assertIn(OWNER_REFUSAL, refused(command) or "")
++
++    def test_the_reads_of_the_same_commands_stay_allowed(self) -> None:
++        for command in (
++            "gh secret list",
++            "gh variable list",
++            "gh variable get NAME",
++            "gh repo view o/r",
++            "gh repo edit --description 'x'",
++            "gh repo list",
++        ):
++            with self.subTest(command=command):
++                self.assertIsNone(refused(command))
++
++    def test_a_write_by_gh_api_on_an_owner_endpoint_is_refused(self) -> None:
++        cases = [
++            "gh api -X PUT repos/o/r/collaborators/bob -f permission=push",
++            "gh api --method DELETE /repos/o/r/collaborators/bob",
++            "gh api -X DELETE repos/o/r/invitations/12",
++            "gh api -X PUT repos/o/r/branches/main/protection --input p.json",
++            "gh api -X PUT repos/o/r/branches/release/1.x/protection -f x=1",
++            "gh api repos/o/r/rulesets -f name=x",
++            "gh api -X PUT repos/o/r/rulesets/9 --input r.json",
++            "gh api -X POST repos/o/r/actions/runners/registration-token",
++            "gh api -X DELETE repos/o/r/actions/runners/4",
++            "gh api -X PUT repos/o/r/actions/secrets/TOKEN -f encrypted_value=x",
++            "gh api -X DELETE repos/o/r/actions/variables/NAME",
++            "gh api -X POST repos/o/r/actions/variables -f name=A -f value=1",
++            "gh api -X PATCH repos/o/r -f private=false",
++            "gh api -X DELETE repos/o/r",
++            "gh api -X POST repos/o/r/transfer -f new_owner=x",
++            "gh api -X POST repos/o/r/keys -f key=k",
++            "gh api -X POST repos/o/r/hooks --input h.json",
++            "gh api -X PUT repos/o/r/environments/prod",
++            "gh api -X PUT repos/o/r/actions/permissions -F enabled=true",
++            "gh api -X PUT orgs/o/actions/secrets/TOKEN",
++            "gh api -XDELETE repos/o/r/collaborators/bob",
++            "gh -R o/r api -X DELETE repos/{owner}/{repo}/collaborators/bob",
++            "gh api repos/o/r/collaborators/bob?permission=push -X PUT",
++            "gh api -H 'Accept: application/json' -X PUT repos/o/r/rulesets/1",
++        ]
++        for command in cases:
++            with self.subTest(command=command):
++                verdict = refused(command)
++                self.assertIn(OWNER_REFUSAL, verdict or "")
++                self.assertIn("gh api", verdict or "")
++
++    def test_a_read_by_gh_api_stays_allowed_even_on_an_owner_endpoint(self) -> None:
++        for command in (
++            "gh api repos/o/r/collaborators",
++            "gh api -X GET repos/o/r/rulesets",
++            "gh api --method HEAD repos/o/r/branches/main/protection",
++            "gh api repos/o/r/actions/secrets",
++            "gh api repos/o/r/actions/runners --jq '.runners[].name'",
++            "gh api repos/o/r",
++            "gh api repos/o/r/pulls/3 -X GET -f state=open",
++        ):
++            with self.subTest(command=command):
++                self.assertIsNone(refused(command))
++
++    def test_a_write_by_gh_api_outside_the_owner_endpoints_is_left_alone(self) -> None:
++        for command in (
++            "gh api -X POST repos/o/r/issues/3/comments -f body=x",
++            "gh api -X PUT repos/o/r/contents/plugins/forge/hooks/x.py -f message=m",
++            "gh api -X PATCH repos/o/r/issues/3 -f state=closed",
++            "gh api -X POST repos/o/r/git/refs -f ref=refs/heads/x",
++        ):
++            with self.subTest(command=command):
++                self.assertIsNone(refused(command))
++
++    def test_graphql_mutations_of_protection_ruleset_collaborator_and_repository_are_refused(
++        self,
++    ) -> None:
++        for mutation in (
++            'createBranchProtectionRule(input: {pattern: "main"})',
++            "updateBranchProtectionRule(input: {})",
++            'deleteBranchProtectionRule(input: {id: "x"})',
++            "createRepositoryRuleset(input: {})",
++            "updateRepositoryRuleset(input: {})",
++            "deleteRepositoryRuleset(input: {})",
++            'updateRepository(input: {repositoryId: "x", hasIssuesEnabled: false})',
++            'deleteRepository(input: {repositoryId: "x"})',
++            'archiveRepository(input: {repositoryId: "x"})',
++            "transferRepository(input: {})",
++            "addRepositoryCollaborator(input: {})",
++            "removeRepositoryCollaborator(input: {})",
++        ):
++            command = f"gh api graphql -f query='mutation {{ {mutation} {{ clientMutationId }} }}'"
++            with self.subTest(mutation=mutation):
++                verdict = refused(command)
++                self.assertIn(OWNER_REFUSAL, verdict or "")
++                self.assertIn("gh api graphql", verdict or "")
++
++    def test_the_runner_scripts_are_refused_behind_a_wrapper_too(self) -> None:
++        for command in (
++            "./config.sh --url https://github.com/o/r --token T",
++            "cd actions-runner && ./config.sh remove --token T",
++            ".\\config.cmd --url https://github.com/o/r --token T",
++            "config.cmd remove",
++            "sudo ./svc.sh install",
++            "sudo -u runner ./svc.sh start",
++            "sudo bash ./config.sh --token T",
++            "bash config.sh --token T",
++            "sh -x ./svc.sh uninstall",
++            "cmd /c config.cmd --token T",
++            "C:\\actions-runner\\config.cmd --token T",
++            "/home/runner/actions-runner/svc.sh stop",
++        ):
++            with self.subTest(command=command):
++                verdict = refused(command)
++                self.assertIn(OWNER_REFUSAL, verdict or "")
++                self.assertRegex(verdict or "", r"config\.(sh|cmd)|svc\.sh")
++
++    def test_a_runner_status_and_other_scripts_stay_allowed(self) -> None:
++        for command in (
++            "sudo ./svc.sh status",
++            "./run.sh",
++            "bash ./build.sh",
++            "cat config.sh",
++            "grep -n token config.cmd",
++            "sudo apt update",
++        ):
++            with self.subTest(command=command):
++                self.assertIsNone(refused(command))
++
++    def test_a_gesture_the_project_declares_is_refused_with_its_reason(self) -> None:
++        lines = [OWNER_KEY_VALUE, "uv run python -m scripts.release | la publication est humaine"]
++        for command in (
++            "gh label delete bug",
++            "gh -R o/r label delete bug",
++            "GH_TOKEN=x gh --repo=o/r label delete bug",
++            "cd /work && gh label delete bug --yes",
++            "uv run python -m scripts.release --tag v1",
++        ):
++            with self.subTest(command=command):
++                verdict = owner_refused(command, lines)
++                self.assertIn(OWNER_REFUSAL, verdict or "")
++                self.assertRegex(verdict or "", "les étiquettes sont au propriétaire|publication")
++
++    def test_a_declared_prefix_is_compared_word_by_word(self) -> None:
++        for command in ("gh label deleted bug", "gh label list", "gh issue delete 3", "ghx label delete"):
++            with self.subTest(command=command):
++                self.assertIsNone(owner_refused(command, [OWNER_KEY_VALUE]))
++
++    def test_a_declared_gesture_without_a_reason_still_refuses_and_says_so(self) -> None:
++        for value in ("gh label delete", "gh label delete | ", "gh label delete |"):
++            with self.subTest(value=value):
++                verdict = owner_refused("gh label delete bug", [value])
++                self.assertIn(OWNER_REFUSAL, verdict or "")
++                self.assertIn("sans raison", verdict or "")
++
++    def test_a_declared_gesture_with_no_command_refuses_nothing(self) -> None:
++        self.assertIsNone(owner_refused("gh label delete bug", [" | une raison", ""]))
++
++    def test_the_hook_reads_the_gestures_from_the_project_configuration(self) -> None:
++        event = json.dumps({"tool_input": {"command": "gh label delete bug"}, "cwd": "/nowhere"})
++
++        def run(project: str | None) -> tuple[int, str]:
++            env = {"CLAUDE_PROJECT_DIR": project} if project else {}
++            err = io.StringIO()
++            with (
++                mock.patch.dict("os.environ", env, clear=True),
++                mock.patch("sys.stdin", io.StringIO(event)),
++                mock.patch("sys.stderr", err),
++                mock.patch("guard_git.current_branch", lambda _cwd: "feat/x"),
++                mock.patch("guard_git.checks_green_via_gh", lambda _cwd: always_green),
++            ):
++                return main(), err.getvalue()
++
++        with tempfile.TemporaryDirectory() as root:
++            config = Path(root) / "docs" / "agents"
++            config.mkdir(parents=True)
++            (config / "usine.md").write_text(f"- `{OWNER_KEY}` : `{OWNER_KEY_VALUE}`\n", "utf-8")
++            code, message = run(root)
++            self.assertEqual(code, 2)
++            self.assertIn("les étiquettes sont au propriétaire", message)
++        with tempfile.TemporaryDirectory() as root:
++            self.assertEqual(run(root)[0], 0)
++
++    def test_the_sub_issue_mutations_the_plugin_uses_and_graphql_reads_pass(self) -> None:
++        for command in (
++            "gh api graphql -f query='mutation { addSubIssue(input: {issueId: \"a\", "
++            "subIssueId: \"b\"}) { issue { id } } }'",
++            "gh api graphql -f query='mutation { removeSubIssue(input: {}) { issue { id } } }'",
++            "gh api graphql -f query='mutation { reprioritizeSubIssue(input: {}) { id } }'",
++            "gh api graphql -f query='query { repository(owner: \"o\", name: \"r\") { id } }'",
++            "gh api graphql -f query='query { repository(owner: \"o\", name: \"r\") "
++            "{ branchProtectionRules(first: 5) { nodes { pattern } } } }'",
++        ):
++            with self.subTest(command=command):
++                self.assertIsNone(refused(command))
++
++
+ if __name__ == "__main__":
+     unittest.main()
+diff --git a/tests/test_usine.py b/tests/test_usine.py
+index 6a188e1..5ebe9b7 100644
+--- a/tests/test_usine.py
++++ b/tests/test_usine.py
+@@ -68,7 +68,7 @@ class Config(unittest.TestCase):
+             if "templates" not in path.parts:
+                 for key in CITED.findall(path.read_text(encoding="utf-8")):
+                     cited.setdefault(key, str(path.relative_to(support.PLUGIN)))
+-        for name in ("after_write", "guard_readonly"):
++        for name in ("after_write", "guard_git", "guard_readonly"):
+             text = (support.PLUGIN / "hooks" / f"{name}.py").read_text(encoding="utf-8")
+             for key in HOOK_KEY.findall(text):
+                 cited.setdefault(key, f"hooks/{name}.py")
