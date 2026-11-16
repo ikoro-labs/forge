@@ -118,8 +118,9 @@ refuse un DOCTYPE ou une entité, un rapport étant écrit par du code que la PR
 tests que la PR ajoute ou change par les lignes du diff et la place de chaque nom de test dans le
 fichier de la tête, et rend chaque test passant sur la base. Ce repérage lit le texte, pas le langage :
 un test dont le nom n'est pas écrit dans le fichier, ou un assistant changé à côté, n'est pas bien
-placé, et un test qu'il ne place pas compte comme changé. Il n'a été essayé que sur un lanceur Python
-`unittest` écrit pour le test, jamais sur la sortie d'un vrai `pytest` ou d'un lanceur d'un autre langage.
+placé, et un test qu'il ne place pas compte comme changé. Le rejeu complet n'a été essayé que sur un lanceur Python
+`unittest` écrit pour le test ; le rapport d'un vrai `pytest` a été lu et repéré sur un fichier d'essai, mais
+n'a pas été rejoué de bout en bout, et aucun lanceur d'un autre langage n'a été essayé.
 Ce dépôt n'a pas de rapport JUnit pour `unittest` : sa clé `red-replay` reste au grain du fichier.
 
 Deux clés, `run-limits` (`<mémoire en Mo> | <délai en secondes>`) et `run-budget` (`<Mo disponibles au

@@ -213,7 +213,7 @@ class GrainIsDocumented(unittest.TestCase):
         self.assertIn("`{report}`", page)
         self.assertIn("junit_report.py", page)
         self.assertIn("un test qu'il ne place pas compte comme changé", page)
-        self.assertIn("jamais sur la sortie d'un vrai `pytest`", page)
+        self.assertIn("n'a pas été rejoué de bout en bout", page)
 
     def test_the_gate_and_the_judge_read_the_grain_of_the_test(self) -> None:
         """No F-NNNN: ticket #43, grain du test: la sonde et le juge lisent les lignes `(grain du test)`."""
