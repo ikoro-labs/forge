@@ -70,9 +70,11 @@ FAKE_TOOL = textwrap.dedent(
         counter = state / f"count-{{tool}}-{{index}}"
         seen = int(counter.read_text()) if counter.exists() else 0
         counter.write_text(str(seen + 1))
-        stdout = rule.get("stdout", "")
+        stdout, code = rule.get("stdout", ""), rule.get("code", 0)
         if isinstance(stdout, list):
             stdout = stdout[min(seen, len(stdout) - 1)]
+        if isinstance(code, list):
+            code = code[min(seen, len(code) - 1)]
         if rule.get("mkdir"):
             Path(args[-1]).mkdir(parents=True, exist_ok=True)
         time.sleep(rule.get("sleep", 0))
@@ -82,13 +84,27 @@ FAKE_TOOL = textwrap.dedent(
             shutil.copytree(args[args.index("-C") + 1], target)
         sys.stdout.write(stdout)
         sys.stderr.write(rule.get("stderr", ""))
-        sys.exit(rule.get("code", 0))
+        sys.exit(code)
     """
 )
 
 REPO = "essai-labs/forge-essai"
 TICKET_URL = f"https://github.com/{REPO}/issues/12\n"
 posix_only = unittest.skipUnless(os.name == "posix", "les exécutables factices sont des scripts à shebang")
+
+
+def pr(number: int = 13, body: str = "Closes #12", state: str = "OPEN", branch: str = "feat/essai") -> dict:
+    return {"number": number, "title": "feat: écrire le fichier", "body": body, "state": state, "headRefName": branch}
+
+
+def prs(*found: dict) -> str:
+    """What `gh pr list --json` prints."""
+    return json.dumps(list(found))
+
+
+def checks(*found: tuple[str, str]) -> str:
+    """What `gh pr checks --json name,bucket` prints."""
+    return json.dumps([{"name": name, "bucket": bucket} for name, bucket in found])
 
 
 def scenario(**changes: list[dict]) -> dict[str, list[dict]]:
@@ -99,8 +115,13 @@ def scenario(**changes: list[dict]) -> dict[str, list[dict]]:
             {"has": ["repo", "clone"], "mkdir": True},
             {"has": ["label", "create"]},
             {"has": ["issue", "create"], "stdout": TICKET_URL},
+            {"has": ["pr", "list"], "stdout": prs(pr())},
+            {"has": ["pr", "checks"], "stdout": checks(("tests", "pass"), ("lint", "pass"))},
         ],
-        "git": [{"has": ["commit"], "snapshot": True}],
+        "git": [
+            {"has": ["commit"], "snapshot": True},
+            {"has": ["rev-parse", "HEAD"], "stdout": "0123abc\n"},
+        ],
         "claude": [],
     }
     return {tool: [*changes.get(tool, []), *rules] for tool, rules in base.items()}
@@ -389,6 +410,133 @@ class Launch(unittest.TestCase):
         self.assertRegex(out, r"(?m)^ETAPE: budget$")
         self.assertEqual((project.calls("gh"), project.calls("claude")), ([], []))
         self.assertEqual([call for call in project.calls("git") if "push" in call["args"]], [])
+
+
+@posix_only
+class Result(unittest.TestCase):
+    def trial(self, *options: str, **changes: list[dict]) -> tuple[Project, int, str]:
+        project = Project(self, KEYS, scenario(**changes))
+        code, out, _ = project.run(*options)
+        return project, code, out
+
+    def assert_fail_at(self, out: str, stage: str, *words: str) -> None:
+        self.assertRegex(out, r"(?m)^RESULTAT: FAIL$")
+        self.assertRegex(out, rf"(?m)^ETAPE: {stage}$")
+        self.assertNotIn("PASS", out)
+        for word in words:
+            self.assertIn(word, out)
+
+    def test_an_open_pull_request_that_cites_the_ticket_with_green_checks_is_a_pass(self) -> None:
+        """Ticket #70, critère 4 : une PR ouverte qui cite le ticket, aux checks verts, est `PASS`, avec la tête essayée."""
+        _, code, out = self.trial()
+        self.assertEqual(code, 0)
+        self.assertRegex(out, r"(?m)^RESULTAT: PASS$")
+        self.assertRegex(out, r"(?m)^TETE: 0123abc$")
+        self.assertRegex(out, r"(?m)^PR: #13$")
+        self.assertRegex(out, r"(?m)^TICKET: #12$")
+        self.assertNotIn("FAIL", out)
+
+    def test_a_merged_pull_request_is_a_pass_too(self) -> None:
+        """Ticket #70, critère 4 : `forge:qc` fusionne sur ACCEPT : une PR citée et fusionnée vaut une PR ouverte."""
+        _, code, out = self.trial(gh=[{"has": ["pr", "list"], "stdout": prs(pr(state="MERGED"))}])
+        self.assertEqual(code, 0)
+        self.assertRegex(out, r"(?m)^RESULTAT: PASS$")
+
+    def test_the_pull_requests_are_looked_up_by_the_base_branch_of_the_trial(self) -> None:
+        """Ticket #70, critère 4 : les PR de l'essai sont celles qui visent sa branche de base, ouvertes ou non."""
+        project, _, _ = self.trial()
+        (call,) = [c["args"] for c in project.calls("gh") if c["args"][:2] == ["pr", "list"]]
+        self.assertEqual(call[call.index("--base") + 1], "e2e/essai1")
+        self.assertEqual(call[call.index("--state") + 1], "all")
+
+    def test_no_pull_request_is_a_fail_at_pr(self) -> None:
+        """Ticket #70, critère 4 : aucune PR vers la base de l'essai : `FAIL` à l'étape `pr`."""
+        _, code, out = self.trial(gh=[{"has": ["pr", "list"], "stdout": "[]"}])
+        self.assertEqual(code, 1)
+        self.assert_fail_at(out, "pr", "e2e/essai1")
+
+    def test_a_pull_request_closed_without_a_merge_is_a_fail_at_pr(self) -> None:
+        """Ticket #70, critère 4 : une PR fermée sans fusion n'est pas une PR ouverte : `FAIL` à `pr`."""
+        _, code, out = self.trial(gh=[{"has": ["pr", "list"], "stdout": prs(pr(state="CLOSED"))}])
+        self.assertEqual(code, 1)
+        self.assert_fail_at(out, "pr", "#13")
+
+    def test_a_pull_request_that_does_not_cite_the_ticket_is_a_fail_at_citation(self) -> None:
+        """Ticket #70, critère 4 : une PR qui ne cite pas le ticket : `FAIL` à `citation`, `#123` n'est pas `#12`."""
+        for body in ("rien", "Closes #99", "Closes #123", "Closes #1"):
+            with self.subTest(body=body):
+                _, code, out = self.trial(gh=[{"has": ["pr", "list"], "stdout": prs(pr(body=body))}])
+                self.assertEqual(code, 1)
+                self.assert_fail_at(out, "citation", "#13")
+
+    def test_the_title_can_cite_the_ticket(self) -> None:
+        """Ticket #70, critère 4 : la citation se lit dans le corps ou dans le titre."""
+        cited = {**pr(body=""), "title": "feat: écrire le fichier (Refs #12)"}
+        _, code, out = self.trial(gh=[{"has": ["pr", "list"], "stdout": prs(cited)}])
+        self.assertEqual(code, 0)
+        self.assertRegex(out, r"(?m)^RESULTAT: PASS$")
+
+    def test_the_latest_pull_request_that_cites_the_ticket_is_the_one_judged(self) -> None:
+        """Ticket #70, critère 4 : plusieurs PR citent le ticket (tours de correction) : la dernière est jugée."""
+        found = prs(pr(number=13, state="CLOSED"), pr(number=14), pr(number=15, body="rien"))
+        project, code, out = self.trial(gh=[{"has": ["pr", "list"], "stdout": found}])
+        self.assertEqual(code, 0)
+        self.assertRegex(out, r"(?m)^PR: #14$")
+        (call,) = [c["args"] for c in project.calls("gh") if c["args"][:2] == ["pr", "checks"]]
+        self.assertEqual(call[2], "14")
+
+    def test_a_red_check_is_a_fail_at_checks_and_names_the_check(self) -> None:
+        """Ticket #70, critère 4 : un check rouge : `FAIL` à `checks`, avec son nom."""
+        red = checks(("tests", "pass"), ("lint", "fail"))
+        _, code, out = self.trial(gh=[{"has": ["pr", "checks"], "stdout": red, "code": 1}])
+        self.assertEqual(code, 1)
+        self.assert_fail_at(out, "checks", "lint")
+
+    def test_a_skipped_check_is_not_red(self) -> None:
+        """Ticket #70, critère 4 : un check sauté ne fait pas échouer l'essai."""
+        skipped = checks(("tests", "pass"), ("deploy", "skipping"))
+        _, code, out = self.trial(gh=[{"has": ["pr", "checks"], "stdout": skipped}])
+        self.assertEqual(code, 0)
+
+    def test_a_pull_request_without_any_check_is_a_fail_at_checks(self) -> None:
+        """Ticket #70, critère 4 : sans aucun check, rien ne dit que la PR est verte : `FAIL` à `checks`."""
+        for answer in (
+            {"has": ["pr", "checks"], "stdout": "[]"},
+            {"has": ["pr", "checks"], "stdout": "", "stderr": "no checks reported on the 'feat/essai' branch", "code": 1},
+        ):
+            with self.subTest(answer=answer):
+                _, code, out = self.trial(gh=[answer])
+                self.assertEqual(code, 1)
+                self.assert_fail_at(out, "checks", "aucun check")
+
+    def test_pending_checks_are_awaited_until_they_pass(self) -> None:
+        """Ticket #70, critère 4 : des checks en cours sont attendus (`--wait-checks`), puis lus."""
+        running = checks(("tests", "pending"), ("lint", "pass"))
+        done = checks(("tests", "pass"), ("lint", "pass"))
+        project, code, out = self.trial(
+            "--wait-checks", "30", "--poll-seconds", "0.05",
+            gh=[{"has": ["pr", "checks"], "stdout": [running, running, done], "code": [8, 8, 0]}],
+        )
+        self.assertEqual(code, 0)
+        self.assertRegex(out, r"(?m)^RESULTAT: PASS$")
+        self.assertEqual(len([c for c in project.calls("gh") if c["args"][:2] == ["pr", "checks"]]), 3)
+
+    def test_pending_checks_that_do_not_finish_in_time_are_a_fail_at_checks(self) -> None:
+        """Ticket #70, critère 4 : des checks encore en cours après l'attente : `FAIL` à `checks`."""
+        running = checks(("tests", "pending"))
+        _, code, out = self.trial("--wait-checks", "0", gh=[{"has": ["pr", "checks"], "stdout": running}])
+        self.assertEqual(code, 1)
+        self.assert_fail_at(out, "checks", "en cours", "tests")
+
+    def test_a_head_with_uncommitted_changes_says_so(self) -> None:
+        """Ticket #70, critère 4 : la tête essayée dit quand l'arbre du plugin a des changements non commités."""
+        _, _, out = self.trial(git=[{"has": ["status", "--porcelain"], "stdout": " M plugins/forge/x.py\n"}])
+        self.assertRegex(out, r"(?m)^TETE: 0123abc \(arbre modifié\)$")
+
+    def test_a_fail_carries_the_head_too(self) -> None:
+        """Ticket #70, critère 4 : un `FAIL` porte aussi la tête essayée, que la PR de version recopie."""
+        _, _, out = self.trial(gh=[{"has": ["pr", "list"], "stdout": "[]"}])
+        self.assertRegex(out, r"(?m)^TETE: 0123abc$")
 
 
 if __name__ == "__main__":

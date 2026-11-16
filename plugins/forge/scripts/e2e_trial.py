@@ -33,6 +33,7 @@ The standard library only.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import secrets
@@ -40,6 +41,7 @@ import shlex
 import subprocess
 import sys
 import tempfile
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import NamedTuple, NoReturn
@@ -57,6 +59,7 @@ REQUIRED_MARKERS = ("plugin", "budget")
 MARKERS = (*REQUIRED_MARKERS, "feature", "ticket", "base")
 WRONG_CALL = 2
 
+GREEN = ("pass", "skipping")  # the buckets of `gh pr checks` that do not fail the trial
 FEATURE = "F-9999"
 LABEL = "ready-for-agent"
 IDENTITY = ("-c", "user.name=forge-e2e", "-c", "user.email=forge-e2e@users.noreply.github.com", "-c", "commit.gpgsign=false")
@@ -149,6 +152,8 @@ class Trial:
         self.scratch = scratch
         self.clone = scratch / "projet"
         self.ticket: int | None = None
+        self.prs: list[int] = []  # every pull request aimed at the base branch of the trial
+        self.pr: int | None = None  # the one that is judged
 
     def tool(self, stage: str, argv: list[str], *, cwd: Path | None = None) -> str:
         """Run `git` or `gh` and give its standard output; a failure is a `Failure` of `stage`."""
@@ -190,6 +195,65 @@ class Trial:
         self.git("preparation", "add", "-A")
         self.git("preparation", *IDENTITY, "commit", "-m", f"chore(e2e): le projet de l'essai {self.name}")
         self.git("preparation", "push", "origin", f"HEAD:{self.base}")
+
+    def find_pr(self) -> int:
+        """The pull request the run left: the latest one aimed at the base of the trial that cites the ticket.
+
+        Pull requests are found by that base branch, a name only this trial uses, merged ones included
+        (`forge:qc` merges on ACCEPT). None is a `pr` failure, none that cites the ticket a `citation`
+        failure, a closed one a `pr` failure.
+        """
+        listing = self.gh(
+            "pr", "pr", "list", "--state", "all", "--base", self.base, "--limit", "100",
+            "--json", "number,title,body,state,headRefName",
+        )
+        try:
+            found = json.loads(listing)
+        except ValueError:
+            raise Failure("pr", f"`gh pr list` n'a pas rendu du JSON : {listing.strip()[:120]}") from None
+        self.prs = sorted(item["number"] for item in found)
+        if not found:
+            raise Failure("pr", f"aucune PR n'a été ouverte vers la base {self.base}")
+        cite = re.compile(rf"(?<![\w/])#{self.ticket}(?!\d)")
+        citing = [item for item in found if cite.search(f"{item['title']}\n{item['body']}")]
+        if not citing:
+            listed = ", ".join(f"#{number}" for number in self.prs)
+            raise Failure("citation", f"aucune PR vers la base ne cite #{self.ticket} (PR : {listed})")
+        latest = max(citing, key=lambda item: item["number"])
+        if latest["state"] not in ("OPEN", "MERGED"):
+            raise Failure("pr", f"la PR #{latest['number']} est fermée sans fusion")
+        self.pr = latest["number"]
+        return latest["number"]
+
+    def read_checks(self) -> list[dict]:
+        """The checks of the judged pull request, `name` and `bucket` each, as `gh` rates them."""
+        done = subprocess.run(
+            ["gh", "pr", "checks", str(self.pr), "--json", "name,bucket", "--repo", self.repo],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+        )
+        try:
+            return json.loads(done.stdout)
+        except ValueError:
+            if "no checks reported" in done.stderr:
+                return []  # gh exits non-zero while a pull request has no check; the JSON alone judges
+            raise Failure("checks", f"`gh pr checks` n'a pas rendu du JSON : {done.stderr.strip()[:200]}") from None
+
+    def wait_green(self, wait: int, poll: float) -> int:
+        """The number of checks once all are green; the checks still running are awaited, up to `wait` seconds."""
+        start = time.monotonic()
+        while True:
+            found = self.read_checks()
+            if not found:
+                raise Failure("checks", f"aucun check n'est rapporté sur la PR #{self.pr} : rien ne dit qu'elle est verte")
+            red = [item["name"] for item in found if item["bucket"] not in (*GREEN, "pending")]
+            if red:
+                raise Failure("checks", f"checks rouges sur la PR #{self.pr} : {', '.join(red)}")
+            running = [item["name"] for item in found if item["bucket"] == "pending"]
+            if not running:
+                return len(found)
+            if time.monotonic() - start >= wait:
+                raise Failure("checks", f"checks encore en cours sur la PR #{self.pr} après {wait} s : {', '.join(running)}")
+            time.sleep(poll)
 
 
 LAUNCHER = Path(__file__).resolve().with_name("bounded_run.py")
@@ -238,6 +302,38 @@ def launch(trial: Trial, settings: Settings, plugin: Path, usine_file: Path, arg
         why = LAUNCHER_CODES.get(done.returncode)
         tail = done.stderr.strip()[-300:] or done.stdout.strip()[-300:]
         raise Failure("lancement", f"{why or f'`{words[0]}` a rendu le code {done.returncode}'} : {tail}")
+
+
+def head_tried(plugin: Path) -> str:
+    """The commit of the plugin under trial, and whether its tree has changes the commit does not hold."""
+    def git(*words: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["git", "-C", str(plugin), *words], capture_output=True, text=True, encoding="utf-8", errors="replace"
+        )
+
+    try:
+        head = git("rev-parse", "HEAD")
+        sha = head.stdout.strip() if head.returncode == 0 else ""
+        if not sha:
+            return "inconnue (le plugin n'est pas dans un dépôt git)"
+        return f"{sha} (arbre modifié)" if git("status", "--porcelain", "--", ".").stdout.strip() else sha
+    except OSError:
+        return "inconnue (git ne se lance pas)"
+
+
+def report(trial: Trial, head: str, failure: Failure | None = None, checks: int = 0) -> None:
+    """The result, one fact per line: what the pull request of the release copies."""
+    lines = ["RESULTAT: FAIL" if failure else "RESULTAT: PASS"]
+    if failure:
+        lines += [f"ETAPE: {failure.stage}", f"RAISON: {failure.reason}"]
+    lines += [f"TETE: {head}", f"DEPOT: {trial.repo}"]
+    if trial.ticket is not None:
+        lines.append(f"TICKET: #{trial.ticket}")
+    if trial.pr is not None:
+        lines.append(f"PR: #{trial.pr}")
+    if not failure:
+        lines.append(f"CHECKS: {checks} verts")
+    print("\n".join(lines))
 
 
 def origin_repo(project: Path) -> str | None:
@@ -354,13 +450,17 @@ def main(argv: list[str] | None = None) -> int:
     plugin = Path(args.plugin) if args.plugin else Path(__file__).resolve().parent.parent
     with tempfile.TemporaryDirectory(prefix="forge-e2e-", dir=scratch_root()) as folder:
         trial = Trial(settings.repo, name, Path(folder))
+        head = head_tried(plugin)
         try:
             check_budget(usine_file, args)
             trial.prepare(f"{datetime.now(timezone.utc):%Y-%m-%d}")
             launch(trial, settings, plugin, usine_file, args)
+            trial.find_pr()
+            checks = trial.wait_green(args.wait_checks, args.poll_seconds)
         except Failure as failure:
-            print(f"RESULTAT: FAIL\nETAPE: {failure.stage}\nRAISON: {failure.reason}")
+            report(trial, head, failure)
             return 1
+        report(trial, head, checks=checks)
     return 0
 
 
