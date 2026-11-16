@@ -303,6 +303,52 @@ class AMentionOfTheClassEndsNoTest(unittest.TestCase):
         self.assertEqual([case.name for case in junit_report.touched(cases, text, [range(6, 7)])], [])
 
 
+class ANameInsideATestPlacesNoCase(unittest.TestCase):
+    """A name read inside the body of another test is not taken for a definition: the case counts as touched."""
+
+    def names(self, cases: list, text: str, changed: int) -> list[str]:
+        import junit_report
+
+        return [case.ident for case in junit_report.touched(cases, text, [range(changed, changed + 1)])]
+
+    def test_a_call_to_a_homonym_inside_a_test_of_its_class_hides_neither(self) -> None:
+        """No F-NNNN: ticket #43, grain du test: `self.test_x()` dans `A.test_y` ne place pas `A.test_x` là, `A.test_y` reste touché."""
+        import junit_report
+
+        text = (
+            "class A(unittest.TestCase):\n"
+            "    def test_y(self):\n"
+            "        self.test_x()\n"
+            "        self.assertTrue(True)\n"
+            "\n"
+            "    def test_x(self):\n"
+            "        pass\n"
+            "\n"
+            "\n"
+            "class B(unittest.TestCase):\n"
+            "    def test_x(self):\n"
+            "        pass\n"
+        )
+        cases = [junit_report.Case(f"tests.{owner}", name, "pass") for owner, name in (("A", "test_y"), ("A", "test_x"), ("B", "test_x"))]
+        self.assertEqual(self.names(cases, text, 4), ["tests.A.test_y", "tests.A.test_x"])
+
+    def test_a_name_written_once_in_a_comment_of_another_test_does_not_cut_it(self) -> None:
+        """No F-NNNN: ticket #43, grain du test: un nom écrit une fois dans le corps d'un autre test ne coupe pas ce test."""
+        import junit_report
+
+        text = (
+            "class T(unittest.TestCase):\n"
+            "    def test_a(self):\n"
+            "        # test_made_by_a_loop shares this setup\n"
+            "        self.assertTrue(True)\n"
+            "\n"
+            "    def test_b(self):\n"
+            "        pass\n"
+        )
+        cases = [junit_report.Case("tests.T", name, "pass") for name in ("test_a", "test_b", "test_made_by_a_loop")]
+        self.assertEqual(self.names(cases, text, 4), ["tests.T.test_a", "tests.T.test_made_by_a_loop"])
+
+
 class GrainIsDocumented(unittest.TestCase):
     """The consumers read the placeholder and the limits of the reading in the template, the page and the agents."""
 

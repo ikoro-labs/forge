@@ -8,25 +8,28 @@ a DOCTYPE or an entity, or that is over 20 MB, is refused (`ReportError`) before
 
 `touched(cases, text, ranges)` keeps the cases a diff touches. `text` is the test file as the head
 has it, `ranges` the line ranges the diff adds or changes in it (`changed_ranges` reads them from a
-`git diff -U0`). A case is placed at the line of `text` that holds its name, without the `[parameters]`
-a runner appends, as a whole word. When the name is written once, that line is the one; when it is
-written several times (two classes with a test of the same name, a comment, a call), the case is placed
-by its class: at the first line with the name below the line that holds the last part of its
-`classname`, provided that gives one line only. A case that cannot be placed, whether its name is not
-written in the file or it stays ambiguous after its class, counts as touched, so that the replay shows
-it rather than hides it. A placed case begins at the decorators, attributes and comments (`@`, `#`,
-`//`, `/*`, `*`, `[`) right above it. It owns the lines down to the next placed case, or down to a line
-that declares the class of a case (a keyword, `class`, `object`, `struct`, `interface`, `trait`, then
-the name, with only words before it), when that line is the only one of the file to declare it; the
-blank lines that end them belong to no case. A mere mention of a class (a call, a string, a comment)
-ends no case, so that a test is never cut short at it. A case is touched when a changed range falls in
-its lines.
+`git diff -U0`). The class of a case is the last part of its `classname`; its declaration is the line
+that declares it with a keyword (`class`, `object`, `struct`, `interface`, `trait`, with only words
+before it, then the name), when it is the only such line of the file. A case is placed at the line of
+`text` that holds its name, without the `[parameters]` a runner appends, as a whole word. When the name
+is written once, that line is the one. When it is written several times (two classes with a test of
+the same name, a comment, a call), it is the one line with the name between the declaration of its
+class and the next declaration of a class of the report; with no declaration, or with the name written
+twice there, the case is not placed. Nor is a case whose line is more indented than the placed case
+above it with no declaration between them: that line sits in the body of the test above (a call, a
+comment), and is no definition. A case that is not placed counts as touched, so that the replay shows
+it rather than hides it.
+
+A placed case begins at the decorators, attributes and comments (`@`, `#`, `//`, `/*`, `*`, `[`) right
+above it, and owns the lines down to the next placed case or the next declaration, less the blank lines
+that end them. Nothing else ends it: a mention of a class (a call, a string, a comment) ends no case. A
+case is touched when a changed range falls in its lines.
 
 This is a reading of the text, not of the language. A helper or a fixture changed below a test, or at
 the end of the file, falls in the lines of the test above it, which is then taken for changed (a
 passing, unchanged test can be shown); only a line above the first test touches no case. A name
-written once is taken for the definition, even in a comment. Where it is written several times, the
-class decides, and a comment or a call between the class and the definition can still mislead it.
+written once, at the indentation of the tests or less, is taken for the definition, even in a comment
+or a string; a line that declares a class inside a multiline string is read as a declaration.
 """
 
 from __future__ import annotations
@@ -113,31 +116,51 @@ def declared_once(lines: list[str], owner: str) -> int | None:
     return found[0] if len(found) == 1 else None
 
 
-def place(lines: list[str], case: Case) -> int | None:
-    """The line of the definition of a case, or None when the text does not say it with certainty."""
+def owner(case: Case) -> str:
+    """The class of a case: the last part of its `classname` (`Outer$Inner` gives `Inner`)."""
+    return re.split(r"[.$]", case.classname)[-1]
+
+
+def place(lines: list[str], case: Case, declarations: list[int]) -> int | None:
+    """The line that names a case where it is defined, or None when the text does not say it with certainty."""
     found = holding(lines, case.bare_name)
     if len(found) > 1:
-        owner = case.classname.rsplit(".", 1)[-1]
-        below = {min((n for n in found if n > line), default=0) for line in holding(lines, owner)} if owner else set()
-        below.discard(0)
-        found = sorted(below) if len(below) == 1 else []
-    return with_its_decorations(lines, found[0]) if found else None
+        declared = declared_once(lines, owner(case))
+        if declared is None:
+            return None
+        end = min((line for line in declarations if line > declared), default=len(lines) + 1)
+        found = [line for line in found if declared < line < end]
+    return found[0] if len(found) == 1 else None
+
+
+def indent(line: str) -> int:
+    return len(line) - len(line.lstrip())
 
 
 def touched(cases: list[Case], text: str, ranges: list[range]) -> list[Case]:
     lines = text.splitlines()
-    placed = {index: place(lines, case) for index, case in enumerate(cases)}
-    starts = sorted({line for line in placed.values() if line is not None})
-    # Only a line that surely ends a test ends one: the start of the next placed case, or the one line
-    # that declares a class of the report (a class added after a test is not a change of that test). A
-    # mention of a class inside a test (a call, a string, a comment) ends nothing.
-    owners = {case.classname.rsplit(".", 1)[-1] for case in cases}
-    declarations = {declared_once(lines, owner) for owner in owners}
-    stops = set(starts) | {line for line in declarations if line is not None}
+    declarations = sorted({line for line in (declared_once(lines, owner(case)) for case in cases) if line})
+    named = {index: place(lines, case, declarations) for index, case in enumerate(cases)}
+    # A name more indented than the placed case above it, with no declaration between them, sits in the
+    # body of that test (a call, a comment): it is no definition, and its case is not placed.
+    definitions: set[int] = set()
+    above = 0
+    for line in sorted({line for line in named.values() if line is not None}):
+        inside = above > 0 and indent(lines[line - 1]) > indent(lines[above - 1])
+        if inside and not any(above < declared < line for declared in declarations):
+            continue
+        definitions.add(line)
+        above = line
+    placed = {index: with_its_decorations(lines, line) for index, line in named.items() if line in definitions}
+    starts = {line for line in placed.values() if line is not None}
+    # Only a line that surely ends a test ends one: the start of the next placed case, or a declaration
+    # (a class added after a test is not a change of that test). A mention of a class inside a test (a
+    # call, a string, a comment) ends nothing.
+    stops = starts | set(declarations)
     stops_sorted = sorted(stops)
     result = []
     for index, case in enumerate(cases):
-        start = placed[index]
+        start = placed.get(index)
         if start is None:
             result.append(case)
             continue
