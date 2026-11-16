@@ -102,6 +102,40 @@ class Budget(unittest.TestCase):
             main(["status", str(self.world.root)], run=self.world.runner, now=NOW)
         self.assertEqual(json.loads(self.state_file().read_text(encoding="utf-8"))["epuises"], ["main-green / 31 j"])
 
+    def status(self) -> None:
+        with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+            main(["status", str(self.world.root)], run=self.world.runner, now=NOW)
+
+    def epuises(self) -> list[str]:
+        return json.loads(self.state_file().read_text(encoding="utf-8"))["epuises"]
+
+    def test_an_unreadable_previous_state_keeps_the_action_closed_until_tenu(self) -> None:
+        """Ticket #71 : un état précédent qui existe sans se lire ne fait pas perdre la mémoire `epuises`.
+
+        `human-merge` actif après un calcul `épuisé`, fichier tronqué, puis `status` à `menacé` :
+        l'action reste active, et ne cesse qu'au retour à `tenu`.
+        """
+        actions = ["main-green | human-merge"]
+        self.configure(["main-green | >= 90 % | 31"], actions)
+        self.assertIn("ACTIVE", self.budget()[1])
+        self.state_file().write_text('{"objectifs": [', encoding="utf-8")
+        self.configure(["main-green | >= 60 % | 31"], actions)
+        self.status()
+        self.assertEqual(self.epuises(), ["main-green / 31 j"])
+        self.assertIn("ACTIVE : `human-merge` sur `main-green`", self.budget()[1])
+        self.configure(["main-green | >= 50 % | 31"], actions)
+        self.assertIn("inactive", self.budget()[1])
+
+    def test_an_unreadable_previous_state_holds_nothing_for_an_objective_that_is_tenu(self) -> None:
+        """Ticket #71 : le fichier illisible ne retient que ce qui n'est pas `tenu` ; un premier calcul ne retient rien."""
+        self.configure(["main-green | >= 60 % | 31"], ["main-green | human-merge"])
+        self.status()
+        self.assertEqual(self.epuises(), [])
+        self.state_file().write_text("pas du json", encoding="utf-8")
+        self.configure(["main-green | >= 50 % | 31"], ["main-green | human-merge"])
+        self.status()
+        self.assertEqual(self.epuises(), [])
+
     def test_a_malformed_line_or_an_unknown_objective_fails(self) -> None:
         self.configure(["main-green | >= 90 % | 31"], ["main-green | geler"])
         code, _, err = self.budget()

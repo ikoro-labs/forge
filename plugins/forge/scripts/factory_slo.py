@@ -701,11 +701,15 @@ def state_path(project: Path, run: Runner = run_command) -> Path:
 
 def write_state(path: Path, document: dict) -> None:
     """Write the state file, keeping from the previous one which budget actions are still held."""
+    previous, unreadable = None, False
     try:
         previous = json.loads(path.read_text(encoding="utf-8"))
+        unreadable = not isinstance(previous, dict)
+    except FileNotFoundError:
+        pass  # a first calculation: there is nothing to keep
     except (OSError, ValueError):
-        previous = None
-    budget.carry(previous, document)
+        unreadable = True  # the file exists and says nothing: `carry` keeps every action it cannot rule out
+    budget.carry(previous, document, unreadable)
     path.parent.mkdir(parents=True, exist_ok=True)
     scratch = path.with_name(path.name + ".tmp")
     scratch.write_text(json.dumps(document, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

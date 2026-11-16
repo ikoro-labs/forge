@@ -7,7 +7,8 @@ is `épuisé` in `slo-status.json`, which `scripts/factory_slo.py status` writes
 while the objective is `menacé` after that (hysteresis); it ends by itself at the next calculation
 that finds the objective back to `tenu`. The file carries that memory in `epuises` (the SLI,
 statistic and window of each objective whose action is held), because the guard reads the current
-state only.
+state only. A previous file that exists but cannot be read holds every objective that is not
+`tenu`: an action never ends for want of memory.
 
 Read by `guard_git.py` (the merge refusal) and by `scripts/factory_slo.py budget` (what `forge:qc`
 and `forge:feature-build` run at the start of a pass). Standard library only. An absent key is
@@ -77,11 +78,18 @@ def _key(item: dict) -> str:
     return _name(item)[1] + (f" / {window} j" if window else "")
 
 
-def carry(previous: dict | None, document: dict) -> None:
+def carry(previous: dict | None, document: dict, unreadable: bool = False) -> None:
     """Write `epuises` into `document`: the objectives exhausted now, and those exhausted before that
-    have not come back to `tenu` (a `menacé` or `sans objet` one keeps its action)."""
+    have not come back to `tenu` (a `menacé` or `sans objet` one keeps its action).
+
+    `unreadable` says a previous state file exists but cannot be read: what it held is unknown, so
+    every objective that is not `tenu` is held. Closed by default: an action never ends for want of
+    memory, only at a calculation that finds its objective back to `tenu`.
+    """
     before = previous.get(LATCH) if isinstance(previous, dict) else None
     kept = set(before) if isinstance(before, list) else set()
+    if unreadable:
+        kept = {_key(item) for item in document["objectifs"]}
     document[LATCH] = [
         _key(item) for item in document["objectifs"]
         if (item.get("statut") == "calculé" and item.get("etat") == EXHAUSTED)
