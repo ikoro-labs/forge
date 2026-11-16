@@ -115,6 +115,7 @@ DECIDER_KNOWN = frozenset({
 GATE_MOST_TABLE_LINES = 30
 BILLET_WORDS = 60
 BILLET_SEPARATOR = "---"
+BILLET_RESOURCE_KEY = "shared-resource"
 # The fields of the billet that take a closed list of values; `templates/billet.md` shows the same.
 BILLET_VALUES = {
     "type": ("claim", "release", "info", "question", "reply"),
@@ -463,7 +464,7 @@ def _measure(value: str) -> list[str]:
     return found
 
 
-def _billet(text: str, template: str) -> list[str]:
+def _billet(text: str, template: str, config: Mapping[str, list[str]]) -> list[str]:
     """Every way `text` departs from the billet of `templates/billet.md`."""
     lines = text.strip().splitlines()
     cut = next((i for i, line in enumerate(lines) if line.strip() == BILLET_SEPARATOR), None)
@@ -492,6 +493,13 @@ def _billet(text: str, template: str) -> list[str]:
     for name, values in BILLET_VALUES.items():
         if fields.get(name) and fields[name] not in values:
             found.append(f"`{name}: {fields[name]}` is not one of {', '.join(values)}")
+    # The values of `resource` are the project's own: no key, no list, and the check is not applicable.
+    resources = config.get(BILLET_RESOURCE_KEY, [])
+    if resources and fields.get("resource") and fields["resource"] not in (*resources, "none"):
+        found.append(
+            f"`resource: {fields['resource']}` is not a value of the key `{BILLET_RESOURCE_KEY}`:"
+            f" {', '.join((*resources, 'none'))}"
+        )
     if fields.get("measure"):
         found += _measure(fields["measure"])
     words = count_words(" ".join(prose))
@@ -510,7 +518,7 @@ def deviations(
     if kind == "exempt":
         return []
     if kind == "billet":
-        return _billet(text, _template_text(kind, config, root))
+        return _billet(text, _template_text(kind, config, root), config)
     if kind == "report-mail":
         text = _from_html(text)
     lines, prose = _structure(_unwrap(text) if kind in KEYED else text)

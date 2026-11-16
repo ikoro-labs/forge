@@ -218,6 +218,55 @@ class Hook(unittest.TestCase):
             self.assertEqual(outcome(json.dumps(send("shipyard-f6", answer))).code, 0)
 
 
+POOL = {"shared-resource": ["worktree-pool", "ci-runner"]}
+
+
+class Resource(unittest.TestCase):
+    def test_a4_227_a_value_of_the_key_passes(self) -> None:
+        """#227 A4: each `shared-resource` line of `usine.md` is a value of `resource`."""
+        for value in ("worktree-pool", "ci-runner"):
+            with self.subTest(resource=value):
+                self.assertEqual(deviations(billet(resource=value), "billet", POOL), [])
+
+    def test_a4_227_a_value_outside_the_key_is_named_with_the_values(self) -> None:
+        """#227 A4: `resource` cannot name a thing the project did not declare."""
+        found = deviations(billet(resource="the-database"), "billet", POOL)
+        self.assertEqual(
+            found,
+            ["`resource: the-database` is not a value of the key `shared-resource`: worktree-pool, ci-runner, none"],
+        )
+
+    def test_a4_227_none_is_always_a_value(self) -> None:
+        """#227 A4: a question or an info that concerns no resource says `none`."""
+        self.assertEqual(deviations(billet(resource="none"), "billet", POOL), [])
+
+    def test_a4_227_without_the_key_the_check_is_not_applicable(self) -> None:
+        """#227 A4: no key, no list: any non-empty value passes (`sans objet`), the field stays required."""
+        self.assertEqual(deviations(billet(resource="anything-at-all"), "billet", {}), [])
+        self.assertEqual(
+            deviations(billet(resource=None), "billet", {}), ["the field `resource` is missing (template `billet`)"]
+        )
+
+    def test_a4_227_the_hook_reads_the_key_in_the_project_usine(self) -> None:
+        """#227 A4: the guard loads `docs/agents/usine.md` of the project that sends."""
+        with isolated() as project:
+            register(project.parent / "home", 4242, sessionId="e1ae680a", name="shipyard-f6", cwd="/x")
+            page = project / "docs" / "agents" / "usine.md"
+            page.parent.mkdir(parents=True)
+            page.write_text("- `shared-resource` : `worktree-pool`\n", encoding="utf-8")
+            refused = outcome(json.dumps(send("shipyard-f6", billet(resource="the-database"))))
+            allowed = outcome(json.dumps(send("shipyard-f6", billet(resource="worktree-pool"))))
+        self.assertEqual(refused.code, REFUSED)
+        self.assertIn("`resource: the-database` is not a value of the key `shared-resource`", refused.stderr)
+        self.assertEqual((allowed.code, allowed.stderr), (0, ""))
+
+    def test_a4_227_the_template_documents_the_key(self) -> None:
+        """#227 A4: the key is documented in the `usine.md` template, as any new key must be."""
+        text = (support.PLUGIN / "templates" / "usine.md").read_text(encoding="utf-8")
+        self.assertIn("`shared-resource`", text)
+        self.assertIn("sans objet", text[text.index("`shared-resource`") :][:1500])
+
+
 class HooksJson(unittest.TestCase):
     def test_a3_227_send_message_reaches_the_guard_that_blocks_on_exit_3(self) -> None:
         """#227 A3: the `PreToolUse` entry of `guard_output` names `SendMessage`, in the command that
