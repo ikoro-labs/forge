@@ -16,6 +16,7 @@ from pathlib import Path
 
 import support
 from incident import CLASSES, SECTIONS, check, main
+from test_factory_slo import isolate
 
 TEMPLATE = support.PLUGIN / "templates" / "incident.md"
 USINE_TEMPLATE = support.PLUGIN / "templates" / "usine.md"
@@ -218,7 +219,9 @@ class IncidentDirKey(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
-        self.root = Path(self.tmp.name)
+        isolate(self, self.tmp.name)
+        self.root = Path(self.tmp.name) / "projet"
+        self.root.mkdir()
 
     def configure(self, text: str) -> None:
         (self.root / "docs" / "agents").mkdir(parents=True, exist_ok=True)
