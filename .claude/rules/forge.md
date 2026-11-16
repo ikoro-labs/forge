@@ -55,6 +55,8 @@ La grille que lisent le coder, le juge et les décideurs sur toute PR de ce dép
 
 ## Prose
 
-- En français, sans tiret cadratin (le hook `after_write` le refuse).
+- Le contenu de `plugins/forge/` et la documentation de la racine s'écrivent en français, sans tiret
+  cadratin (le hook `after_write` le refuse). Leur traduction est un chantier à part ; la langue
+  des tickets, des PR et des commits est fixée par `.claude/rules/git.md`.
 - Une phrase dit ce qui est, éprouvé ou non : ce qui n'a été essayé que sur un système, ou pas du
   tout sur un vrai poste, le dit.

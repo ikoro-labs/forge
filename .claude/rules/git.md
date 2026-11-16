@@ -3,16 +3,18 @@
 ## Branches et PR
 
 - Une branche par changement, depuis `main` : `feat/<slug>`, `fix/<slug>`, `docs/<slug>`,
-  `test/<slug>` ou `chore/<slug>`, le slug en français, en minuscules et avec des tirets.
+  `test/<slug>` ou `chore/<slug>`, le slug en anglais, en minuscules et avec des tirets.
 - Jamais de commit ni de push sur `main` : tout passe par une PR, fusionnée par un commit de fusion.
 - Le titre d'une PR suit le format des commits. Son corps suit `.github/pull_request_template.md`
   et cite son ticket (`Closes #n`, ou `Refs #n` quand la PR n'en livre qu'une partie).
+- Les tickets, les titres et les corps de PR s'écrivent en anglais. Restent en français la section
+  `Rapport d'agent` d'une PR et les réponses à l'humain.
 
 ## Commits
 
-- Conventional Commits, en français : `<type>(<zone>): <ce qui change>`, la zone étant celle du
-  plugin touchée (`hooks`, `coder`, `qc`, `feature-build`, `release`...). Exemple :
-  `fix(hooks): fermer proprement une session Windows`.
+- Conventional Commits, en anglais, sujet et corps : `<type>(<zone>): <ce qui change>`, la zone
+  étant celle du plugin touchée (`hooks`, `coder`, `qc`, `feature-build`, `release`...). Exemple :
+  `fix(hooks): close a Windows session cleanly`.
 - Le corps dit pourquoi, et ce qui a été essayé ; il finit par `Refs #n` ou `Closes #n`, puis par la
   ligne `Co-Authored-By` de l'agent qui a écrit le commit.
 - Un commit par critère vert, jamais « wip ».
