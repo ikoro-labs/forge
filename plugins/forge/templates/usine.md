@@ -392,6 +392,35 @@ en local, appelée avec `--title "<titre>" --body-file body.md`.
 - `trace-check` : `<trace>`
 - `trace-replay` : `<uv run python -m scripts.trace>`
 
+## Essai de bout en bout
+
+L'essai de l'usine avant une version, par `scripts/e2e_trial.py`. Les tests de `tests/` éprouvent chaque
+hook et chaque script seul ; l'essai éprouve l'enchaînement (un coder qui n'ouvre pas sa PR, un garde qui
+refuse un geste légitime) sur un dépôt d'essai que le projet désigne. Trois clés, chacune sur une seule
+ligne et sans valeur par défaut : une clé absente rend « sans objet (clé `<nom>` absente) » et le script
+n'écrit jamais `PASS`. La création du dépôt d'essai et de son jeton est un geste humain : le script ne la
+fait pas.
+
+`e2e-repo` : le dépôt d'essai sur GitHub, `<propriétaire>/<nom>`. Le script y crée un ticket fictif et y
+nettoie ensuite ce qu'il a créé, retrouvé par son numéro, rien d'autre. Sans la clé, l'étape est
+« sans objet (clé `e2e-repo` absente) ».
+
+- `e2e-repo` : `<propriétaire/depot-d-essai>`
+
+`e2e-command` : la commande lancée dans le projet jetable, un clone neuf du dépôt d'essai, découpée en mots
+comme le fait un shell puis lancée sans shell, sous le lanceur borné (`run-limits`, `run-budget`). Elle cite
+`{plugin}` (le plugin à essayer) et `{budget}` (la clé `e2e-budget-usd`), sans quoi l'essai ne tiendrait pas
+le plugin à essayer sous le plafond ; `{feature}`, `{ticket}` et `{base}` (la branche de base de l'essai)
+sont facultatives. Toute autre marque est refusée. Sans la clé, l'étape est
+« sans objet (clé `e2e-command` absente) ».
+
+- `e2e-command` : `<claude -p --plugin-dir {plugin} --max-budget-usd {budget} "/forge:feature-build {feature} --base {base}">`
+
+`e2e-budget-usd` : le plafond de l'essai en dollars, un nombre positif, que la commande passe à
+`--max-budget-usd` par `{budget}`. Sans la clé, l'étape est « sans objet (clé `e2e-budget-usd` absente) ».
+
+- `e2e-budget-usd` : `<2.50>`
+
 ## Libellés de l'écran
 
 Les libellés qu'une PR ajoute ou change, confrontés par `forge:qc-gate` (`scripts/ui_labels.py`) aux
