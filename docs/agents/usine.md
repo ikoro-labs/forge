@@ -124,6 +124,7 @@ La suite de tests de ce dépôt, dont la sortie se raccourcit quand elle passe.
 - `test-skill` : la façon d'écrire les tests est dans `.claude/rules/forge.md`.
 - `feature-gate` : la porte se vérifie à la main, dans les en-têtes des documents.
 - `install` : la suite n'a que la bibliothèque standard, et `pytest` (épinglé) arrive par `uv run --with` à chaque lancement ; `uv` choisit le Python.
+- `gh-api-allow` : ce dépôt n'appelle que ce que le plugin appelle par `gh api` ; sa liste suffit.
 - `baselines`, `size-check`, `trace-check`, `trace-replay`, `review-grid` : aucun outil encore.
 - `em-dash-allowances` : aucun fichier n'en tolère.
 - `doc-frontmatter`, `doc-index`, `doc-cap` : ce dépôt n'a décidé ni de `type` de frontmatter, ni
