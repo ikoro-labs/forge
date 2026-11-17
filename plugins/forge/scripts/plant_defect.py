@@ -40,7 +40,7 @@ import re
 import shutil
 import sys
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePath
 from typing import Any
 
 PLUGIN = Path(__file__).resolve().parents[1]
@@ -279,6 +279,11 @@ def description(kind: str, source: str, summary: str) -> str:
             "défaut nommé : le défaut est planté par `plant_defect.py` dans un diff que le juge de l'époque a accepté.")
 
 
+def relative_key(path: PurePath, folder: PurePath) -> str:
+    """The name of a file of a case, relative to its folder: slash-separated, so it sorts the same on every system."""
+    return path.relative_to(folder).as_posix()
+
+
 def plant(spec: dict[str, Any], evals_dir: Path, output_dir: Path) -> Path:
     """Write the trapped case of `spec` under `output_dir`, and return its folder."""
     name, kind, source = (text_field(spec, key) for key in ("name", "class", "source"))
@@ -300,7 +305,7 @@ def plant(spec: dict[str, Any], evals_dir: Path, output_dir: Path) -> Path:
         at = next((i for i, section in enumerate(sections) if section.path > added.path), len(sections))
         sections.insert(at, added)
     files = {
-        str(path.relative_to(folder)): path.read_bytes() for path in sorted(folder.rglob("*")) if path.is_file()
+        relative_key(path, folder): path.read_bytes() for path in sorted(folder.rglob("*")) if path.is_file()
         if path.relative_to(folder).parts[0] in ("fixtures", "prompt.md", "scaffold.sh")
     }
     gate_text = (folder / "fixtures" / "gate.txt").read_text(encoding="utf-8")

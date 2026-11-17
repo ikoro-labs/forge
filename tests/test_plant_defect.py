@@ -9,11 +9,11 @@ import re
 import shutil
 import tempfile
 import unittest
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Any
 
 import support
-from plant_defect import SpecError, parse_diff, plant, totals
+from plant_defect import SpecError, parse_diff, plant, relative_key, totals
 
 EVALS = support.PLUGIN / "evals"
 SOURCE = "accept-pr238-tour1"
@@ -23,7 +23,7 @@ HEADER = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
 
 
 def tree(folder: Path) -> dict[str, bytes]:
-    return {str(path.relative_to(folder)): path.read_bytes() for path in sorted(folder.rglob("*")) if path.is_file()}
+    return {path.relative_to(folder).as_posix(): path.read_bytes() for path in sorted(folder.rglob("*")) if path.is_file()}
 
 
 def changes(before: str, after: str) -> tuple[list[str], list[str]]:
@@ -304,6 +304,14 @@ class UnmetCriterion(Plant):
         del only_tests["edits"][0]
         with self.assertRaises(SpecError):
             self.plant(only_tests)
+
+
+class Keys(unittest.TestCase):
+    def test_a_file_is_keyed_by_a_slash_path_whatever_the_system(self) -> None:
+        """#154 A2.1, under Windows: `fixtures\\pr.diff` sorts after `fixtures/pr.diff`, so the frozen diff won."""
+        folder = PureWindowsPath("C:/evals/accept-pr238-tour1")
+        self.assertEqual(relative_key(folder / "fixtures" / "pr.diff", folder), "fixtures/pr.diff")
+        self.assertEqual(relative_key(folder / "prompt.md", folder), "prompt.md")
 
 
 class Counts(unittest.TestCase):
