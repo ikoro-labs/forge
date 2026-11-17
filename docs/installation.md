@@ -786,7 +786,19 @@ a `---` line, then 60 words of prose at most, all in English. The guard names ev
 missing, empty, repeated or unknown field, a missing `---`, a value outside its list, a time without
 its offset. `resource` takes its values from the key `shared-resource` of `usine.md` (and `none`); without
 the key that check is sans objet and any non-empty value passes. A message to an agent of the session
-(`main`, a teammate) and a structured message are not judged. Not yet tried in a real session: the
+(`main`, a teammate) and a structured message are not judged.
+
+The hook holds the billet to the host's clock: a `time` more than 5 minutes from it is refused, with
+both instants named. The session handoff (see [Céder la main](sessions.md#céder-la-main-à-la-session-interactive))
+has two more types of billet, each with one field that belongs to it alone: `handoff-request` adds
+`session: <id>`, and the hook checks that the id is the one of a session of `~/.claude/sessions/`
+(its first eight characters will do, as `claude --bg` prints them); `handoff` adds `handoff: <path>`,
+and the hook checks that the file exists and that its header names the receiver, the session `to`
+addresses, as its successor, by the rule of `handoff_header.py successor-ok` (a header with no
+successor recorded is refused here, where `successor-ok` lets an older handoff pass, because
+`set-successor` runs before the path is sent). The receiver must be addressed by its registered name
+or id: an address the registry does not resolve leaves nothing to hold the header to. The template
+header's `max-lines` is 24, room for the seventh field. Not yet tried in a real session: the
 `SendMessage` input (`to`, `message`) was read in the strings of Claude Code 2.1.325, not captured from a
 real hook event, and the suite alone has run the guard.
 

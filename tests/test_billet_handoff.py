@@ -7,13 +7,16 @@ included, given as `now`), `guard_output.outcome` on a `SendMessage` event holds
 """
 
 import json
+import re
+import textwrap
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-import support  # noqa: F401 - puts the hooks and the scripts on the import path
+import support
 from guard_output import REFUSED, outcome
-from output_check import deviations
+from handoff_trigger import handover
+from output_check import billet_fields, deviations
 from test_billet import BILLET, billet, current, measure, register, send
 from test_guard_output import isolated
 
@@ -283,6 +286,83 @@ class HandoffHook(unittest.TestCase):
         self.assertEqual(code, REFUSED)
         self.assertIn("host clock", stderr)
         self.assertIn("is no file", stderr)
+
+
+SKILL = support.PLUGIN / "skills" / "feature-build" / "SKILL.md"
+BLOCK = re.compile(r"^[ \t]*```text\n(.*?)^[ \t]*```", re.DOTALL | re.MULTILINE)
+PLACEHOLDER = re.compile(r"<[^<>]*>")
+
+
+def billets(text: str) -> list[str]:
+    """The fenced blocks of `text` that are billets (their first line is `from:`), dedented."""
+    return [textwrap.dedent(block) for block in BLOCK.findall(text) if block.lstrip().startswith("from:")]
+
+
+def filled(block: str) -> str:
+    """A printed billet as a session sends it: each `<...>` of its fields given a value the template
+    allows, the time read now. The prose of a printed billet has no placeholder."""
+    values = {"from": "shipyard-bg", "session": INTERACTIVE, "handoff": PATH, "resource": "none", "ticket": "none"}
+    lines = []
+    for line in block.splitlines():
+        key = line.split(":", 1)[0]
+        if key == "measure":
+            line = f"measure: {current()}"
+        elif key in values and PLACEHOLDER.search(line):
+            line = f"{key}: {values[key]}"
+        lines.append(line)
+    return "\n".join(lines) + "\n"
+
+
+class Printed(unittest.TestCase):
+    def test_a6_227_yield_prints_the_handoff_billet_in_place_of_the_prose(self) -> None:
+        """#227 A6: step 6 of `handoff_trigger.py yield` is the `handoff` billet, with the path filled."""
+        with isolated() as project:
+            text = handover(INTERACTIVE, 45, project)
+            home = project.parent / "home"
+            found = billets(text)
+            self.assertEqual(len(found), 1, text)
+            sent_billet = filled(found[0])
+            fields = billet_fields(sent_billet)
+            self.assertEqual(deviations(sent_billet, "billet", now=datetime.now(timezone.utc)), [])
+            self.assertEqual(fields["type"], "handoff")
+            self.assertIn("Send the handoff path to the session " + INTERACTIVE + " by SendMessage", " ".join(text.split()))
+            # The path the billet carries is the one step 4 writes: the whole exchange goes through the hook.
+            path = Path(fields["handoff"])
+            self.assertIn(f"at {path}", " ".join(text.split()))
+            path.parent.mkdir(parents=True)
+            write_handoff(path.parent, INTERACTIVE).rename(path)
+            registered(home)
+            self.assertEqual(sent(INTERACTIVE, sent_billet), (0, ""))
+
+    def test_a6_227_the_skill_prints_the_two_billets_in_step_0(self) -> None:
+        """#227 A6: `feature-build` step 0 shows the request and the handoff as billets, each of them
+        a billet the hook lets through once its placeholders are filled."""
+        text = SKILL.read_text(encoding="utf-8").split("## 1. ")[0]
+        found = billets(text)
+        types = sorted(billet_fields(filled(block))["type"] for block in found)
+        self.assertEqual(types, ["handoff", "handoff-request"])
+        for block in found:
+            with self.subTest(type=billet_fields(block)["type"]):
+                sent_billet = filled(block)
+                self.assertEqual(deviations(sent_billet, "billet", now=datetime.now(timezone.utc)), [])
+
+    def test_a6_227_the_pages_of_docs_describe_the_two_billets_and_the_clock(self) -> None:
+        """#227 A5, A6: a change a consumer project sees is described in the page that covers it."""
+        sessions = (support.REPO_ROOT / "docs" / "sessions.md").read_text(encoding="utf-8")
+        installation = (support.REPO_ROOT / "docs" / "installation.md").read_text(encoding="utf-8")
+        for word in ("`handoff-request`", "`handoff`", "registre des sessions", "5 minutes", "successor-ok"):
+            with self.subTest(page="sessions", word=word):
+                self.assertIn(word, sessions)
+        for word in ("`handoff-request`", "`handoff`", "5 minutes from it", "successor-ok"):
+            with self.subTest(page="installation", word=word):
+                self.assertIn(word, installation)
+
+    def test_a6_227_the_skill_no_longer_asks_for_the_request_in_prose(self) -> None:
+        """#227 A6: the sentence that asked for an identifier and a request by `SendMessage` is gone."""
+        text = " ".join(SKILL.read_text(encoding="utf-8").split("## 1. ")[0].split())
+        self.assertNotIn("ton identifiant et cette demande", text)
+        self.assertIn("`handoff-request`", text)
+        self.assertIn("`handoff`", text)
 
 
 if __name__ == "__main__":
