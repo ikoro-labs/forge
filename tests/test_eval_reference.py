@@ -604,6 +604,18 @@ class TrappedMeasures(unittest.TestCase):
         self.assertIn("piège `out-of-scope` : judge-recall 0/2", err.getvalue())
 
 
+class Ceiling154(unittest.TestCase):
+    """#154 A4: the nine trapped cases make the set dearer; the launch keeps its ceiling and stays manual."""
+
+    def test_run_without_a_ceiling_is_refused_and_no_model_is_called(self) -> None:
+        """#154 A4.1: with the trapped cases in the set, `run` still does not start without `--max-cost-usd`."""
+        with unittest.mock.patch("subprocess.run") as launched, redirect_stderr(io.StringIO()):
+            with self.assertRaises(SystemExit) as stop:
+                main(["run", "--output-dir", "/nonexistent-folder-for-the-test"])
+        self.assertEqual(stop.exception.code, 2)
+        launched.assert_not_called()
+
+
 class Documented(unittest.TestCase):
     def page(self) -> str:
         return (support.REPO_ROOT / "docs" / "jeu-de-reference.md").read_text(encoding="utf-8")
