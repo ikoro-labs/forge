@@ -132,6 +132,24 @@ class Journal(unittest.TestCase):
                 self.assertEqual(done.returncode, clear.returncode)
 
 
+class Documentation(unittest.TestCase):
+    def test_the_indicators_page_describes_the_journal_the_sli_and_the_limit(self) -> None:
+        """#156 A4: the journal, the SLI `guard-refusals` and the per-host limit are in the page."""
+        page = (support.REPO_ROOT / "docs" / "indicateurs-de-service.md").read_text(encoding="utf-8")
+        for needle in (
+            "~/.claude/hooks/state/refusals/",
+            "`guard-refusals`",
+            "un fichier par jour",
+            "jamais la commande",
+            "Deux postes donnent deux journaux",
+            "sans objet",
+        ):
+            with self.subTest(needle=needle):
+                self.assertIn(needle, page)
+        for field in ("date", "guard", "rule", "agent", "repo", "branch", "verb"):
+            self.assertIn(f"`{field}`", page)
+
+
 class RuleNames(unittest.TestCase):
     """#156 A1: each refusal of a guard gets the fixed name of its rule, never `other`."""
 

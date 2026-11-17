@@ -26,6 +26,7 @@ il ne lit que `docs/agents/usine.md` en configuration.
 | `change-failure` | part des fusions de la fenêtre suivies, dans la fenêtre, d'un revert (`This reverts commit`) ou d'un `escaped-defect` qui les cite |
 | `restore-time` | médiane et p90 du délai entre l'ouverture d'un `escaped-defect` et la fusion de la PR qui le ferme (`Closes`, pas `Refs`), par gravité |
 | `tokens-per-merge` | jetons de tous les rôles, session principale comprise (`token_audit.py`), divisés par les PR fusionnées |
+| `guard-refusals` | refus des gardes (`guard_git`, `guard_coder`, `guard_readonly`) par PR fusionnée de la fenêtre, lus dans le journal du poste (voir plus bas), avec le détail par garde (`par_garde`) et par agent (`par_agent`) |
 | `human-touch` | part des PR qui ont reçu `needs-your-attention`, ou dont la ligne `Attention` du `Rapport d'agent` n'est pas `aucune`, pour une autre raison qu'un chemin de la clé `protected-path` |
 | `main-green` | part des commits de la branche de base dont les checks de la clé `required-contexts` sont verts |
 | `judge-recall`, `false-accept` | lus dans le dernier résultat du jeu de référence (`--reference <fichier JSON>`, que produit `eval_reference.py score`, voir `docs/jeu-de-reference.md`), sinon « sans objet » |
@@ -44,6 +45,41 @@ Les durées sont en heures, la médiane est la vraie médiane, le p90 est au ran
 - **`lead-time`** : un ticket sans événement `ready-for-agent` avant la fusion est compté à part
   (`sans_evenement`). **`release-lag`** : une fusion qui n'est dans aucun tag de version est comptée
   à part (`non_publiees`) ; un commit absent du clone local l'est aussi.
+
+## Le journal des refus des gardes
+
+Un agent qui pousse contre les règles se voit avant qu'un défaut n'échappe : une hausse des refus
+l'annonce. Chaque refus de `guard_git`, `guard_coder` ou `guard_readonly` ajoute une ligne JSON à
+`~/.claude/hooks/state/refusals/<AAAA-MM-JJ>.jsonl`, un fichier par jour (date UTC). La ligne porte
+sept champs et rien d'autre :
+
+| Champ | Contenu |
+| --- | --- |
+| `date` | l'instant du refus, en UTC (ISO 8601) |
+| `guard` | le garde qui refuse (`guard_git`, `guard_coder`, `guard_readonly`) |
+| `rule` | le nom fixe de la règle refusée (`force-push`, `gh-pr-merge`, `redirection`...), pris dans la table de chaque garde, `other` quand le motif n'y est pas |
+| `agent` | le nom préfixé de l'agent (`forge:coder`), ou `main` pour la session principale |
+| `repo` | le nom du dépôt, le même depuis la copie principale et depuis ses worktrees |
+| `branch` | la branche courante du dossier de la commande |
+| `verb` | le verbe de la commande, `git push` ou `gh pr merge`, jamais la commande entière : un secret passé en argument n'arrive jamais au journal |
+
+La règle ne vient jamais du texte de la commande (les motifs de refus la citent) : c'est un nom fixe du
+code du garde. Le journal n'enregistre jamais la commande. Il n'est qu'une trace : une écriture qui
+échoue (dossier absent et impossible à créer, fichier à la place du dossier, disque plein) est ignorée,
+et le refus garde son code de sortie et son message. Un refus qui vient d'un garde en panne (« guard_git
+failed ») n'est pas une règle du dépôt et n'est pas journalisé.
+
+`factory_slo.py` lit ce journal pour `guard-refusals` : les lignes du dépôt du projet, datées dans la
+fenêtre, divisées par les PR fusionnées de la même fenêtre. Une ligne illisible est ignorée. Sans
+journal sur le poste, ou sans PR fusionnée dans la fenêtre, le SLI est « sans objet » avec sa raison,
+jamais 0 ; un journal sans refus dans la fenêtre donne 0.
+
+**Limite : le journal vit sur le poste.** Deux postes donnent deux journaux, et le SLI ne compte que
+ceux du poste qui le calcule ; son texte le dit (« journal de ce poste seulement »). Le dépôt est
+reconnu par son nom : deux clones du même nom sur un poste se confondent. Aucun objectif (`slo`) n'est
+posé sur `guard-refusals` : c'est une mesure à lire, pas encore une cible. Éprouvé dans les tests,
+sous Linux seulement (la suite est écrite pour Windows aussi, mais n'y a pas tourné), sur des journaux
+fictifs ; aucun refus réel d'une session de Claude Code n'a encore été lu.
 
 ## L'étiquette `escaped-defect` et la ligne `Échappé de #<pr>`
 
