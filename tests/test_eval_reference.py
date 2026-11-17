@@ -26,6 +26,7 @@ FALSE_ACCEPTS = {"faux-accept-pr13-tour2", "faux-accept-pr14-tour1", "faux-accep
 ACCEPTS = {
     "accept-pr226-tour1": ("ad904b756aa76913e7a42e2d9288d386077eafd8", "d972447662d60b530d64134145a46071fe36529f"),
     "accept-pr228-tour1": ("76b372830b04f4af363a7f558e3475b5ebe25975", "0d51e8a299f7fd7bd79f9084f00261d19ad6a4b9"),
+    "accept-pr238-tour1": ("be73972256e90b55101353c5c823b1f3fd3945dc", "8a6a4ce22fd5024f7488fd52b88492621fd34775"),
 }
 FIXTURES = ("ticket.txt", "pr-body.txt", "pr.diff", "gate.txt", "claude.txt", "rules-forge.txt",
             "rules-git.txt", "usine.txt")
@@ -288,7 +289,8 @@ class CaseForm(unittest.TestCase):
                     text = (folder / "fixtures" / name).read_text(encoding="utf-8")
                     self.assertTrue(text.strip())
                     self.assertIsNone(re.search(r"^VERDICT:", text, re.M))
-                    if name != "pr.diff":
+                    # The grid (rules, usine) may name the section; the data of the PR must not hold its report.
+                    if name in ("ticket.txt", "pr-body.txt", "gate.txt"):
                         self.assertNotIn("Rapport d'agent", text)
 
     def test_the_diff_is_a_diff_and_the_gate_table_a_table(self) -> None:
