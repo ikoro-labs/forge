@@ -19,7 +19,7 @@ tableau de `forge:qc-gate`), parce que le cas doit se rejouer sans réseau et sa
 | Famille | Cas | Verdict attendu |
 | --- | --- | --- |
 | `blocker-` | PR 11, 13, 28, 30 et 51, au tour 1 | `REJECT` : chacune portait un `BLOCKER` avéré |
-| `faux-accept-` | PR 13 au tour 2, PR 14 et PR 23 au tour 1 | `REJECT`, ou au moins le défaut que le juge de l'époque a laissé passer |
+| `faux-accept-` | PR 13 au tour 2, PR 14 et PR 23 au tour 1 | `REJECT`, ou au moins le défaut que le juge de l'époque a laissé passer ; hors de `false-accept` pour la PR 13 et la PR 23 |
 | `accept-` | PR 226, 228 et 238, au tour 1 | `ACCEPT` : chacune a été acceptée au tour 1, fusionnée, et aucun correctif ne l'a suivie |
 
 Les cas `accept-` ont été choisis parmi les PR fusionnées sur un `ACCEPT` du tour 1 et relues dans
@@ -27,11 +27,16 @@ Les cas `accept-` ont été choisis parmi les PR fusionnées sur un `ACCEPT` du 
 touche leurs fichiers pour les corriger. Leur verdict de l'époque portait des `MINOR` et des `NOTE` : un
 juge qui accepte et les nomme réussit le cas.
 
-Chaque cas porte deux notations sur le dernier message du juge, des expressions régulières sur la
-ligne `VERDICT:` :
+Les cas `blocker-` et `faux-accept-` portent deux notations sur le dernier message du juge, des
+expressions régulières sur la ligne `VERDICT:` :
 
 - `rejects` réussit si une ligne `VERDICT: REJECT` y figure ;
 - `no-false-accept` réussit si aucune ligne `VERDICT: ACCEPT` n'y figure.
+
+Les deux cas `faux-accept-` de la PR 13 au tour 2 et de la PR 23 n'ont pas `no-false-accept` : le défaut
+que le juge de l'époque a laissé passer n'y était qu'un `MINOR`, et un juge qui accepte alors peut avoir
+raison. Leur `ACCEPT` reste donc hors de `false-accept` (la part ne les compte ni au numérateur ni au
+dénominateur). Ils gardent `rejects` et `names-the-defect`, qui se lisent à la main.
 
 Les cas `faux-accept-` ont en plus `names-the-defect`, une notation par un modèle qui dit si le verdict
 nomme le défaut manqué. Elle n'entre dans aucune des mesures : elle sert à lire un cas à la main.
@@ -54,11 +59,18 @@ uv run --no-project --quiet python plugins/forge/scripts/eval_reference.py score
 ```
 
 - `judge-recall` : part des runs des cas `blocker-` dont le verdict est `REJECT`.
-- `false-accept` : part des runs des cas `blocker-` et `faux-accept-` dont le verdict est `ACCEPT`. Ces
-  cas rejouent une PR qui n'aurait pas dû être acceptée, donc chaque `ACCEPT` y est un faux.
+- `false-accept` : part des runs des cas qui portent `no-false-accept` (les cas `blocker-` et le cas
+  `faux-accept-` de la PR 14) dont le verdict est `ACCEPT`. Ces cas rejouent une PR qui portait un
+  défaut de la gravité d'un `BLOCKER`, donc chaque `ACCEPT` y est un faux. Les cas de la PR 13 au tour 2
+  et de la PR 23 en sont hors, pour la raison donnée plus haut.
 - `false-reject` : part des runs des cas `accept-` dont le verdict est `REJECT`. Sans elle, un juge qui
   rejette tout aurait un `judge-recall` parfait. `factory_slo.py` ne lit que les deux premières clés :
   aucun objectif de service ne porte sur celle-ci.
+
+Le JSON et la ligne que `score` imprime sur la sortie d'erreur ne disent pas la même chose : chaque clé du
+JSON porte une part (un nombre entre 0 et 1), et la ligne porte un compte (runs en défaut sur runs notés).
+Avec trois cas `accept-` d'un run chacun dont un est jugé `REJECT`, la clé `false-reject` vaut `0.333` et
+la ligne imprimée porte le compte `1/3`. `factory_slo.py` lit la part, jamais la ligne.
 
 Un run en erreur (appel qui échoue, délai dépassé) reste hors des trois parts et se compte sur la sortie
 d'erreur : ce n'est ni un `REJECT` ni un `ACCEPT`. Une mesure sans aucun run derrière elle manque du
@@ -104,14 +116,22 @@ vérifier au premier lancement :
 - que `eval_reference.py score` lit un vrai `aggregate-result.json` : il accepte les noms en
   `camelCase` (bras `arms.with`) et en `snake_case` (`runs`).
 
-La CI épingle `claude` à la version 2.1.304 dans son job `validate`. Le jeu ne tourne pas en CI : il se
-lance sur un poste dont `claude plugin eval` existe, et la version qui l'a relevé est la 2.1.325.
+La CI épingle `claude` à la version 2.1.304 dans son job `validate` (`.github/workflows/tests.yml`, chemin
+protégé : il n'est pas changé ici). `claude plugin eval` existe dans la version 2.1.304. Relevé le
+2026-11-17 : le paquet `@anthropic-ai/claude-code@2.1.304` installé dans un dossier jetable, son binaire
+lancé avec un `HOME` jetable, `claude --version` répond `2.1.304 (Claude Code)`, et `claude plugin --help` liste la
+sous-commande `eval`. `claude plugin eval --help` y montre les options que `eval_reference.py run` passe
+(`--scaffold`, `--ablation`, `--no-publish`, `--max-cost-usd`, `--output-dir`, `--runs`, `--case`). Aucun
+cas n'y a tourné, et aucun appel à un modèle n'a été fait : seule l'aide a été lue. Le jeu ne tourne pas en
+CI : il se lance sur un poste dont `claude plugin eval` existe, et la version qui a relevé le format des
+cas est la 2.1.325.
 
 ## Limites des cas
 
 - Les cas `faux-accept-` de la PR 13 (tour 2) et de la PR 23 sont faibles par construction : le défaut
   que le juge de l'époque a laissé passer n'était qu'un `MINOR` dans le verdict rendu ensuite. Le juge
-  peut bien juger et ne pas le nommer.
+  peut bien juger et ne pas le nommer. Ils sont hors de `false-accept` (choix de l'orchestrateur du
+  ticket) pour qu'un `ACCEPT` juste ne fasse pas échouer l'objectif `false-accept <= 0 %`.
 - Les corps de PR et de ticket figés sont ceux d'aujourd'hui (les commentaires du ticket sont ceux
   d'avant le verdict), les corps de PR coupés avant `Rapport d'agent`, pas ceux du moment de la revue. Les tableaux de `forge:qc-gate` sont reconstruits (état des checks de la tête, périmètre) :
   les sondes que le jeu ne rejoue pas y sont marquées `NOT RUN`.

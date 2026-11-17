@@ -1,6 +1,6 @@
 schema_version: "1.0"
 name: faux-accept-pr13-tour2
-description: "Rejoue la PR 13 au tour 2 devant forge:qc-conf (la correction de la PR du cas blocker-pr13-tour1, ACCEPT à l'époque). Verdict attendu, REJECT, ou au moins le BLOCKER qui manquait: la PR a été fusionnée sur ACCEPT et ce défaut a suivi."
+description: "Rejoue la PR 13 au tour 2 devant forge:qc-conf (la correction de la PR du cas blocker-pr13-tour1, ACCEPT à l'époque). Le défaut manqué n'était qu'un MINOR: un ACCEPT juste y est possible, donc ce cas reste hors de `false-accept` (il n'a pas la notation `no-false-accept`). Il se lit à la main, par `rejects` et `names-the-defect`."
 tags: [faux-accept, juge]
 context:
   scaffold_script: scaffold.sh

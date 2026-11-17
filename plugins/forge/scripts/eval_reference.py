@@ -7,11 +7,14 @@ The reference set is the directory `evals/` of the plugin: one case per past rev
 diff and the ticket of a pull request, with a frozen `forge:qc-gate` table, in front of the judge, and a
 grader that reads the verdict line. A case named `blocker-<...>` replays a pull request with a proven
 BLOCKER: the judge must return `REJECT`. A case named `faux-accept-<...>` replays a pull request that was
-accepted and later proved wrong: the judge must return `REJECT`, or at least name the missing defect. Each
-of those two families carries two regex graders on the last message: `rejects` (a line `VERDICT: REJECT`)
-and `no-false-accept` (no line `VERDICT: ACCEPT`). A case named `accept-<...>` replays a pull request that
-was accepted at round 1, merged and never fixed afterwards: the judge must return `ACCEPT`. It carries
-`accepts` (a line `VERDICT: ACCEPT`) and `no-false-reject` (no line `VERDICT: REJECT`).
+accepted and later proved wrong: the judge should return `REJECT`, or at least name the missing defect.
+Each case of those two families carries the regex grader `rejects` (a line `VERDICT: REJECT`) on the last
+message, and `no-false-accept` (no line `VERDICT: ACCEPT`) unless its missed defect was only a MINOR: such
+a case (its `case.yaml` says so) has no `no-false-accept`, because a judge that accepts there may be
+right, so its `ACCEPT` is not counted in `false-accept`. It is read by hand. A case named
+`accept-<...>` replays a pull request that was accepted at round 1, merged and never fixed afterwards: the
+judge must return `ACCEPT`. It carries `accepts` (a line `VERDICT: ACCEPT`) and `no-false-reject` (no line
+`VERDICT: REJECT`).
 
 `score` reads the `aggregate-result.json` that `claude plugin eval` writes, and prints the JSON that
 `factory_slo.py --reference` reads:
@@ -19,8 +22,10 @@ was accepted at round 1, merged and never fixed afterwards: the judge must retur
     {"judge-recall": 0.9, "false-accept": 0.05, "false-reject": 0.1}
 
 - `judge-recall`: the share of runs of the `blocker-` cases whose verdict is `REJECT`.
-- `false-accept`: the share of runs of the `blocker-` and `faux-accept-` cases whose verdict is `ACCEPT`.
-  Those cases replay a pull request that should not have been accepted, so each `ACCEPT` is a false one.
+- `false-accept`: the share of runs, among those of the cases that carry `no-false-accept` (the `blocker-`
+  cases and the `faux-accept-` cases with a BLOCKER-grade defect), whose verdict is `ACCEPT`. Those cases
+  replay a pull request that should not have been accepted, so each `ACCEPT` is a false one. A case whose
+  missed defect was only a MINOR is left out.
 - `false-reject`: the share of runs of the `accept-` cases whose verdict is `REJECT`: a judge that rejects
   everything scores a perfect recall, and this share is what shows it. `factory_slo.py` reads only the
   first two keys; this one is not an objective.
@@ -131,7 +136,7 @@ def measure(result: dict[str, Any]) -> Measure:
 def summary(counts: Measure) -> list[str]:
     lines = [
         f"judge-recall : {counts.found}/{counts.blocker_runs} run(s) de cas `{BLOCKER_PREFIX}` en REJECT",
-        f"false-accept : {counts.accepted}/{counts.runs} run(s) en ACCEPT, cas `{BLOCKER_PREFIX}` et `faux-accept-`",
+        f"false-accept : {counts.accepted}/{counts.runs} run(s) en ACCEPT, cas qui portent `no-false-accept`",
     ]
     if counts.accept_runs:
         lines.append(f"false-reject : {counts.false_rejected}/{counts.accept_runs} run(s) en REJECT, cas `{ACCEPT_PREFIX}`")

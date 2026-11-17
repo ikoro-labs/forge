@@ -151,6 +151,14 @@ avant un coder ou une revue. Aucune clé n'a de valeur par défaut : sans `run-l
 côté Windows (la mémoire disponible par `GlobalMemoryStatusEx`, sans charge à 1 min, et la borne par
 objet de tâche) n'a tourné que dans la CI. macOS n'est pas couvert.
 
+Le lanceur n'est tenu que par une consigne tant que rien ne le refuse : `guard_coder` refuse donc au
+`forge:coder` toute commande qui lance une suite sans `bounded_run.py --` (`pytest`, `python -m
+unittest`, une ligne de `ci-replay` ou de `red-replay`), et le refus donne la forme bornée. Le garde lit
+le nom de la suite avant ses arguments : `uv run pytest -k sync` est refusé, `uv add pytest` ne l'est
+pas. Il n'a été éprouvé que par les tests du dépôt (`tests/test_guard_coder_bound.py`,
+`tests/test_guard_coder_option_value.py`), qui lui donnent des commandes écrites ; ce garde n'a jamais
+été essayé dans une vraie session de coder, et le refus tel que l'agent le reçoit n'a pas été vu.
+
 Une sonde de plus, sans clé nouvelle, rejoue la suite sur chaque commit de la PR : à partir des clés
 `ci-replay`, `install`, `run-limits` et `run-budget`, `plugins/forge/scripts/commit_replay.py` extrait
 chaque commit propre à la PR par `git archive` (comme `base_replay.py`, sans rien écrire dans le dépôt,
