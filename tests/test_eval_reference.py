@@ -22,6 +22,10 @@ EVALS = support.PLUGIN / "evals"
 BLOCKERS = {"blocker-pr11-tour1", "blocker-pr13-tour1", "blocker-pr28-tour1", "blocker-pr30-tour1",
             "blocker-pr51-tour1"}
 FALSE_ACCEPTS = {"faux-accept-pr13-tour2", "faux-accept-pr14-tour1", "faux-accept-pr23-tour1"}
+# PR accepted at round 1, merged, never fixed since: the head and the base the judge saw at round 1.
+ACCEPTS = {
+    "accept-pr226-tour1": ("ad904b756aa76913e7a42e2d9288d386077eafd8", "d972447662d60b530d64134145a46071fe36529f"),
+}
 FIXTURES = ("ticket.txt", "pr-body.txt", "pr.diff", "gate.txt", "claude.txt", "rules-forge.txt",
             "rules-git.txt", "usine.txt")
 
@@ -264,8 +268,8 @@ class CaseForm(unittest.TestCase):
     def cases(self) -> list[Path]:
         return sorted(path for path in EVALS.iterdir() if path.is_dir())
 
-    def test_the_set_holds_the_five_blockers_and_the_three_false_accepts(self) -> None:
-        self.assertEqual({path.name for path in self.cases()}, BLOCKERS | FALSE_ACCEPTS)
+    def test_the_set_holds_the_five_blockers_the_three_false_accepts_and_the_three_accepts(self) -> None:
+        self.assertEqual({path.name for path in self.cases()}, BLOCKERS | FALSE_ACCEPTS | set(ACCEPTS))
 
     def test_each_case_names_itself_after_its_folder_and_loads_its_frozen_data(self) -> None:
         for folder in self.cases():
@@ -318,7 +322,10 @@ class CaseForm(unittest.TestCase):
 
     def test_each_case_grades_the_verdict_line_with_the_two_graders_the_script_reads(self) -> None:
         for folder in self.cases():
+            if folder.name in ACCEPTS:
+                continue
             with self.subTest(case=folder.name):
+                self.assertFalse((folder / "graders" / "accepts.md").exists())
                 rejects = frontmatter(folder / "graders" / "rejects.md")
                 accepts = frontmatter(folder / "graders" / "no-false-accept.md")
                 self.assertEqual((rejects["type"], rejects["match"]), ("regex", "contains"))
@@ -327,6 +334,35 @@ class CaseForm(unittest.TestCase):
                     "^VERDICT: REJECT\\s*$\n"))
                 self.assertTrue((folder / "graders" / "no-false-accept.md").read_text(encoding="utf-8").endswith(
                     "^VERDICT: ACCEPT\\s*$\n"))
+
+    def test_a_case_expecting_accept_grades_the_verdict_line_with_the_inverse_graders(self) -> None:
+        """#67 A1.1: `accepts` and `no-false-reject`, and neither grader of the REJECT families."""
+        for name in ACCEPTS:
+            folder = EVALS / name
+            with self.subTest(case=name):
+                accepts = frontmatter(folder / "graders" / "accepts.md")
+                kept = frontmatter(folder / "graders" / "no-false-reject.md")
+                self.assertEqual((accepts["type"], accepts["match"]), ("regex", "contains"))
+                self.assertEqual((kept["type"], kept["match"]), ("regex", "not_contains"))
+                self.assertTrue((folder / "graders" / "accepts.md").read_text(encoding="utf-8").endswith(
+                    "^VERDICT: ACCEPT\\s*$\n"))
+                self.assertTrue((folder / "graders" / "no-false-reject.md").read_text(encoding="utf-8").endswith(
+                    "^VERDICT: REJECT\\s*$\n"))
+                self.assertEqual(sorted(path.name for path in (folder / "graders").iterdir()),
+                                 ["accepts.md", "no-false-reject.md"])
+
+    def test_a_case_expecting_accept_says_so_and_replays_the_head_the_judge_saw_at_round_1(self) -> None:
+        """#67 A1.1: the description gives the expected verdict, the prompt the head and the base of round 1."""
+        for name, (head, base) in ACCEPTS.items():
+            folder = EVALS / name
+            with self.subTest(case=name):
+                description = next(line for line in (folder / "case.yaml").read_text(encoding="utf-8").splitlines()
+                                   if line.startswith("description:"))
+                self.assertIn("Verdict attendu, ACCEPT", description)
+                prompt = (folder / "prompt.md").read_text(encoding="utf-8")
+                self.assertIn(f"La PR {name.split('-pr')[1].split('-')[0]} est jugée au tour 1", prompt)
+                self.assertIn(f"`{head}`", prompt)
+                self.assertIn(f"`{base}`", prompt)
 
     def test_a_false_accept_case_also_names_the_defect_the_judge_missed(self) -> None:
         for folder in self.cases():
