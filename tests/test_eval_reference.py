@@ -534,6 +534,76 @@ class TrappedCases(unittest.TestCase):
                     self.assertIn(f"| Base et diff | {files} fichier(s) dans pr.diff, +{added} -{removed} |", gate)
 
 
+class TrappedMeasures(unittest.TestCase):
+    """#154 A3: the top-level keys keep reading real cases only; trapped and per-class figures are nested."""
+
+    def real(self) -> list[dict[str, Any]]:
+        # 3 blocker runs (1 ACCEPT) and 2 accept runs (1 REJECT): recall 2/3, false-accept 1/3, false-reject 1/2.
+        return [case("blocker-a", "REJECT", "REJECT", "ACCEPT"), case("accept-b", "ACCEPT", "REJECT")]
+
+    def trapped(self) -> list[dict[str, Any]]:
+        return [case("trap-weakened-test-pr1-a", "REJECT", "ACCEPT"), case("trap-out-of-scope-pr2-b", "ACCEPT", "ACCEPT"),
+                case("trap-unmet-criterion-pr3-c", "REJECT", "REJECT")]
+
+    def test_the_top_level_keys_cover_real_cases_only(self) -> None:
+        """#154 A3.1: trapped runs, which carry the same graders, leave the keys `factory_slo.py` reads unchanged."""
+        both = measure(result(*self.real(), *self.trapped())).reference()
+        real = measure(result(*self.real())).reference()
+        self.assertEqual({key: both[key] for key in ("judge-recall", "false-accept", "false-reject")}, real)
+        self.assertAlmostEqual(both["judge-recall"], 2 / 3)
+        self.assertAlmostEqual(both["false-accept"], 1 / 3)
+        self.assertAlmostEqual(both["false-reject"], 1 / 2)
+
+    def test_the_nested_keys_give_real_trapped_and_per_class_recall_and_false_accept(self) -> None:
+        """#154 A3.2: 6 trapped runs, 3 REJECT and 3 ACCEPT; per class 1/2, 0 and 1 for the recall."""
+        both = measure(result(*self.real(), *self.trapped())).reference()
+        self.assertEqual(set(both), {"judge-recall", "false-accept", "false-reject", "real", "trapped", "per-class"})
+        self.assertEqual(both["real"], {key: both[key] for key in ("judge-recall", "false-accept", "false-reject")})
+        self.assertEqual(both["trapped"], {"judge-recall": 0.5, "false-accept": 0.5})
+        self.assertEqual(both["per-class"], {
+            "weakened-test": {"judge-recall": 0.5, "false-accept": 0.5},
+            "out-of-scope": {"judge-recall": 0.0, "false-accept": 1.0},
+            "unmet-criterion": {"judge-recall": 1.0, "false-accept": 0.0},
+        })
+
+    def test_a_result_without_trapped_runs_keeps_the_top_level_keys_as_they_were(self) -> None:
+        """#154 A3.3: no nested key at all, the JSON of #67 as it was."""
+        self.assertEqual(measure(result(*self.real())).reference(),
+                         {"judge-recall": 2 / 3, "false-accept": 1 / 3, "false-reject": 1 / 2})
+        only_errors = measure(result(case("trap-weakened-test-x", None, error="API error")))
+        self.assertEqual(only_errors.reference(), {})
+
+    def test_a_trapped_case_judged_accept_is_not_counted_in_the_real_false_accept(self) -> None:
+        counts = measure(result(case("blocker-a", "REJECT"), case("trap-out-of-scope-x", "ACCEPT", "ACCEPT")))
+        self.assertEqual((counts.reference()["false-accept"], counts.reference()["trapped"]["false-accept"]), (0.0, 1.0))
+
+    def test_a_run_in_error_is_left_out_of_the_trapped_shares_and_counted(self) -> None:
+        counts = measure(result(case("trap-weakened-test-x", "REJECT"), case("trap-weakened-test-y", None, error="boom")))
+        self.assertEqual(counts.reference()["per-class"], {"weakened-test": {"judge-recall": 1.0, "false-accept": 0.0}})
+        self.assertEqual(counts.errors, 1)
+
+    def test_a_class_with_no_run_is_left_out_and_an_unknown_class_counts_only_as_trapped(self) -> None:
+        counts = measure(result(case("trap-unmet-criterion-x", "REJECT"), case("trap-mystery-y", "ACCEPT")))
+        reference = counts.reference()
+        self.assertEqual(list(reference["per-class"]), ["unmet-criterion"])
+        self.assertEqual(reference["trapped"], {"judge-recall": 0.5, "false-accept": 0.5})
+
+    def test_score_prints_the_nested_figures_and_factory_slo_still_reads_the_top_level_ones(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            source, target = Path(folder) / "aggregate-result.json", Path(folder) / "reference.json"
+            source.write_text(json.dumps(result(*self.real(), *self.trapped())), encoding="utf-8")
+            err = io.StringIO()
+            with redirect_stderr(err):
+                self.assertEqual(main(["score", str(source), "--output", str(target)]), 0)
+            recall, false_accept = reference("judge-recall", target), reference("false-accept", target)
+            written = json.loads(target.read_text(encoding="utf-8"))
+        self.assertAlmostEqual(recall.data["valeur"], 2 / 3)
+        self.assertAlmostEqual(false_accept.data["valeur"], 1 / 3)
+        self.assertEqual(written["per-class"]["out-of-scope"], {"judge-recall": 0.0, "false-accept": 1.0})
+        self.assertIn("pièges : judge-recall 3/6", err.getvalue())
+        self.assertIn("piège `out-of-scope` : judge-recall 0/2", err.getvalue())
+
+
 class Documented(unittest.TestCase):
     def page(self) -> str:
         return (support.REPO_ROOT / "docs" / "jeu-de-reference.md").read_text(encoding="utf-8")
