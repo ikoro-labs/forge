@@ -871,13 +871,45 @@ class MergeMethod(unittest.TestCase):
     def test_qc_merges_with_the_merge_method_key(self) -> None:
         skill = " ".join((support.PLUGIN / "skills" / "qc" / "SKILL.md").read_text(encoding="utf-8").split())
         self.assertIn("`gh pr merge <n> --<méthode> --delete-branch --body-file <fichier>`", skill)
-        self.assertIn("valeur de la clé `merge-method` (`squash` ou `merge`)", skill)
-        self.assertIn("Sans la clé `merge-method`, tu ne fusionnes pas", skill)
+        self.assertIn("valeur de la clé `merge-method` (`merge`, `squash` ou `rebase`)", skill)
+        self.assertNotIn("(`squash` ou `merge`)", skill)
         self.assertNotIn("gh pr merge <n> --squash", skill)
+
+    def test_qc_maps_each_merge_method_to_its_option(self) -> None:
+        # ikoro-labs/forge#63 A2.1: three values, three options.
+        skill = " ".join((support.PLUGIN / "skills" / "qc" / "SKILL.md").read_text(encoding="utf-8").split())
+        step = skill[skill.index("8. **Fusionner.**"):]
+        self.assertIn("`merge` donne `--merge`, `squash` donne `--squash`, `rebase` donne `--rebase`", step)
+
+    def test_qc_without_the_key_does_not_merge_and_asks_for_attention(self) -> None:
+        # ikoro-labs/forge#63 A1.1: key absent, no merge, the label and the Attention text.
+        skill = " ".join((support.PLUGIN / "skills" / "qc" / "SKILL.md").read_text(encoding="utf-8").split())
+        step = skill[skill.index("8. **Fusionner.**"):]
+        self.assertIn("Sans la clé `merge-method`, tu ne fusionnes pas", step)
+        self.assertIn("pose `needs-your-attention`", step)
+        self.assertIn("écris dans `Attention` `fusion sans objet (clé `merge-method` absente)`", step)
+        self.assertIn("`fusionnée par l'agent : non` dans `Verdict`", step)
+
+    def test_qc_local_branch_is_deleted_after_a_merge_commit_only(self) -> None:
+        # ikoro-labs/forge#63 A3.1: the local branch delete works after merge once the coder worktree is
+        # gone; after squash or rebase the local copy stays.
+        skill = " ".join((support.PLUGIN / "skills" / "qc" / "SKILL.md").read_text(encoding="utf-8").split())
+        step = skill[skill.index("8. **Fusionner.**"):]
+        paragraph = step[step.index("`--delete-branch` supprime"):step.index("Si la protection de la base")]
+        self.assertIn("après `merge`, `git branch -d` supprime la copie locale une fois le worktree du coder disparu", paragraph)
+        self.assertIn("après `squash` ou `rebase`, la copie locale reste", paragraph)
+        self.assertNotIn("squash ou un rebase, `git branch -d` ne la voit jamais", paragraph)
 
     def test_template_declares_the_merge_method_key(self) -> None:
         template = (support.PLUGIN / "templates" / "usine.md").read_text(encoding="utf-8")
         self.assertIn("- `merge-method` : `<squash>`", template)
+
+    def test_template_names_the_three_merge_methods_with_their_options(self) -> None:
+        # ikoro-labs/forge#63 A2.2: the template names merge, squash, rebase and the matching options.
+        template = " ".join((support.PLUGIN / "templates" / "usine.md").read_text(encoding="utf-8").split())
+        paragraph = template[template.index("La méthode de fusion d'une PR"):template.index("- `merge-method`")]
+        self.assertIn("`merge` (commit de fusion, `--merge`), `squash` (`--squash`) ou `rebase` (`--rebase`)", paragraph)
+        self.assertNotIn("`squash` ou `merge`", paragraph)
 
 
 class StackedPullRequests(unittest.TestCase):
