@@ -708,10 +708,25 @@ rulesets, runners, secrets, variables, clés, webhooks et dépôt ; `gh secret`,
 collaborateur et de dépôt). Une ligne `<préfixe de commande> | <raison>` par geste. Le préfixe se
 compare mot à mot au début de la commande, après les affectations d'environnement et les options
 globales de gh (`gh -R o/r label delete` correspond à `gh label delete`) ; la raison est reprise
-dans le refus. Une ligne sans raison refuse quand même, et le dit. La lecture (`GET`, `HEAD`)
-passe toujours. Sans la clé, seule la liste intégrée s'applique. Une par ligne.
+dans le refus. Une ligne sans raison refuse quand même, et le dit. Une lecture (`GET`, `HEAD`) n'est
+pas un geste du propriétaire ; elle passe si `gh-api-allow` et la liste du plugin l'admettent. Sans la
+clé, seule la liste intégrée s'applique. Une par ligne.
 
 - `owner-gesture` : `<gh label delete | les étiquettes sont posées par le propriétaire>`
+
+Les appels `gh api` propres au projet, que `guard_git` laisse passer en plus de la liste du plugin (les
+lectures d'une PR, de ses fichiers, de ses commentaires et de ses checks, de la CI et des sous-tickets,
+l'écriture d'un commentaire, d'un sous-ticket et d'une étiquette, GraphQL et la fusion). Un `gh api`
+qui n'est ni sur la liste du plugin ni sur une de ces lignes est refusé, l'appel et la raison nommés.
+Une ligne `<méthode> | <motif de chemin> | <raison>` par appel : la méthode est `GET`, `HEAD`, `POST`,
+`PUT`, `PATCH` ou `DELETE`, lue comme `gh` la lit (le dernier `-X`, sinon `POST` dès qu'un champ ou
+`--input` est donné, sinon `GET`) ; le motif se compare au chemin sans `?` ni `/` de tête, avec `*`
+(une partie d'un segment) et `**/` (des dossiers) ; la raison dit pourquoi le projet fait cet appel. Une
+ligne à qui il manque une partie, ou dont la méthode n'en est pas une, n'autorise rien et est citée dans
+le refus. La clé n'ouvre pas un geste du propriétaire (`owner-gesture` et la liste intégrée restent
+refusés). Sans la clé, seule la liste du plugin s'applique. Une par ligne.
+
+- `gh-api-allow` : `<DELETE | repos/*/*/git/refs/heads/* | le nettoyage des branches de PR>`
 
 Les formateurs lancés après chaque écriture d'un agent (Edit, Write, MultiEdit) : une ligne
 `<motif> | <commande>` par formateur. Le motif se compare au chemin relatif entier, en POSIX, casse

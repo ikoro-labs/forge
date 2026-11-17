@@ -47,6 +47,16 @@ like the command itself. The human can always run the command himself.
 The branch that matters is the one of the directory git acts on: `cd <dir> &&` and `git -C
 <dir>` move it, so each command is judged against the branch checked out there.
 
+A `gh api` call passes only when it is on an allow-list (`api_allow_refusal`): its method and its
+path must match a line of `PLUGIN_API_ALLOW` or of the project's `gh-api-allow` key, one `<method> |
+<path pattern> | <reason>` per line (a line short of a part allows nothing, and the refusal cites
+it). The method is read as gh reads it: the last `-X` or `--method`, else POST once a field or
+`--input` is given, else GET. A call the guard cannot read is refused, naming the call and the
+reason: a variable or a substitution in the endpoint, the method or an option's name, a glob, a
+brace expansion, a `#` or a `%` in the path, an empty, `.` or `..` segment, no endpoint. A variable
+in the value of a field is not one, and a GraphQL query is still read for its mutations (below).
+The owner gestures that follow are judged first, and no line of the key opens one.
+
 Also refused, to every agent, are the gestures of the owner of the repository: a write by
 `gh api` (any method but an explicit GET or HEAD) on collaborators, invitations, branch
 protection, rulesets, runners, secrets, variables, Actions permissions, keys, webhooks,
@@ -90,9 +100,10 @@ runs alone (a literal `cd` aside), and counts as a merge beside anything else; `
 
 Known limits:
 
-- a `gh api` write with a variable in its endpoint escapes the owner gestures
-  (`gh api --method PUT repos/$R/collaborators/x`);
-- `OWNER_ENDPOINT` does not cover the full URL `https://api.github.com/repos/...`;
+- an unquoted variable in the value of a `gh api` field, once expanded, may add words to the call
+  (`-f body=$X` with `X="a -X DELETE"`): the guard no longer sees the quotes it was typed with;
+- `OWNER_ENDPOINT` does not cover the full URL `https://api.github.com/repos/...`, which the
+  allow-list refuses as an absolute URL;
 - extended globs (`extglob`) are not handled;
 - a merge run by a file (a script, a program that calls gh or the API itself, a gh extension) or
   by a program that runs gh from one argument string (`script -c "gh pr merge 5"`) escapes it.
@@ -118,10 +129,13 @@ from typing import NamedTuple
 from budget import KEY as BUDGET_KEY
 from budget import merge_refusal, state_path
 from refusal_journal import record
-from usine import load, project_root, split_value
+from usine import load, pattern_regex, project_root, split_value
 
 # The project's own owner gestures, one per line: `<command prefix> | <reason>`.
 OWNER_KEY = "owner-gesture"
+# The `gh api` calls the project adds to the plugin's list, one per line:
+# `<method> | <path pattern> | <reason>`.
+API_ALLOW_KEY = "gh-api-allow"
 # The paths and prefixes no agent merges, one per line.
 PROTECTED_KEY = "protected-path"
 # The one way the project merges a PR: `merge`, `squash` or `rebase`.
@@ -165,6 +179,9 @@ def without_heredoc_bodies(command: str) -> str:
 _SHELL_CHARACTERS = ";&|()<>"
 _MASK = str.maketrans({char: chr(0xE000 + index) for index, char in enumerate(_SHELL_CHARACTERS)})
 _UNMASK = str.maketrans({chr(0xE000 + index): char for index, char in enumerate(_SHELL_CHARACTERS)})
+# A `#` inside a word (`pulls/1#x`) is a plain character for the shell, but shlex reads it as the
+# start of a comment and drops the rest of the line, options included: it is masked too.
+_MID_WORD_HASH = chr(0xE0FF)
 
 
 def _mask_quoted(text: str) -> str:
@@ -193,7 +210,8 @@ def _mask_quoted(text: str) -> str:
             out.append(char if char == '"' else char.translate(_MASK))
         else:
             quote = char if char in "'\"" else ""
-            out.append(char)
+            inside_word = char == "#" and bool(out) and out[-1][-1:] not in " \t\n;&|()<>"
+            out.append(_MID_WORD_HASH if inside_word else char)
         index += 1
     return "".join(out)
 
@@ -216,7 +234,7 @@ def _commands(command: str) -> list[list[str] | str]:
                         result.append(part)
                     current = []
                 else:
-                    current.append(part.translate(_UNMASK))
+                    current.append(part.translate(_UNMASK).replace(_MID_WORD_HASH, "#"))
         result.append(current)
     except ValueError:
         # Unbalanced quotes: fall back to plain words rather than let the command through.
@@ -558,6 +576,10 @@ class ApiCall(NamedTuple):
     method: str | None  # the last `-X` or `--method`; None when there is none
     endpoint: str
     options: list[tuple[str, str]]  # `(name, value)` of each field and `--input`, as typed
+    # What the shell may turn into something else where it decides the call: an endpoint, a word
+    # that follows it, an option's name, the value of `-X`. A variable in the value of a field,
+    # which cannot change the method or the path, is not one.
+    unreadable: list[str] = []
 
 
 # More operator-like words than this in a `gh api` call and the guard refuses: each one doubles or
@@ -584,7 +606,8 @@ def api_readings(words: list[str]) -> list[Reading] | None:
     `&` is a redirection (which takes the next word as its target, and a bare number before it as
     its descriptor) or the value of an option (`-t '>'`, `-q 1 > out`): that is a reading only
     after an option that awaits a value. The words cannot tell, so a reading is made of each
-    choice, as `(arguments, [(operator, target)])`. The caller judges them all and refuses when
+    choice, as `(arguments, [(operator, target)])`, the operator led by its descriptor when the
+    reading takes the number before it for one (`3<`). The caller judges them all and refuses when
     one refuses. None when there are too many to judge.
     """
     if sum(1 for word in words if REDIRECTION.match(word)) > MOST_OPERATOR_WORDS:
@@ -600,10 +623,11 @@ def api_readings(words: list[str]) -> list[Reading] | None:
             walk(index + 1, [*kept, word], redirections)  # an argument, or the value of an option
         if REDIRECTION.match(word):
             target = words[index + 1] if index + 1 < len(words) else ""
-            redirected = [*redirections, (word, target)]
-            walk(index + 2, kept, redirected)
-            if kept and kept[-1].isdigit():  # `2>/dev/null`: the number is the descriptor
-                walk(index + 2, kept[:-1], redirected)
+            walk(index + 2, kept, [*redirections, (word, target)])
+            if kept and kept[-1].isdigit():
+                # `2>/dev/null`, `3< file`: the number is the descriptor, and it stays in the
+                # operator (`3<`), so that a redirection of another descriptor is no standard input.
+                walk(index + 2, kept[:-1], [*redirections, (kept[-1] + word, target)])
 
     walk(0, [], [])
     return readings
@@ -617,11 +641,17 @@ def parse_api(words: list[str]) -> ApiCall:
     method: str | None = None
     endpoint: str | None = None
     options: list[tuple[str, str]] = []
+    unreadable: list[str] = []
+
+    def expands(word: str) -> bool:
+        return "$" in word or "`" in word
 
     def take(name: str, value: str) -> None:
         nonlocal method
         if name == "method":
             method = value
+            if expands(value):
+                unreadable.append(value)
         elif name in API_BODY_OPTIONS:
             options.append((name, value))
 
@@ -630,10 +660,15 @@ def parse_api(words: list[str]) -> ApiCall:
         word = words[index]
         index += 1
         if word == "--":
-            endpoint = endpoint if endpoint is not None else (words[index] if index < len(words) else "")
+            after = words[index:]
+            if endpoint is None:
+                endpoint = after[0] if after else ""
+            unreadable.extend(item for item in after if expands(item))
             break
         if word.startswith("--"):
             name, equals, value = word[2:].partition("=")
+            if expands(name):
+                unreadable.append(word)
             if name in API_LONG_VALUE_OPTIONS:
                 if not equals:
                     value = words[index] if index < len(words) else ""
@@ -645,6 +680,8 @@ def parse_api(words: list[str]) -> ApiCall:
                 letter = word[position]
                 position += 1
                 if letter not in API_SHORT_VALUE_OPTIONS:
+                    if expands(letter):
+                        unreadable.append(word)
                     continue
                 rest = word[position:]
                 if rest.startswith("=") and len(rest) > 1:
@@ -656,9 +693,12 @@ def parse_api(words: list[str]) -> ApiCall:
                     index += 1
                 take(API_SHORT_VALUE_OPTIONS[letter], value)
                 break
-        elif endpoint is None:
-            endpoint = word
-    return ApiCall(method, endpoint or "", options)
+        else:
+            if expands(word):
+                unreadable.append(word)
+            if endpoint is None:
+                endpoint = word
+    return ApiCall(method, endpoint or "", options, unreadable)
 
 
 def _gh_api_reads(args: list[str]) -> bool:
@@ -697,11 +737,6 @@ OWNER_MUTATION = re.compile(
 )
 
 
-def _api_method(words: list[str]) -> str:
-    method = parse_api(words).method
-    return method.upper() if method is not None else "POST"
-
-
 GRAPHQL_MUTATION_GESTURE = (
     "gh api graphql (mutation de protection, de ruleset, de collaborateur ou du dépôt)"
 )
@@ -728,6 +763,19 @@ def _graphql_inputs(words: list[str]) -> list[tuple[str, str]]:
     return inputs
 
 
+def _standard_input_operator(operator: str) -> str | None:
+    """`<`, `<<` or `<<-` when `operator` feeds the descriptor 0, else None.
+
+    A descriptor in front (`3< file`, `3<<EOF`) feeds that descriptor, not the standard input:
+    only no number or `0` does (`0< file`).
+    """
+    bare = operator.lstrip("0123456789")
+    descriptor = operator[: len(operator) - len(bare)]
+    if descriptor not in ("", "0") or bare not in ("<", "<<", "<<-"):
+        return None
+    return bare
+
+
 def _standard_input_text(
     redirections: list[tuple[str, str]], here: str | None, bodies: str, read_text: Callable[[str], str | None]
 ) -> str | None:
@@ -737,13 +785,14 @@ def _standard_input_text(
     a heredoc (`<<EOF`) is the bodies of the command. A heredoc of another command, a pipe and a
     here-string (`<<<`) are not known.
     """
-    last = next(
-        (item for item in reversed(redirections) if item[0] in ("<", "<<", "<<-")),
-        None,
-    )
-    if last is None:
+    fed = [
+        (bare, target)
+        for written, target in redirections
+        if (bare := _standard_input_operator(written)) is not None
+    ]
+    if not fed:
         return None
-    operator, target = last
+    operator, target = fed[-1]
     if operator == "<":
         path = _moved(here, target)
         if path is None or path == UNKNOWN or device_path_kind(path, here) is not None:
@@ -854,7 +903,136 @@ def _api_gesture_of(
         (scope.group(1) is None and endpoint.startswith("repos/"))
         or (scope.group(1) and OWNER_ENDPOINT.match(scope.group(1)))
     ):
-        return f"gh api {_api_method(words)} {endpoint}"
+        return f"gh api {_api_method(parse_api(words))} {endpoint}"
+    return None
+
+
+# The `gh api` calls an agent may make: `(method, path pattern, reason)`. A call that is on neither
+# this list nor a `gh-api-allow` line of the project is refused. The patterns are those of
+# `usine.pattern_regex`: `*` stands for part of one segment, `**/` for folders. Each of the first
+# lines is a call the skills and agents of the plugin quote (a test reads them all); the writes are
+# the ones a ticket may ask of an agent: a comment, a sub-issue, a label. `graphql` is one endpoint
+# whose request is judged by what it holds (`_graphql_gesture`), and the merge by `refusal`.
+PLUGIN_API_ALLOW: tuple[tuple[str, str, str], ...] = (
+    ("GET", "repos/*/*/pulls/*", "lire une PR"),
+    ("GET", "repos/*/*/pulls/*/files", "lire les fichiers d'une PR"),
+    ("GET", "repos/*/*/pulls/*/commits", "lire les commits d'une PR"),
+    ("GET", "repos/*/*/pulls/*/comments", "lire les commentaires de revue d'une PR"),
+    ("GET", "repos/*/*/pulls/*/reviews", "lire les revues d'une PR"),
+    ("GET", "repos/*/*/issues/*", "lire un ticket"),
+    ("GET", "repos/*/*/issues/*/comments", "lire les commentaires d'un ticket ou d'une PR"),
+    ("GET", "repos/*/*/issues/*/sub_issues", "lire les sous-tickets d'un ticket"),
+    ("GET", "repos/*/*/issues/*/labels", "lire les étiquettes d'un ticket"),
+    ("GET", "repos/*/*/commits/*/check-runs", "lire les checks d'un commit"),
+    ("GET", "repos/*/*/commits/*/status", "lire l'état d'un commit"),
+    ("GET", "repos/*/*/check-runs/*", "lire un check"),
+    ("GET", "repos/*/*/check-runs/*/annotations", "lire les annotations d'un check"),
+    ("GET", "repos/*/*/actions/runs", "lister les exécutions de la CI"),
+    ("GET", "repos/*/*/actions/runs/*", "lire une exécution de la CI"),
+    ("GET", "repos/*/*/actions/runs/*/jobs", "lire les jobs d'une exécution de la CI"),
+    ("GET", "repos/*/*/actions/runners", "lire les runners du dépôt"),
+    ("GET", "repos/*/*/branches/*", "lire une branche et sa protection"),
+    ("GET", "repos/*/*/rules/branches/*", "lire les règles d'une branche"),
+    ("POST", "repos/*/*/issues/*/comments", "écrire un commentaire sur un ticket ou une PR"),
+    ("POST", "repos/*/*/issues/*/sub_issues", "rattacher un sous-ticket"),
+    ("POST", "repos/*/*/issues/*/labels", "poser des étiquettes"),
+    ("DELETE", "repos/*/*/issues/*/labels/*", "retirer une étiquette"),
+    ("POST", "graphql", "une requête GraphQL, dont le garde lit le contenu"),
+    ("PUT", "repos/*/*/pulls/*/merge", "fusionner une PR, que les règles de fusion jugent"),
+)
+HTTP_METHODS = frozenset({"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"})
+
+
+class ApiAllow(NamedTuple):
+    """One accepted call: a method and the path it may reach."""
+
+    method: str
+    pattern: re.Pattern[str]
+
+
+def api_allow_rules(declared: Iterable[str]) -> tuple[list[ApiAllow], list[str]]:
+    """`(rules, faulty lines)`: the plugin's list, then the project's `gh-api-allow` lines.
+
+    A line is `<method> | <path pattern> | <reason>`. One that lacks a part, or names no HTTP
+    method (`*` is none), allows nothing: it is returned as faulty, never completed.
+    """
+    rules = [ApiAllow(method, pattern_regex(path)) for method, path, _reason in PLUGIN_API_ALLOW]
+    faulty: list[str] = []
+    for line in declared:
+        parts = split_value(line, 3)
+        if parts is None or parts[0].upper() not in HTTP_METHODS or not parts[1].strip("/"):
+            faulty.append(line)
+            continue
+        rules.append(ApiAllow(parts[0].upper(), pattern_regex(parts[1].strip("/"))))
+    return rules, faulty
+
+
+def _api_method(call: ApiCall) -> str:
+    """The method gh sends: the last `-X`, else a POST once a field or `--input` is given, else GET."""
+    if call.method is not None:
+        return call.method.upper()
+    return "POST" if call.options else "GET"
+
+
+def _path_problem(endpoint: str) -> str | None:
+    """Why the path of an endpoint cannot be matched against a pattern, or None.
+
+    The path is what comes before `?`. A segment that is empty, `.` or `..`, a `%` escape, a `#`, a
+    glob character or a brace expansion lets the shell or the server resolve it to another path
+    than the one the pattern saw.
+    """
+    if not endpoint:
+        return "it names no endpoint"
+    if "://" in endpoint:
+        return "an absolute URL is not read: write the path"
+    path = endpoint.split("?", 1)[0]
+    if any(char in path for char in "*[#%\\") or BRACE_EXPANSION.search(path):
+        return "its path holds a glob, a brace expansion, a `#` or a `%` escape the guard does not resolve"
+    if any(segment in ("", ".", "..") for segment in path.strip("/").split("/")):
+        return "its path holds an empty, `.` or `..` segment"
+    return None
+
+
+API_ALLOW_ADVICE = (
+    "the guard accepts the calls the plugin uses and the `gh-api-allow` lines of docs/agents/usine.md"
+    " (`<method> | <path pattern> | <reason>`): use one of them, or ask the human to add the line"
+)
+
+
+def api_allow_refusal(args: list[str], allow: Iterable[str] = ()) -> str | None:
+    """Why a `gh api` call (the words after `api`) is refused, or None: it is on the allow-list.
+
+    Judged in every reading of its words (see `api_readings`): the first that refuses wins. A call
+    the guard cannot read (a variable, a substitution or a glob where the method or the path is
+    decided, no endpoint) is refused, whatever the list says.
+    """
+    rules, faulty = api_allow_rules(allow)
+    readings = api_readings(args)
+    if readings is None:
+        return "gh api call with too many redirections to read: it cannot be matched against the `gh api` allow-list"
+    for words, _redirections in readings:
+        call = parse_api(words)
+        shown = f"gh api {_api_method(call)} {call.endpoint}"
+        problem = (
+            f"`{call.unreadable[0]}` is left to the shell"
+            if call.unreadable
+            else _path_problem(call.endpoint)
+        )
+        if problem is not None:
+            return (
+                f"`{shown}` cannot be read ({problem}), so it cannot be matched against the"
+                f" `gh api` allow-list; {API_ALLOW_ADVICE}"
+            )
+        path = call.endpoint.split("?", 1)[0].strip("/")
+        method = _api_method(call)
+        method = "GET" if method == "HEAD" else method
+        if not any(rule.method == method and rule.pattern.fullmatch(path) for rule in rules):
+            note = "".join(
+                f"; the line `{line}` of the `gh-api-allow` key is not `<method> | <path pattern> | <reason>`"
+                " and allows nothing"
+                for line in faulty
+            )
+            return f"`{shown}` is not on the `gh api` allow-list: {API_ALLOW_ADVICE}{note}"
     return None
 
 
@@ -1695,6 +1873,7 @@ def refusal(
     subagent: bool = False,
     merge_method: Sequence[str] | None = None,
     commit_messages: CommitMessages = lambda *_target: [],
+    gh_api_allow: Iterable[str] | None = None,
 ) -> str | None:
     """Why the command is refused, or None when it may run.
 
@@ -1706,9 +1885,12 @@ def refusal(
     `budget` says why the error budget forbids a merge (key `budget-action`), or None.
     `protected_paths` are the values of the `protected-path` key, judged on `changed_files`, None
     when they cannot be read; `pr_files` are judged by the infra guard. `gh_aliases` reads the gh
-    aliases; `subagent` says whether a subagent runs the command.
+    aliases; `subagent` says whether a subagent runs the command. `gh_api_allow` are the values of
+    the project's `gh-api-allow` key, beside the plugin's list of `gh api` calls; a caller that
+    passes none (None) does not ask for the allow-list, and `main` always passes the key's lines.
     """
     declared = list(owner_gestures)
+    api_allowed = None if gh_api_allow is None else list(gh_api_allow)
     branch_of = branch if callable(branch) else (lambda _directory: branch)
 
     def branch_where(directory: str | None) -> str:
@@ -1773,6 +1955,9 @@ def refusal(
                 return _owner_refusal(gesture), merges
             if declared_refusal := _declared_gesture(words, declared):
                 return declared_refusal, merges
+            if api_allowed is not None and (call := gh_command(words)) and call[0] == "api":
+                if refused := api_allow_refusal(call[1:], api_allowed):
+                    return refused, merges
             act = gh_act(words)
             if subagent and act is not None and act[:2] in ALIAS_GESTURES:
                 return ALIAS_REFUSAL.format(act[1]), merges
@@ -2169,6 +2354,7 @@ RULES = (
     ("reset --hard discards work", "reset-hard"),
     ("clean -f deletes untracked files", "clean-force"),
     ("geste du propriétaire du dépôt", "owner-gesture"),
+    ("the `gh api` allow-list", "gh-api-allow"),
     ("an alias may hide a merge", "alias-change"),
     ("and the aliases cannot be read", "alias-unreadable"),
     (MERGE_ALONE, "merge-form"),
@@ -2252,6 +2438,7 @@ def main() -> int:
         subagent=bool(event.get("agent_id")),
         merge_method=config.get(METHOD_KEY, []),
         commit_messages=commits_via_gh(cwd),
+        gh_api_allow=config.get(API_ALLOW_KEY, []),
     )
     if reason is None:
         return 0
