@@ -110,12 +110,14 @@ habituel, et une PR de prose en rend souvent une.
    refusée, remets chaque PR reportée sur sa base d'avant, `gh pr edit <m> --base <branche de
    tête>`, sans quoi son diff porterait les commits non fusionnés de la mère. Puis
    `gh pr merge <n> --<méthode> --delete-branch --body-file <fichier>`, où `<méthode>` est la
-   valeur de la clé `merge-method` (`squash` ou `merge`), seule dans sa commande
+   valeur de la clé `merge-method` (`merge`, `squash` ou `rebase`), seule dans sa commande
    (`guard_git` refuse une fusion accompagnée d'autre chose), puis, dans une commande à part,
    `gh pr edit <n> --add-label agent-merged` : tu agis sous le compte de l'humain, et sans
-   l'étiquette la fusion paraîtrait lue par lui. Sans la clé `merge-method`, tu ne fusionnes pas :
-   la PR reste ouverte sur son ACCEPT, et le compte rendu dit « fusion sans objet (clé
-   `merge-method` absente) ». Toujours avec un corps que tu écris : en `squash`, sans lui, GitHub
+   l'étiquette la fusion paraîtrait lue par lui. `merge` donne `--merge`, `squash` donne `--squash`,
+   `rebase` donne `--rebase`. Sans la clé `merge-method`, tu ne fusionnes pas : la PR reste ouverte
+   sur son ACCEPT, pose `needs-your-attention`, écris dans `Attention` `fusion sans objet (clé
+   `merge-method` absente)` et `fusionnée par l'agent : non` dans `Verdict`, puis arrête-toi :
+   l'humain fusionne. Toujours avec un corps que tu écris : en `squash`, sans lui, GitHub
    écrit sur la base tous les messages de commit de la branche, périmés compris, et une PR reprise
    au tour 2 ou 3 porte un message d'un tour précédent que son correctif a rendu faux. En `merge`,
    les commits de la branche arrivent sur la base quel que soit le corps, et `guard_git` ne lit
@@ -128,9 +130,11 @@ habituel, et une PR de prose en rend souvent une.
    dans le message ni dans la description de la PR, `Rapport d'agent` compris : le hook
    `guard_git` du plugin refuse la fusion sinon.
 
-   `--delete-branch` supprime la branche de tête sur `origin` et sa copie locale : après un
-   squash ou un rebase, `git branch -d` ne la voit jamais comme fusionnée, et `guard_git` refuse `-D` aux
-   agents. Une branche encore extraite dans le worktree d'un coder fait échouer gh après la fusion
+   `--delete-branch` supprime la branche de tête sur `origin` et sa copie locale, et le sort de
+   la copie locale suit la méthode : après `merge`, `git branch -d` supprime la copie locale une
+   fois le worktree du coder disparu, parce qu'un commit de fusion garde les commits de la branche
+   dans la base ; après `squash` ou `rebase`, la copie locale reste, parce que `git branch -d` ne
+   la voit jamais comme fusionnée, et `guard_git` refuse `-D` aux agents. Une branche encore extraite dans le worktree d'un coder fait échouer gh après la fusion
    (`failed to delete local branch`), et il s'arrête avant `origin` : la fusion est faite, pose
    l'étiquette, puis `git push origin --delete <branche>` ; la copie locale reste, elle est à ce
    worktree. Une PR empilée, reportée avant la fusion, reçoit ensuite la base à jour par
