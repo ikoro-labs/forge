@@ -159,10 +159,20 @@ draine.
 
 ### Le seuil
 
-`CLAUDE_SESSION_TOKEN_LIMIT`, 150 000 par défaut, quelle que soit la fenêtre du modèle et que la
-passation porte une feature ou non : le seuil, et le plafond dur 35 000 jetons plus haut, restent
-sous le point où la session se compacte elle-même. Seul le relais le pose, à cette même valeur,
-pour chaque successeur. Aucun `settings.json` ne doit le fixer.
+`CLAUDE_SESSION_TOKEN_LIMIT` est le réglage de l'utilisateur : il le pose dans le bloc `env` de
+`~/.claude/settings.json`. Sans réglage, le seuil est de 150 000, quelle que soit la fenêtre du
+modèle et que la passation porte une feature ou non : le seuil, et le plafond dur 35 000 jetons plus
+haut, restent sous le point où la session se compacte elle-même. Le réglage est un entier de 50 000
+à 965 000 : plus bas, la session passerait la main avant d'avoir travaillé ; plus haut, le plafond dur
+dépasserait le million de jetons.
+
+Le relais lit ce réglage dans `~/.claude/settings.json` et, s'il est valide, le passe à chaque
+successeur et l'écrit dans `seuil` ; sinon il passe 150 000. Il affiche la valeur et sa source
+(`threshold: <valeur> (source: <fichier ou default>)`).
+
+Une valeur invalide n'arrête jamais rien : `handoff_trigger.py` la signale par une ligne
+d'`additionalContext`, une seule par session, et applique 150 000. Il en va de même pour
+`CLAUDE_HANDOFF_DRAIN_MINUTES` (un entier positif), qui retombe sur 45.
 
 ### La passation
 
@@ -222,8 +232,8 @@ interactive ou un `CLAUDE_PID` inconnu, et (code 2) une passation qui ne nomme a
 
 | Variable | Défaut | Effet |
 | --- | --- | --- |
-| `CLAUDE_SESSION_TOKEN_LIMIT` | 150000 | seuil de drainage, posé par le relais seulement |
-| `CLAUDE_HANDOFF_DRAIN_MINUTES` | 45 | minutes de drainage avant le plafond dur |
+| `CLAUDE_SESSION_TOKEN_LIMIT` | 150000 | seuil de drainage, réglage de l'utilisateur dans le bloc `env` de `~/.claude/settings.json` (50000 à 965000), que le relais passe au successeur ; une valeur invalide est signalée et 150000 s'applique |
+| `CLAUDE_HANDOFF_DRAIN_MINUTES` | 45 | minutes de drainage avant le plafond dur (entier positif) ; une valeur invalide est signalée et 45 s'applique |
 | `CLAUDE_HANDOFF_DIR` | `~/.claude/hooks/state/handoffs` | dossier des passations, `~` et variables développés (`%LOCALAPPDATA%\forge\handoffs`) ; les marqueurs et compteurs restent dans `~/.claude/hooks/state` |
 | `CLAUDE_HANDOFF_RELAY_MAX` | 200 | relais par projet et par jour (code 3 au-delà) |
 | `CLAUDE_HANDOFF_CLOSE_DELAY` | 45 | secondes avant la fermeture de la session appelante, par le relais ou par `--yield`, 0 la garde ouverte |
