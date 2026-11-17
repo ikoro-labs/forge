@@ -109,7 +109,9 @@ passage (étape 4). Par défaut : 5 tickets, 3 coders, 6 heures et 3 000 000 jet
 6. **L'agent `forge:coder` existe** dans la liste des agents. Sinon le plugin n'est pas chargé dans
    cette session : arrête-toi et dis-le. Pas de repli sur un agent générique, qui n'aurait ni le
    rôle ni le hook `guard_coder`.
-7. **L'heure de départ** : `date -u +%s`, que tu gardes pour le plafond de durée (étape 4).
+7. **L'heure de départ** : `date -u +%s`, que tu gardes pour le plafond de durée (étape 4). Un relais
+   qui reprend le passage garde le `passage_depart` de la passation (son front matter) et recalcule
+   la durée depuis lui, jamais depuis une durée écrite dans le corps.
 8. **Le budget d'erreur** : recalcule l'état des objectifs de service,
 
    ```
@@ -221,7 +223,9 @@ uv run --no-project --quiet python "${CLAUDE_PLUGIN_ROOT}/scripts/parse_output.p
 Code 1 : la sortie n'a pas la forme du contrat. Reprends le coder une fois (`SendMessage`) avec la
 phrase que le script a rendue ; un second échec se traite comme `RESULT: FAILED`. Code 0 :
 
-- `RESULT: PR` : la PR entre dans la file de revue.
+- `RESULT: PR` : relis le corps de la PR et chaque ligne, test ou sortie qu'il affirme, à la tête de sa
+  branche (`git show origin/<branche>:<chemin>`). Une affirmation que la tête ne tient pas renvoie le
+  coder une fois (`SendMessage`) avec la phrase fausse ; ensuite, la PR entre dans la file de revue.
 - `RESULT: BLOCKED` : d'abord l'agent `forge:staff-engineer` (outil Agent, au premier plan), ou
   `forge:product-owner` si la question est produit ou UX, avec la question, la recommandation du
   coder, le ticket et la feature. Un `TECHNICAL` de `forge:product-owner` part, une fois, vers

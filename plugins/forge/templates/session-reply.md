@@ -11,5 +11,6 @@ Features: <the output of `scripts/report_mail.py --features`, copied as printed,
 
 - Free language: `Fait`, `Mesure`, `Attend ta décision` and `CI et runners` are the first four fields; `Features` is the same word in both.
 - `Features` is the script's table (`Feature | Closed / total | Open PRs | Blocked | Ready`, then the `In parallel:` line) or its single line, never your words: the guard refuses the rest, and leaves the block out of the line and word caps.
+- A gesture reserved to the human goes in `Awaiting your decision` as a command ready to run, never as a description of it.
 - More than two elements in a field go in a table, never in a list.
 - At most 150 words of prose (key `output-words-session-reply`); tables and code blocks do not count. No paragraph over 60 words (key `output-words-paragraph`).

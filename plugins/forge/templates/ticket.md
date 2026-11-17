@@ -1,5 +1,5 @@
 <!-- template: ticket | max-lines: 25, this comment excluded | required: Motif, Criteria | rules: socle.md -->
-Motif: <case allowed by the repository> <source: link, or the human's words and date>
+Motif: <case allowed by the repository> <source: link, or the date of the human's decision>
 Feature: F-NNNN <optional; required when the motif is `fusion-bloquee`>
 
 <What is wrong or missing, for whom, in three sentences at most. Facts with their source.>
@@ -19,3 +19,5 @@ AGREED: test-author, coder, qc-conf <and each reviewer whose perimeter the PR to
 - <what a reader could expect here and is not done>
 
 Refs: <spec, design, ADR or parent ticket>
+
+- On a public repository, never quote the human's words or a private note: restate the decision.

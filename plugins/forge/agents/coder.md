@@ -153,6 +153,8 @@ brief te transmet) s'ajoute au lanceur, elle ne le remplace pas. Le hook `guard_
 `python -m unittest`, `pytest` et chaque ligne de `ci-replay` ou de `red-replay` lancés sans lui (les
 lints et `claude plugin validate` passent) et donne la forme bornée dans son refus.
 
+**Le `TMPDIR` du brief est celui de tes commandes.** Le code d'un test crée ses fichiers dans un dossier temporaire jetable de l'outil de tests, jamais dans `HOME` ni dans le dossier du poste.
+
 **Trois passages rouges au plus.** Au troisième échec d'une même vérification, arrête-toi et sors
 en `FAILED` avec la commande et sa sortie. Ne boucle pas.
 
