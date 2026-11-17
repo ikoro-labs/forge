@@ -67,6 +67,11 @@ uv run --no-project --quiet python plugins/forge/scripts/eval_reference.py score
   rejette tout aurait un `judge-recall` parfait. `factory_slo.py` ne lit que les deux premières clés :
   aucun objectif de service ne porte sur celle-ci.
 
+Le JSON et la ligne que `score` imprime sur la sortie d'erreur ne disent pas la même chose : chaque clé du
+JSON porte une part (un nombre entre 0 et 1), et la ligne porte un compte (runs en défaut sur runs notés).
+Avec trois cas `accept-` d'un run chacun dont un est jugé `REJECT`, la clé `false-reject` vaut `0.333` et
+la ligne imprimée porte le compte `1/3`. `factory_slo.py` lit la part, jamais la ligne.
+
 Un run en erreur (appel qui échoue, délai dépassé) reste hors des trois parts et se compte sur la sortie
 d'erreur : ce n'est ni un `REJECT` ni un `ACCEPT`. Une mesure sans aucun run derrière elle manque du
 fichier, et l'objectif la lit « sans objet », jamais 0 ni 100 % ; `false-reject` est « sans objet » tant

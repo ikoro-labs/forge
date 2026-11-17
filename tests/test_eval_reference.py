@@ -465,6 +465,12 @@ class Documented(unittest.TestCase):
         self.assertIn("PR 13 au tour 2 et de la PR 23", text)
         self.assertNotIn("des cas `blocker-` et `faux-accept-` dont le verdict est `ACCEPT`", text)
 
+    def test_the_page_says_the_json_key_is_a_share_and_the_printed_line_a_count(self) -> None:
+        """#67 part 3 A2: `false-reject` is 0.333 in the JSON and `1/3` on the line."""
+        text = self.page()
+        self.assertIn("0.333", text)
+        self.assertIn("`1/3`", text)
+
     def test_the_page_gives_the_command_and_the_ceiling(self) -> None:
         text = (support.REPO_ROOT / "docs" / "jeu-de-reference.md").read_text(encoding="utf-8")
         self.assertIn("eval_reference.py run --max-cost-usd", text)
