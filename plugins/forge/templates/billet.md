@@ -12,5 +12,6 @@ awaits: <nothing | reply>
 - `type` : `claim` prend une ressource, `release` la rend, `info` informe, `question` demande, `reply` répond.
 - `awaits` : `nothing` ou `reply`.
 - `resource` prend ses valeurs dans la clé `shared-resource` de `usine.md` (une ligne par valeur), ou `none`. Sans cette clé, l'étape est sans objet : toute valeur non vide passe.
-- `measure` : `load=1.25 memory=5200MB time=2026-11-16T14:13+01:00`. `time` est l'heure ISO 8601 avec son décalage (`Z` compris), jamais l'heure locale nue ni une prose.
+- `measure` : `load=1.25 memory=5200MB time=2026-11-16T14:13+01:00`. `time` est l'heure ISO 8601 avec son décalage (`Z` compris), jamais l'heure locale nue ni une prose. Relève l'heure juste avant d'envoyer : le hook compare
+  `time` à l'heure du poste et refuse un écart de plus de 5 minutes.
 - Le hook `guard_output` refuse le message qui s'écarte du gabarit et nomme chaque écart ; un message refusé ne part pas.

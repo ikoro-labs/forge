@@ -7,6 +7,7 @@ the hook adds: it judges a message to another session only, and a refused messag
 
 import json
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 
 import support
@@ -73,6 +74,11 @@ def measure(**parts: str) -> str:
     """A `measure` value: the three parts of the template, one replaced at a time."""
     values = {"load": "1.25", "memory": "5200MB", "time": "2026-11-16T14:13+01:00", **parts}
     return " ".join(f"{key}={value}" for key, value in values.items())
+
+
+def current() -> str:
+    """A `measure` whose time is the host clock's, as the hook (A5) reads it."""
+    return measure(time=datetime.now(timezone.utc).astimezone().isoformat(timespec="minutes"))
 
 
 class Lines(unittest.TestCase):
@@ -196,7 +202,7 @@ class Hook(unittest.TestCase):
         with isolated() as project:
             register(project.parent / "home", 4242, sessionId="e1ae680a-d488", name="shipyard-f6", cwd="/x")
             refused = outcome(json.dumps(send("shipyard-f6", PROSE)))
-            sent = outcome(json.dumps(send("shipyard-f6", BILLET)))
+            sent = outcome(json.dumps(send("shipyard-f6", billet(measure=current()))))
         self.assertEqual(refused.code, REFUSED)
         self.assertEqual((sent.code, sent.stderr, sent.stdout), (0, "", ""))
 
@@ -271,8 +277,8 @@ class Resource(unittest.TestCase):
             page = project / "docs" / "agents" / "usine.md"
             page.parent.mkdir(parents=True)
             page.write_text("- `shared-resource` : `worktree-pool`\n", encoding="utf-8")
-            refused = outcome(json.dumps(send("shipyard-f6", billet(resource="the-database"))))
-            allowed = outcome(json.dumps(send("shipyard-f6", billet(resource="worktree-pool"))))
+            refused = outcome(json.dumps(send("shipyard-f6", billet(resource="the-database", measure=current()))))
+            allowed = outcome(json.dumps(send("shipyard-f6", billet(resource="worktree-pool", measure=current()))))
         self.assertEqual(refused.code, REFUSED)
         self.assertIn("`resource: the-database` is not a value of the key `shared-resource`", refused.stderr)
         self.assertEqual((allowed.code, allowed.stderr), (0, ""))

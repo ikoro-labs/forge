@@ -35,7 +35,7 @@ import re
 import sys
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from html.parser import HTMLParser
 from pathlib import Path
 
@@ -115,8 +115,8 @@ DECIDER_KNOWN = frozenset({
 GATE_MOST_TABLE_LINES = 30
 BILLET_WORDS = 60
 BILLET_SEPARATOR = "---"
-BILLET_RESOURCE_KEY = "shared-resource"
-# The fields of the billet that take a closed list of values; `templates/billet.md` shows the same.
+BILLET_CLOCK_MINUTES = 5
+BILLET_RESOURCE_KEY = "shared-resource"# The fields of the billet that take a closed list of values; `templates/billet.md` shows the same.
 BILLET_VALUES = {
     "type": ("claim", "release", "info", "question", "reply"),
     "awaits": ("nothing", "reply"),
@@ -445,8 +445,10 @@ def _instant(value: str) -> bool:
     return True
 
 
-def _measure(value: str) -> list[str]:
-    """The deviations of the `measure` field: `load=<n> memory=<n>MB time=<ISO 8601 with offset>`."""
+def _measure(value: str, now: datetime | None = None) -> list[str]:
+    """The deviations of the `measure` field: `load=<n> memory=<n>MB time=<ISO 8601 with offset>`.
+
+    With `now`, the host clock, a `time` more than `BILLET_CLOCK_MINUTES` from it is one too."""
     match = BILLET_MEASURE.fullmatch(value)
     if match is None:
         return [
@@ -461,11 +463,23 @@ def _measure(value: str) -> list[str]:
         found.append(f"`memory={memory}` is not whole megabytes, like `memory=5200MB`")
     if not _instant(time):
         found.append(f"`time={time}` is not ISO 8601 with its offset, like `time=2026-11-16T14:13+01:00`")
+    elif now is not None:
+        gap = abs(now - datetime.fromisoformat(time.replace("Z", "+00:00")))
+        if gap > timedelta(minutes=BILLET_CLOCK_MINUTES):
+            found.append(
+                f"`time={time}` is {round(gap.total_seconds() / 60)} minutes from the host clock"
+                f" ({now.isoformat(timespec='minutes')}), at most {BILLET_CLOCK_MINUTES}: read the clock"
+                " just before you send, do not write the time from memory"
+            )
     return found
 
 
-def _billet(text: str, template: str, config: Mapping[str, list[str]]) -> list[str]:
-    """Every way `text` departs from the billet of `templates/billet.md`."""
+def _billet(
+    text: str, template: str, config: Mapping[str, list[str]], now: datetime | None = None
+) -> list[str]:
+    """Every way `text` departs from the billet of `templates/billet.md`.
+
+    `now` is the host clock: given, it holds the `time` of `measure` to `BILLET_CLOCK_MINUTES` of it."""
     lines = text.strip().splitlines()
     cut = next((i for i, line in enumerate(lines) if line.strip() == BILLET_SEPARATOR), None)
     found: list[str] = []
@@ -501,7 +515,7 @@ def _billet(text: str, template: str, config: Mapping[str, list[str]]) -> list[s
             f" {', '.join((*resources, 'none'))}"
         )
     if fields.get("measure"):
-        found += _measure(fields["measure"])
+        found += _measure(fields["measure"], now)
     written = sum(1 for line in lines if line.strip())
     most_lines = line_cap(template)
     if most_lines is not None and written > most_lines:
@@ -513,16 +527,22 @@ def _billet(text: str, template: str, config: Mapping[str, list[str]]) -> list[s
 
 
 def deviations(
-    text: str, kind: str, config: Mapping[str, list[str]] | None = None, root: Path | None = None
+    text: str,
+    kind: str,
+    config: Mapping[str, list[str]] | None = None,
+    root: Path | None = None,
+    now: datetime | None = None,
 ) -> list[str]:
-    """Every way `text` departs from the rules of `kind`; empty when it conforms."""
+    """Every way `text` departs from the rules of `kind`; empty when it conforms.
+
+    `now`, the host clock, is read by the billet alone: its `time` is held to it when given."""
     if kind not in KINDS:
         raise ValueError(f"unknown kind `{kind}`: one of {', '.join(sorted(KINDS))}")
     config = config or {}
     if kind == "exempt":
         return []
     if kind == "billet":
-        return _billet(text, _template_text(kind, config, root), config)
+        return _billet(text, _template_text(kind, config, root), config, now)
     if kind == "report-mail":
         text = _from_html(text)
     lines, prose = _structure(_unwrap(text) if kind in KEYED else text)
@@ -605,7 +625,7 @@ def main(argv: list[str]) -> int:
     from usine import load, project_root
 
     root = project_root()
-    found = deviations(text, argv[0], load(root), root)
+    found = deviations(text, argv[0], load(root), root, datetime.now(timezone.utc))
     for deviation in found:
         sys.stdout.write(f"- {deviation}\n")
     return 1 if found else 0

@@ -15,8 +15,9 @@ One script for the declarations of `hooks.json`, told apart by `hook_event_name`
   `api.github.com` by `curl` or `wget` is refused: its body would go unread.
 - `PreToolUse` on `SendMessage`: a message to another session (an address `uds:`, `bridge:` or
   `did:`, or the name or id of a session of `~/.claude/sessions/`) must be a billet,
-  `templates/billet.md`. A message to an agent of the session (`main`, a teammate) is free prose, and
-  so is a structured message. A refused message does not leave, and is refused each time.
+  `templates/billet.md`, its `time` within 5 minutes of the host clock. A message to an agent of the
+  session (`main`, a teammate) is free prose, and so is a structured message. A refused message does
+  not leave, and is refused each time.
 - `Stop`: the session's reply to the human (`last_assistant_message`, else the last assistant
   entry of the transcript), checked against `templates/session-reply.md`.
 
@@ -267,7 +268,7 @@ def _send(event: Mapping[str, object]) -> Outcome:
     if not isinstance(message, str) or not _other_session(tool_input.get("to")):
         return Outcome(0)  # a structured message is a protocol object, not prose to hold to the billet
     root = project_root(event)
-    found = deviations(message, "billet", load(root), root)
+    found = deviations(message, "billet", load(root), root, datetime.now(timezone.utc))
     if not found:
         return Outcome(0)
     return Outcome(REFUSED, stderr=(
