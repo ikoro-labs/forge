@@ -33,7 +33,9 @@ from guard_git import (
     _subcommand_and_args,
     gh_act,
     gh_command,
+    verb_of,
 )
+from refusal_journal import record
 from usine import load, project_root
 
 GATE = "forge:qc-gate"
@@ -266,6 +268,33 @@ def _str(value: object) -> str | None:
     return value if isinstance(value, str) else None
 
 
+# The refusals journal (`refusal_journal.py`): the name of each rule, found by a fixed phrase of the
+# text this guard refuses with, never by the command. The first marker found wins.
+RULES = (
+    ("hides the command it runs", "hidden-command"),
+    (" by a redirection", "redirection"),
+    ("writes a file by `--output`", "output-option"),
+    ("is not a read this role may run", "not-a-read"),
+    ("this role reads, it never writes a file", "write-tool"),
+    ("the gate measures, it never changes a history", "git-history"),
+    ("`git config` write", "git-config"),
+    ("`git branch` write", "git-branch"),
+    ("in the project's working copy", "working-copy"),
+    ("the gate never writes to GitHub", "gh-write"),
+    ("the hook could not read", "unreadable-event"),
+)
+
+
+def _verb(event: object) -> str:
+    """The shell command's verb (`git push`), or the tool's name (`Write`)."""
+    if not isinstance(event, dict):
+        return "other"
+    tool, tool_input = str(event.get("tool_name", "")), event.get("tool_input")
+    if tool in ("Bash", "PowerShell") and isinstance(tool_input, dict):
+        return verb_of(str(tool_input.get("command", "")))
+    return tool or "other"
+
+
 def main() -> int:
     try:
         event = json.load(sys.stdin)
@@ -278,6 +307,7 @@ def main() -> int:
         reason = refusal(event)
     if reason is None:
         return 0
+    record("guard_readonly", reason, RULES, event, lambda: _verb(event))
     sys.stderr.write(f"Blocked by the read-only guard (forge plugin): {reason}.\n")
     return 2
 

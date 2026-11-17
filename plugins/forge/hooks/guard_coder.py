@@ -53,7 +53,9 @@ from guard_git import (
     gh_act,
     looked_through,
     native_directory,
+    verb_of,
 )
+from refusal_journal import record
 
 CODER = "forge:coder"
 REFUSED_GH = {
@@ -343,6 +345,38 @@ def refusal(
     return _git_commands(command, cwd, root)
 
 
+# The refusals journal (`refusal_journal.py`): the name of each rule, found by a fixed phrase of the
+# text this guard refuses with, never by the command. The first marker found wins.
+RULES = (
+    ("`gh pr merge`: qc merges", "gh-pr-merge"),
+    ("`gh pr review`: qc judges", "gh-pr-review"),
+    ("`gh issue close`", "gh-issue-close"),
+    ("`gh issue edit`", "gh-issue-edit"),
+    ("the qc skill", "skill-qc"),
+    ("the end-to-end review skill", "skill-feature-review"),
+    ("`push -u` writes the configuration", "push-upstream"),
+    ("force push: the coder never rewrites", "force-push"),
+    ("`config` in write mode", "config-write"),
+    ("aim git away from the coder's worktree", "git-dir"),
+    ("merge the base instead", "rebase"),
+    (WHOLE_TREE, "add-whole-tree"),
+    (NO_ISOLATION, "no-isolation"),
+    ("is outside the coder's worktree", "outside-worktree"),
+    ("a write without a path", "write-without-path"),
+    ("a git command in a directory the hook cannot read", "directory-unreadable"),
+    ("is not in a git working tree", "not-a-worktree"),
+    ("the hook could not read", "unreadable-event"),
+)
+
+
+def _verb(event: object, tool_input: object) -> str:
+    """The shell command's verb (`git push`), or the tool's name (`Write`, `Skill`)."""
+    tool = str(event.get("tool_name", "")) if isinstance(event, dict) else ""
+    if tool in ("Bash", "PowerShell") and isinstance(tool_input, dict):
+        return verb_of(str(tool_input.get("command", "")))
+    return tool or "other"
+
+
 def main() -> int:
     try:
         event = json.load(sys.stdin)
@@ -364,6 +398,7 @@ def main() -> int:
         )
     if reason is None:
         return 0
+    record("guard_coder", reason, RULES, event, lambda: _verb(event, tool_input))
     sys.stderr.write(f"Blocked by the coder's guard (forge plugin): {reason}.\n")
     return 2
 

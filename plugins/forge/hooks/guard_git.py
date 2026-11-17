@@ -115,7 +115,9 @@ from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import NamedTuple
 
+from budget import KEY as BUDGET_KEY
 from budget import merge_refusal, state_path
+from refusal_journal import record
 from usine import load, project_root, split_value
 
 # The project's own owner gestures, one per line: `<command prefix> | <reason>`.
@@ -2155,6 +2157,80 @@ def changed_files_via_gh(cwd: str | None) -> PrFiles:
     return pr_files_via_gh(cwd)
 
 
+# The refusals journal (`refusal_journal.py`): the name of each rule, found by a fixed phrase of the
+# text this guard refuses with, never by the command. The first marker found wins, and a reason with
+# none is `other`: a new refusal gets its line here (a test lists every one).
+RULES = (
+    ("--no-verify skips the repository hooks", "no-verify"),
+    ("commit on main: create a branch", "commit-on-main"),
+    ("force push: use --force-with-lease", "force-push"),
+    ("push to main: open a pull request", "push-to-main"),
+    ("forced branch deletion", "branch-force-delete"),
+    ("reset --hard discards work", "reset-hard"),
+    ("clean -f deletes untracked files", "clean-force"),
+    ("geste du propriétaire du dépôt", "owner-gesture"),
+    ("an alias may hide a merge", "alias-change"),
+    ("and the aliases cannot be read", "alias-unreadable"),
+    (MERGE_ALONE, "merge-form"),
+    ("holds a variable outside double quotes", "merge-variable"),
+    (f"the `{METHOD_KEY}` key", "merge-method"),
+    (f"- `{METHOD_KEY}` :", "merge-method"),
+    ("the merge names", "merge-method"),
+    ("the merge asks for", "merge-method"),
+    ("the merge message or PR description cites", "merge-closes-refs"),
+    (" of the PR closes #", "commit-closes-refs"),
+    ("the commits of the PR cannot be read", "commits-unreadable"),
+    (f"`{BUDGET_KEY}`", "error-budget"),
+    ("this PR changes the infra guard", "infra-guard"),
+    ("change the infra guard", "infra-guard"),
+    (f"clé `{PROTECTED_KEY}`", "protected-path"),
+    ("merge with checks not green", "checks-not-green"),
+    ("git finds the repository by it", "git-location"),
+)
+GIT_VERBS = frozenset(
+    {"add", "am", "apply", "bisect", "blame", "branch", "checkout", "cherry-pick", "clean", "clone"}
+    | {"commit", "config", "diff", "fetch", "grep", "init", "log", "merge", "mv", "notes", "pull"}
+    | {"push", "rebase", "reflog", "remote", "reset", "restore", "revert", "rm", "show", "stash"}
+    | {"status", "submodule", "switch", "tag", "worktree"}
+)
+VERB_WORD = re.compile(r"[a-z][a-z0-9-]{0,24}")
+PROGRAM_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._+-]{0,31}")
+
+
+def _verb(words: list[str]) -> str:
+    """`git push`, `gh pr merge`, `gh api` or the program's name: never an argument."""
+    if words[0] == "git":
+        sub = _subcommand_and_args(words[1:])
+        return f"git {sub[0]}" if sub and sub[0] in GIT_VERBS else "git"
+    if words[0] == "gh":
+        call = gh_command(words)
+        if not call or call[0] not in GH_GROUPS:
+            return "gh"
+        act = gh_act(words)
+        if call[0] != "api" and act is not None and VERB_WORD.fullmatch(act[1]):
+            return f"gh {call[0]} {act[1]}"
+        return f"gh {call[0]}"
+    name = PurePosixPath(words[0].replace("\\", "/")).name
+    name = name.removesuffix(".exe")
+    return name if PROGRAM_NAME.fullmatch(name) else "other"
+
+
+def verb_of(command: str) -> str:
+    """The verb of the call a refusal is about, for the journal: the first git or gh call, else
+    the first command that is not a `cd`; `other` when there is none."""
+    bodies = split_heredocs(command)[1]
+    found: list[str] = []
+    for item in _commands(command):
+        if not isinstance(item, list):
+            continue
+        seen = looked_through(after_keywords(item), bodies)
+        if seen.script is not None:
+            found.append(verb_of(seen.script))
+        elif seen.words and seen.words[0] != "cd":
+            found.append(_verb(seen.words))
+    return next((verb for verb in found if verb.split()[0] in ("git", "gh")), found[0] if found else "other")
+
+
 def main() -> int:
     event = json.load(sys.stdin)
     command = str(event.get("tool_input", {}).get("command", ""))
@@ -2179,6 +2255,7 @@ def main() -> int:
     )
     if reason is None:
         return 0
+    record("guard_git", reason, RULES, event, lambda: verb_of(command))
     sys.stderr.write(f"Blocked by the forge plugin (guard_git): {reason}.\n")
     return 2
 
