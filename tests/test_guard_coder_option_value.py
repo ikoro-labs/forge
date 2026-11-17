@@ -62,5 +62,13 @@ class OptionValue(unittest.TestCase):
                 self.assertIsNone(bash(command))
 
 
+class Documentation(unittest.TestCase):
+    def test_installation_says_the_guard_refuses_an_unbounded_suite_and_was_never_tried_live(self) -> None:
+        """Ticket #61 A3: the page on `run-limits` says the refusal, and that no live coder session tried it."""
+        text = " ".join((support.REPO_ROOT / "docs" / "installation.md").read_text(encoding="utf-8").split())
+        self.assertRegex(text, r"`guard_coder` refuse[^.]{0,200}suite[^.]{0,200}sans `bounded_run\.py --`")
+        self.assertRegex(text, r"`guard_coder`.{0,700}jamais été essayé dans une vraie session de coder")
+
+
 if __name__ == "__main__":
     unittest.main()
