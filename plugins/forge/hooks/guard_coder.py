@@ -10,6 +10,12 @@ agent through. For the coder, it refuses, with the reason on stderr and exit cod
 - the qc skill, under its plugin name `forge:qc` as under a bare `qc`, which the coder would
   otherwise run as the last step of opening a PR; and the end-to-end review skill
   (`forge:feature-review`, bare or prefixed), which reviews a feature the coder wrote;
+- a test suite run without the bounded launcher: `python -m unittest`, `pytest`, a line of the
+  project's `ci-replay` or `red-replay` keys (a `{name}` in a line matches any word) unless it
+  is a lint or a validation (`ruff`, `mypy`, `claude plugin validate`...). `scripts/bounded_run.py --`
+  in front of the command is what clears it, and the refusal gives that form. A command is read
+  from where it starts (`uv run pytest`, `timeout 900 pytest`, `python -m pytest`), so `pip
+  install pytest` or `grep pytest` run no suite;
 - `git push` with `-u`, `--set-upstream`, `-f`, `--force` or `--force-with-lease`, and `git config`
   in write mode: the first writes, and the others rewrite, the configuration or the history shared
   by every worktree of the repository;
@@ -40,6 +46,7 @@ import shutil
 import sys
 from collections.abc import Callable, Mapping
 from itertools import pairwise
+from pathlib import Path
 
 from guard_git import (
     UNKNOWN,
@@ -53,7 +60,9 @@ from guard_git import (
     gh_act,
     looked_through,
     native_directory,
+    segments,
 )
+from usine import load, project_root
 
 CODER = "forge:coder"
 REFUSED_GH = {
@@ -73,6 +82,31 @@ REFUSED_REVIEW = (
     " orchestrator runs the review with a judge that did not write the code"
 )
 
+BOUNDED_RUN = "bounded_run.py"
+# The programs that start a suite on their own, the modules `-m` starts, and the programs that only
+# launch another one (`uv run pytest`, `timeout 900 pytest`, `python -m unittest`).
+SUITE_PROGRAMS = frozenset({"pytest", "py.test"})
+SUITE_MODULES = frozenset({"unittest", "pytest"})
+LAUNCHERS = frozenset(
+    {"uv", "uvx", "poetry", "pipenv", "pdm", "hatch", "pipx", "npx", "env", "timeout", "nice", "ionice"}
+    | {"nohup", "py"}
+)
+PYTHON = re.compile(r"python[\d.]*")
+# What puts a program's name after it without running it: `uv add pytest`, `uv run --with pytest`.
+NOT_A_RUN = frozenset({"install", "add", "remove", "uninstall", "sync", "lock", "pip", "show", "freeze"})
+VALUE_OPTIONS = frozenset({"--with", "--from", "-w", "--with-requirements", "--package", "--python", "-p"})
+# A line of `ci-replay` that runs one of these is a lint or a validation, not a suite.
+CHECKS = frozenset(
+    {"ruff", "mypy", "pyright", "flake8", "pylint", "black", "isort", "eslint", "prettier", "tsc"}
+    | {"biome", "claude"}
+)
+PLACEHOLDER = re.compile(r"\{[^}]*\}")
+SUITE_KEYS = ("ci-replay", "red-replay")
+BOUNDED_FORM = (
+    "`{shown}` runs a test suite without the bound: run it as"
+    ' `uv run --no-project --quiet python "{script}" -- <the command>`, which reads `run-limits`'
+    " and `run-budget` of `docs/agents/usine.md` (a bare suite can empty the memory of the post)"
+)
 
 WRITE_TOOLS = frozenset({"Edit", "Write", "MultiEdit", "NotebookEdit"})
 CONFIG_READS = frozenset(
@@ -255,6 +289,81 @@ def _act_refusal(args: list[str]) -> str | None:
     return None
 
 
+def _program(word: str) -> str:
+    """The name of a program from its word: no directory, no `.exe`."""
+    name = word.replace("\\", "/").rsplit("/", 1)[-1].lower()
+    return name.removesuffix(".exe")
+
+
+def _bounded(words: list[str]) -> bool:
+    """Whether the command goes through `bounded_run.py --`."""
+    names = [_program(word) for word in words]
+    return BOUNDED_RUN in names and "--" in words[names.index(BOUNDED_RUN) :]
+
+
+def _names_suite(words: list[str]) -> bool:
+    """Whether the command starts `pytest` or `python -m unittest` (or `-m pytest`).
+
+    A name later in the line (`pip install pytest`, `grep pytest`, `uv run --with pytest ...`) is
+    data: the command is read from its start, through the launchers.
+    """
+    names = [_program(word) for word in words]
+    if not names:
+        return False
+    if names[0] in SUITE_PROGRAMS:
+        return True
+    if names[0] not in LAUNCHERS and not PYTHON.fullmatch(names[0]):
+        return False
+    if any(name in NOT_A_RUN for name in names):
+        return False
+    for index, name in enumerate(names[1:], start=1):
+        if name in SUITE_MODULES and words[index - 1] == "-m":
+            return True
+        if name in SUITE_PROGRAMS and words[index - 1] not in VALUE_OPTIONS:
+            return True
+    return False
+
+
+def _suite_lines(config: Mapping[str, list[str]] | None) -> list[list[str]]:
+    """The words of each line of `ci-replay` and `red-replay` that is not a lint or a validation."""
+    lines: list[list[str]] = []
+    for key in SUITE_KEYS:
+        for value in (config or {}).get(key, []):
+            for words in segments(value):
+                if words and not any(_program(word) in CHECKS for word in words):
+                    lines.append(words)
+    return lines
+
+
+def _runs_line(words: list[str], line: list[str]) -> bool:
+    """Whether `line` is in `words`, in a row; a `{name}` in the line matches any one word."""
+    for start in range(len(words) - len(line) + 1):
+        window = words[start : start + len(line)]
+        if all(PLACEHOLDER.fullmatch(wanted) or wanted == got for wanted, got in zip(line, window)):
+            return True
+    return False
+
+
+def _suite_refusal(command: str, config: Mapping[str, list[str]] | None) -> str | None:
+    """Why a command is refused for running a suite without `bounded_run.py --`, or None."""
+    lines = _suite_lines(config)
+    for item in _commands(command):
+        if not isinstance(item, list):
+            continue
+        seen = looked_through(after_keywords(item), "")
+        if seen.script is not None:  # the script of a `bash -c` runs the same way
+            if reason := _suite_refusal(seen.script, config):
+                return reason
+            continue
+        words = seen.words
+        if not words or _bounded(words):
+            continue
+        if _names_suite(words) or any(_runs_line(words, line) for line in lines):
+            script = Path(__file__).resolve().parent.parent / "scripts" / BOUNDED_RUN
+            return BOUNDED_FORM.format(shown=" ".join(words)[:80], script=script.as_posix())
+    return None
+
+
 def _git_commands(command: str, cwd: str | None, root: str | None) -> str | None:
     """Why a git command is refused: its act, or a directory outside `root` when `root` is known."""
     here = cwd
@@ -305,6 +414,7 @@ def refusal(
     tool_input: Mapping[str, object],
     cwd: str | None = None,
     worktree: Worktree | None = None,
+    config: Mapping[str, list[str]] | None = None,
 ) -> str | None:
     """Why the coder may not make this call, or None when it may.
 
@@ -335,6 +445,8 @@ def refusal(
         if isinstance(item, list) and (act := gh_act(item)) is not None:
             if reason := REFUSED_GH.get(act[:2]):
                 return reason
+    if reason := _suite_refusal(command, config):
+        return reason
     root = None
     if worktree is not None and _runs_git(command):
         root, why = worktree(cwd)
@@ -361,6 +473,7 @@ def main() -> int:
             tool_input,
             cwd if isinstance(cwd, str) else None,
             linked_worktree,
+            load(project_root(event)),
         )
     if reason is None:
         return 0

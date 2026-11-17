@@ -149,7 +149,9 @@ relances pas la commande autrement, tu rends `BLOCKED` avec la raison de stderr.
 `run-limits` absente) » ou « (clé `run-budget` absente) » : tu le dis dans la PR, et tu ne devines ni
 mémoire, ni délai, ni seuil ; sans `run-limits`, le lanceur exige `--memory-mb` et `--timeout`, que
 la session ou le brief te donne. Une consigne de poste plus stricte que la clé (une borne que le
-brief te transmet) s'ajoute au lanceur, elle ne le remplace pas.
+brief te transmet) s'ajoute au lanceur, elle ne le remplace pas. Le hook `guard_coder` refuse
+`python -m unittest`, `pytest` et chaque ligne de `ci-replay` ou de `red-replay` lancés sans lui (les
+lints et `claude plugin validate` passent) et donne la forme bornée dans son refus.
 
 **Trois passages rouges au plus.** Au troisième échec d'une même vérification, arrête-toi et sors
 en `FAILED` avec la commande et sa sortie. Ne boucle pas.
