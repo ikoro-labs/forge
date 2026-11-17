@@ -1,0 +1,6 @@
+schema_version: "1.0"
+name: accept-pr226-tour1
+description: "Rejoue la PR 226 au tour 1 devant forge:qc-conf (la clé sla déclarée dans la configuration de l'usine, un fichier de Markdown). Verdict attendu, ACCEPT: la PR a été acceptée au tour 1, fusionnée et jamais corrigée depuis."
+tags: [accept, juge]
+context:
+  scaffold_script: scaffold.sh

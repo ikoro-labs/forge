@@ -8,19 +8,24 @@ diff and the ticket of a pull request, with a frozen `forge:qc-gate` table, in f
 grader that reads the verdict line. A case named `blocker-<...>` replays a pull request with a proven
 BLOCKER: the judge must return `REJECT`. A case named `faux-accept-<...>` replays a pull request that was
 accepted and later proved wrong: the judge must return `REJECT`, or at least name the missing defect. Each
-case carries two regex graders on the last message: `rejects` (a line `VERDICT: REJECT`) and
-`no-false-accept` (no line `VERDICT: ACCEPT`).
+of those two families carries two regex graders on the last message: `rejects` (a line `VERDICT: REJECT`)
+and `no-false-accept` (no line `VERDICT: ACCEPT`). A case named `accept-<...>` replays a pull request that
+was accepted at round 1, merged and never fixed afterwards: the judge must return `ACCEPT`. It carries
+`accepts` (a line `VERDICT: ACCEPT`) and `no-false-reject` (no line `VERDICT: REJECT`).
 
 `score` reads the `aggregate-result.json` that `claude plugin eval` writes, and prints the JSON that
 `factory_slo.py --reference` reads:
 
-    {"judge-recall": 0.9, "false-accept": 0.05}
+    {"judge-recall": 0.9, "false-accept": 0.05, "false-reject": 0.1}
 
 - `judge-recall`: the share of runs of the `blocker-` cases whose verdict is `REJECT`.
-- `false-accept`: the share of runs, over every case, whose verdict is `ACCEPT`. Every case replays a
-  pull request that should not have been accepted, so each `ACCEPT` is a false one.
+- `false-accept`: the share of runs of the `blocker-` and `faux-accept-` cases whose verdict is `ACCEPT`.
+  Those cases replay a pull request that should not have been accepted, so each `ACCEPT` is a false one.
+- `false-reject`: the share of runs of the `accept-` cases whose verdict is `REJECT`: a judge that rejects
+  everything scores a perfect recall, and this share is what shows it. `factory_slo.py` reads only the
+  first two keys; this one is not an objective.
 
-A run that ended on an error is left out of both shares and counted on stderr, never as a miss. A measure
+A run that ended on an error is left out of every share and counted on stderr, never as a miss. A measure
 with no run behind it is left out of the JSON (the SLO reads it as "sans objet"), never written as 0 or 1.
 The standard library only; the eval itself is `claude plugin eval`, and no call to a model is made here
 except by that command, from `run`.
@@ -47,17 +52,21 @@ from typing import Any
 PLUGIN = Path(__file__).resolve().parents[1]
 FOUND = "rejects"
 ACCEPTED = "no-false-accept"
+KEPT = "no-false-reject"
 BLOCKER_PREFIX = "blocker-"
+ACCEPT_PREFIX = "accept-"
 
 
 @dataclass
 class Measure:
-    """The two shares, and the counts they come from."""
+    """The three shares, and the counts they come from."""
 
     found: int = 0
     blocker_runs: int = 0
     accepted: int = 0
     runs: int = 0
+    false_rejected: int = 0
+    accept_runs: int = 0
     errors: int = 0
     partial: bool = False
 
@@ -69,9 +78,13 @@ class Measure:
     def false_accept(self) -> float | None:
         return self.accepted / self.runs if self.runs else None
 
+    @property
+    def false_reject(self) -> float | None:
+        return self.false_rejected / self.accept_runs if self.accept_runs else None
+
     def reference(self) -> dict[str, float]:
         """The JSON `factory_slo.py --reference` reads, without a measure that has no run."""
-        shares = {"judge-recall": self.recall, "false-accept": self.false_accept}
+        shares = {"judge-recall": self.recall, "false-accept": self.false_accept, "false-reject": self.false_reject}
         return {name: value for name, value in shares.items() if value is not None}
 
 
@@ -102,22 +115,30 @@ def measure(result: dict[str, Any]) -> Measure:
                 continue
             rejects = grader(run, FOUND)
             accepts = grader(run, ACCEPTED)
+            kept = grader(run, KEPT)
             if blocker and rejects is not None:
                 out.blocker_runs += 1
                 out.found += bool(rejects.get("passed"))
             if accepts is not None:
                 out.runs += 1
                 out.accepted += not accepts.get("passed")
+            if kept is not None:
+                out.accept_runs += 1
+                out.false_rejected += not kept.get("passed")
     return out
 
 
 def summary(counts: Measure) -> list[str]:
     lines = [
         f"judge-recall : {counts.found}/{counts.blocker_runs} run(s) de cas `{BLOCKER_PREFIX}` en REJECT",
-        f"false-accept : {counts.accepted}/{counts.runs} run(s) en ACCEPT, tous cas confondus",
+        f"false-accept : {counts.accepted}/{counts.runs} run(s) en ACCEPT, cas `{BLOCKER_PREFIX}` et `faux-accept-`",
     ]
+    if counts.accept_runs:
+        lines.append(f"false-reject : {counts.false_rejected}/{counts.accept_runs} run(s) en REJECT, cas `{ACCEPT_PREFIX}`")
+    else:
+        lines.append(f"false-reject : sans objet (aucun run de cas `{ACCEPT_PREFIX}`)")
     if counts.errors:
-        lines.append(f"{counts.errors} run(s) en erreur, laissés hors des deux mesures")
+        lines.append(f"{counts.errors} run(s) en erreur, laissés hors des trois mesures")
     if counts.partial:
         lines.append("résultat partiel (plafond atteint ou arrêt) : les cas non lancés ne comptent pas")
     return lines

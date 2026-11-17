@@ -1,0 +1,6 @@
+schema_version: "1.0"
+name: accept-pr238-tour1
+description: "Rejoue la PR 238 au tour 1 devant forge:qc-conf (la méthode de fusion de la revue suit la clé merge-method : merge, squash ou rebase). Verdict attendu, ACCEPT: la PR a été acceptée au tour 1, fusionnée et jamais corrigée depuis."
+tags: [accept, juge]
+context:
+  scaffold_script: scaffold.sh

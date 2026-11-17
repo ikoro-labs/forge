@@ -42,7 +42,9 @@ class, listed with its faults, and the command exits 1. It reads the folder only
 `incident-dir` absent is "sans objet": no count, never 0; a folder not created yet holds no review.
 
 The data come from GitHub (`gh ... --json`, run from the project folder, so `gh` finds the
-repository itself), from git, and from the logs `token_audit.py` reads. Prints a Markdown table, or
+repository itself), from git, from the logs `token_audit.py` reads, and from the journal of the
+guards' refusals (`refusal_journal.py`), which lives on the host: `guard-refusals` is "sans objet"
+without it, and counts the refusals of this host only. Prints a Markdown table, or
 JSON with `--json`. The window is [depuis, jusqua), `jusqua` defaulting to now.
 
 The end-to-end review has two indicators of its own (`matrix-coverage`, `review-regressions`, helpers in
@@ -68,6 +70,7 @@ import math
 import re
 import subprocess
 import sys
+from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
@@ -79,6 +82,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "hooks"))
 
 import budget  # noqa: E402  the hooks' reader of the `budget-action` key
 import incident  # noqa: E402  the reader of a blameless review and of the key `incident-dir`
+import refusal_journal  # noqa: E402  the journal of the guards' refusals
 import revue_boucle  # noqa: E402  the journal of the end-to-end review loop
 import revue_indicateurs  # noqa: E402  the matrices and journals of that loop
 import sla  # noqa: E402  the hooks' reader of the `sla` key and the severity classes
@@ -427,6 +431,34 @@ def tokens_per_merge(f: Factory) -> Sli:
     )
 
 
+def guard_refusals(f: Factory) -> Sli:
+    """Refusals of the three guards per merged PR, from the journal of this host (`refusal_journal.py`).
+
+    Only the lines of this project's repository count. The journal is local: two hosts give two
+    journals, which the indicator's text says.
+    """
+    merged = len(f.merged)
+    if not merged:
+        return Sli("guard-refusals", reason="aucune PR fusionnée dans la fenêtre")
+    lines = refusal_journal.read(f.since, f.until)
+    if lines is None:
+        return Sli("guard-refusals", reason=f"pas de journal des refus : `{refusal_journal.journal_dir()}` n'existe pas sur ce poste")
+    repo = refusal_journal.repo_of(str(f.project))
+    ours = [line for line in lines if line.get("repo") == repo]
+    def count(key: str) -> dict[str, int]:
+        return dict(Counter(str(line.get(key, "")) for line in ours).most_common())
+
+    value = round(len(ours) / merged, 2)
+    return Sli(
+        "guard-refusals",
+        data={
+            "numerateur": len(ours), "denominateur": merged, "valeur": value,
+            "par_garde": count("guard"), "par_agent": count("agent"),
+        },
+        text=f"{value} refus par PR fusionnée ({len(ours)}/{merged}), journal de ce poste seulement",
+    )
+
+
 def human_touch(f: Factory) -> Sli:
     protected = f.config.get("protected-path", [])
     touched = 0
@@ -513,7 +545,7 @@ def compute(project: Path, since: datetime, until: datetime, run: Runner = run_c
     f = Factory(project, since, until, run)
     return [
         accept_round_1(f), rework_rate(f), escaped_defects(f), lead_time(f), release_lag(f),
-        change_failure(f), restore_time(f), tokens_per_merge(f), human_touch(f), main_green(f),
+        change_failure(f), restore_time(f), tokens_per_merge(f), guard_refusals(f), human_touch(f), main_green(f),
         reference("judge-recall", ref), reference("false-accept", ref),
         *review_slis(f),
     ]
@@ -782,7 +814,31 @@ def report(project: Path, now: datetime, run: Runner = run_command, ref: Path | 
         item["tendance"] = trend(item, item["precedent"])
     document["sla"] = sla_check(project, now, run)
     document["revue"] = review_check(project, now, run)
+    document["refus"] = refusal_check(project, now, run)
     return document
+
+
+REFUSAL_DAYS = 30
+
+
+def refusal_check(project: Path, now: datetime, run: Runner = run_command) -> dict:
+    """`guard-refusals` over the last `REFUSAL_DAYS` days, with its detail by guard and by agent, or "sans objet" and why."""
+    item = guard_refusals(Factory(project, now - timedelta(days=REFUSAL_DAYS), now, run))
+    return {**item.to_dict(), "texte": item.text, "fenetre_jours": REFUSAL_DAYS}
+
+
+def refusal_markdown(document: dict) -> str:
+    """The section « Refus des gardes » of the report."""
+    lines = [f"Refus des gardes, sur {document['fenetre_jours']} jours.", "", "| Indicateur | Valeur | Détail |", "|---|---|---|"]
+    if document["statut"] == "sans objet":
+        lines.append(f"| `{document['nom']}` | sans objet | {document['raison']} |")
+    else:
+        detail = " ; ".join(
+            f"{label} : " + ", ".join(f"{name} : {n}" for name, n in document[key].items())
+            for label, key in (("par garde", "par_garde"), ("par agent", "par_agent"))
+        )
+        lines.append(f"| `{document['nom']}` | {document['texte']} | {detail} |")
+    return "\n".join(lines)
 
 
 REVIEW_DAYS = 30
@@ -851,6 +907,8 @@ def report_markdown(document: dict) -> str:
         lines += ["", sla_markdown(document["sla"], False)]
     if "revue" in document:
         lines += ["", review_markdown(document["revue"])]
+    if "refus" in document:
+        lines += ["", refusal_markdown(document["refus"])]
     return "\n".join(lines)
 
 
