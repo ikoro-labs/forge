@@ -116,7 +116,7 @@ passes, what is out of reach and what was tried:
      "enabledPlugins": { "forge@ikoro-labs": true },
      "extraKnownMarketplaces": {
        "ikoro-labs": {
-         "source": { "source": "github", "repo": "ikoro-labs/forge", "ref": "forge--v1.14.0" }
+         "source": { "source": "github", "repo": "ikoro-labs/forge", "ref": "forge--v1.15.0" }
        }
      }
    }
@@ -126,7 +126,7 @@ passes, what is out of reach and what was tried:
 3. Installer, une fois par poste, depuis la racine du projet :
 
    ```sh
-   claude plugin marketplace add ikoro-labs/forge@forge--v1.14.0 --scope project
+   claude plugin marketplace add ikoro-labs/forge@forge--v1.15.0 --scope project
    claude plugin install forge@ikoro-labs --scope project
    ```
 

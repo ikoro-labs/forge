@@ -7,7 +7,7 @@
       "source": {
         "source": "github",
         "repo": "ikoro-labs/forge",
-        "ref": "forge--v1.14.0"
+        "ref": "forge--v1.15.0"
       }
     }
   }
