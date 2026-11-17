@@ -81,7 +81,7 @@ ne fusionne une PR rouge, ou ne sort de son rôle.
 | `after_write` | formate chaque fichier écrit avec les formateurs que le projet déclare (clé `format-on-write`), puis refuse le tiret cadratin au-delà de ce que le projet admet ; tient aussi le frontmatter `type` des documents, leur index généré et leurs plafonds de mots ou de lignes (clés `doc-frontmatter`, `doc-index`, `doc-cap`, [détail](docs/installation.md#les-documents-que-lagent-écrit)) |
 | `trim_output` | la longue sortie d'une commande de tests qui réussit est raccourcie, la sortie complète gardée dans un journal |
 | `agent_cleanup` | le ménage après un agent fini, sans geste à la main : son worktree propre est retiré (sale, il est laissé et signalé), sa branche `worktree-agent-*` orpheline et contenue dans `main` ou une branche distante est supprimée, et, si le projet déclare les clés `agent-cache-dir` et `rescue-bundle-dir`, ses caches et les bundles de sauvetage contenus ; il n'est pas un garde : il échoue ouvert et ne bloque jamais ([détail](docs/installation.md#le-ménage-après-un-agent)) |
-| `sessions_notice`, `handoff_*` | une seule session par dépôt, et la passation à une nouvelle session quand le contexte atteint 300 000 jetons (400 000 avec une feature), 200 relais par jour et par projet au plus |
+| `sessions_notice`, `handoff_*` | une seule session par dépôt, et la passation à une nouvelle session quand le contexte atteint 150 000 jetons, 200 relais par jour et par projet au plus |
 
 ## The infrastructure guard
 
