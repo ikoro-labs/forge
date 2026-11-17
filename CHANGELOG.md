@@ -26,15 +26,18 @@ messages des commits de la PR. Version mineure : deux billets nouveaux, aucune c
   l'étape 0 de `forge:feature-build` et dans ce qu'imprime `handoff_trigger.py yield` ; le hook
   vérifie la session demandeuse dans le registre et le successeur nommé par la passation
   (ikoro-labs/forge#236, point A6 de ikoro-labs/forge#227).
-- Gabarits : `billet.md` ajoute les types `handoff-request` et `handoff` ; son plafond passe de 16
-  à 24 lignes.
+- Skills : `forge:qc` fusionne par `--merge`, `--squash` ou `--rebase` selon `merge-method` ; sans
+  la clé, il ne fusionne pas et pose `needs-your-attention` ; la copie locale de la branche suit la
+  méthode (ikoro-labs/forge#238, ikoro-labs/forge#63).
+- Gabarits : `usine.md` nomme les trois valeurs de `merge-method` ; `billet.md` ajoute les types
+  `handoff-request` et `handoff`, et son plafond passe de 16 à 24 lignes.
 - Tests : le seuil avec et sans feature, les messages des commits pour chaque méthode, l'heure et
-  les billets de passation.
+  les billets de passation, les trois méthodes de fusion du skill `qc`.
 - Gestes humains : une session ouverte avec `CLAUDE_SESSION_TOKEN_LIMIT` garde son propre seuil ;
   sans la variable, elle passe la main à 150 000 jetons.
 - Resté dehors : le seuil propre à un utilisateur, conservé par le relais, est la suite de
-  ikoro-labs/forge#127 ; la dernière partie de ikoro-labs/forge#63 (PR ikoro-labs/forge#238) n'est pas
-  encore relue. L'essai de bout en bout est sans objet ici (clé `e2e-repo` absente). Rien d'éprouvé
+  ikoro-labs/forge#127 ; le journal des refus des gardes (ikoro-labs/forge#240) attend sa revue, puis
+  la fusion de l'humain. L'essai de bout en bout est sans objet ici (clé `e2e-repo` absente). Rien d'éprouvé
   sous Windows en local, ni dans une vraie session.
 
 ### Objectifs de service
