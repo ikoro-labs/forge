@@ -1,0 +1,32 @@
+PR #226: docs(usine): déclarer les délais sla par gravité
+
+## Summary
+
+Ce dépôt déclare la clé `sla`, qui était le dernier point ouvert de #76. Elle sort de la liste des clés absentes.
+
+| Gravité | Prise en charge | Fusionné | Publié |
+|---|---|---|---|
+| sev1 | 1 h | 24 h | 24 h |
+| sev2 | 1 j | 3 j | 7 j |
+| sev3 | 7 j | 30 j | 30 j |
+
+Les délais viennent du ticket. La prise en charge de sev2 et de sev3 a été proposée par l'agent et acceptée par l'humain le 2026-11-16.
+
+Closes #76
+
+## Door
+
+`two-way` : trois lignes à retirer suffisent pour revenir en arrière.
+
+## Blast radius
+
+Local : seul ce dépôt est touché. `factory_slo.py` (`sla`, `queue`, `report`) et `forge:feature-build` lisent les échéances. Aucune fusion n'est bloquée.
+
+## Proofs
+
+- `factory_slo.py sla .` : la clé se lit, 0 ticket de gravité, 0 dépassement (2026-11-16).
+- unittest : 1798 tests OK, 5 ignorés. ruff passe sans remarque.
+- `claude plugin validate .` et `plugins/forge` : les deux passent.
+- Essai sur poste : Linux seulement, en lecture seule.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)

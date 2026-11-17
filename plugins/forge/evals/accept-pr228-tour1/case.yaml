@@ -1,0 +1,6 @@
+schema_version: "1.0"
+name: accept-pr228-tour1
+description: "Rejoue la PR 228 au tour 1 devant forge:qc-conf (guard_git relit les messages des commits de la PR avant une fusion). Verdict attendu, ACCEPT: la PR a été acceptée au tour 1, fusionnée et jamais corrigée depuis."
+tags: [accept, juge]
+context:
+  scaffold_script: scaffold.sh
