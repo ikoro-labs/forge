@@ -320,6 +320,9 @@ Après `/forge:qc` :
 - **Fusionnée sur une autre base** : GitHub ne ferme un ticket que sur la branche par défaut.
   Ferme-le toi-même, pour débloquer la suite :
   `gh issue close <n> --comment "Fusionné dans <base> par #<pr> ; atteindra la branche par défaut avec <base>."`
+- **Fusionnée, et le ticket qu'elle ferme porte `sev1` ou `sev2`** (`gh issue view <n> --json labels`) :
+  c'est un incident à écrire. Note-le pour la revue sans blâme de l'étape 4 (« La revue d'un
+  incident »), qui passe avant le compte rendu.
 - **Stopped in round 3** (`needs-your-attention`, PR open): the ticket leaves the queue of this
   pass; the human decides, and only their grant (`GRANTED:`) opens a round 4.
 - **`needs-your-attention` sans fusion**, ou fusion refusée : **arrêt sur incident**.
@@ -436,6 +439,14 @@ en vol vont jusqu'à leur sortie, que tu traites comme à l'étape 2.
   jamais le passage, étape 2) : plus aucun `/forge:qc` ne part non plus. Les PR de la file restent
   ouvertes ; le passage suivant les reprend en tête (étape 1, priorité 1). Tu rends compte dès que
   plus aucun coder n'est en vol.
+- **La revue d'un incident.** Chaque arrêt sur incident, et chaque PR fusionnée qui ferme un ticket
+  `sev1` ou `sev2` (étape 3), a sa revue sans blâme : lance le skill `forge:incident` avec l'incident en
+  une phrase (ou le numéro du ticket `sev1` ou `sev2`), une fois que plus aucun coder n'est en vol et
+  avant le compte rendu. Une revue par incident, deux arrêts de même cause comptent pour un. La revue
+  se pose dans le dossier de la clé `incident-dir` ; sans cette clé, le skill rend « sans objet (clé
+  `incident-dir` absente) » et tu le dis dans le compte rendu avec le nom de la clé, sans écrire de
+  revue. Une revue qui sort sans correctif ou refusée par son contrôle ne change pas l'arrêt : dis-le
+  au compte rendu. Sa PR se relit par l'étape 3 comme les autres.
 - **Frontière vide, rien en vol, file vide** : toutes les sous-issues fermées, étape 5 ; des
   tickets encore ouverts (humains ou bloqués), étape 6.
 
@@ -479,8 +490,9 @@ Au décideur :
 | #245 | #281 | 0 | - | ouverte, en file |
 ```
 
-Puis la durée du passage et ses jetons d'agents, qui calibrent les plafonds ; la **raison de
-l'arrêt**, en une ligne (plafond atteint et lequel, pause, reprise épuisée, remise à jour
+Puis, pour chaque incident du passage, la revue que `forge:incident` a écrite (son chemin et sa classe
+de correctif), ou « sans objet (clé `incident-dir` absente) » ; la durée du passage et ses jetons
+d'agents, qui calibrent les plafonds ; la **raison de l'arrêt**, en une ligne (plafond atteint et lequel, pause, reprise épuisée, remise à jour
 impossible, acceptation attendue, tickets humains restants) ; les questions passées à l'arbitre de
 domaine et les tickets `ready-for-human` ou `needs-info` ; chaque clé de `docs/agents/usine.md`
 trouvée absente ; les actions actives du budget d'erreur et les tickets qui attendent sous un gel ;
