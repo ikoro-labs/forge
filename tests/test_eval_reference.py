@@ -392,6 +392,15 @@ class Documented(unittest.TestCase):
         self.assertIn("judge-recall", text)
         self.assertIn("false-accept", text)
 
+    def test_the_page_counts_eleven_cases_and_names_the_three_accept_prs(self) -> None:
+        """#67 A1: the table of the page lists the `accept-` cases and the README summary counts the set."""
+        text = (support.REPO_ROOT / "docs" / "jeu-de-reference.md").read_text(encoding="utf-8")
+        self.assertIn("## Les onze cas", text)
+        self.assertIn("| `accept-` | PR 226, 228 et 238, au tour 1 |", text)
+        self.assertNotIn("huit", text)
+        readme = (support.REPO_ROOT / "README.md").read_text(encoding="utf-8")
+        self.assertIn("les onze revues rejouées, les trois mesures", readme)
+
     def test_the_page_describes_false_reject_and_the_accept_family(self) -> None:
         """#67 A2: the third measure, the cases it reads and the graders they carry are on the page."""
         text = (support.REPO_ROOT / "docs" / "jeu-de-reference.md").read_text(encoding="utf-8")

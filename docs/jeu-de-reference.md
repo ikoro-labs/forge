@@ -1,14 +1,15 @@
 # Le jeu de référence du juge
 
-`plugins/forge/evals/` mesure le juge `forge:qc-conf` : il rejoue huit revues passées de ce dépôt
+`plugins/forge/evals/` mesure le juge `forge:qc-conf` : il rejoue onze revues passées de ce dépôt
 devant lui et note le verdict. Il alimente deux objectifs de service (`judge-recall` et
 `false-accept`, voir `docs/indicateurs-de-service.md`) que `factory_slo.py` ne sait pas calculer
-seul, faute de données : sans ce jeu, ils restent « sans objet ».
+seul, faute de données : sans ce jeu, ils restent « sans objet ». Une troisième mesure, `false-reject`,
+n'a pas d'objectif : elle dit si le juge rejette à tort.
 
 Il se lance à la main, sous un plafond de coût. Aucune suite de tests ne le lance, et aucun appel à un
 modèle ne se fait ailleurs que par la commande de lancement.
 
-## Les huit cas
+## Les onze cas
 
 Chaque cas est un dossier de `plugins/forge/evals/` : `case.yaml`, `prompt.md`, `graders/`,
 `scaffold.sh` et `fixtures/`. Les données de la PR sont figées dans `fixtures/` (le diff de la base à
@@ -19,6 +20,12 @@ tableau de `forge:qc-gate`), parce que le cas doit se rejouer sans réseau et sa
 | --- | --- | --- |
 | `blocker-` | PR 11, 13, 28, 30 et 51, au tour 1 | `REJECT` : chacune portait un `BLOCKER` avéré |
 | `faux-accept-` | PR 13 au tour 2, PR 14 et PR 23 au tour 1 | `REJECT`, ou au moins le défaut que le juge de l'époque a laissé passer |
+| `accept-` | PR 226, 228 et 238, au tour 1 | `ACCEPT` : chacune a été acceptée au tour 1, fusionnée, et aucun correctif ne l'a suivie |
+
+Les cas `accept-` ont été choisis parmi les PR fusionnées sur un `ACCEPT` du tour 1 et relues dans
+`git log` de `main` : aucune PR ultérieure ne les cite comme correctif, et aucun commit ultérieur ne
+touche leurs fichiers pour les corriger. Leur verdict de l'époque portait des `MINOR` et des `NOTE` : un
+juge qui accepte et les nomme réussit le cas.
 
 Chaque cas porte deux notations sur le dernier message du juge, des expressions régulières sur la
 ligne `VERDICT:` :
@@ -105,8 +112,12 @@ lance sur un poste dont `claude plugin eval` existe, et la version qui l'a relev
 - Les cas `faux-accept-` de la PR 13 (tour 2) et de la PR 23 sont faibles par construction : le défaut
   que le juge de l'époque a laissé passer n'était qu'un `MINOR` dans le verdict rendu ensuite. Le juge
   peut bien juger et ne pas le nommer.
-- Les corps de PR figés sont ceux d'aujourd'hui, coupés avant `Rapport d'agent`, pas ceux du moment
-  de la revue. Les tableaux de `forge:qc-gate` sont reconstruits (état des checks de la tête, périmètre) :
+- Les corps de PR et de ticket figés sont ceux d'aujourd'hui (les commentaires du ticket sont ceux
+  d'avant le verdict), les corps de PR coupés avant `Rapport d'agent`, pas ceux du moment de la revue. Les tableaux de `forge:qc-gate` sont reconstruits (état des checks de la tête, périmètre) :
   les sondes que le jeu ne rejoue pas y sont marquées `NOT RUN`.
+- Trois cas `accept-` font neuf runs par défaut (trois par cas) : `false-reject` est une alarme contre un
+  juge qui rejette tout, pas une mesure fine. Un cas de plus à chaque faux `REJECT` constaté.
+- Le diff du cas de la PR 238 part de l'ancêtre commun de la PR (`8a6a4ce`), les quatre fichiers que
+  GitHub montre, et non de la pointe de `main` à la revue.
 - Chaque cas cite un numéro de PR de ce dépôt dans ses données : il les porte avec lui parce qu'un jeu de
   référence est une mémoire de ce dépôt. Aucune invite générique du plugin n'en cite.
