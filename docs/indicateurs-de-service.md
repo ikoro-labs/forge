@@ -77,7 +77,10 @@ jamais 0 ; un journal sans refus dans la fenêtre donne 0.
 **Limite : le journal vit sur le poste.** Deux postes donnent deux journaux, et le SLI ne compte que
 ceux du poste qui le calcule ; son texte le dit (« journal de ce poste seulement »). Le dépôt est
 reconnu par son nom : deux clones du même nom sur un poste se confondent. Aucun objectif (`slo`) n'est
-posé sur `guard-refusals` : c'est une mesure à lire, pas encore une cible. Éprouvé dans les tests,
+posé sur `guard-refusals` : c'est une mesure à lire, pas encore une cible. `report` en porte une section
+« Refus des gardes » (fenêtre de 30 jours, sous la clé `refus` avec `--json`) : la valeur, le détail par garde
+et par agent, ou « sans objet » et sa raison quand le journal manque ; comme les autres sections, elle
+suppose la clé `slo`. Éprouvé dans les tests,
 sous Linux seulement (la suite est écrite pour Windows aussi, mais n'y a pas tourné), sur des journaux
 fictifs ; aucun refus réel d'une session de Claude Code n'a encore été lu.
 

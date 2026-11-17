@@ -814,7 +814,31 @@ def report(project: Path, now: datetime, run: Runner = run_command, ref: Path | 
         item["tendance"] = trend(item, item["precedent"])
     document["sla"] = sla_check(project, now, run)
     document["revue"] = review_check(project, now, run)
+    document["refus"] = refusal_check(project, now, run)
     return document
+
+
+REFUSAL_DAYS = 30
+
+
+def refusal_check(project: Path, now: datetime, run: Runner = run_command) -> dict:
+    """`guard-refusals` over the last `REFUSAL_DAYS` days, with its detail by guard and by agent, or "sans objet" and why."""
+    item = guard_refusals(Factory(project, now - timedelta(days=REFUSAL_DAYS), now, run))
+    return {**item.to_dict(), "texte": item.text, "fenetre_jours": REFUSAL_DAYS}
+
+
+def refusal_markdown(document: dict) -> str:
+    """The section « Refus des gardes » of the report."""
+    lines = [f"Refus des gardes, sur {document['fenetre_jours']} jours.", "", "| Indicateur | Valeur | Détail |", "|---|---|---|"]
+    if document["statut"] == "sans objet":
+        lines.append(f"| `{document['nom']}` | sans objet | {document['raison']} |")
+    else:
+        detail = " ; ".join(
+            f"{label} : " + ", ".join(f"{name} : {n}" for name, n in document[key].items())
+            for label, key in (("par garde", "par_garde"), ("par agent", "par_agent"))
+        )
+        lines.append(f"| `{document['nom']}` | {document['texte']} | {detail} |")
+    return "\n".join(lines)
 
 
 REVIEW_DAYS = 30
@@ -883,6 +907,8 @@ def report_markdown(document: dict) -> str:
         lines += ["", sla_markdown(document["sla"], False)]
     if "revue" in document:
         lines += ["", review_markdown(document["revue"])]
+    if "refus" in document:
+        lines += ["", refusal_markdown(document["refus"])]
     return "\n".join(lines)
 
 
