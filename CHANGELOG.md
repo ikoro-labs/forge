@@ -27,6 +27,9 @@ ticket se borne à trois PR. Version mineure : une clé nouvelle, `gh-api-allow`
   signale une valeur invalide sans bloquer (ikoro-labs/forge#244, ikoro-labs/forge#127).
 - Hooks : le tableau de complétion exige la colonne `PR fusionnées / budget PR`
   (ikoro-labs/forge#251).
+- Hooks : la garde de sortie exige les champs Fait, Mesure et Attend ta décision de la réponse de
+  session dans un seul tableau `Champ / État`, et refuse un champ écrit hors du tableau
+  (ikoro-labs/forge#253, ikoro-labs/forge#252).
 - Agents et skills : un ticket se taille pour trois PR au plus ; `forge:coder` rend `BLOCKED` plutôt
   qu'une quatrième partie, et `feature-build` route ce blocage (ikoro-labs/forge#251,
   ikoro-labs/forge#249). `feature-build` lance `forge:incident` sur un arrêt sur incident
@@ -41,9 +44,8 @@ ticket se borne à trois PR. Version mineure : une clé nouvelle, `gh-api-allow`
 - Gestes humains : un projet dont les agents appellent `gh api` hors de la liste du plugin déclare
   chaque appel dans `gh-api-allow` (`docs/installation.md`, « Les appels `gh api` admis ») ; sans
   cela, l'appel est refusé, lectures comprises.
-- Resté dehors : la règle du tableau `Champ / État` dans la réponse de session
-  (ikoro-labs/forge#252) est en cours de code. L'essai de bout en bout est sans objet ici (clé
-  `e2e-repo` absente). Rien d'éprouvé sous Windows en local, ni dans une vraie session.
+- Resté dehors : l'essai de bout en bout est sans objet ici (clé `e2e-repo` absente). Rien
+  d'éprouvé sous Windows en local, ni dans une vraie session.
 
 ### Objectifs de service
 
