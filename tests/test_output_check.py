@@ -67,11 +67,11 @@ FINDINGS:
 GATES: all probes pass
 ```
 """
-REPLY = """Done: merged #12 at abc1234.
-
-Measured: CI 4 min 10 s, run 99, 2026-11-13, 1 run of 1.
-
-Awaiting your decision: nothing.
+REPLY = """| Field | State |
+|---|---|
+| Done | merged #12 at abc1234. |
+| Measured | CI 4 min 10 s, run 99, 2026-11-13, 1 run of 1. |
+| Awaiting your decision | nothing. |
 
 CI and runners: pc 2/2 online, 1 busy; queued 0, main success abc1234.
 
@@ -142,14 +142,27 @@ class Conforming(unittest.TestCase):
         long_gates = VERDICT.replace("all probes pass", " ".join(["word"] * 61))
         self.assertTrue(any("paragraph" in d for d in deviations(long_gates, "verdict")))
 
-    def test_the_reply_labels_hold_in_french_and_in_markup(self) -> None:
+    def test_a3_1_the_french_table_then_the_ci_line_and_features_conforms(self) -> None:
+        """F-0181 ticket #252 A3.1: a `Champ / État` table, then the CI line and Features."""
         reply = (
-            "**Fait** : PR #12 fusionnée.\n\n## Mesure\n\nCI 4 min.\n\n"
-            "| Attend ta décision | rien |\n|---|---|\n\nCI et runners : poste 2/2.\n\n"
+            "| Champ | État |\n|---|---|\n| Fait | PR #12 fusionnée. |\n| Mesure | CI 4 min. |\n"
+            "| Attend ta décision | rien |\n\nCI et runners : poste 2/2.\n\n"
             "**Features :** \n\n" + FEATURES_BLOCK.split("\n", 2)[2]
         )
         self.assertEqual(deviations(reply, "session-reply"), [])
         self.assertEqual(deviations(reply.replace("**Features :**", "Features :"), "session-reply"), [])
+
+    def test_a3_2_the_english_table_conforms_and_its_markup_may_vary(self) -> None:
+        """F-0181 ticket #252 A3.2: a `Field / State` table with the English names."""
+        self.assertEqual(deviations(REPLY, "session-reply"), [])
+        for name, text in {
+            "bold labels": REPLY.replace("| Done |", "| **Done** |"),
+            "lower case header": REPLY.replace("| Field | State |", "| field | state |"),
+            "French labels under the English header": REPLY.replace("| Done |", "| Fait |"),
+            "aligned separator": REPLY.replace("|---|---|", "| :--- | ---: |"),
+        }.items():
+            with self.subTest(name):
+                self.assertEqual(deviations(text, "session-reply"), [])
 
     def test_a_key_written_with_a_space_before_its_colon_counts(self) -> None:
         self.assertEqual(deviations(TICKET.replace("Motif:", "Motif :"), "ticket"), [])
@@ -181,7 +194,7 @@ class Refused(unittest.TestCase):
         self.assertRefused(TICKET.replace("## Criteria", "## Tests"), "ticket", "`Criteria` is missing")
         self.assertRefused(PR.replace("## Door", "## Gate"), "pr", "`Door` is missing")
         self.assertRefused(VERDICT.replace("GATES: all probes pass\n", ""), "verdict", "`GATES:`")
-        self.assertRefused(REPLY.replace("Measured:", "Numbers:"), "session-reply", "`Measured`")
+        self.assertRefused(REPLY.replace("| Measured |", "| Numbers |"), "session-reply", "`Measured`")
         # A6 of forge#181: the reply carries the one-line "CI and runners" part.
         self.assertRefused(
             REPLY.replace("CI and runners:", "Runners:"), "session-reply", "`CI and runners`"
@@ -252,6 +265,66 @@ class Refused(unittest.TestCase):
         self.assertRefused(long + "\n- a\n- b\n- c\n", "session-reply", "go in a table")
         lines = REPLY.replace(FEATURES_BLOCK, "") + "x\n" * 12 + FEATURES_BLOCK
         self.assertRefused(lines, "session-reply", "lines, at most 15")
+
+    def test_a2_1_a_table_field_written_outside_the_table_is_refused(self) -> None:
+        """F-0181 ticket #252 A2.1: `Fait: ...` as prose is refused; so is each of the three fields."""
+        prose_form = {
+            "Done": "Done: merged #12 at abc1234.",
+            "Measured": "Measured: CI 4 min 10 s, run 99, 2026-11-13, 1 run of 1.",
+            "Awaiting your decision": "Awaiting your decision: nothing.",
+        }
+        for field, line in prose_form.items():
+            with self.subTest(field=field):
+                row = next(r for r in REPLY.splitlines() if r.startswith(f"| {field} |"))
+                outside = REPLY.replace(row + "\n", "") + "\n" + line + "\n"
+                self.assertRefused(outside, "session-reply", f"`{field}`")
+                self.assertRefused(outside, "session-reply", "outside the table")
+        french = REPLY.replace("| Field | State |", "| Champ | État |").replace("| Done | merged", "| Fait | merged")
+        self.assertRefused(french.replace("| Fait | merged #12 at abc1234. |\n", "") + "\nFait: PR #12.\n",
+                           "session-reply", "`Fait`")
+
+    def test_a2_1_the_same_field_in_prose_and_in_the_table_is_still_refused(self) -> None:
+        self.assertRefused("Done: merged #12.\n\n" + REPLY, "session-reply", "outside the table")
+        for form in ("**Done:** merged.", "## Done\n\nmerged.", "Done | merged."):
+            with self.subTest(form=form):
+                self.assertRefused(form + "\n\n" + REPLY, "session-reply", "outside the table")
+
+    def test_a2_1_fields_in_prose_without_any_table_are_refused(self) -> None:
+        old = (
+            "Done: merged #12.\n\nMeasured: CI 4 min.\n\nAwaiting your decision: nothing.\n\n"
+            + REPLY[REPLY.index("CI and runners:") :]
+        )
+        found = deviations(old, "session-reply")
+        for field in ("Done", "Measured", "Awaiting your decision"):
+            self.assertTrue(any(f"`{field}`" in d and "outside the table" in d for d in found), found)
+
+    def test_a2_1_a_table_under_another_header_is_not_the_table_of_the_fields(self) -> None:
+        for header in ("| Item | Value |", "| Field | State | Note |", "| State | Field |"):
+            with self.subTest(header=header):
+                text = REPLY.replace("| Field | State |", header)
+                self.assertRefused(text, "session-reply", "outside the table")
+
+    def test_a2_1_a_table_without_its_separator_row_is_not_a_table(self) -> None:
+        self.assertRefused(REPLY.replace("|---|---|\n", "", 1), "session-reply", "outside the table")
+
+    def test_a2_1_the_refusal_names_the_header_the_fields_go_under(self) -> None:
+        found = deviations("Done: x.\n\n" + REPLY, "session-reply")
+        self.assertTrue(any("| Field | State |" in d and "| Champ | État |" in d for d in found), found)
+
+    def test_a2_1_a_missing_row_and_an_empty_state_are_refused_in_the_table(self) -> None:
+        self.assertRefused(REPLY.replace("| Measured | CI 4 min 10 s, run 99, 2026-11-13, 1 run of 1. |\n", ""),
+                           "session-reply", "`Mesuré` is missing")
+        for empty in ("| Measured | |", "| Measured |", "| Measured |   |"):
+            with self.subTest(row=empty):
+                text = REPLY.replace("| Measured | CI 4 min 10 s, run 99, 2026-11-13, 1 run of 1. |", empty)
+                self.assertRefused(text, "session-reply", "`Mesuré` is empty")
+        # An empty last row is read as empty too, whatever follows it.
+        last = REPLY.replace("| Awaiting your decision | nothing. |", "| Awaiting your decision | |")
+        self.assertRefused(last, "session-reply", "`Awaiting your decision`")
+
+    def test_a2_1_the_features_table_is_not_mistaken_for_the_table_of_the_fields(self) -> None:
+        feature = REPLY.replace("| F-0001 demo |", "| Done and Measured |")
+        self.assertEqual(deviations(feature, "session-reply"), [])
 
     def test_an_empty_required_field(self) -> None:
         self.assertRefused(TICKET.replace("Motif: demande-kevin, 2026-11-13 chat", "Motif:"),
