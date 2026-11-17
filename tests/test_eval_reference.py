@@ -471,6 +471,17 @@ class Documented(unittest.TestCase):
         self.assertIn("0.333", text)
         self.assertIn("`1/3`", text)
 
+    def test_the_page_states_whether_the_eval_command_exists_in_the_version_the_ci_pins(self) -> None:
+        """#67 part 3 A3: the pinned version, how it was checked, and that no case was run there."""
+        workflow = (support.REPO_ROOT / ".github" / "workflows" / "tests.yml").read_text(encoding="utf-8")
+        pinned = re.search(r"claude-code@([\d.]+)", workflow)
+        self.assertIsNotNone(pinned)
+        assert pinned is not None
+        text = self.page()
+        self.assertIn(f"`claude plugin eval` existe dans la version {pinned.group(1)}", text)
+        self.assertIn("plugin eval --help", text)
+    """#67 point 3: the page of `docs/` gives the launch command and its ceiling."""
+
     def test_the_page_gives_the_command_and_the_ceiling(self) -> None:
         text = (support.REPO_ROOT / "docs" / "jeu-de-reference.md").read_text(encoding="utf-8")
         self.assertIn("eval_reference.py run --max-cost-usd", text)

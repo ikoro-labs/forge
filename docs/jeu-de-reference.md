@@ -116,8 +116,15 @@ vérifier au premier lancement :
 - que `eval_reference.py score` lit un vrai `aggregate-result.json` : il accepte les noms en
   `camelCase` (bras `arms.with`) et en `snake_case` (`runs`).
 
-La CI épingle `claude` à la version 2.1.304 dans son job `validate`. Le jeu ne tourne pas en CI : il se
-lance sur un poste dont `claude plugin eval` existe, et la version qui l'a relevé est la 2.1.325.
+La CI épingle `claude` à la version 2.1.304 dans son job `validate` (`.github/workflows/tests.yml`, chemin
+protégé : il n'est pas changé ici). `claude plugin eval` existe dans la version 2.1.304. Relevé le
+2026-11-17 : le paquet `@anthropic-ai/claude-code@2.1.304` installé dans un dossier jetable, son binaire
+lancé avec un `HOME` jetable, `claude --version` répond `2.1.304 (Claude Code)`, et `claude plugin --help` liste la
+sous-commande `eval`. `claude plugin eval --help` y montre les options que `eval_reference.py run` passe
+(`--scaffold`, `--ablation`, `--no-publish`, `--max-cost-usd`, `--output-dir`, `--runs`, `--case`). Aucun
+cas n'y a tourné, et aucun appel à un modèle n'a été fait : seule l'aide a été lue. Le jeu ne tourne pas en
+CI : il se lance sur un poste dont `claude plugin eval` existe, et la version qui a relevé le format des
+cas est la 2.1.325.
 
 ## Limites des cas
 
