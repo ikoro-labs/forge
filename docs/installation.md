@@ -609,11 +609,6 @@ the plugin and not a key of `usine.md`. `guard_ticket_budget` holds it at four m
   counts as for a new ticket and refuses past the budget. A number or a state it cannot read, or a
   ticket gh cannot give, is refused; `reopenIssue` and an `updateIssue` that sets `state` are refused.
 
-The budget counts tickets, not PRs. A ticket is sized for at most three PRs (`feature-design` step 6
-and `forge:product-owner` apply it when they cut), so a feature's PR budget is `feature-tickets` times
-3, shown in the completion table. The hook does not enforce it: `forge:coder` returns `BLOCKED`
-instead of opening a fourth part of one ticket (counted by `gh pr list --state all`).
-
 The hook refuses what it cannot read: a body passed by a variable (`--body "$BODY"`), a command
 substitution other than `$(cat <<'EOF' ... EOF)`, a heredoc with an unquoted delimiter whose body
 holds `$`, a backtick or a backslash, an editor or a pipe; a count gh cannot make (absent, network,
@@ -655,16 +650,13 @@ nommé) :
 | Ouverts | les tickets ouverts que compte le budget |
 | Hors compte (not_planned) | les tickets fermés comme non prévus, hors du budget |
 | Reste (numéros ouverts) | les numéros des tickets ouverts |
-| PR fusionnées / budget PR | les PR fusionnées de la feature, sur le budget en PR : `feature-tickets` fois 3, un ticket étant taillé pour trois PR au plus (`?` sans `feature-tickets`). Les PR de chaque ticket suivent entre parenthèses (`4 / 45 (#41: 3, #42: 1)`) |
 | Relevé (date UTC) | l'heure de la lecture et sa source |
 
 Les tickets d'une feature sont les sous-issues de son issue de suivi (l'`issue:` de son `idee.md`),
 lues par `gh api .../sub_issues --paginate`. Sans `issue:`, ce sont ceux que place la recherche du
 [budget d'une feature](#the-ticket-budget-of-a-feature) (`to-tickets F-NNNN` et `Feature: F-NNNN`,
 chaque corps placé par sa ligne `Motif :`) ; la cellule `Relevé` dit la source. Un ticket fermé
-comme non prévu ne gonfle pas les fermés. Les PR fusionnées sont lues par un
-`gh pr list --state merged --search "Feature: F-NNNN"` : une PR compte pour chaque ticket que son
-corps cite par `Closes #n` ou `Refs #n`, et la cellule `Relevé` en nomme la source. Il n'y a pas
+comme non prévu ne gonfle pas les fermés. Il n'y a pas
 de ligne de total : les dénominateurs des features ne s'additionnent pas. Une feature est ouverte
 tant que son dossier n'a pas de `README.md` et que son `etat` n'est pas `hors-perimetre` ou
 `abandonnee` (clé `feature-state`). La clé `completion-column` ajoute la colonne propre au projet.
@@ -813,7 +805,9 @@ can also run on a body before it posts it:
 
 The reply carries five fields: `Done`, `Measured`, `Awaiting your decision`, `CI and runners` and
 `Features` (or `Fait`, `Mesure`, `Attend ta décision`, `CI et runners`, `Features`, the last being the
-same word in both languages). `CI and runners` is one line, which `scripts/report_mail.py --line`
+same word in both languages). The first three are the rows of one table headed `| Field | State |` (or
+`| Champ | État |`), with its separator row; the guard refuses one of them written as a prose line or a
+heading, or a row with no state. `CI and runners` is one line, which `scripts/report_mail.py --line`
 prints from the `report-*` keys of `usine.md` (see [Le mail de relevé](#le-mail-de-relevé)); without
 those keys the line reads `not applicable`.
 

@@ -454,6 +454,26 @@ class TemplatesAndAgents(unittest.TestCase):
                                 ("Awaiting your decision", "Attend ta décision")):
             self.assertTrue(any(english in f and french in f for f in fields), fields)
 
+    def test_a1_the_reply_template_puts_the_three_fields_in_one_table_then_the_ci_line_and_features(self) -> None:
+        """F-0181 ticket #252 A1: one `Field | State` table, then the CI line and Features."""
+        text = (support.PLUGIN / "templates" / "session-reply.md").read_text(encoding="utf-8")
+        body = text.split("\n", 1)[1].split("\n- ", 1)[0].strip().splitlines()
+        lines = [line for line in body if line.strip()]
+        self.assertEqual(lines[0], "| Field | State |")
+        self.assertRegex(lines[1], r"^\|\s*:?-{3,}:?\s*\|\s*:?-{3,}:?\s*\|$")
+        self.assertEqual([line.split("|")[1].strip() for line in lines[2:5]],
+                         ["Done", "Measured", "Awaiting your decision"])
+        self.assertTrue(lines[5].startswith("CI and runners:"), lines[5])
+        self.assertTrue(lines[6].startswith("Features:"), lines[6])
+        self.assertEqual(len(lines), 7)
+
+    def test_a1_the_reply_template_filled_in_conforms(self) -> None:
+        text = (support.PLUGIN / "templates" / "session-reply.md").read_text(encoding="utf-8")
+        body = text.split("\n", 1)[1].split("\n- ", 1)[0]
+        filled = re.sub(r"(?m)^Features:.*$", lambda _: FEATURES_BLOCK.rstrip(), body)
+        filled = re.sub(r"<[^>\n]*>", "text", filled)
+        self.assertEqual(deviations(filled, "session-reply"), [])
+
     def test_each_forge_agent_the_validator_names_exists_and_declares_its_keys(self) -> None:
         declared = {
             "coder": {"RESULT", *(key for keys in RESULT_KEYS.values() for key in keys)},
