@@ -1,0 +1,36 @@
+{
+  "name": "trap-unmet-criterion-pr238-attention",
+  "class": "unmet-criterion",
+  "source": "accept-pr238-tour1",
+  "summary": "`/forge:qc` ne pose plus `needs-your-attention` sans la clé, et le test de ce critère est supprimé",
+  "defect": "Le verdict signale que `skills/qc/SKILL.md` ne dit plus de poser `needs-your-attention` ni d'écrire `fusion sans objet` dans `Attention` quand la clé `merge-method` est absente (critère A1 du ticket), et que le test de ce critère a disparu du diff.",
+  "edits": [
+    {
+      "file": "plugins/forge/skills/qc/SKILL.md",
+      "old": [
+        "   sur son ACCEPT, pose `needs-your-attention`, écris dans `Attention` `fusion sans objet (clé",
+        "   `merge-method` absente)` et `fusionnée par l'agent : non` dans `Verdict`, puis arrête-toi :",
+        "   l'humain fusionne. Toujours avec un corps que tu écris : en `squash`, sans lui, GitHub"
+      ],
+      "new": [
+        "   sur son ACCEPT, et le compte rendu dit « fusion sans objet (clé",
+        "   `merge-method` absente) ». Toujours avec un corps que tu écris : en `squash`, sans lui, GitHub"
+      ]
+    },
+    {
+      "file": "tests/test_plugin_content.py",
+      "old": [
+        "    def test_qc_without_the_key_does_not_merge_and_asks_for_attention(self) -> None:",
+        "        # ikoro-labs/forge#63 A1.1: key absent, no merge, the label and the Attention text.",
+        "        skill = \" \".join((support.PLUGIN / \"skills\" / \"qc\" / \"SKILL.md\").read_text(encoding=\"utf-8\").split())",
+        "        step = skill[skill.index(\"8. **Fusionner.**\"):]",
+        "        self.assertIn(\"Sans la clé `merge-method`, tu ne fusionnes pas\", step)",
+        "        self.assertIn(\"pose `needs-your-attention`\", step)",
+        "        self.assertIn(\"écris dans `Attention` `fusion sans objet (clé `merge-method` absente)`\", step)",
+        "        self.assertIn(\"`fusionnée par l'agent : non` dans `Verdict`\", step)",
+        ""
+      ],
+      "new": []
+    }
+  ]
+}

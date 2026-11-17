@@ -1,0 +1,16 @@
+{
+  "name": "trap-weakened-test-pr238-label",
+  "class": "weakened-test",
+  "source": "accept-pr238-tour1",
+  "summary": "l'assertion qui vérifie que `needs-your-attention` est posé est retirée du test de la clé absente",
+  "defect": "Le verdict signale que le test `test_qc_without_the_key_does_not_merge_and_asks_for_attention` ne vérifie plus que `/forge:qc` pose `needs-your-attention` quand la clé `merge-method` est absente (critère A1.1 du ticket), ou que l'assertion retirée par le diff laisse ce critère sans preuve.",
+  "edits": [
+    {
+      "file": "tests/test_plugin_content.py",
+      "old": [
+        "        self.assertIn(\"pose `needs-your-attention`\", step)"
+      ],
+      "new": []
+    }
+  ]
+}

@@ -1,0 +1,36 @@
+Ticket #64: `guard_git` relit les messages des commits de la branche avant une fusion
+
+## Constat
+
+`guard_git` refuse une fusion dont le message ou la description ferme un ticket que la PR ne cite qu'en `Refs`. Il ne lit pas les messages des commits de la branche. Avec un commit de fusion, GitHub les lit pourtant : un `Closes #n` écrit dans un commit de branche a fermé un ticket malgré une PR en `Refs` (#51). La parade est une entrée de mémoire d'un poste (relire les messages avant de fusionner), pas un contrôle.
+
+Suivi : #55. Dépend de #63.
+
+## Ce qui est attendu
+
+- Avant un `gh pr merge` d'un agent, `guard_git` lit les messages des commits de la PR (`gh pr view <n> --json commits`) et refuse quand l'un d'eux contient un mot-clé de fermeture suivi d'un ticket que la description cite en `Refs`.
+- La règle des mots-clés est celle que le garde applique déjà à la description et au message : une seule fonction pour les trois lectures.
+- Le refus nomme le commit (sha court) et le ticket, et dit comment corriger : réécrire le message, ou retirer le ticket du `Refs` si la PR le livre en entier.
+- Fermé par défaut : une liste de commits illisible vaut refus.
+- Avec `merge-method` : `squash` (#63), les messages des commits entrent dans le message par défaut : la règle s'applique de même.
+- Tests : un `Closes #n` dans un commit refusé, un `Refs #n` qui passe, un mot-clé pour un autre ticket que celui du `Refs`, une liste illisible.
+
+## Hors périmètre
+
+La liste d'acceptation de `gh api` (#73).
+
+## Chemin protégé
+
+Touche `plugins/forge/hooks/guard_git.py` (clé `protected-path`) : la PR s'arrête à l'ACCEPT, et l'humain la fusionne.
+
+## Décision
+
+Demande de l'humain (`accepting-human`, 2026-10-24), issue de suivi #55.
+
+--- Commentaire du 2026-11-15T23:58:43Z
+Tri du 2026-11-16, lecture seule de `main` à 7dfcf61 (forge 1.14.0).
+
+**Case : à faire.** `guard_git` ne lit pas les commits de la PR (`grep 'json commits' guard_git.py` : 0) ; seule une consigne du skill demande de relire les messages (`skills/qc/SKILL.md:94-97`). Dépend de #63, ouvert.
+
+--- Commentaire du 2026-11-16T05:49:26Z
+La revue sans blâme de l'incident qui motive ce ticket est maintenant sur `main`, depuis #222 : `docs/incidents/2026-10-24-closes-dans-un-commit-de-branche.md`. Sa classe de correctif est mécanique, et ce ticket en est le correctif.

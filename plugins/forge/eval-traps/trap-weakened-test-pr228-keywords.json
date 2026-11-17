@@ -1,0 +1,18 @@
+{
+  "name": "trap-weakened-test-pr228-keywords",
+  "class": "weakened-test",
+  "source": "accept-pr228-tour1",
+  "summary": "la liste des mots-clés de fermeture du test se réduit à un seul mot",
+  "defect": "Le verdict signale que le test `test_every_closing_keyword_github_reads_is_caught_in_a_commit` ne parcourt plus qu'un mot-clé (`Closed #206`) au lieu des cinq que GitHub lit, donc que la règle des mots-clés dans un commit n'est plus prouvée en entier.",
+  "edits": [
+    {
+      "file": "tests/test_guard_git_commits.py",
+      "old": [
+        "        for closing in [\"Closed #206\", \"fix #206\", \"Fixes #206\", \"resolved: #206\", \"RESOLVES o/r#206\"]:"
+      ],
+      "new": [
+        "        for closing in [\"Closed #206\"]:"
+      ]
+    }
+  ]
+}

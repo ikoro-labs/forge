@@ -1,0 +1,136 @@
+diff --git a/.claude/rules/forge.md b/.claude/rules/forge.md
+index 10b76b3..3694157 100644
+--- a/.claude/rules/forge.md
++++ b/.claude/rules/forge.md
+@@ -38,8 +38,7 @@
+ - Chaque comportement ajouté ou changé d'un hook, du parseur ou du contenu a son test dans
+   `tests/`. La suite tourne sous Linux et sous Windows :
+   `uv run --no-project --quiet python -m unittest discover -s tests`.
+-- Un test isole `HOME` et `USERPROFILE`, ne passe pas les variables `CLAUDE_` de la session qui le
+-  lance, et n'écrit jamais dans le vrai `~/.claude`.
++- Un test isole `HOME` et `USERPROFILE`.
+ - Un test qui ne peut tourner que sous un système le dit par `skipUnless`, avec la raison.
+ 
+ ## Version et journal
+diff --git a/docs/installation.md b/docs/installation.md
+index 2f462bc..44516c4 100644
+--- a/docs/installation.md
++++ b/docs/installation.md
+@@ -99,8 +99,8 @@ une ligne retirée, un nombre relevé, un rang abaissé, mesurés sur le diff pa
+ `plugins/forge/scripts/never_weaken.py`), les tolérances des hooks, les commandes dont la sortie se
+ raccourcit. Le gabarit, `plugins/forge/templates/usine.md`, documente chaque clé.
+ 
+-Depuis la 1.7.0, `/forge:qc` ne fusionne que si la clé `merge-method` dit comment : `squash` ou
+-`merge` (commit de fusion), selon ce que le dépôt GitHub autorise. Un projet qui monte de version
++Depuis la 1.7.0, `/forge:qc` ne fusionne que si la clé `merge-method` dit comment : `merge`
++(commit de fusion), `squash` ou `rebase`, selon ce que le dépôt GitHub autorise. Un projet qui monte de version
+ sans la poser voit ses PR rester ouvertes sur leur ACCEPT, avec la raison dans le compte rendu.
+ 
+ Le hook `guard_git` tient la même clé pour tout agent, quel que soit son nom : un `gh pr merge` dont
+diff --git a/plugins/forge/skills/qc/SKILL.md b/plugins/forge/skills/qc/SKILL.md
+index 140f532..e3c6d81 100644
+--- a/plugins/forge/skills/qc/SKILL.md
++++ b/plugins/forge/skills/qc/SKILL.md
+@@ -110,12 +110,14 @@ habituel, et une PR de prose en rend souvent une.
+    refusée, remets chaque PR reportée sur sa base d'avant, `gh pr edit <m> --base <branche de
+    tête>`, sans quoi son diff porterait les commits non fusionnés de la mère. Puis
+    `gh pr merge <n> --<méthode> --delete-branch --body-file <fichier>`, où `<méthode>` est la
+-   valeur de la clé `merge-method` (`squash` ou `merge`), seule dans sa commande
++   valeur de la clé `merge-method` (`merge`, `squash` ou `rebase`), seule dans sa commande
+    (`guard_git` refuse une fusion accompagnée d'autre chose), puis, dans une commande à part,
+    `gh pr edit <n> --add-label agent-merged` : tu agis sous le compte de l'humain, et sans
+-   l'étiquette la fusion paraîtrait lue par lui. Sans la clé `merge-method`, tu ne fusionnes pas :
+-   la PR reste ouverte sur son ACCEPT, et le compte rendu dit « fusion sans objet (clé
+-   `merge-method` absente) ». Toujours avec un corps que tu écris : en `squash`, sans lui, GitHub
++   l'étiquette la fusion paraîtrait lue par lui. `merge` donne `--merge`, `squash` donne `--squash`,
++   `rebase` donne `--rebase`. Sans la clé `merge-method`, tu ne fusionnes pas : la PR reste ouverte
++   sur son ACCEPT, pose `needs-your-attention`, écris dans `Attention` `fusion sans objet (clé
++   `merge-method` absente)` et `fusionnée par l'agent : non` dans `Verdict`, puis arrête-toi :
++   l'humain fusionne. Toujours avec un corps que tu écris : en `squash`, sans lui, GitHub
+    écrit sur la base tous les messages de commit de la branche, périmés compris, et une PR reprise
+    au tour 2 ou 3 porte un message d'un tour précédent que son correctif a rendu faux. En `merge`,
+    les commits de la branche arrivent sur la base quel que soit le corps, et `guard_git` ne lit
+@@ -128,9 +130,11 @@ habituel, et une PR de prose en rend souvent une.
+    dans le message ni dans la description de la PR, `Rapport d'agent` compris : le hook
+    `guard_git` du plugin refuse la fusion sinon.
+ 
+-   `--delete-branch` supprime la branche de tête sur `origin` et sa copie locale : après un
+-   squash ou un rebase, `git branch -d` ne la voit jamais comme fusionnée, et `guard_git` refuse `-D` aux
+-   agents. Une branche encore extraite dans le worktree d'un coder fait échouer gh après la fusion
++   `--delete-branch` supprime la branche de tête sur `origin` et sa copie locale, et le sort de
++   la copie locale suit la méthode : après `merge`, `git branch -d` supprime la copie locale une
++   fois le worktree du coder disparu, parce qu'un commit de fusion garde les commits de la branche
++   dans la base ; après `squash` ou `rebase`, la copie locale reste, parce que `git branch -d` ne
++   la voit jamais comme fusionnée, et `guard_git` refuse `-D` aux agents. Une branche encore extraite dans le worktree d'un coder fait échouer gh après la fusion
+    (`failed to delete local branch`), et il s'arrête avant `origin` : la fusion est faite, pose
+    l'étiquette, puis `git push origin --delete <branche>` ; la copie locale reste, elle est à ce
+    worktree. Une PR empilée, reportée avant la fusion, reçoit ensuite la base à jour par
+diff --git a/plugins/forge/templates/usine.md b/plugins/forge/templates/usine.md
+index 8350637..a44b047 100644
+--- a/plugins/forge/templates/usine.md
++++ b/plugins/forge/templates/usine.md
+@@ -115,8 +115,9 @@ Les règles git du projet : nommage des branches, format des commits, ligne d'at
+ 
+ - `git-rules` : `<.claude/rules/git.md>`
+ 
+-La méthode de fusion d'une PR par `/forge:qc` : `squash` ou `merge` (commit de fusion), celle
+-que le dépôt GitHub autorise et que ses règles git demandent. Sans la clé, `/forge:qc` ne fusionne
++La méthode de fusion d'une PR par `/forge:qc` : `merge` (commit de fusion, `--merge`), `squash`
++(`--squash`) ou `rebase` (`--rebase`), celle que le dépôt GitHub autorise et que ses règles git
++demandent. Sans la clé, `/forge:qc` ne fusionne
+ pas : l'étape est sans objet et la PR reste ouverte sur son ACCEPT. Le hook `guard_git` tient la
+ même clé pour tout agent : une fusion dont la méthode diffère de la clé ou n'en donne aucune, une
+ clé absente, sur deux lignes ou d'une valeur autre que `merge`, `squash` ou `rebase` valent refus.
+diff --git a/tests/test_plugin_content.py b/tests/test_plugin_content.py
+index 7ac1f7a..5e4541e 100644
+--- a/tests/test_plugin_content.py
++++ b/tests/test_plugin_content.py
+@@ -871,14 +871,46 @@ class MergeMethod(unittest.TestCase):
+     def test_qc_merges_with_the_merge_method_key(self) -> None:
+         skill = " ".join((support.PLUGIN / "skills" / "qc" / "SKILL.md").read_text(encoding="utf-8").split())
+         self.assertIn("`gh pr merge <n> --<méthode> --delete-branch --body-file <fichier>`", skill)
+-        self.assertIn("valeur de la clé `merge-method` (`squash` ou `merge`)", skill)
+-        self.assertIn("Sans la clé `merge-method`, tu ne fusionnes pas", skill)
++        self.assertIn("valeur de la clé `merge-method` (`merge`, `squash` ou `rebase`)", skill)
++        self.assertNotIn("(`squash` ou `merge`)", skill)
+         self.assertNotIn("gh pr merge <n> --squash", skill)
+ 
++    def test_qc_maps_each_merge_method_to_its_option(self) -> None:
++        # ikoro-labs/forge#63 A2.1: three values, three options.
++        skill = " ".join((support.PLUGIN / "skills" / "qc" / "SKILL.md").read_text(encoding="utf-8").split())
++        step = skill[skill.index("8. **Fusionner.**"):]
++        self.assertIn("`merge` donne `--merge`, `squash` donne `--squash`, `rebase` donne `--rebase`", step)
++
++    def test_qc_without_the_key_does_not_merge_and_asks_for_attention(self) -> None:
++        # ikoro-labs/forge#63 A1.1: key absent, no merge, the label and the Attention text.
++        skill = " ".join((support.PLUGIN / "skills" / "qc" / "SKILL.md").read_text(encoding="utf-8").split())
++        step = skill[skill.index("8. **Fusionner.**"):]
++        self.assertIn("Sans la clé `merge-method`, tu ne fusionnes pas", step)
++        self.assertIn("pose `needs-your-attention`", step)
++        self.assertIn("écris dans `Attention` `fusion sans objet (clé `merge-method` absente)`", step)
++        self.assertIn("`fusionnée par l'agent : non` dans `Verdict`", step)
++
++    def test_qc_local_branch_is_deleted_after_a_merge_commit_only(self) -> None:
++        # ikoro-labs/forge#63 A3.1: the local branch delete works after merge once the coder worktree is
++        # gone; after squash or rebase the local copy stays.
++        skill = " ".join((support.PLUGIN / "skills" / "qc" / "SKILL.md").read_text(encoding="utf-8").split())
++        step = skill[skill.index("8. **Fusionner.**"):]
++        paragraph = step[step.index("`--delete-branch` supprime"):step.index("Si la protection de la base")]
++        self.assertIn("après `merge`, `git branch -d` supprime la copie locale une fois le worktree du coder disparu", paragraph)
++        self.assertIn("après `squash` ou `rebase`, la copie locale reste", paragraph)
++        self.assertNotIn("squash ou un rebase, `git branch -d` ne la voit jamais", paragraph)
++
+     def test_template_declares_the_merge_method_key(self) -> None:
+         template = (support.PLUGIN / "templates" / "usine.md").read_text(encoding="utf-8")
+         self.assertIn("- `merge-method` : `<squash>`", template)
+ 
++    def test_template_names_the_three_merge_methods_with_their_options(self) -> None:
++        # ikoro-labs/forge#63 A2.2: the template names merge, squash, rebase and the matching options.
++        template = " ".join((support.PLUGIN / "templates" / "usine.md").read_text(encoding="utf-8").split())
++        paragraph = template[template.index("La méthode de fusion d'une PR"):template.index("- `merge-method`")]
++        self.assertIn("`merge` (commit de fusion, `--merge`), `squash` (`--squash`) ou `rebase` (`--rebase`)", paragraph)
++        self.assertNotIn("`squash` ou `merge`", paragraph)
++
+ 
+ class StackedPullRequests(unittest.TestCase):
+     """ikoro-labs/forge#170: merging with --delete-branch closed a PR stacked on the merged branch."""

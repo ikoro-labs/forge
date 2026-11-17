@@ -17,6 +17,7 @@ from typing import Any
 import support
 from eval_reference import command, main, measure
 from factory_slo import reference
+from plant_defect import parse_diff, plant, totals
 
 EVALS = support.PLUGIN / "evals"
 BLOCKERS = {"blocker-pr11-tour1", "blocker-pr13-tour1", "blocker-pr28-tour1", "blocker-pr30-tour1",
@@ -30,6 +31,17 @@ ACCEPTS = {
     "accept-pr228-tour1": ("76b372830b04f4af363a7f558e3475b5ebe25975", "0d51e8a299f7fd7bd79f9084f00261d19ad6a4b9"),
     "accept-pr238-tour1": ("be73972256e90b55101353c5c823b1f3fd3945dc", "8a6a4ce22fd5024f7488fd52b88492621fd34775"),
 }
+# Ticket #154: the trapped cases, three per class, each built on a frozen `accept-` case by `plant_defect.py`.
+TRAPS = {
+    "weakened-test": ("trap-weakened-test-pr238-label", "trap-weakened-test-pr228-sha",
+                      "trap-weakened-test-pr228-keywords"),
+    "out-of-scope": ("trap-out-of-scope-pr226-rule", "trap-out-of-scope-pr228-threshold",
+                     "trap-out-of-scope-pr238-test-rule"),
+    "unmet-criterion": ("trap-unmet-criterion-pr226-sev3", "trap-unmet-criterion-pr228-fail-open",
+                        "trap-unmet-criterion-pr238-attention"),
+}
+TRAPPED = {name for names in TRAPS.values() for name in names}
+SPECS = support.PLUGIN / "eval-traps"
 FIXTURES = ("ticket.txt", "pr-body.txt", "pr.diff", "gate.txt", "claude.txt", "rules-forge.txt",
             "rules-git.txt", "usine.txt")
 
@@ -340,8 +352,8 @@ class CaseForm(unittest.TestCase):
     def cases(self) -> list[Path]:
         return sorted(path for path in EVALS.iterdir() if path.is_dir())
 
-    def test_the_set_holds_the_five_blockers_the_three_false_accepts_and_the_three_accepts(self) -> None:
-        self.assertEqual({path.name for path in self.cases()}, BLOCKERS | FALSE_ACCEPTS | set(ACCEPTS))
+    def test_the_set_holds_the_five_blockers_the_three_false_accepts_the_three_accepts_and_the_nine_traps(self) -> None:
+        self.assertEqual({path.name for path in self.cases()}, BLOCKERS | FALSE_ACCEPTS | set(ACCEPTS) | TRAPPED)
 
     def test_each_case_names_itself_after_its_folder_and_loads_its_frozen_data(self) -> None:
         for folder in self.cases():
@@ -443,7 +455,7 @@ class CaseForm(unittest.TestCase):
         for folder in self.cases():
             with self.subTest(case=folder.name):
                 grader = folder / "graders" / "names-the-defect.md"
-                self.assertEqual(grader.is_file(), folder.name in FALSE_ACCEPTS)
+                self.assertEqual(grader.is_file(), folder.name in FALSE_ACCEPTS | TRAPPED)
                 if grader.is_file():
                     self.assertEqual(frontmatter(grader)["type"], "llm")
 
@@ -452,6 +464,74 @@ class CaseForm(unittest.TestCase):
             if path.is_file():
                 with self.subTest(path=str(path.relative_to(EVALS))):
                     self.assertNotIn(chr(0x2014), path.read_text(encoding="utf-8"))
+
+
+class TrappedCases(unittest.TestCase):
+    """#154 A1: three trapped cases per class, built on the frozen `accept-` cases, expecting REJECT and the defect."""
+
+    def test_each_class_has_three_cases_that_expect_reject_and_name_the_defect(self) -> None:
+        """#154 A1.1: the graders `rejects`, `no-false-accept` and `names-the-defect`, and no grader of the accept family."""
+        for kind, names in TRAPS.items():
+            self.assertGreaterEqual(len(names), 3)
+            self.assertEqual({path.name for path in EVALS.glob(f"trap-{kind}-*")}, set(names))
+            for name in names:
+                folder = EVALS / name
+                with self.subTest(case=name):
+                    self.assertEqual(sorted(path.name for path in (folder / "graders").iterdir()),
+                                     ["names-the-defect.md", "no-false-accept.md", "rejects.md"])
+                    blocker = EVALS / "blocker-pr11-tour1" / "graders"
+                    for grader in ("rejects.md", "no-false-accept.md"):
+                        self.assertEqual((folder / "graders" / grader).read_bytes(), (blocker / grader).read_bytes())
+                    names_it = frontmatter(folder / "graders" / "names-the-defect.md")
+                    self.assertEqual((names_it["type"], names_it["weight"]), ("llm", "0.5"))
+                    body = (folder / "graders" / "names-the-defect.md").read_text(encoding="utf-8").split("---\n", 2)[2]
+                    self.assertTrue(body.strip())
+
+    def test_each_case_is_built_on_a_frozen_accept_case_and_says_which_class_it_plants(self) -> None:
+        for kind, names in TRAPS.items():
+            for name in names:
+                with self.subTest(case=name):
+                    spec = json.loads((SPECS / f"{name}.json").read_text(encoding="utf-8"))
+                    self.assertEqual((spec["name"], spec["class"]), (name, kind))
+                    self.assertIn(spec["source"], ACCEPTS)
+                    text = (EVALS / name / "case.yaml").read_text(encoding="utf-8")
+                    self.assertIn(f"\nname: {name}\n", text)
+                    self.assertIn(f"piégée ({kind})", text)
+                    self.assertIn("Verdict attendu, REJECT", text)
+                    self.assertIn(f"tags: [trap, {kind}, juge]", text)
+
+    def test_each_case_is_what_its_spec_plants_byte_for_byte(self) -> None:
+        """#154 A2.4: the committed case is the output of its spec, so a spec cannot drift from its case."""
+        with tempfile.TemporaryDirectory() as folder:
+            for name in sorted(TRAPPED):
+                with self.subTest(case=name):
+                    spec = json.loads((SPECS / f"{name}.json").read_text(encoding="utf-8"))
+                    planted = plant(spec, EVALS, Path(folder))
+                    committed = EVALS / name
+                    files = sorted(path.relative_to(committed) for path in committed.rglob("*") if path.is_file())
+                    self.assertEqual(files, sorted(path.relative_to(planted) for path in planted.rglob("*")
+                                                   if path.is_file()))
+                    for relative in files:
+                        self.assertEqual((committed / relative).read_bytes(), (planted / relative).read_bytes(),
+                                         str(relative))
+
+    def test_each_case_differs_from_its_source_in_the_diff_and_at_most_the_gate_table(self) -> None:
+        for names in TRAPS.values():
+            for name in names:
+                with self.subTest(case=name):
+                    spec = json.loads((SPECS / f"{name}.json").read_text(encoding="utf-8"))
+                    source, case = EVALS / spec["source"], EVALS / name
+                    for fixture in FIXTURES:
+                        same = (source / "fixtures" / fixture).read_bytes() == (case / "fixtures" / fixture).read_bytes()
+                        if fixture == "pr.diff":
+                            self.assertFalse(same, fixture)
+                        elif fixture != "gate.txt":  # the gate table moves only when the counts or the files do
+                            self.assertTrue(same, fixture)
+                    self.assertEqual((source / "prompt.md").read_bytes(), (case / "prompt.md").read_bytes())
+                    diff = (case / "fixtures" / "pr.diff").read_text(encoding="utf-8")
+                    files, added, removed = totals(parse_diff(diff))
+                    gate = (case / "fixtures" / "gate.txt").read_text(encoding="utf-8")
+                    self.assertIn(f"| Base et diff | {files} fichier(s) dans pr.diff, +{added} -{removed} |", gate)
 
 
 class Documented(unittest.TestCase):

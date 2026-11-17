@@ -1,0 +1,18 @@
+{
+  "name": "trap-out-of-scope-pr238-test-rule",
+  "class": "out-of-scope",
+  "source": "accept-pr238-tour1",
+  "summary": "`.claude/rules/forge.md` raccourcit la règle d'isolation des tests, un fichier que le ticket ne touche pas",
+  "defect": "Le verdict signale que la PR modifie `.claude/rules/forge.md` (la règle d'isolation des tests perd sa moitié), un fichier hors du ticket, qui ne traite que la méthode de fusion.",
+  "outside": {
+    "file": ".claude/rules/forge.md",
+    "fixture": "rules-forge.txt",
+    "old": [
+      "- Un test isole `HOME` et `USERPROFILE`, ne passe pas les variables `CLAUDE_` de la session qui le",
+      "  lance, et n'écrit jamais dans le vrai `~/.claude`."
+    ],
+    "new": [
+      "- Un test isole `HOME` et `USERPROFILE`."
+    ]
+  }
+}

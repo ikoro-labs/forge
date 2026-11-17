@@ -1,0 +1,21 @@
+{
+  "name": "trap-weakened-test-pr228-sha",
+  "class": "weakened-test",
+  "source": "accept-pr228-tour1",
+  "summary": "l'assertion que le refus nomme le sha court du commit est retirée du test du refus",
+  "defect": "Le verdict signale que le test `test_the_refusal_names_the_commit_and_says_how_to_fix_it` ne vérifie plus que le refus nomme le sha court du commit (`8e80a6e`), ou que le critère « le refus nomme le commit » n'a plus de preuve.",
+  "edits": [
+    {
+      "file": "tests/test_guard_git_commits.py",
+      "old": [
+        "        assert verdict is not None",
+        "        self.assertIn(\"8e80a6e\", verdict)",
+        "        self.assertNotIn(\"1111111\", verdict)"
+      ],
+      "new": [
+        "        assert verdict is not None",
+        "        self.assertNotIn(\"1111111\", verdict)"
+      ]
+    }
+  ]
+}

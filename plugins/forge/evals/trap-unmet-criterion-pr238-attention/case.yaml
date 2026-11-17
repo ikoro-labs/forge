@@ -1,0 +1,6 @@
+schema_version: "1.0"
+name: trap-unmet-criterion-pr238-attention
+description: "Rejoue la PR 238 au tour 1 devant forge:qc-conf, piégée (unmet-criterion) : `/forge:qc` ne pose plus `needs-your-attention` sans la clé, et le test de ce critère est supprimé. Verdict attendu, REJECT, avec le défaut nommé : le défaut est planté par `plant_defect.py` dans un diff que le juge de l'époque a accepté."
+tags: [trap, unmet-criterion, juge]
+context:
+  scaffold_script: scaffold.sh
