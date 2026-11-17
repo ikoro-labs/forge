@@ -658,13 +658,37 @@ class Documented(unittest.TestCase):
         self.assertIn("| `accept-` | PR 226, 228 et 238, au tour 1 |", text)
         self.assertNotIn("huit", text)
         readme = (support.REPO_ROOT / "README.md").read_text(encoding="utf-8")
-        self.assertIn("les onze revues rejouées, les trois mesures", readme)
+        self.assertIn("les onze revues rejouées, les neuf cas piégés, les trois mesures", readme)
 
     def test_the_page_describes_false_reject_and_the_accept_family(self) -> None:
         """#67 A2: the third measure, the cases it reads and the graders they carry are on the page."""
         text = (support.REPO_ROOT / "docs" / "jeu-de-reference.md").read_text(encoding="utf-8")
         for word in ("false-reject", "`accept-`", "`accepts`", "`no-false-reject`"):
             self.assertIn(word, text)
+
+    def test_the_page_describes_the_trapped_cases_their_classes_and_how_they_are_built(self) -> None:
+        """#154 A5: the three classes, the script and its specs, the graders, and the class PR 226 cannot carry."""
+        text = (support.REPO_ROOT / "docs" / "jeu-de-reference.md").read_text(encoding="utf-8")
+        self.assertIn("## Les cas piégés", text)
+        for word in ("`trap-`", "`weakened-test`", "`out-of-scope`", "`unmet-criterion`", "`plant_defect.py`",
+                     "`plugins/forge/eval-traps/`", "`names-the-defect`", "`rejects`", "`no-false-accept`",
+                     "trois cas par classe", "octet pour octet"):
+            self.assertIn(word, text)
+        for name in TRAPPED:
+            self.assertIn(f"`{name}`", text)
+        self.assertRegex(text, r"PR 226[^\n]*aucun test")
+
+    def test_the_page_says_the_top_level_keys_are_real_only_and_names_the_nested_ones(self) -> None:
+        """#154 A5: the nested keys, and that `factory_slo.py` reads the top-level ones only."""
+        text = (support.REPO_ROOT / "docs" / "jeu-de-reference.md").read_text(encoding="utf-8")
+        for word in ("`real`", "`trapped`", "`per-class`", "cas réels", "`factory_slo.py` ne lit que"):
+            self.assertIn(word, text)
+        self.assertRegex(text, r"jamais dans les trois mesures|ne compte[^.]*cas réels")
+
+    def test_the_page_gives_the_limits_of_the_trapped_cases(self) -> None:
+        text = (support.REPO_ROOT / "docs" / "jeu-de-reference.md").read_text(encoding="utf-8")
+        self.assertIn("## Limites des cas piégés", text)
+        self.assertIn("--case 'trap-*'", text)
 
 
 if __name__ == "__main__":
