@@ -22,7 +22,7 @@ believe touched and that does not change (version, other hooks, projects). -->
 ## Proofs
 
 <!-- Per criterion test: the red output with the reason it fails, then the green output.
-`uv run --no-project --quiet python -m unittest discover -s tests`, `claude plugin validate .`
+`uv run --no-project --quiet --with pytest==9.2.0 python -m pytest tests`, `claude plugin validate .`
 and `claude plugin validate plugins/forge` with their result. Tried on a real machine (system,
 Claude Code version), or "not yet". -->
 

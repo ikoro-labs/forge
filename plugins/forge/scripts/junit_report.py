@@ -12,10 +12,11 @@ has it, `ranges` the line ranges the diff adds or changes in it (`changed_ranges
 that declares it with a keyword (`class`, `object`, `struct`, `interface`, `trait`, with only words
 before it, then the name), when it is the only such line of the file. A case is placed at the line of
 `text` that holds its name, without the `[parameters]` a runner appends, as a whole word. When the name
-is written once, that line is the one. When it is written several times (two classes with a test of
-the same name, a comment, a call), it is the one line with the name between the declaration of its
-class and the next declaration of a class of the report; with no declaration, or with the name written
-twice there, the case is not placed. Nor is a case whose line is more indented than the placed case
+is written once, that line is the one, unless it is only a comment: a comment defines nothing, wherever
+its column, so a comment at column 0 inside a test does not cut it, and the case is not placed. When it
+is written several times (two classes with a test of the same name, a comment, a call), it is the one
+line with the name between the declaration of its class and the next declaration of a class of the
+report; with no declaration, or with the name written twice there, the case is not placed. Nor is a case whose line is more indented than the placed case
 above it with no declaration between them: that line sits in the body of the test above (a call, a
 comment), and is no definition. A case that is not placed counts as touched, so that the replay shows
 it rather than hides it.
@@ -48,6 +49,7 @@ MAX_BYTES = 20 * 1024 * 1024
 HUNK = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@", re.MULTILINE)
 PASS, FAIL, SKIPPED = "pass", "fail", "skipped"
 DECORATION = ("@", "#", "//", "/*", "*", "[")
+COMMENT = DECORATION[1:5]
 DECLARATION = r"^\s*(?:[\w@]+\s+)*(?:class|object|struct|interface|trait)\s+{}(?!\w)"
 
 
@@ -135,7 +137,9 @@ def place(lines: list[str], case: Case, declarations: list[int]) -> int | None:
             return None
         end = min((line for line in declarations if line > declared), default=len(lines) + 1)
         found = [line for line in found if declared < line < end]
-    return found[0] if len(found) == 1 else None
+    if len(found) != 1 or lines[found[0] - 1].lstrip().startswith(COMMENT):
+        return None  # a name written only in a comment defines nothing, at any column
+    return found[0]
 
 
 def indent(line: str) -> int:

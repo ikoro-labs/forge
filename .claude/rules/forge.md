@@ -37,7 +37,9 @@ La grille que lisent le coder, le juge et les décideurs sur toute PR de ce dép
 
 - Chaque comportement ajouté ou changé d'un hook, du parseur ou du contenu a son test dans
   `tests/`. La suite tourne sous Linux et sous Windows :
-  `uv run --no-project --quiet python -m unittest discover -s tests`.
+  `uv run --no-project --quiet --with pytest==9.2.0 python -m pytest tests`. Les tests restent des classes
+  `unittest` ; `pytest`, épinglé, ne sert qu'à les lancer et à écrire le rapport JUnit du rejeu sur la
+  base. Les hooks et les scripts restent sur la bibliothèque standard.
 - Un test isole `HOME` et `USERPROFILE`, ne passe pas les variables `CLAUDE_` de la session qui le
   lance, et n'écrit jamais dans le vrai `~/.claude`.
 - Un test qui ne peut tourner que sous un système le dit par `skipUnless`, avec la raison.
