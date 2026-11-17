@@ -7,6 +7,7 @@ the hook adds: it judges a message to another session only, and a refused messag
 
 import json
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 
 import support
@@ -75,15 +76,21 @@ def measure(**parts: str) -> str:
     return " ".join(f"{key}={value}" for key, value in values.items())
 
 
+def current() -> str:
+    """A `measure` whose time is the host clock's, as the hook (A5) reads it."""
+    return measure(time=datetime.now(timezone.utc).astimezone().isoformat(timespec="minutes"))
+
+
 class Lines(unittest.TestCase):
     def test_a1_227_the_line_cap_of_the_template_header_holds(self) -> None:
-        """#227 A1: `max-lines` of `billet.md` (16) counts the written lines, blank ones excluded."""
-        short_lines = "\n".join(["five words on a line"] * 10)
+        """#227 A1: `max-lines` of `billet.md` (24, room for a handoff billet's seventh field)
+        counts the written lines, blank ones excluded."""
+        short_lines = "\n".join(["three words here"] * 18)
         found = deviations(BILLET.split("---")[0] + f"---\n{short_lines}\n", "billet")
         self.assertEqual(len(found), 1, found)
-        self.assertIn("17 lines, at most 16", found[0])
-        sixteen = "\n".join(["five words on a line"] * 9)
-        self.assertEqual(deviations(BILLET.split("---")[0] + f"---\n\n{sixteen}\n", "billet"), [])
+        self.assertIn("25 lines, at most 24", found[0])
+        seventeen = "\n".join(["three words here"] * 17)
+        self.assertEqual(deviations(BILLET.split("---")[0] + f"---\n\n{seventeen}\n", "billet"), [])
 
 
 class Measure(unittest.TestCase):
@@ -148,7 +155,11 @@ class Format(unittest.TestCase):
     def test_a3_227_a_field_the_template_does_not_declare_is_refused(self) -> None:
         """#227 A3: the set of fields is closed, so no session invents a variant."""
         found = deviations(billet().replace("---\n", "mood: calm\n---\n"), "billet")
-        self.assertEqual(found, ["`mood` is not a field of the billet: from, type, resource, ticket, measure, awaits"])
+        self.assertEqual(len(found), 1, found)
+        self.assertTrue(
+            found[0].startswith("`mood` is not a field of the billet: from, type, resource, ticket, measure, awaits"),
+            found,
+        )
 
     def test_a3_227_a_field_given_twice_is_refused(self) -> None:
         """#227 A3: the second `type` would be ignored in silence."""
@@ -196,7 +207,7 @@ class Hook(unittest.TestCase):
         with isolated() as project:
             register(project.parent / "home", 4242, sessionId="e1ae680a-d488", name="shipyard-f6", cwd="/x")
             refused = outcome(json.dumps(send("shipyard-f6", PROSE)))
-            sent = outcome(json.dumps(send("shipyard-f6", BILLET)))
+            sent = outcome(json.dumps(send("shipyard-f6", billet(measure=current()))))
         self.assertEqual(refused.code, REFUSED)
         self.assertEqual((sent.code, sent.stderr, sent.stdout), (0, "", ""))
 
@@ -271,8 +282,8 @@ class Resource(unittest.TestCase):
             page = project / "docs" / "agents" / "usine.md"
             page.parent.mkdir(parents=True)
             page.write_text("- `shared-resource` : `worktree-pool`\n", encoding="utf-8")
-            refused = outcome(json.dumps(send("shipyard-f6", billet(resource="the-database"))))
-            allowed = outcome(json.dumps(send("shipyard-f6", billet(resource="worktree-pool"))))
+            refused = outcome(json.dumps(send("shipyard-f6", billet(resource="the-database", measure=current()))))
+            allowed = outcome(json.dumps(send("shipyard-f6", billet(resource="worktree-pool", measure=current()))))
         self.assertEqual(refused.code, REFUSED)
         self.assertIn("`resource: the-database` is not a value of the key `shared-resource`", refused.stderr)
         self.assertEqual((allowed.code, allowed.stderr), (0, ""))

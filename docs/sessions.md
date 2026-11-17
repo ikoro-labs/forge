@@ -81,9 +81,12 @@ processus.
 Seule la session interactive qui ne trouve en place que des sessions `bg` demande à céder ; dans
 tout autre cas, la nouvelle session s'arrête. L'échange :
 
-1. La session interactive envoie par `SendMessage` son identifiant et la commande que lance la
-   session de fond depuis le dépôt :
-   `uv run --no-project --quiet python <hooks>/handoff_trigger.py yield <identifiant>`.
+1. La session interactive envoie par `SendMessage` un billet `handoff-request` (voir
+   [le billet](installation.md#output-structure)) : son identifiant dans le champ `session`, et la
+   demande de lancer depuis le dépôt
+   `uv run --no-project --quiet python <hooks>/handoff_trigger.py yield <identifiant>`. Le hook
+   `guard_output` refuse le message si l'identifiant n'est pas dans le registre des sessions
+   (`~/.claude/sessions/`), ou si l'heure du billet s'écarte de plus de 5 minutes de celle du poste.
 2. `yield` imprime la conduite du drainage : ne plus rien lancer, laisser finir les agents, au plus
    `CLAUDE_HANDOFF_DRAIN_MINUTES` minutes, la passation au même chemin et au même format qu'au
    seuil. Céder tout de suite tuerait les sous-agents, et finir le passage ferait attendre
@@ -92,15 +95,17 @@ tout autre cas, la nouvelle session s'arrête. L'échange :
    `handoff_header.py set-successor <passation> <identifiant>` : la passation nomme la session
    interactive successeur et la session de fond auteur, et `sessions` ne compte plus celle-ci pour
    celle-là.
-4. La session de fond envoie le chemin de sa passation par `SendMessage`, puis lance
+4. La session de fond envoie le chemin de sa passation dans un billet `handoff` (champ `handoff`),
+   que `guard_output` laisse partir seulement si le fichier existe et si son en-tête nomme le
+   destinataire successeur (la règle de `successor-ok`, avec `set-successor` déjà lancé), puis lance
    `handoff_relay.py --yield <passation>` (voir [Céder la main](#céder-la-main-à-la-session-interactive)) :
    elle est arrêtée puis supprimée après `CLAUDE_HANDOFF_CLOSE_DELAY` secondes, sans qu'aucune
    session soit lancée. Laissée vivante, elle resterait dans le registre, et la session suivante du
    dépôt, le relais de la session interactive compris, s'arrêterait derrière elle en code 6.
 5. La session interactive reprend depuis la passation (`successor-ok`, puis le sauvetage).
 
-Le contenu chargé par les projets le dit des deux côtés : `feature-build`, étape 0, point 5, et la
-sortie de `yield`.
+Le contenu chargé par les projets le dit des deux côtés, en imprimant les deux billets à la place
+d'une consigne en prose : `feature-build`, étape 0, point 5, et la sortie de `yield`.
 
 ### Ce qui a été éprouvé
 
@@ -115,7 +120,9 @@ sortie de `yield`.
   n'y a tourné que contre un faux `claude`, dont le `rm` retire l'entrée du registre ; qu'un vrai
   `claude rm` la retire n'a été vérifié sur aucun poste.
 - La règle entière (premier geste, `SendMessage`, drainage de la session de fond) n'a pas encore
-  été éprouvée de bout en bout.
+  été éprouvée de bout en bout. Les deux billets, leurs contrôles (registre, fichier de passation,
+  heure du poste) et leur impression par `feature-build` et `yield` n'ont tourné que dans la suite de
+  tests, sous Linux : aucun `SendMessage` réel entre deux sessions de Claude Code n'a été essayé.
 - Sous Windows, rien n'a été essayé hors de la CI ; `procStart` n'y est pas comparé, et un pid
   vivant y vaut session vivante, sans garde contre la reprise d'un pid.
 - Le hook `sessions_notice.py` n'a tourné dans aucune session réelle de Claude Code. Il a tourné

@@ -15,8 +15,11 @@ One script for the declarations of `hooks.json`, told apart by `hook_event_name`
   `api.github.com` by `curl` or `wget` is refused: its body would go unread.
 - `PreToolUse` on `SendMessage`: a message to another session (an address `uds:`, `bridge:` or
   `did:`, or the name or id of a session of `~/.claude/sessions/`) must be a billet,
-  `templates/billet.md`. A message to an agent of the session (`main`, a teammate) is free prose, and
-  so is a structured message. A refused message does not leave, and is refused each time.
+  `templates/billet.md`, its `time` within 5 minutes of the host clock. A message to an agent of the
+  session (`main`, a teammate) is free prose, and so is a structured message. The two handoff
+  billets are held to the host too: a `handoff-request` carries the id of a session of the registry,
+  a `handoff` the path of a file whose header names the receiver as successor (the rule of
+  `handoff_header.py successor-ok`). A refused message does not leave, and is refused each time.
 - `Stop`: the session's reply to the human (`last_assistant_message`, else the last assistant
   entry of the transcript), checked against `templates/session-reply.md`.
 
@@ -44,6 +47,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
+import handoff_header  # noqa: E402
 from gh_bodies import (  # noqa: E402
     UNREAD,
     Publication,
@@ -57,7 +61,7 @@ from gh_bodies import (  # noqa: E402
     publications,
 )
 from guard_git import UNKNOWN, _moved  # noqa: E402
-from output_check import agent_kind, deviations  # noqa: E402
+from output_check import agent_kind, billet_fields, deviations  # noqa: E402
 from usine import load, project_root  # noqa: E402
 
 REFUSED = 3
@@ -67,6 +71,8 @@ TRANSCRIPT_TAIL = 2 * 1024 * 1024
 # What `SendMessage` accepts for a session other than the caller's: `uds:<socket>`, `bridge:<id>`,
 # `did:<id>`, or a bare socket path.
 SESSION_ADDRESS = re.compile(r"^(?:uds|bridge|did):|\.sock$")
+# The shortest id of a session the handoff request accepts for a registered session: `claude --bg` prints it.
+SHORT_SESSION_ID = 8
 
 
 @dataclass(frozen=True)
@@ -235,17 +241,23 @@ def _gh(event: Mapping[str, object]) -> Outcome:
 # --- session to session -------------------------------------------------------------------------
 
 
-def _registered() -> set[str]:
-    """The names and ids of the sessions Claude Code lists in `~/.claude/sessions/<pid>.json`."""
-    known: set[str] = set()
+def _registry() -> list[dict[str, str]]:
+    """The sessions Claude Code lists in `~/.claude/sessions/<pid>.json`: each one's `name` and
+    `sessionId`, when it has them."""
+    sessions: list[dict[str, str]] = []
     for entry in (Path.home() / ".claude" / "sessions").glob("*.json"):
         try:
             fields = json.loads(entry.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             continue
         if isinstance(fields, dict):
-            known |= {value for key in ("name", "sessionId") if isinstance(value := fields.get(key), str)}
-    return known
+            sessions.append({key: value for key in ("name", "sessionId") if isinstance(value := fields.get(key), str)})
+    return sessions
+
+
+def _registered() -> set[str]:
+    """The names and ids of the sessions of the registry."""
+    return {value for session in _registry() for value in session.values()}
 
 
 def _other_session(to: object) -> bool:
@@ -258,6 +270,59 @@ def _other_session(to: object) -> bool:
     return SESSION_ADDRESS.search(target) is not None or target in _registered()
 
 
+def _asking(session: str) -> list[str]:
+    """What is wrong with the `session` of a `handoff-request`: an id the registry does not list.
+    A short id (`claude --bg` prints eight characters) names the session it starts."""
+    ids = [entry["sessionId"] for entry in _registry() if "sessionId" in entry]
+    if any(known == session or (len(session) >= SHORT_SESSION_ID and known.startswith(session)) for known in ids):
+        return []
+    return [
+        f"`session: {session}` is not the id of a session of the registry (`~/.claude/sessions/`): the"
+        " handoff request carries the id of the session that asks, which `handoff_header.py self` prints"
+    ]
+
+
+def _handing(path: str, to: str, cwd: object) -> list[str]:
+    """What is wrong with the `handoff` of a `handoff` billet: a file that does not exist, or whose
+    header does not name the receiver, the session `to` addresses, as its successor (`successor-ok`)."""
+    file = Path(os.path.expanduser(path))
+    if not file.is_absolute() and isinstance(cwd, str):
+        file = Path(cwd) / file
+    if not file.is_file():
+        return [f"`handoff: {path}` is no file: write the handoff there before you send its path"]
+    ids = {
+        entry["sessionId"]
+        for entry in _registry()
+        if "sessionId" in entry and to.strip() in (entry.get("name"), entry["sessionId"])
+    }
+    if not ids:
+        return [
+            f"the receiver `{to}` has no id in the registry to hold the header to: address the message by"
+            " the name or the id of its session"
+        ]
+    try:
+        successor = handoff_header.recorded_successor(file)
+    except (handoff_header.HeaderError, OSError) as error:
+        return [f"`handoff: {path}` has no readable header: {error}"]
+    if not successor:
+        return [
+            f"the header of `{path}` names no successor: run `handoff_header.py set-successor {path} <id of"
+            f" `{to}`>` first"
+        ]
+    if not any(handoff_header.names(successor, known) for known in ids):
+        return [f"the header of `{path}` names `{successor}` as its successor, not the receiver `{to}`"]
+    return []
+
+
+def _handoff_checks(fields: Mapping[str, str], to: str, cwd: object) -> list[str]:
+    """The checks of the two handoff types that need the host: the registry, the handoff file."""
+    if fields.get("type") == "handoff-request" and fields.get("session"):
+        return _asking(fields["session"])
+    if fields.get("type") == "handoff" and fields.get("handoff"):
+        return _handing(fields["handoff"], to, cwd)
+    return []
+
+
 def _send(event: Mapping[str, object]) -> Outcome:
     """Refuse a message to another session that is not a billet; the message does not leave."""
     tool_input = event.get("tool_input")
@@ -267,7 +332,8 @@ def _send(event: Mapping[str, object]) -> Outcome:
     if not isinstance(message, str) or not _other_session(tool_input.get("to")):
         return Outcome(0)  # a structured message is a protocol object, not prose to hold to the billet
     root = project_root(event)
-    found = deviations(message, "billet", load(root), root)
+    found = deviations(message, "billet", load(root), root, datetime.now(timezone.utc))
+    found += _handoff_checks(billet_fields(message), str(tool_input.get("to")), event.get("cwd"))
     if not found:
         return Outcome(0)
     return Outcome(REFUSED, stderr=(

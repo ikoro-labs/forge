@@ -246,6 +246,26 @@ def reminder(tokens: int, limit: int, minutes: int, stage: str) -> str:
     )
 
 
+def handoff_billet(path: Path) -> str:
+    """The `handoff` billet a background session sends to the session that takes over: the path of
+    its handoff in the `handoff` field, the other placeholders left for the session to fill."""
+    return (
+        "```text\n"
+        "from: <your session name, as the registry of the host lists it>\n"
+        "type: handoff\n"
+        f"handoff: {path}\n"
+        "resource: none\n"
+        "ticket: none\n"
+        "measure: load=<1-minute load, with a dot> memory=<available memory in MB>MB "
+        "time=<ISO 8601 with its offset, read just before you send>\n"
+        "awaits: nothing\n"
+        "---\n"
+        "Handoff written and addressed to you. Check it with successor-ok, rescue each worktree it lists, "
+        "then take over. I stop after the close delay.\n"
+        "```\n"
+    )
+
+
 def handover(successor: str, drain_minutes: int, root: Path) -> str:
     """What a background session does when the user's interactive session asks it to hand over
     (ikoro-labs/forge#4): it drains then stops, under the drain cap, and the interactive session
@@ -264,8 +284,12 @@ def handover(successor: str, drain_minutes: int, root: Path) -> str:
         f'5. Run `{PYTHON} "{HEADER}" set-successor <handoff path> {successor}` from the project directory: it '
         "names the interactive session as the successor and this session as the author, so that the interactive "
         "session's `sessions` no longer counts this one. Do not run the relay itself: no successor is started.\n"
-        f"6. Send the handoff path to the session {successor} by SendMessage.\n"
-        f'7. Then run `{PYTHON} "{RELAY}" --yield <handoff path>` from the project directory, with --force only '
+        f"6. Send the handoff path to the session {successor} by SendMessage (`to`: `{successor}`), as this "
+        "`handoff` billet (`templates/billet.md`, all in English), the fields between `<>` filled when you send. "
+        "The hook refuses the message when `time` is more than 5 minutes from the clock of the host, so read the "
+        f"clock then; it refuses it too until the header of the handoff names {successor} as successor (step 5):\n"
+        + handoff_billet(path)
+        + f'7. Then run `{PYTHON} "{RELAY}" --yield <handoff path>` from the project directory, with --force only '
         "when sauvetage lists agents: it starts no session and stops then deletes this one after "
         "CLAUDE_HANDOFF_CLOSE_DELAY seconds, so that no later session of the repository finds it in place. Exit 5 "
         "means an agent of this session is still alive or en_vol is not empty: wait for it, do not force. Exit 2 "

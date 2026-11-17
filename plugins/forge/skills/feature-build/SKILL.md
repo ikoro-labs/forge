@@ -51,10 +51,25 @@ passage (étape 4). Par défaut : 5 tickets, 3 coders, 6 heures et 3 000 000 jet
      `uv run --no-project --quiet python "${CLAUDE_PLUGIN_ROOT}/hooks/handoff_header.py" self`
      imprime `interactive <ton identifiant>`, et chaque session listée porte le type `bg` (une
      session que seul `ListAgents` montre est de fond). C'est la session de fond qui cède, et tu es
-     son successeur de fait. Tu ne lances rien. Tu lui envoies par `SendMessage` ton identifiant et
-     cette demande : lancer, depuis le dépôt,
-     `uv run --no-project --quiet python "${CLAUDE_PLUGIN_ROOT}/hooks/handoff_trigger.py" yield <ton identifiant>`
-     et suivre ce qu'il imprime. Tu dis à l'humain que tu attends qu'elle draine, au plus le plafond
+     son successeur de fait. Tu ne lances rien. Tu lui envoies par `SendMessage` (`to` : son nom ou son
+     identifiant, tels que `sessions .` les liste) le billet `handoff-request` de
+     `templates/billet.md`, en anglais, les champs entre `<>` remplis, `time` relevé juste avant l'envoi
+     (le hook refuse un écart de plus de 5 minutes avec l'heure du poste, et un `session` absent du
+     registre) :
+
+     ```text
+     from: <your session name, as the registry of the host lists it>
+     type: handoff-request
+     session: <your session id, as `handoff_header.py self` prints it>
+     resource: none
+     ticket: none
+     measure: load=<1-minute load, with a dot> memory=<available memory in MB>MB time=<ISO 8601 with its offset>
+     awaits: reply
+     ---
+     Please hand this repository over to me. From it, run `uv run --no-project --quiet python "${CLAUDE_PLUGIN_ROOT}/hooks/handoff_trigger.py" yield` followed by the id in the session field, and follow what it prints.
+     ```
+
+     Tu dis à l'humain que tu attends qu'elle draine, au plus le plafond
      de drainage (`CLAUDE_HANDOFF_DRAIN_MINUTES`, 45 minutes par défaut). Quand elle t'a envoyé le
      chemin de sa passation, relance `sessions .` : sa passation te nomme successeur, elle n'y
      figure plus, et elle s'arrête puis se supprime d'elle-même après le délai de fermeture
@@ -71,7 +86,22 @@ passage (étape 4). Par défaut : 5 tickets, 3 coders, 6 heures et 3 000 000 jet
      n'importe quel autre travail : tu ne lances plus rien, tu laisses finir tes agents en vol, tu
      écris ta passation et tu t'arrêtes en le disant, sous le plafond de drainage. Dans cet ordre,
      ta passation nomme la session interactive successeur, tu lui en envoies le chemin par
-     `SendMessage`, puis `handoff_relay.py --yield` arrête et supprime ta session après le délai
+     `SendMessage` (`to` : son identifiant), dans le billet `handoff` (le hook refuse un fichier absent
+     ou dont l'en-tête ne la nomme pas successeur) :
+
+     ```text
+     from: <your session name, as the registry of the host lists it>
+     type: handoff
+     handoff: <absolute path of your handoff>
+     resource: none
+     ticket: none
+     measure: load=<1-minute load, with a dot> memory=<available memory in MB>MB time=<ISO 8601 with its offset>
+     awaits: nothing
+     ---
+     Handoff written and addressed to you. Check it with successor-ok, rescue each worktree it lists, then take over. I stop after the close delay.
+     ```
+
+     Puis `handoff_relay.py --yield` arrête et supprime ta session après le délai
      de fermeture, sans en lancer aucune. Chaque geste, avec le chemin de la passation, est
      imprimé par
      `uv run --no-project --quiet python "${CLAUDE_PLUGIN_ROOT}/hooks/handoff_trigger.py" yield <son identifiant>`,

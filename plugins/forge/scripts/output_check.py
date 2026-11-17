@@ -35,7 +35,7 @@ import re
 import sys
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from html.parser import HTMLParser
 from pathlib import Path
 
@@ -115,10 +115,12 @@ DECIDER_KNOWN = frozenset({
 GATE_MOST_TABLE_LINES = 30
 BILLET_WORDS = 60
 BILLET_SEPARATOR = "---"
+BILLET_CLOCK_MINUTES = 5
 BILLET_RESOURCE_KEY = "shared-resource"
-# The fields of the billet that take a closed list of values; `templates/billet.md` shows the same.
+# The field each handoff type adds: the id of the session that asks, the path of the handoff file.
+BILLET_TYPE_FIELDS = {"handoff-request": "session", "handoff": "handoff"}# The fields of the billet that take a closed list of values; `templates/billet.md` shows the same.
 BILLET_VALUES = {
-    "type": ("claim", "release", "info", "question", "reply"),
+    "type": ("claim", "release", "info", "question", "reply", "handoff-request", "handoff"),
     "awaits": ("nothing", "reply"),
 }
 
@@ -445,8 +447,10 @@ def _instant(value: str) -> bool:
     return True
 
 
-def _measure(value: str) -> list[str]:
-    """The deviations of the `measure` field: `load=<n> memory=<n>MB time=<ISO 8601 with offset>`."""
+def _measure(value: str, now: datetime | None = None) -> list[str]:
+    """The deviations of the `measure` field: `load=<n> memory=<n>MB time=<ISO 8601 with offset>`.
+
+    With `now`, the host clock, a `time` more than `BILLET_CLOCK_MINUTES` from it is one too."""
     match = BILLET_MEASURE.fullmatch(value)
     if match is None:
         return [
@@ -461,11 +465,35 @@ def _measure(value: str) -> list[str]:
         found.append(f"`memory={memory}` is not whole megabytes, like `memory=5200MB`")
     if not _instant(time):
         found.append(f"`time={time}` is not ISO 8601 with its offset, like `time=2026-11-16T14:13+01:00`")
+    elif now is not None:
+        gap = abs(now - datetime.fromisoformat(time.replace("Z", "+00:00")))
+        if gap > timedelta(minutes=BILLET_CLOCK_MINUTES):
+            found.append(
+                f"`time={time}` is {round(gap.total_seconds() / 60)} minutes from the host clock"
+                f" ({now.isoformat(timespec='minutes')}), at most {BILLET_CLOCK_MINUTES}: read the clock"
+                " just before you send, do not write the time from memory"
+            )
     return found
 
 
-def _billet(text: str, template: str, config: Mapping[str, list[str]]) -> list[str]:
-    """Every way `text` departs from the billet of `templates/billet.md`."""
+def billet_fields(text: str) -> dict[str, str]:
+    """The `key: value` lines of a billet before its `---` line, the first of each key."""
+    fields: dict[str, str] = {}
+    for line in text.strip().splitlines():
+        if line.strip() == BILLET_SEPARATOR:
+            break
+        match = BILLET_FIELD.match(line.strip())
+        if match is not None and match.group(1) not in fields:
+            fields[match.group(1)] = match.group(2).strip()
+    return fields
+
+
+def _billet(
+    text: str, template: str, config: Mapping[str, list[str]], now: datetime | None = None
+) -> list[str]:
+    """Every way `text` departs from the billet of `templates/billet.md`.
+
+    `now` is the host clock: given, it holds the `time` of `measure` to `BILLET_CLOCK_MINUTES` of it."""
     lines = text.strip().splitlines()
     cut = next((i for i, line in enumerate(lines) if line.strip() == BILLET_SEPARATOR), None)
     found: list[str] = []
@@ -481,8 +509,12 @@ def _billet(text: str, template: str, config: Mapping[str, list[str]]) -> list[s
                 found.append(f"`{_quote(line.strip())}` is not a `key: value` line")
         elif match.group(1) in fields:
             found.append(f"the field `{match.group(1)}` appears twice")
-        elif declared and match.group(1) not in declared:
-            found.append(f"`{match.group(1)}` is not a field of the billet: {', '.join(declared)}")
+        elif declared and match.group(1) not in (*declared, *BILLET_TYPE_FIELDS.values()):
+            found.append(
+                f"`{match.group(1)}` is not a field of the billet: {', '.join(declared)}"
+                f" (and {' or '.join(f'`{name}`' for name in BILLET_TYPE_FIELDS.values())},"
+                " for the two handoff types)"
+            )
         else:
             fields[match.group(1)] = match.group(2).strip()
     for name in declared:
@@ -493,6 +525,14 @@ def _billet(text: str, template: str, config: Mapping[str, list[str]]) -> list[s
     for name, values in BILLET_VALUES.items():
         if fields.get(name) and fields[name] not in values:
             found.append(f"`{name}: {fields[name]}` is not one of {', '.join(values)}")
+    # The handoff types add one field each, and no other type takes it.
+    for kind, name in BILLET_TYPE_FIELDS.items():
+        if fields.get("type") == kind and name not in fields:
+            found.append(f"the field `{name}` is missing (a billet of type `{kind}`)")
+        elif fields.get("type") == kind and not fields[name]:
+            found.append(f"the field `{name}` is empty")
+        elif name in fields and fields.get("type") != kind:
+            found.append(f"the field `{name}` belongs to a billet of type `{kind}`, not `{fields.get('type')}`")
     # The values of `resource` are the project's own: no key, no list, and the check is not applicable.
     resources = config.get(BILLET_RESOURCE_KEY, [])
     if resources and fields.get("resource") and fields["resource"] not in (*resources, "none"):
@@ -501,7 +541,7 @@ def _billet(text: str, template: str, config: Mapping[str, list[str]]) -> list[s
             f" {', '.join((*resources, 'none'))}"
         )
     if fields.get("measure"):
-        found += _measure(fields["measure"])
+        found += _measure(fields["measure"], now)
     written = sum(1 for line in lines if line.strip())
     most_lines = line_cap(template)
     if most_lines is not None and written > most_lines:
@@ -513,16 +553,22 @@ def _billet(text: str, template: str, config: Mapping[str, list[str]]) -> list[s
 
 
 def deviations(
-    text: str, kind: str, config: Mapping[str, list[str]] | None = None, root: Path | None = None
+    text: str,
+    kind: str,
+    config: Mapping[str, list[str]] | None = None,
+    root: Path | None = None,
+    now: datetime | None = None,
 ) -> list[str]:
-    """Every way `text` departs from the rules of `kind`; empty when it conforms."""
+    """Every way `text` departs from the rules of `kind`; empty when it conforms.
+
+    `now`, the host clock, is read by the billet alone: its `time` is held to it when given."""
     if kind not in KINDS:
         raise ValueError(f"unknown kind `{kind}`: one of {', '.join(sorted(KINDS))}")
     config = config or {}
     if kind == "exempt":
         return []
     if kind == "billet":
-        return _billet(text, _template_text(kind, config, root), config)
+        return _billet(text, _template_text(kind, config, root), config, now)
     if kind == "report-mail":
         text = _from_html(text)
     lines, prose = _structure(_unwrap(text) if kind in KEYED else text)
@@ -605,7 +651,7 @@ def main(argv: list[str]) -> int:
     from usine import load, project_root
 
     root = project_root()
-    found = deviations(text, argv[0], load(root), root)
+    found = deviations(text, argv[0], load(root), root, datetime.now(timezone.utc))
     for deviation in found:
         sys.stdout.write(f"- {deviation}\n")
     return 1 if found else 0
