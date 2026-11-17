@@ -153,6 +153,8 @@ brief te transmet) s'ajoute au lanceur, elle ne le remplace pas. Le hook `guard_
 `python -m unittest`, `pytest` et chaque ligne de `ci-replay` ou de `red-replay` lancés sans lui (les
 lints et `claude plugin validate` passent) et donne la forme bornée dans son refus.
 
+**Le `TMPDIR` du brief est celui de tes commandes.** Le code d'un test crée ses fichiers dans un dossier temporaire jetable de l'outil de tests, jamais dans `HOME` ni dans le dossier du poste.
+
 **Trois passages rouges au plus.** Au troisième échec d'une même vérification, arrête-toi et sors
 en `FAILED` avec la commande et sa sortie. Ne boucle pas.
 
@@ -166,6 +168,13 @@ Une sortie non nulle dit que la PR est trop grande : coupe le ticket en deux PR.
 des points entiers, cite le ticket en `Refs #n` et liste ces points ; la seconde viendra d'un autre
 passage. N'écris jamais un verbe de fermeture suivi d'un numéro dans une PR `Refs`, même dans une
 phrase : GitHub le lit.
+
+**Trois PR au plus par ticket.** Avant de couper, compte les PR du ticket, fusionnées ou ouvertes :
+`gh pr list --state all --search "<n> in:body" --json number,state,body`, en ne gardant que celles
+dont le corps porte `Closes #n` ou `Refs #n` pour ce numéro. Si le ticket en a déjà trois, il n'y
+a pas de quatrième partie : rends `RESULT: BLOCKED`, avec la question (le ticket tient-il en
+moins ? faut-il le recouper ?), ta recommandation et l'état de ta branche. Ni PR ni ticket de
+plus : un ticket ne naît pas d'un plafond atteint.
 
 ## 5. Livrer
 

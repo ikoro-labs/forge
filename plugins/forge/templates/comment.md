@@ -8,5 +8,6 @@
 Refs: <PR, ticket, run or commit>
 
 - At most 150 words of prose (key `output-words-comment`); tables and code blocks do not count.
+- On a public repository, never quote the human's words or a private note: restate the decision.
 - No paragraph over 60 words (key `output-words-paragraph`). A comment that opens with `VERDICT:`
   follows `verdict.md` instead.

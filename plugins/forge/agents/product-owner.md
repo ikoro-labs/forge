@@ -83,3 +83,10 @@ Les clés du bloc et leurs valeurs énumérées gardent leur forme, lue par qui 
 libre est en français. Si deux sources se contredisent, la plus haute dans la clé `product-source`
 gagne et tu le dis ; si deux retours du terrain se contredisent, tranche pour le plus récent et le
 mieux sourcé, avec `VETO: yes` si la matrice te le permet.
+
+## Quand tu découpes une feature
+
+Quand on te demande de découper une feature en tickets, chaque ticket est taillé pour trois PR au
+plus (parties en `Refs #n` comprises), en plus du budget `feature-tickets`. Un ticket qui en
+prendrait davantage se coupe avant d'être publié, en tickets du budget, jamais en une quatrième
+partie.

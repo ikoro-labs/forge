@@ -36,6 +36,7 @@ HEADERS = (
     "Ouverts",
     "Hors compte (not_planned)",
     "Reste (numéros ouverts)",
+    "PR fusionnées / budget PR",
     "Relevé (date UTC)",
 )
 COLUMN_KEY = "completion-column"
