@@ -9,6 +9,60 @@ Ce dépôt a été recréé le 2026-10-23 ; l'ancien est `ikoro-labs/forge-archi
 numéros de PR et de ticket nus (`#38`) renvoient à l'ancien dépôt ; un renvoi au nouveau dépôt
 porte son nom (`ikoro-labs/forge#7`).
 
+## [1.17.0] - 2026-11-17
+
+`guard_git` n'admet plus un `gh api` hors d'une liste, les refus des gardes sont journalisés, et un
+ticket se borne à trois PR. Version mineure : une clé nouvelle, `gh-api-allow`.
+
+- Hooks : `guard_git` n'accepte un `gh api` que si sa méthode et son chemin figurent sur la liste du
+  plugin ou sur une ligne de la clé `gh-api-allow` ; un appel illisible est refusé
+  (ikoro-labs/forge#247, partie 1 de ikoro-labs/forge#73).
+- Hooks : chaque refus de `guard_git`, `guard_coder` et `guard_readonly` ajoute une ligne, sans la
+  commande, à `~/.claude/hooks/state/refusals/<date>.jsonl`, et `factory_slo.py` en tire le SLI
+  `guard-refusals` (ikoro-labs/forge#240, ikoro-labs/forge#156).
+- Hooks : `guard_coder` refuse au coder une suite de tests lancée sans le lanceur borné, y compris
+  quand une valeur d'option nomme une sous-commande (ikoro-labs/forge#241, ikoro-labs/forge#246,
+  ikoro-labs/forge#61).
+- Hooks : le relais garde le `CLAUDE_SESSION_TOKEN_LIMIT` de l'utilisateur (50 000 à 965 000) et
+  signale une valeur invalide sans bloquer (ikoro-labs/forge#244, ikoro-labs/forge#127).
+- Hooks : le tableau de complétion exige la colonne `PR fusionnées / budget PR`
+  (ikoro-labs/forge#251).
+- Agents et skills : un ticket se taille pour trois PR au plus ; `forge:coder` rend `BLOCKED` plutôt
+  qu'une quatrième partie, et `feature-build` route ce blocage (ikoro-labs/forge#251,
+  ikoro-labs/forge#249). `feature-build` lance `forge:incident` sur un arrêt sur incident
+  (ikoro-labs/forge#246).
+- Gabarits : six lignes venues de la mémoire d'un poste, dans `session-reply`, `comment`, `ticket`,
+  `pr`, `billet` et le coder (ikoro-labs/forge#250) ; `usine.md` documente `gh-api-allow`.
+- Évaluations : trois cas de référence en ACCEPT et la mesure `false-reject` ; les deux cas qui ne
+  portent que des MINOR sortent de `false-accept` (ikoro-labs/forge#242, ikoro-labs/forge#245,
+  ikoro-labs/forge#67).
+- Tests : la CI lance la suite par un `pytest` épinglé, et `red-replay` lit un rapport JUnit
+  (ikoro-labs/forge#248, ikoro-labs/forge#43). La correspondance de la mémoire a son test.
+- Gestes humains : un projet dont les agents appellent `gh api` hors de la liste du plugin déclare
+  chaque appel dans `gh-api-allow` (`docs/installation.md`, « Les appels `gh api` admis ») ; sans
+  cela, l'appel est refusé, lectures comprises.
+- Resté dehors : la règle du tableau `Champ / État` dans la réponse de session
+  (ikoro-labs/forge#252) est en cours de code. L'essai de bout en bout est sans objet ici (clé
+  `e2e-repo` absente). Rien d'éprouvé sous Windows en local, ni dans une vraie session.
+
+### Objectifs de service
+
+État de chaque objectif au 2026-11-17.
+
+| Objectif | Cible | Fenêtre | Valeur | Budget restant | État |
+|---|---|---|---|---|---|
+| `accept-round-1` | >= 80 % | 30 j | 66.3 % | 0 % sur 20 % | épuisé |
+| `lead-time p90` | <= 24 h | 30 j | 542.2 h | 0 h sur 24 h | épuisé |
+| `release-lag p90` | <= 24 h | 30 j | 493.6 h | 0 h sur 24 h | épuisé |
+| `escaped-defects` | <= 10 % | 30 j | 0.83 % | 9.17 % sur 10 % | tenu |
+| `change-failure` | <= 10 % | 30 j | 0.83 % | 9.17 % sur 10 % | tenu |
+| `human-touch` | <= 10 % | 30 j | 18.55 % | 0 % sur 10 % | épuisé |
+| `main-green` | >= 100 % | 30 j | 96.1 % | 0 % sur 0 % | épuisé |
+| `judge-recall` | >= 95 % | 30 j | sans objet | aucun résultat du jeu de référence (option `--reference` absente) | sans objet |
+| `false-accept` | <= 0 % | 30 j | sans objet | aucun résultat du jeu de référence (option `--reference` absente) | sans objet |
+
+Aucun `escaped-defect` ouvert depuis le 2026-11-17.
+
 ## [1.16.0] - 2026-11-17
 
 La passation se fait à 150 000 jetons, avec ou sans feature, et par billet ; une fusion relit les
