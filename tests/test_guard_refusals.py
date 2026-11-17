@@ -213,6 +213,7 @@ class RuleNames(unittest.TestCase):
             ("git pull --rebase", "rebase"),
             ("git add -A", "add-whole-tree"),
             ("git --git-dir=/x status", "git-dir"),
+            ("python -m unittest discover", "suite-unbounded"),
         ]:
             with self.subTest(command=command, rule=rule):
                 reason = guard_coder.refusal("Bash", {"command": command})
