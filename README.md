@@ -183,6 +183,7 @@ du front matter qu'un agent de plugin ignore : le détail est dans
 | [`docs/jeu-de-reference.md`](docs/jeu-de-reference.md) | le jeu de référence du juge `forge:qc-conf` (`plugins/forge/evals/`) : les onze revues rejouées, les trois mesures `judge-recall`, `false-accept` et `false-reject`, le lancement à la main sous un plafond de coût |
 | [`docs/gravite-et-sla.md`](docs/gravite-et-sla.md) | les classes de gravité (`sev1` à `sev3`), les engagements de délai de la clé `sla` et la file de `forge:feature-build` |
 | [`docs/incidents.md`](docs/incidents.md) | la revue sans blâme d'un incident (clé `incident-dir`), la classe de son correctif (`mécanique` ou `jugement`), son refus sans correctif et le décompte par classe |
+| [`docs/correspondance-memoire.md`](docs/correspondance-memoire.md) | les 21 entrées de la mémoire du poste, chacune rangée en ligne du plugin et son test, en documentation du projet ou sans règle |
 | [`docs/contribuer.md`](docs/contribuer.md) | modifier le plugin, publier une version, l'organisation du dépôt |
 | [`CHANGELOG.md`](CHANGELOG.md) | ce qui est entré dans chaque version, et ce qui en est resté dehors |
 

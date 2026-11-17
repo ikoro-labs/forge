@@ -60,6 +60,24 @@ Publier une version :
 6. Une fois le tag poussé, deux PR : l'une monte l'épingle de ce dépôt (`.claude/settings.json`),
    l'autre le tag cité par l'installation, dans `README.md` et `docs/installation.md`.
 
+## Le poste qui contribue
+
+Ce qui est propre au poste de ce dépôt (l'identité git, le compte `gh`) vit ici, jamais sous
+`plugins/forge/` : un test (`tests/test_correspondance_memoire.py`) le garde. Le reste de la mémoire
+du poste est rangé ligne à ligne dans [`correspondance-memoire.md`](correspondance-memoire.md).
+
+- **L'identité git.** Les commits de ce poste portent `ikoro-labs` et l'adresse
+  `336514991+ikoro-labs@users.noreply.github.com`, donnée à chaque commande :
+  `git -c user.name=ikoro-labs -c user.email=336514991+ikoro-labs@users.noreply.github.com commit ...`.
+  Elle n'est jamais écrite dans la configuration git, que tous les worktrees partagent (`guard_coder`
+  refuse `git config` en écriture). Un commit à une autre adresse a vu son push refusé sur ce poste.
+- **La fusion.** Une PR se fusionne par un commit de fusion, jamais par un squash ni un rebase
+  (`.claude/rules/git.md`, clé `merge-method`).
+- **Le compte `gh`.** `gh` agit sous le compte du jeton du poste : `gh api user --jq .login` le dit
+  (`ikoro-labs`, lu le 2026-11-17). `ikoro-labs` est un compte utilisateur, pas une organisation. Avant
+  `gh repo create <propriétaire>/<nom>`, relire ce login et nommer le propriétaire voulu en entier : un
+  dépôt créé sous un autre propriétaire se corrige avant tout push.
+
 ## La publication par l'agent
 
 Quand le projet déclare la clé `release-trigger` (`<N fusions> | <délai max>`), l'agent publie lui-même une

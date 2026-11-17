@@ -2,7 +2,8 @@
 ## Summary
 
 <!-- What the PR changes and why, in five lines at most. Cite the ticket: `Closes #n`, or
-`Refs #n` with the points this PR delivers. -->
+`Refs #n` with the points this PR delivers. On a public repository, never quote the human's words
+or a private note: restate the decision. -->
 
 ### Change view
 
