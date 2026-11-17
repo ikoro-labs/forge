@@ -167,6 +167,13 @@ des points entiers, cite le ticket en `Refs #n` et liste ces points ; la seconde
 passage. N'écris jamais un verbe de fermeture suivi d'un numéro dans une PR `Refs`, même dans une
 phrase : GitHub le lit.
 
+**Trois PR au plus par ticket.** Avant de couper, compte les PR du ticket, fusionnées ou ouvertes :
+`gh pr list --state all --search "<n> in:body" --json number,state,body`, en ne gardant que celles
+dont le corps porte `Closes #n` ou `Refs #n` pour ce numéro. Si le ticket en a déjà trois, il n'y
+a pas de quatrième partie : rends `RESULT: BLOCKED`, avec la question (le ticket tient-il en
+moins ? faut-il le recouper ?), ta recommandation et l'état de ta branche. Ni PR ni ticket de
+plus : un ticket ne naît pas d'un plafond atteint.
+
 ## 5. Livrer
 
 1. Des commits au format des règles git du projet (clé `git-rules`), terminés par la ligne
