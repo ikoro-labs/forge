@@ -1,0 +1,28 @@
+diff --git a/docs/agents/usine.md b/docs/agents/usine.md
+index 4c09762..6237216 100644
+--- a/docs/agents/usine.md
++++ b/docs/agents/usine.md
+@@ -79,6 +79,13 @@ décision de l'humain. `tokens-per-merge` n'a pas de ligne : sa cible n'est pas
+ - `budget-action` : `judge-recall | alert`
+ - `budget-action` : `false-accept | alert`
+ 
++Les engagements de délai par gravité (ticket #76), lus par `factory_slo.py sla` et `queue`, que l'humain a
++retenus le 2026-11-16. Ils sont tirés du ticket ; la prise en charge de `sev2` et de `sev3`, que le ticket
++ne fixait pas, est une proposition de l'agent que l'humain a acceptée. Ils mesurent et ordonnent la file, sans rien bloquer.
++
++- `sla` : `sev1 | 1 h | 24 h | 24 h`
++- `sla` : `sev2 | 1 j | 3 j | 7 j`
++
+ ## Incidents
+ 
+ Les revues sans blâme que `/forge:incident` écrit (ticket #61), une par incident `sev1`, `sev2` ou
+@@ -105,9 +112,6 @@ La suite de tests de ce dépôt, dont la sortie se raccourcit quand elle passe.
+ 
+ ## Clés absentes
+ 
+-- `sla` : `sev2` n'a pas de délai de prise en charge, et l'étape où court le délai de 30 jours de
+-  `sev3` n'est pas dite ; aucun délai n'est deviné, la clé reste absente jusqu'à la décision de
+-  l'humain (ticket #76).
+ - `release-trigger` : la publication reste un geste de l'humain tant qu'il n'a pas choisi le nombre de
+   fusions et le délai qui déclenchent une version ; aucune valeur n'est devinée, l'agent ne publie rien.
+ - `decision-matrix` : aucune matrice encore ; `forge:staff-engineer` et `forge:product-owner`

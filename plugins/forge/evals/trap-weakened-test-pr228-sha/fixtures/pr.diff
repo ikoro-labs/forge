@@ -1,0 +1,478 @@
+diff --git a/README.md b/README.md
+index 0ddc023..7af804b 100644
+--- a/README.md
++++ b/README.md
+@@ -67,7 +67,7 @@ ne fusionne une PR rouge, ou ne sort de son rôle.
+ 
+ | Hook | Ce qu'il garde |
+ | --- | --- |
+-| `guard_git` | pas de commit ni de push sur `main`, pas de `--force`, pas de fusion d'une PR dont un check n'est pas vert ou dont un fichier touche la clé `protected-path`, pas de geste du propriétaire du dépôt (runners, protection, collaborateurs, secrets, visibilité), pas de variable de localisation de git (`GIT_DIR`, `GIT_WORK_TREE`, `GIT_INDEX_FILE`, `GIT_COMMON_DIR`, `GIT_OBJECT_DIRECTORY`) ni d'option `--git-dir` ou `--work-tree`, nus ou derrière `if`, `then`, `time`, `!`, `env` ou `bash -c` |
++| `guard_git` | pas de commit ni de push sur `main`, pas de `--force`, pas de fusion d'une PR dont un check n'est pas vert ou dont un fichier touche la clé `protected-path`, pas de fusion dont le message, la description ou un commit de la branche ferme un ticket que la PR cite en `Refs` (une liste de commits que `gh` ne rend pas vaut refus), pas de geste du propriétaire du dépôt (runners, protection, collaborateurs, secrets, visibilité), pas de variable de localisation de git (`GIT_DIR`, `GIT_WORK_TREE`, `GIT_INDEX_FILE`, `GIT_COMMON_DIR`, `GIT_OBJECT_DIRECTORY`) ni d'option `--git-dir` ou `--work-tree`, nus ou derrière `if`, `then`, `time`, `!`, `env` ou `bash -c` |
+ | `guard_infra` | the infrastructure gestures (`docker rm`, `systemctl restart`, `lxc delete`..., and anything off the read list on a host of the `infra-hosts` key): refused to a subagent, asked in the main session; see [The infrastructure guard](#the-infrastructure-guard) |
+ | `guard_coder` | le coder ne fusionne pas, ne relit pas, ne lance ni `forge:qc` ni la revue de bout en bout, ne ferme pas de ticket, n'écrit que dans son worktree, ne pousse ni avec `-u`, ni avec `-f`, ni avec `--force-with-lease`, ne rebase pas (`git rebase`, `git pull --rebase`), n'indexe pas l'arbre entier (`git add -A`, `.`, `:/`, `git commit -a`), y compris derrière `if`, `then`, `time`, `!` ou `bash -c` |
+ | `guard_readonly` | les juges et les décideurs lisent, n'écrivent jamais |
+diff --git a/plugins/forge/hooks/guard_git.py b/plugins/forge/hooks/guard_git.py
+index 610ce63..107584b 100644
+--- a/plugins/forge/hooks/guard_git.py
++++ b/plugins/forge/hooks/guard_git.py
+@@ -15,6 +15,10 @@ Refused, with the reason on stderr and exit code 2 so Claude Code blocks the cal
+   included, in the squash message as in the description. The message is read from `--subject`,
+   `--body` and `--body-file`, the description from `gh pr view`; a body built by a shell
+   substitution cannot be read here, which is why `/forge:qc` writes it to a file;
++- `gh pr merge` when the message of a commit of the PR closes a ticket the message or the PR
++  description cites with `Refs`: GitHub reads the commits of the branch under every merge method.
++  The commits come from `gh pr view --json commits`, through the same keyword rule; a list `gh`
++  cannot give refuses the merge;
+ - `gh pr merge`, for every agent whatever its name, when a file of the PR's diff starts with a
+   line of the project's `protected-path` key (a path or a prefix, compared word for word on the
+   POSIX path): the merge is the human's. The files come from `gh pr view --json files`, under
+@@ -391,9 +395,17 @@ MERGE_TEXT_OPTIONS = frozenset({"--subject", "-t", "--body", "-b"})
+ MERGE_FILE_OPTIONS = frozenset({"--body-file", "-F"})
+ 
+ 
+-def closed_despite_refs(message: str) -> tuple[str, str] | None:
+-    """The ticket cited with `Refs` and closed anyway, with the phrase that closes it."""
+-    cited = {number for group in REFS.findall(message) for number in re.findall(r"\d+", group)}
++def closed_despite_refs(message: str, context: str = "") -> tuple[str, str] | None:
++    """The ticket cited with `Refs` and closed anyway, with the phrase that closes it.
++
++    The closing phrase is looked for in `message` alone; the `Refs` of `context` (the rest of what
++    GitHub reads with it) cite tickets too.
++    """
++    cited = {
++        number
++        for group in REFS.findall(message + "\n" + context)
++        for number in re.findall(r"\d+", group)
++    }
+     for match in CLOSING.finditer(message):
+         if match.group(1) in cited:
+             return match.group(1), match.group(0)
+@@ -1084,6 +1096,8 @@ MERGE_MUTATION = re.compile(r"\b(?:mergePullRequest|enablePullRequestAutoMerge)\
+ Target = tuple[str | None, str | None, str | None]
+ # The files of a PR by its target, or None when they cannot be read.
+ PrFiles = Callable[[str | None, str | None, str | None], list[str] | None]
++# The commits of a merged PR, `(oid, full message)` in order, or None when `gh` could not tell.
++CommitMessages = Callable[[str | None, str | None, str | None], list[tuple[str, str]] | None]
+ # Why a merge whose PR the guard cannot tell is the owner's.
+ UNREADABLE_MERGE = (
+     "the guard cannot tell which PR is merged ({}), so it may change the infra guard: only the"
+@@ -1678,6 +1692,7 @@ def refusal(
+     gh_aliases: GhAliases = dict,
+     subagent: bool = False,
+     merge_method: Sequence[str] | None = None,
++    commit_messages: CommitMessages = lambda *_target: [],
+ ) -> str | None:
+     """Why the command is refused, or None when it may run.
+ 
+@@ -1779,6 +1794,7 @@ def refusal(
+         pr_files,
+         gh_aliases,
+         merge_method,
++        commit_messages,
+     ) or commands_location_refusal(command)
+ 
+ 
+@@ -1830,6 +1846,28 @@ def method_refusal(
+     return None
+ 
+ 
++def commits_refusal(commits: list[tuple[str, str]] | None, cited_in: str) -> str | None:
++    """Why the commit messages of a PR refuse its merge, or None.
++
++    GitHub reads a closing keyword in the message of every commit of the branch, whatever the
++    merge method, so a commit that closes a ticket the PR cites with `Refs` closes it at merge.
++    """
++    if commits is None:
++        return (
++            "the commits of the PR cannot be read (`gh pr view --json commits`): GitHub reads their"
++            " messages at merge, and the guard refuses what it cannot check"
++        )
++    for oid, text in commits:
++        if closed := closed_despite_refs(text, cited_in):
++            ticket, phrase = closed
++            return (
++                f"commit {oid[:7]} of the PR closes #{ticket} (`{phrase}`) and the PR cites it with"
++                f" Refs: rewrite the commit message, or drop #{ticket} from the Refs if the PR"
++                " delivers it whole"
++            )
++    return None
++
++
+ def merge_call_refusal(
+     command: str,
+     cwd: str | None,
+@@ -1842,6 +1880,7 @@ def merge_call_refusal(
+     pr_files: PrFiles,
+     gh_aliases: GhAliases,
+     merge_method: Sequence[str] | None = None,
++    commit_messages: CommitMessages = lambda *_target: [],
+ ) -> str | None:
+     """Why a command that merges is refused, or None: run alone, its PR read where it runs."""
+     call = merge_call(command, cwd)
+@@ -1884,12 +1923,15 @@ def merge_call_refusal(
+     target: Target = (number, repository, call.directory)
+     if wrong := method_refusal(merge_method, methods, cancels):
+         return wrong
+-    if closed := closed_despite_refs(message + "\n" + description(*target)):
++    cited_in = message + "\n" + description(*target)
++    if closed := closed_despite_refs(cited_in):
+         ticket, phrase = closed
+         return (
+             f"the merge message or PR description cites #{ticket} with Refs and closes it"
+             f" (`{phrase}`): the first PR of a split ticket must leave it open"
+         )
++    if reason := commits_refusal(commit_messages(*target), cited_in):
++        return reason
+     if exhausted := budget():
+         return exhausted
+     if infra := infra_guard_refusal(target, pr_files):
+@@ -2038,6 +2080,48 @@ def pr_files_via_gh(cwd: str | None) -> PrFiles:
+     return files
+ 
+ 
++def parse_commits(text: str) -> list[tuple[str, str]] | None:
++    """The `(oid, message)` of each commit in `gh pr view --json commits`, None for any other text.
++
++    `gh` splits a message into a headline and a body, and cuts a headline longer than a line with
++    a `…` that the body takes up again: the two are joined where they were cut, so a keyword that
++    straddles the cut is read whole.
++    """
++    try:
++        document = json.loads(text)
++    except ValueError:
++        return None
++    entries = document.get("commits") if isinstance(document, dict) else None
++    if not isinstance(entries, list):
++        return None
++    commits: list[tuple[str, str]] = []
++    for entry in entries:
++        if not isinstance(entry, dict):
++            return None
++        oid, headline, body = (entry.get(key) for key in ("oid", "messageHeadline", "messageBody"))
++        if not (isinstance(oid, str) and oid and isinstance(headline, str) and isinstance(body, str)):
++            return None
++        if headline.endswith("…") and body.startswith("…"):
++            message = headline[:-1] + body[1:]
++        else:
++            message = headline + ("\n\n" + body if body else "")
++        commits.append((oid, message))
++    return commits
++
++
++def commits_via_gh(cwd: str | None) -> CommitMessages:
++    """`gh pr view <n> -R <repo> --json commits` where the target says, None when unreadable."""
++
++    def commits(pr: str | None, repository: str | None, directory: str | None) -> list[tuple[str, str]] | None:
++        completed = _gh_pr(cwd, "view", (pr, repository, directory), "--json", "commits")
++        # No gh, a failure or a timeout: the messages are unknown, and the caller refuses.
++        if completed is None or completed.returncode != 0:
++            return None
++        return parse_commits(completed.stdout)
++
++    return commits
++
++
+ def parse_gh_aliases(text: str) -> dict[str, str] | None:
+     """The aliases of `gh alias list` (`name: expansion` per line), or None for anything else."""
+     aliases: dict[str, str] = {}
+@@ -2091,6 +2175,7 @@ def main() -> int:
+         gh_aliases=gh_aliases_via_gh(cwd),
+         subagent=bool(event.get("agent_id")),
+         merge_method=config.get(METHOD_KEY, []),
++        commit_messages=commits_via_gh(cwd),
+     )
+     if reason is None:
+         return 0
+diff --git a/tests/test_budget.py b/tests/test_budget.py
+index 074a2bf..47de193 100644
+--- a/tests/test_budget.py
++++ b/tests/test_budget.py
+@@ -280,6 +280,7 @@ class TheHook(unittest.TestCase):
+             mock.patch("guard_git.current_branch", lambda _cwd: "feat/x"),
+             mock.patch("guard_git.checks_green_via_gh", lambda _cwd: lambda *_target: True),
+             mock.patch("guard_git.description_via_gh", lambda _cwd: lambda *_target: ""),
++            mock.patch("guard_git.commits_via_gh", lambda _cwd: lambda *_target: []),
+             mock.patch("guard_git.pr_files_via_gh", lambda _cwd: lambda *_args: []),
+         ):
+             return guarded_main(), err.getvalue()
+diff --git a/tests/test_guard_git_commits.py b/tests/test_guard_git_commits.py
+new file mode 100644
+index 0000000..013f7f8
+--- /dev/null
++++ b/tests/test_guard_git_commits.py
+@@ -0,0 +1,239 @@
++"""`guard_git` relit les messages des commits de la PR avant une fusion (ticket #64, suivi #55)."""
++
++import io
++import json
++import os
++import sys
++import tempfile
++import unittest
++from pathlib import Path
++from unittest import mock
++
++import support  # noqa: F401  met les hooks sur le chemin d'import
++from guard_git import commits_via_gh, guarded_main, parse_commits, refusal
++
++Commit = tuple[str, str]
++SHA = "8e80a6e46958d38d63deb30b4500f23899bf5c01"
++
++
++def always_green(*_target: str | None) -> bool:
++    return True
++
++
++def merge(
++    command: str,
++    commits: list[Commit] | None,
++    description: str = "Refs #206\n",
++    key: list[str] | None = None,
++) -> str | None:
++    """Le verdict de `guard_git` sur `command`, pour une PR dont `gh` rend ces commits et cette description."""
++    return refusal(
++        command,
++        "feat/x",
++        always_green,
++        description=lambda *_target: description,
++        commit_messages=lambda *_target: commits,
++        merge_method=key,
++    )
++
++
++class ClosingKeywordInACommit(unittest.TestCase):
++    def test_a_commit_that_closes_a_ticket_the_description_cites_with_refs_is_refused(self) -> None:
++        # #64 : GitHub lit le message de chaque commit de la branche quand la fusion est un commit de fusion.
++        verdict = merge("gh pr merge 5 --merge", [(SHA, "feat(x): a\n\nCloses #206\n")])
++        assert verdict is not None
++        self.assertIn("#206", verdict)
++
++    def test_the_refusal_names_the_commit_and_says_how_to_fix_it(self) -> None:
++        # #64 : le sha court, le ticket, puis les deux sorties : réécrire le message ou retirer le `Refs`.
++        commits = [("1111111aaaa", "fix: b"), (SHA, "feat(x): a\n\nCloses #206")]
++        verdict = merge("gh pr merge 5 --merge", commits)
++        assert verdict is not None
++        self.assertNotIn("1111111", verdict)
++        self.assertNotIn(SHA, verdict)
++        self.assertIn("rewrite the commit message", verdict)
++        self.assertIn("drop #206 from the Refs", verdict)
++
++    def test_a_commit_that_cites_the_ticket_with_refs_passes(self) -> None:
++        # #64 : le cas courant, que la règle ne doit pas gêner.
++        commits = [(SHA, "feat(x): a\n\nRefs #206\n"), ("2222222", "test(x): b\n\nRefs #206")]
++        self.assertIsNone(merge("gh pr merge 5 --merge", commits))
++
++    def test_a_closing_keyword_for_another_ticket_than_the_refs_passes(self) -> None:
++        # #64 : seul le ticket que la description cite en `Refs` est gardé ouvert.
++        self.assertIsNone(merge("gh pr merge 5 --merge", [(SHA, "fix(x): a\n\nCloses #207\n")]))
++
++    def test_every_closing_keyword_github_reads_is_caught_in_a_commit(self) -> None:
++        # #64 : la règle des mots-clés est celle de la description et du message de fusion, une seule fonction.
++        for closing in ["Closed #206", "fix #206", "Fixes #206", "resolved: #206", "RESOLVES o/r#206"]:
++            with self.subTest(closing=closing):
++                self.assertIsNotNone(merge("gh pr merge 5 --merge", [(SHA, f"fix: a\n\n{closing}")]))
++
++    def test_a_commit_that_closes_a_ticket_no_refs_cites_passes(self) -> None:
++        # #64 : une PR en `Closes #206` peut porter un commit en `Closes #206`.
++        commits = [(SHA, "feat(x): a\n\nCloses #206\n")]
++        self.assertIsNone(merge("gh pr merge 5 --merge", commits, description="Closes #206\n"))
++
++
++class UnderEveryMethod(unittest.TestCase):
++    def test_a_squash_applies_the_rule_too(self) -> None:
++        # #64 : avec `merge-method` à `squash` (#63), les messages des commits entrent dans le message par défaut.
++        commits = [(SHA, "feat(x): a\n\nCloses #206")]
++        for flag in ("--squash", "-s"):
++            with self.subTest(flag=flag):
++                verdict = merge(f"gh pr merge 5 {flag}", commits, key=["squash"])
++                assert verdict is not None
++                self.assertIn("8e80a6e", verdict)
++        self.assertIsNone(merge("gh pr merge 5 --squash", [(SHA, "feat(x): a\n\nRefs #206")], key=["squash"]))
++
++    def test_the_other_methods_apply_it_too(self) -> None:
++        commits = [(SHA, "feat(x): a\n\nCloses #206")]
++        for method in ("merge", "rebase"):
++            with self.subTest(method=method):
++                self.assertIsNotNone(merge(f"gh pr merge 5 --{method}", commits, key=[method]))
++
++    def test_a_squash_with_an_explicit_body_is_still_judged_on_the_commits(self) -> None:
++        # #64 : le garde ne devine pas ce que GitHub retient du corps donné : une règle plus sûre.
++        commits = [(SHA, "feat(x): a\n\nCloses #206")]
++        verdict = merge('gh pr merge 5 --squash --body "Refs #206"', commits, key=["squash"])
++        assert verdict is not None
++        self.assertIn("8e80a6e", verdict)
++
++    def test_a_refs_in_the_merge_message_counts_as_a_citation(self) -> None:
++        # #64 : la description ne cite pas le ticket, le message de fusion le fait : le commit qui le ferme est refusé.
++        commits = [(SHA, "feat(x): a\n\nCloses #206")]
++        self.assertIsNotNone(merge('gh pr merge 5 --squash --body "Refs #206"', commits, description="", key=["squash"]))
++
++
++class FailsClosed(unittest.TestCase):
++    def test_an_unreadable_list_of_commits_refuses_the_merge(self) -> None:
++        # #64 : fermé par défaut, la liste que `gh` n'a pas su rendre ne laisse rien passer.
++        verdict = merge("gh pr merge 5 --merge", None)
++        assert verdict is not None
++        self.assertIn("commits", verdict)
++        self.assertIn("cannot be read", verdict)
++
++    def test_an_empty_list_is_a_list(self) -> None:
++        self.assertIsNone(merge("gh pr merge 5 --merge", []))
++
++    def test_the_text_of_gh_is_read_strictly(self) -> None:
++        # #64 : une forme que `gh pr view --json commits` ne rend pas est une liste illisible.
++        one = '{"commits":[{"oid":"abc1234","messageHeadline":"feat: a","messageBody":"Refs #3"}]}'
++        self.assertEqual(parse_commits(one), [("abc1234", "feat: a\n\nRefs #3")])
++        self.assertEqual(parse_commits('{"commits":[]}'), [])
++        for text in (
++            "",
++            "pas du json",
++            "[]",
++            "{}",
++            '{"commits":null}',
++            '{"commits":["a"]}',
++            '{"commits":[{"messageHeadline":"a","messageBody":""}]}',
++            '{"commits":[{"oid":"","messageHeadline":"a","messageBody":""}]}',
++            '{"commits":[{"oid":"a1","messageBody":""}]}',
++            '{"commits":[{"oid":"a1","messageHeadline":"a"}]}',
++            '{"commits":[{"oid":"a1","messageHeadline":3,"messageBody":""}]}',
++        ):
++            with self.subTest(text=text):
++                self.assertIsNone(parse_commits(text))
++
++    def test_a_headline_without_a_body_is_the_whole_message(self) -> None:
++        text = '{"commits":[{"oid":"a1","messageHeadline":"feat: a","messageBody":""}]}'
++        self.assertEqual(parse_commits(text), [("a1", "feat: a")])
++
++    def test_a_keyword_cut_by_the_headline_limit_is_read_whole(self) -> None:
++        # #64 : `gh` coupe un titre long avec une « … » et reprend la suite, en « … », au début du corps :
++        # un `Closes #206` à cheval sur la coupure doit se relire en entier.
++        text = json.dumps(
++            {"commits": [{"oid": SHA, "messageHeadline": "feat(x): " + "m" * 40 + " Clos…", "messageBody": "…es #206\n\nsuite"}]}
++        )
++        commits = parse_commits(text)
++        assert commits is not None
++        self.assertEqual(commits[0][1], "feat(x): " + "m" * 40 + " Closes #206\n\nsuite")
++        self.assertIsNotNone(merge("gh pr merge 5 --merge", commits))
++
++    def run_gh(self, script: str) -> list[Commit] | None:
++        """`gh` est joué par Python, qui exécute le script `pr` du dossier de la commande."""
++        with tempfile.TemporaryDirectory() as folder:
++            (Path(folder) / "pr").write_text(script, encoding="utf-8")
++            with mock.patch("shutil.which", lambda _name: sys.executable):
++                return commits_via_gh(folder)("5", None, None)
++
++    def test_a_gh_that_prints_the_commits_is_read(self) -> None:
++        script = "print('{\"commits\":[{\"oid\":\"a1\",\"messageHeadline\":\"feat: a\",\"messageBody\":\"\"}]}')"
++        self.assertEqual(self.run_gh(script), [("a1", "feat: a")])
++
++    def test_a_gh_that_fails_prints_garbage_or_times_out_is_an_unreadable_list(self) -> None:
++        self.assertIsNone(self.run_gh("import sys; print('{\"commits\":[]}'); sys.exit(1)"))
++        self.assertIsNone(self.run_gh("print('pas du json')"))
++        with mock.patch("guard_git.TIMEOUT_SECONDS", 1):
++            self.assertIsNone(self.run_gh("import time; time.sleep(30)"))
++
++    def test_without_gh_the_list_is_unreadable(self) -> None:
++        with mock.patch("shutil.which", lambda _name: None):
++            self.assertIsNone(commits_via_gh(None)("5", None, None))
++
++    def test_the_commits_are_asked_for_the_pr_the_merge_names(self) -> None:
++        # #64 : le numéro, le dépôt et le dossier sont ceux que lisent les autres lectures de la fusion.
++        script = (
++            "import json, sys\n"
++            "args = sys.argv[1:]\n"
++            "if args[1:3] != ['5', '-R'] or args[3] != 'o/other' or args[4:] != ['--json', 'commits']:\n"
++            "    sys.exit(1)\n"
++            "print(json.dumps({'commits': [{'oid': 'a1', 'messageHeadline': 'fix: a', 'messageBody': 'Closes #3'}]}))\n"
++        )
++        with tempfile.TemporaryDirectory() as folder:
++            (Path(folder) / "pr").write_text(script, encoding="utf-8")
++            with mock.patch("shutil.which", lambda _name: sys.executable):
++                self.assertEqual(commits_via_gh(folder)("5", "o/other", folder), [("a1", "fix: a\n\nCloses #3")])
++                self.assertIsNone(commits_via_gh(folder)("6", "o/other", folder))
++
++
++class TheHook(unittest.TestCase):
++    """Le vrai `main` de `guard_git` : il lit les commits de la PR par `commits_via_gh`, pour tout nom d'agent."""
++
++    def run_hook(self, commits: list[Commit] | None, agent_type: str | None = None) -> tuple[int, str]:
++        with tempfile.TemporaryDirectory() as home:
++            event = {"tool_input": {"command": "gh pr merge 7 --merge"}, "cwd": home}
++            if agent_type:
++                event["agent_type"] = agent_type
++            env = {
++                **{k: v for k, v in os.environ.items() if not k.startswith("CLAUDE_")},
++                "HOME": home,
++                "USERPROFILE": home,
++                "CLAUDE_PROJECT_DIR": home,
++            }
++            err = io.StringIO()
++            with (
++                mock.patch.dict(os.environ, env, clear=True),
++                mock.patch("sys.stdin", io.StringIO(json.dumps(event))),
++                mock.patch("sys.stderr", err),
++                mock.patch("guard_git.current_branch", lambda _cwd: "feat/x"),
++                mock.patch("guard_git.checks_green_via_gh", lambda _cwd: always_green),
++                mock.patch("guard_git.description_via_gh", lambda _cwd: lambda *_target: "Refs #206\n"),
++                mock.patch("guard_git.pr_files_via_gh", lambda _cwd: lambda *_args: []),
++                mock.patch("guard_git.changed_files_via_gh", lambda _cwd: lambda *_args: []),
++                mock.patch("guard_git.commits_via_gh", lambda _cwd: lambda *_target: commits),
++                mock.patch("guard_git.load", lambda _root: {"merge-method": ["merge"]}),
++            ):
++                return guarded_main(), err.getvalue()
++
++    def test_a_commit_that_closes_a_ticket_cited_with_refs_refuses_the_merge(self) -> None:
++        for agent in ("forge:qc-conf", "forge:coder", "autre-agent", None):
++            with self.subTest(agent=agent):
++                code, message = self.run_hook([(SHA, "fix: a\n\nCloses #206")], agent)
++                self.assertEqual(code, 2)
++                self.assertIn("8e80a6e", message)
++                self.assertNotIn("guard_git failed", message)
++
++    def test_commits_that_cite_the_ticket_with_refs_let_the_merge_through(self) -> None:
++        self.assertEqual(self.run_hook([(SHA, "fix: a\n\nRefs #206")])[0], 0)
++
++    def test_an_unreadable_list_refuses_the_merge_through_the_hook(self) -> None:
++        code, message = self.run_hook(None)
++        self.assertEqual(code, 2)
++        self.assertIn("cannot be read", message)
++
++
++if __name__ == "__main__":
++    unittest.main()
+diff --git a/tests/test_guard_git_merge_method.py b/tests/test_guard_git_merge_method.py
+index a60930d..4b4440f 100644
+--- a/tests/test_guard_git_merge_method.py
++++ b/tests/test_guard_git_merge_method.py
+@@ -191,6 +191,7 @@ class TheHook(unittest.TestCase):
+             mock.patch("guard_git.current_branch", lambda _cwd: "feat/x"),
+             mock.patch("guard_git.checks_green_via_gh", lambda _cwd: always_green),
+             mock.patch("guard_git.description_via_gh", lambda _cwd: lambda *_target: ""),
++            mock.patch("guard_git.commits_via_gh", lambda _cwd: lambda *_target: []),
+             mock.patch("guard_git.pr_files_via_gh", lambda _cwd: lambda *_args: []),
+             mock.patch("guard_git.changed_files_via_gh", lambda _cwd: lambda *_args: []),
+         ):
+diff --git a/tests/test_guard_git_protected.py b/tests/test_guard_git_protected.py
+index c3f59ad..18d09d5 100644
+--- a/tests/test_guard_git_protected.py
++++ b/tests/test_guard_git_protected.py
+@@ -143,6 +143,7 @@ class TheHook(unittest.TestCase):
+             mock.patch("guard_git.current_branch", lambda _cwd: "feat/x"),
+             mock.patch("guard_git.checks_green_via_gh", lambda _cwd: always_green),
+             mock.patch("guard_git.description_via_gh", lambda _cwd: lambda *_target: ""),
++            mock.patch("guard_git.commits_via_gh", lambda _cwd: lambda *_target: []),
+             mock.patch("guard_git.pr_files_via_gh", lambda _cwd: lambda *_args: []),
+             mock.patch("guard_git.changed_files_via_gh", lambda _cwd: changed),
+         ):
+diff --git a/tests/test_guard_infra.py b/tests/test_guard_infra.py
+index c8d5cc5..dffa8e6 100644
+--- a/tests/test_guard_infra.py
++++ b/tests/test_guard_infra.py
+@@ -1043,6 +1043,7 @@ class MergeOfTheGuard(unittest.TestCase):
+                     mock.patch("guard_git.current_branch", lambda _cwd: "feat/x"),
+                     mock.patch("guard_git.checks_green_via_gh", lambda _cwd: always_green),
+                     mock.patch("guard_git.description_via_gh", lambda _cwd: lambda *_target: ""),
++                    mock.patch("guard_git.commits_via_gh", lambda _cwd: lambda *_target: []),
+                     mock.patch("guard_git.pr_files_via_gh", lambda _cwd: pr_files),
+                 ):
+                     return git_guarded_main(), err.getvalue()

@@ -4,7 +4,8 @@
 devant lui et note le verdict. Il alimente deux objectifs de service (`judge-recall` et
 `false-accept`, voir `docs/indicateurs-de-service.md`) que `factory_slo.py` ne sait pas calculer
 seul, faute de données : sans ce jeu, ils restent « sans objet ». Une troisième mesure, `false-reject`,
-n'a pas d'objectif : elle dit si le juge rejette à tort.
+n'a pas d'objectif : elle dit si le juge rejette à tort. Neuf cas piégés s'y ajoutent (voir plus bas) :
+ils mesurent le rappel du juge classe de défaut par classe, à part des mesures des cas réels.
 
 Il se lance à la main, sous un plafond de coût. Aucune suite de tests ne le lance, et aucun appel à un
 modèle ne se fait ailleurs que par la commande de lancement.
@@ -49,6 +50,50 @@ Les cas `accept-` attendent le verdict inverse et portent deux autres notations,
 Ils ne portent pas `no-false-accept` : un `ACCEPT` y est le bon verdict, et il ne compte pas dans
 `false-accept`.
 
+## Les cas piégés
+
+Un cas réel rejoue une PR où le défaut est arrivé tout seul. Un cas piégé part d'un cas `accept-` figé
+(PR 226, 228 ou 238, acceptée au tour 1 et jamais corrigée) et y plante **un** défaut connu, d'une
+classe donnée, dans `fixtures/pr.diff`. Le juge n'en est pas prévenu : l'invite est celle du cas
+`accept-` d'origine, et le défaut est la seule chose qui change dans ce qu'il lit (avec la ligne
+`Base et diff` et la ligne `Périmètre` du tableau de `forge:qc-gate`, que le script recalcule sur le
+diff piégé). Il doit rendre `REJECT` et nommer le défaut.
+
+Trois classes, trois cas par classe :
+
+| Classe | Ce que le script plante | Cas |
+| --- | --- | --- |
+| `weakened-test` | une assertion d'un test est retirée ou assouplie | `trap-weakened-test-pr238-label`, `trap-weakened-test-pr228-sha`, `trap-weakened-test-pr228-keywords` |
+| `out-of-scope` | un fichier que le ticket ne touche pas est modifié | `trap-out-of-scope-pr226-rule`, `trap-out-of-scope-pr228-threshold`, `trap-out-of-scope-pr238-test-rule` |
+| `unmet-criterion` | le code d'un critère est retiré, son test gardé (PR 228) ou supprimé (PR 238) ; la PR 226 n'en a pas | `trap-unmet-criterion-pr226-sev3`, `trap-unmet-criterion-pr228-fail-open`, `trap-unmet-criterion-pr238-attention` |
+
+La PR 226 ne change que `docs/agents/usine.md` et n'a aucun test : aucun cas `weakened-test` ne s'y
+plante. Cette classe s'appuie sur la PR 238 (un cas) et sur la PR 228 (deux cas).
+
+Chaque cas piégé porte les trois notations de la famille `blocker-` : `rejects` et `no-false-accept`
+(mêmes expressions régulières sur la ligne `VERDICT:`), et `names-the-defect`, une notation par un
+modèle qui dit si le verdict nomme le défaut planté. Cette dernière n'entre dans aucune mesure : elle se
+lit à la main.
+
+### Fabriqués par un script, d'après une spécification
+
+Un cas piégé n'est pas écrit à la main : le script `plant_defect.py` (`plugins/forge/scripts/`) le fabrique, et le dossier
+du cas est la sortie de sa spécification, versionnée dans `plugins/forge/eval-traps/` (un fichier `<cas>.json` par cas).
+
+```sh
+uv run --no-project --quiet python plugins/forge/scripts/plant_defect.py plugins/forge/eval-traps/<cas>.json
+```
+
+La spécification donne le `name` (`trap-<classe>-<mot>`), la `class`, la `source` (un cas `accept-`), un
+`summary` et le `defect` que le juge doit nommer, puis `edits` (des lignes ajoutées du diff, `old`
+remplacé par `new`, trouvé une seule fois) ou `outside` (une ligne d'un fichier que le cas porte dans
+`fixtures/`, que le diff ne change pas). Le script refuse une spécification qui n'est pas de sa classe : un
+test qui gagne une ligne, un `out-of-scope` qui touche un fichier du diff, un `unmet-criterion` qui
+réécrit un test. Les en-têtes `@@` des blocs qui suivent une retouche sont recalculés, et tous les autres
+fichiers du cas sont copiés octet pour octet. La même spécification donne le même cas, octet pour octet ;
+un test régénère chaque cas depuis sa spécification et le compare au dossier versionné, pour qu'aucun
+des deux ne dérive seul. Le script ne lit ni l'horloge, ni l'environnement, et n'appelle aucun modèle.
+
 ## Les trois mesures
 
 `eval_reference.py score` lit le `aggregate-result.json` de `claude plugin eval` et écrit le fichier
@@ -66,6 +111,27 @@ uv run --no-project --quiet python plugins/forge/scripts/eval_reference.py score
 - `false-reject` : part des runs des cas `accept-` dont le verdict est `REJECT`. Sans elle, un juge qui
   rejette tout aurait un `judge-recall` parfait. `factory_slo.py` ne lit que les deux premières clés :
   aucun objectif de service ne porte sur celle-ci.
+
+Ces trois clés du haut ne comptent que les cas réels : un run d'un cas `trap-` n'entre jamais dans les trois
+mesures, bien qu'il porte les mêmes notations. Quand des cas piégés ont tourné, le JSON ajoute des clés
+imbriquées, que `factory_slo.py` ne lit pas :
+
+```json
+{"judge-recall": 0.9, "false-accept": 0.05, "false-reject": 0.1,
+ "real": {"judge-recall": 0.9, "false-accept": 0.05, "false-reject": 0.1},
+ "trapped": {"judge-recall": 0.8, "false-accept": 0.2},
+ "per-class": {"weakened-test": {"judge-recall": 0.7, "false-accept": 0.3},
+               "out-of-scope": {"judge-recall": 0.9, "false-accept": 0.1},
+               "unmet-criterion": {"judge-recall": 0.8, "false-accept": 0.2}}}
+```
+
+- `real` : les trois clés du haut, répétées, pour qu'on lise les cas réels et les cas piégés côte à côte ;
+- `trapped` : la part des runs des cas `trap-` en `REJECT` (`judge-recall`), et la part de ces runs en
+  `ACCEPT` (`false-accept`) ;
+- `per-class` : les deux mêmes parts pour chaque classe qui a tourné ; une classe sans run manque.
+
+Sans aucun run d'un cas piégé, aucune clé imbriquée n'est écrite : le JSON est celui d'avant. La ligne que
+`score` imprime sur la sortie d'erreur ajoute une ligne pour les pièges et une par classe.
 
 Le JSON et la ligne que `score` imprime sur la sortie d'erreur ne disent pas la même chose : chaque clé du
 JSON porte une part (un nombre entre 0 et 1), et la ligne porte un compte (runs en défaut sur runs notés).
@@ -97,7 +163,9 @@ La commande refuse de partir sans `--max-cost-usd`. Elle lance `claude plugin ev
 - `--output-dir` : un dossier hors du plugin, parce que Claude Code peut charger comme composants les
   fichiers qu'on y laisse. La commande refuse un dossier dans le plugin.
 
-`--runs <n>` et `--case <glob>` passent tels quels. Chaque cas demande trois runs par défaut.
+`--runs <n>` et `--case <glob>` passent tels quels. Chaque cas demande trois runs par défaut : avec les
+neuf cas piégés, le jeu compte vingt cas et soixante runs. `--case 'trap-*'` ne lance que les cas piégés,
+`--case 'trap-weakened-test-*'` une seule classe. Le lancement reste à la main, sous son plafond.
 
 Le plafond n'a pas de valeur par défaut : le coût d'un run n'a jamais été mesuré ici. Au premier
 lancement, `--runs 1 --case 'blocker-pr11-*'` avec un plafond bas donne le coût d'un run et dit si le
@@ -125,6 +193,22 @@ sous-commande `eval`. `claude plugin eval --help` y montre les options que `eval
 cas n'y a tourné, et aucun appel à un modèle n'a été fait : seule l'aide a été lue. Le jeu ne tourne pas en
 CI : il se lance sur un poste dont `claude plugin eval` existe, et la version qui a relevé le format des
 cas est la 2.1.325.
+
+## Limites des cas piégés
+
+- Le défaut est planté dans le diff, pas dans le dépôt : la tête que dit l'invite (le `sha` d'origine) n'est
+  pas celle que le diff décrit, et le juge, qui ne lance aucune commande, ne peut pas le vérifier.
+- Le corps de la PR, le ticket et le tableau de `forge:qc-gate` sont ceux du cas d'origine, sauf les
+  deux lignes que le script recalcule. Un cas qui garde le test d'un critère retiré (`trap-unmet-criterion-pr228-fail-open`)
+  montre donc un tableau où la CI est verte : le juge doit relire le test contre le code, ce qu'un juge qui
+  se fie à la CI ne fait pas. C'est voulu, et c'est un défaut du cas aussi : une vraie PR rouge aurait un
+  tableau rouge.
+- Neuf cas à trois runs (vingt-sept runs de cas piégés, neuf par classe) disent où le juge se trompe, pas de
+  combien. La taille et la discrétion des défauts plantés sont un choix de celui qui a écrit les
+  spécifications : un juge qui les trouve tous n'est pas pour autant sûr devant un défaut plus discret. Une
+  classe de plus, ou un cas de plus par classe, est une partie suivante du ticket #154.
+- Aucun cas piégé n'a tourné devant un modèle : comme le reste du jeu, ils n'ont été éprouvés que sur la
+  forme (fichiers, notations, comptes), jamais sur un verdict réel.
 
 ## Limites des cas
 

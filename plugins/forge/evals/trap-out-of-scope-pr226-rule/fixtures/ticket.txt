@@ -1,0 +1,71 @@
+Ticket #76: Les SLO et SLA de ce dépôt
+
+## Constat
+
+Les clés `slo`, `sla` et `budget-action` (#57, #60, #59) ne valent rien pour ce dépôt tant qu'il ne les déclare pas. Les valeurs de départ ont été proposées et acceptées par l'humain le 2026-10-24, révisables après 30 jours de mesures.
+
+Suivi : #55. Dépend de #57, #59, #60.
+
+## Ce qui est attendu
+
+Dans `docs/agents/usine.md` de ce dépôt, sur une fenêtre de 30 jours :
+
+| SLO | Cible |
+| --- | --- |
+| `accept-round-1` | `>= 80 %` |
+| `escaped-defects` | `<= 0,1` par fusion |
+| `lead-time` p90 | `<= 24 h` |
+| `release-lag` p90 | `<= 1 jour ouvré` |
+| `change-failure` | `<= 10 %` |
+| `tokens-per-merge` p90 | fixé après la première mesure |
+| `human-touch` | `<= 10 %` |
+| `main-green` | `100 %` |
+| `judge-recall` | `>= 95 %` |
+| `false-accept` | `0` |
+
+- `tokens-per-merge` n'a pas de cible tant qu'il n'est pas mesuré : sa ligne est ajoutée par une PR qui cite la première mesure de `factory_slo.py`.
+- La clé `sla` : `sev1`, prise en charge sous 1 h, corrigé et publié sous 24 h ; `sev2`, corrigé sous 3 jours, publié sous 7 ; `sev3`, sous 30 jours.
+- La clé `budget-action` : `human-merge` et `feature-freeze` pour chaque SLO.
+- La date de révision (30 jours après la fusion) est écrite à côté des valeurs, et `factory_slo.py status` la signale quand elle est passée.
+- Un test vérifie que `factory_slo.py status` lit la configuration de ce dépôt sans erreur.
+
+## Hors périmètre
+
+Changer une valeur : c'est une décision de l'humain, prise sur le rapport (#58).
+
+## Décision
+
+Valeurs acceptées par l'humain (`accepting-human`, 2026-10-24), révisables après 30 jours. Issue de suivi #55.
+
+--- Commentaire du 2026-11-15T23:59:02Z
+Tri du 2026-11-16, lecture seule de `main` à 7dfcf61 (forge 1.14.0).
+
+**Case : à faire.** Ce dépôt ne déclare ni `slo`, ni `sla`, ni `budget-action` dans `docs/agents/usine.md` (seul le gabarit les documente, `templates/usine.md:264-278`) ; aucune date de révision dans `factory_slo.py`. Dépendances #57, #59, #60 fermées.
+
+--- Commentaire du 2026-11-16T00:04:33Z
+Coder arrêté avant tout commit (2026-11-16, `main` à 0099aeb). Le ticket ne fixe pas trois points :
+
+- `sla` : le format de la clé exige quatre délais par gravité ; `sev2` n'a pas de prise en charge, et `sev3` ne dit pas à quelle étape s'appliquent les 30 jours.
+- La date de révision : aucune clé ne la porte. Faut-il en créer une, ou l'écrire en prose ?
+- `release-lag` : la clé `slo` ne compte qu'en heures (proposition : `<= 24 h`), et `release-tag` est absente, si bien que le SLO reste sans objet.
+
+Mesure `sli` sur 30 jours, en lecture seule : `accept-round-1` 58 % (36/62), `lead-time` p90 504,9 h, `main-green` 94 %, `human-touch` 14 % (13/94). Avec ces cibles, `human-merge` et `feature-freeze` seraient actives dès le premier calcul de `budget`, et toute fusion par un agent serait rendue à l'humain. À trancher par l'humain avant de reprendre.
+
+--- Commentaire du 2026-11-16T00:11:12Z
+Décision du 2026-11-16 :
+
+- **`budget-action` :** l'humain retient `alert` pour chaque objectif, à la place de `human-merge` et `feature-freeze`. On mesure pendant 30 jours sans rien bloquer ; `slo-issue` vaut #55.
+- **Révision :** une clé nouvelle porte la date, 30 jours après la fusion. `factory_slo.py status` la signale une fois passée, et elle est documentée dans le gabarit.
+- **Traductions :** `release-lag p90 <= 24 h` (la clé ne compte qu'en heures), avec `release-tag` à `forge--v{version}` ; `escaped-defects <= 10 %` ; `false-accept <= 0 %` ; `main-green >= 100 %`.
+- **`sla` :** pas déclarée dans cette PR, parce que `sev2` n'a pas de délai de prise en charge et que l'étape des 30 jours de `sev3` n'est pas dite. Aucun délai n'est deviné : la PR est en `Refs #76`, et ce point reste ouvert pour l'humain.
+
+--- Commentaire du 2026-11-16T12:47:03Z
+Décision de l'humain, le 2026-11-16 : la clé `sla` est déclarée par #226, avec les valeurs ci-dessous.
+
+| Gravité | Prise en charge | Fusionné | Publié |
+|---|---|---|---|
+| sev1 | 1 h | 24 h | 24 h |
+| sev2 | 1 j | 3 j | 7 j |
+| sev3 | 7 j | 30 j | 30 j |
+
+Les délais de prise en charge de sev2 et de sev3 sont des propositions de l'agent, que l'humain a acceptées. Pour sev3, le ticket donnait 30 jours sans préciser l'étape. La proposition, acceptée elle aussi, applique ces 30 jours au correctif fusionné comme au correctif publié.

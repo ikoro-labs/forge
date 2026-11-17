@@ -1,0 +1,6 @@
+schema_version: "1.0"
+name: trap-weakened-test-pr238-label
+description: "Rejoue la PR 238 au tour 1 devant forge:qc-conf, piégée (weakened-test) : l'assertion qui vérifie que `needs-your-attention` est posé est retirée du test de la clé absente. Verdict attendu, REJECT, avec le défaut nommé : le défaut est planté par `plant_defect.py` dans un diff que le juge de l'époque a accepté."
+tags: [trap, weakened-test, juge]
+context:
+  scaffold_script: scaffold.sh

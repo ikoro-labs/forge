@@ -7,6 +7,8 @@ No test here calls a model: the result of a run is a made-up `aggregate-result.j
 import io
 import json
 import re
+import shutil
+import subprocess
 import tempfile
 import unittest
 import unittest.mock
@@ -17,6 +19,7 @@ from typing import Any
 import support
 from eval_reference import command, main, measure
 from factory_slo import reference
+from plant_defect import parse_diff, plant, totals
 
 EVALS = support.PLUGIN / "evals"
 BLOCKERS = {"blocker-pr11-tour1", "blocker-pr13-tour1", "blocker-pr28-tour1", "blocker-pr30-tour1",
@@ -30,6 +33,17 @@ ACCEPTS = {
     "accept-pr228-tour1": ("76b372830b04f4af363a7f558e3475b5ebe25975", "0d51e8a299f7fd7bd79f9084f00261d19ad6a4b9"),
     "accept-pr238-tour1": ("be73972256e90b55101353c5c823b1f3fd3945dc", "8a6a4ce22fd5024f7488fd52b88492621fd34775"),
 }
+# Ticket #154: the trapped cases, three per class, each built on a frozen `accept-` case by `plant_defect.py`.
+TRAPS = {
+    "weakened-test": ("trap-weakened-test-pr238-label", "trap-weakened-test-pr228-sha",
+                      "trap-weakened-test-pr228-keywords"),
+    "out-of-scope": ("trap-out-of-scope-pr226-rule", "trap-out-of-scope-pr228-threshold",
+                     "trap-out-of-scope-pr238-test-rule"),
+    "unmet-criterion": ("trap-unmet-criterion-pr226-sev3", "trap-unmet-criterion-pr228-fail-open",
+                        "trap-unmet-criterion-pr238-attention"),
+}
+TRAPPED = {name for names in TRAPS.values() for name in names}
+SPECS = support.PLUGIN / "eval-traps"
 FIXTURES = ("ticket.txt", "pr-body.txt", "pr.diff", "gate.txt", "claude.txt", "rules-forge.txt",
             "rules-git.txt", "usine.txt")
 
@@ -340,8 +354,8 @@ class CaseForm(unittest.TestCase):
     def cases(self) -> list[Path]:
         return sorted(path for path in EVALS.iterdir() if path.is_dir())
 
-    def test_the_set_holds_the_five_blockers_the_three_false_accepts_and_the_three_accepts(self) -> None:
-        self.assertEqual({path.name for path in self.cases()}, BLOCKERS | FALSE_ACCEPTS | set(ACCEPTS))
+    def test_the_set_holds_the_five_blockers_the_three_false_accepts_the_three_accepts_and_the_nine_traps(self) -> None:
+        self.assertEqual({path.name for path in self.cases()}, BLOCKERS | FALSE_ACCEPTS | set(ACCEPTS) | TRAPPED)
 
     def test_each_case_names_itself_after_its_folder_and_loads_its_frozen_data(self) -> None:
         for folder in self.cases():
@@ -443,7 +457,7 @@ class CaseForm(unittest.TestCase):
         for folder in self.cases():
             with self.subTest(case=folder.name):
                 grader = folder / "graders" / "names-the-defect.md"
-                self.assertEqual(grader.is_file(), folder.name in FALSE_ACCEPTS)
+                self.assertEqual(grader.is_file(), folder.name in FALSE_ACCEPTS | TRAPPED)
                 if grader.is_file():
                     self.assertEqual(frontmatter(grader)["type"], "llm")
 
@@ -452,6 +466,168 @@ class CaseForm(unittest.TestCase):
             if path.is_file():
                 with self.subTest(path=str(path.relative_to(EVALS))):
                     self.assertNotIn(chr(0x2014), path.read_text(encoding="utf-8"))
+
+
+class TrappedCases(unittest.TestCase):
+    """#154 A1: three trapped cases per class, built on the frozen `accept-` cases, expecting REJECT and the defect."""
+
+    def test_each_class_has_three_cases_that_expect_reject_and_name_the_defect(self) -> None:
+        """#154 A1.1: the graders `rejects`, `no-false-accept` and `names-the-defect`, and no grader of the accept family."""
+        for kind, names in TRAPS.items():
+            self.assertGreaterEqual(len(names), 3)
+            self.assertEqual({path.name for path in EVALS.glob(f"trap-{kind}-*")}, set(names))
+            for name in names:
+                folder = EVALS / name
+                with self.subTest(case=name):
+                    self.assertEqual(sorted(path.name for path in (folder / "graders").iterdir()),
+                                     ["names-the-defect.md", "no-false-accept.md", "rejects.md"])
+                    blocker = EVALS / "blocker-pr11-tour1" / "graders"
+                    for grader in ("rejects.md", "no-false-accept.md"):
+                        self.assertEqual((folder / "graders" / grader).read_bytes(), (blocker / grader).read_bytes())
+                    names_it = frontmatter(folder / "graders" / "names-the-defect.md")
+                    self.assertEqual((names_it["type"], names_it["weight"]), ("llm", "0.5"))
+                    body = (folder / "graders" / "names-the-defect.md").read_text(encoding="utf-8").split("---\n", 2)[2]
+                    self.assertTrue(body.strip())
+
+    def test_each_case_is_built_on_a_frozen_accept_case_and_says_which_class_it_plants(self) -> None:
+        for kind, names in TRAPS.items():
+            for name in names:
+                with self.subTest(case=name):
+                    spec = json.loads((SPECS / f"{name}.json").read_text(encoding="utf-8"))
+                    self.assertEqual((spec["name"], spec["class"]), (name, kind))
+                    self.assertIn(spec["source"], ACCEPTS)
+                    text = (EVALS / name / "case.yaml").read_text(encoding="utf-8")
+                    self.assertIn(f"\nname: {name}\n", text)
+                    self.assertIn(f"piégée ({kind})", text)
+                    self.assertIn("Verdict attendu, REJECT", text)
+                    self.assertIn(f"tags: [trap, {kind}, juge]", text)
+
+    def test_each_case_is_what_its_spec_plants_byte_for_byte(self) -> None:
+        """#154 A2.4: the committed case is the output of its spec, so a spec cannot drift from its case."""
+        with tempfile.TemporaryDirectory() as folder:
+            for name in sorted(TRAPPED):
+                with self.subTest(case=name):
+                    spec = json.loads((SPECS / f"{name}.json").read_text(encoding="utf-8"))
+                    planted = plant(spec, EVALS, Path(folder))
+                    committed = EVALS / name
+                    files = sorted(path.relative_to(committed) for path in committed.rglob("*") if path.is_file())
+                    self.assertEqual(files, sorted(path.relative_to(planted) for path in planted.rglob("*")
+                                                   if path.is_file()))
+                    for relative in files:
+                        self.assertEqual((committed / relative).read_bytes(), (planted / relative).read_bytes(),
+                                         str(relative))
+
+    @unittest.skipUnless(shutil.which("git") and (support.REPO_ROOT / ".git").exists(),
+                         "`git check-attr` reads the attributes of a git checkout")
+    def test_every_case_and_every_spec_is_checked_out_with_lf_endings(self) -> None:
+        """#154 A2.4, under Windows: `* text=auto` checks the cases out as CRLF while `plant` writes LF."""
+        files = [path.relative_to(support.REPO_ROOT).as_posix() for folder in (EVALS, SPECS)
+                 for path in sorted(folder.rglob("*")) if path.is_file()]
+        self.assertGreater(len(files), 100)
+        attributes = subprocess.run(["git", "check-attr", "--stdin", "eol"], cwd=support.REPO_ROOT,
+                                    input="\n".join(files), capture_output=True, text=True, check=True).stdout
+        crlf = [line for line in attributes.splitlines() if not line.endswith(": eol: lf")]
+        self.assertEqual(crlf, [])
+
+    def test_each_case_differs_from_its_source_in_the_diff_and_at_most_the_gate_table(self) -> None:
+        for names in TRAPS.values():
+            for name in names:
+                with self.subTest(case=name):
+                    spec = json.loads((SPECS / f"{name}.json").read_text(encoding="utf-8"))
+                    source, case = EVALS / spec["source"], EVALS / name
+                    for fixture in FIXTURES:
+                        same = (source / "fixtures" / fixture).read_bytes() == (case / "fixtures" / fixture).read_bytes()
+                        if fixture == "pr.diff":
+                            self.assertFalse(same, fixture)
+                        elif fixture != "gate.txt":  # the gate table moves only when the counts or the files do
+                            self.assertTrue(same, fixture)
+                    self.assertEqual((source / "prompt.md").read_bytes(), (case / "prompt.md").read_bytes())
+                    diff = (case / "fixtures" / "pr.diff").read_text(encoding="utf-8")
+                    files, added, removed = totals(parse_diff(diff))
+                    gate = (case / "fixtures" / "gate.txt").read_text(encoding="utf-8")
+                    self.assertIn(f"| Base et diff | {files} fichier(s) dans pr.diff, +{added} -{removed} |", gate)
+
+
+class TrappedMeasures(unittest.TestCase):
+    """#154 A3: the top-level keys keep reading real cases only; trapped and per-class figures are nested."""
+
+    def real(self) -> list[dict[str, Any]]:
+        # 3 blocker runs (1 ACCEPT) and 2 accept runs (1 REJECT): recall 2/3, false-accept 1/3, false-reject 1/2.
+        return [case("blocker-a", "REJECT", "REJECT", "ACCEPT"), case("accept-b", "ACCEPT", "REJECT")]
+
+    def trapped(self) -> list[dict[str, Any]]:
+        return [case("trap-weakened-test-pr1-a", "REJECT", "ACCEPT"), case("trap-out-of-scope-pr2-b", "ACCEPT", "ACCEPT"),
+                case("trap-unmet-criterion-pr3-c", "REJECT", "REJECT")]
+
+    def test_the_top_level_keys_cover_real_cases_only(self) -> None:
+        """#154 A3.1: trapped runs, which carry the same graders, leave the keys `factory_slo.py` reads unchanged."""
+        both = measure(result(*self.real(), *self.trapped())).reference()
+        real = measure(result(*self.real())).reference()
+        self.assertEqual({key: both[key] for key in ("judge-recall", "false-accept", "false-reject")}, real)
+        self.assertAlmostEqual(both["judge-recall"], 2 / 3)
+        self.assertAlmostEqual(both["false-accept"], 1 / 3)
+        self.assertAlmostEqual(both["false-reject"], 1 / 2)
+
+    def test_the_nested_keys_give_real_trapped_and_per_class_recall_and_false_accept(self) -> None:
+        """#154 A3.2: 6 trapped runs, 3 REJECT and 3 ACCEPT; per class 1/2, 0 and 1 for the recall."""
+        both = measure(result(*self.real(), *self.trapped())).reference()
+        self.assertEqual(set(both), {"judge-recall", "false-accept", "false-reject", "real", "trapped", "per-class"})
+        self.assertEqual(both["real"], {key: both[key] for key in ("judge-recall", "false-accept", "false-reject")})
+        self.assertEqual(both["trapped"], {"judge-recall": 0.5, "false-accept": 0.5})
+        self.assertEqual(both["per-class"], {
+            "weakened-test": {"judge-recall": 0.5, "false-accept": 0.5},
+            "out-of-scope": {"judge-recall": 0.0, "false-accept": 1.0},
+            "unmet-criterion": {"judge-recall": 1.0, "false-accept": 0.0},
+        })
+
+    def test_a_result_without_trapped_runs_keeps_the_top_level_keys_as_they_were(self) -> None:
+        """#154 A3.3: no nested key at all, the JSON of #67 as it was."""
+        self.assertEqual(measure(result(*self.real())).reference(),
+                         {"judge-recall": 2 / 3, "false-accept": 1 / 3, "false-reject": 1 / 2})
+        only_errors = measure(result(case("trap-weakened-test-x", None, error="API error")))
+        self.assertEqual(only_errors.reference(), {})
+
+    def test_a_trapped_case_judged_accept_is_not_counted_in_the_real_false_accept(self) -> None:
+        counts = measure(result(case("blocker-a", "REJECT"), case("trap-out-of-scope-x", "ACCEPT", "ACCEPT")))
+        self.assertEqual((counts.reference()["false-accept"], counts.reference()["trapped"]["false-accept"]), (0.0, 1.0))
+
+    def test_a_run_in_error_is_left_out_of_the_trapped_shares_and_counted(self) -> None:
+        counts = measure(result(case("trap-weakened-test-x", "REJECT"), case("trap-weakened-test-y", None, error="boom")))
+        self.assertEqual(counts.reference()["per-class"], {"weakened-test": {"judge-recall": 1.0, "false-accept": 0.0}})
+        self.assertEqual(counts.errors, 1)
+
+    def test_a_class_with_no_run_is_left_out_and_an_unknown_class_counts_only_as_trapped(self) -> None:
+        counts = measure(result(case("trap-unmet-criterion-x", "REJECT"), case("trap-mystery-y", "ACCEPT")))
+        reference = counts.reference()
+        self.assertEqual(list(reference["per-class"]), ["unmet-criterion"])
+        self.assertEqual(reference["trapped"], {"judge-recall": 0.5, "false-accept": 0.5})
+
+    def test_score_prints_the_nested_figures_and_factory_slo_still_reads_the_top_level_ones(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            source, target = Path(folder) / "aggregate-result.json", Path(folder) / "reference.json"
+            source.write_text(json.dumps(result(*self.real(), *self.trapped())), encoding="utf-8")
+            err = io.StringIO()
+            with redirect_stderr(err):
+                self.assertEqual(main(["score", str(source), "--output", str(target)]), 0)
+            recall, false_accept = reference("judge-recall", target), reference("false-accept", target)
+            written = json.loads(target.read_text(encoding="utf-8"))
+        self.assertAlmostEqual(recall.data["valeur"], 2 / 3)
+        self.assertAlmostEqual(false_accept.data["valeur"], 1 / 3)
+        self.assertEqual(written["per-class"]["out-of-scope"], {"judge-recall": 0.0, "false-accept": 1.0})
+        self.assertIn("pièges : judge-recall 3/6", err.getvalue())
+        self.assertIn("piège `out-of-scope` : judge-recall 0/2", err.getvalue())
+
+
+class Ceiling154(unittest.TestCase):
+    """#154 A4: the nine trapped cases make the set dearer; the launch keeps its ceiling and stays manual."""
+
+    def test_run_without_a_ceiling_is_refused_and_no_model_is_called(self) -> None:
+        """#154 A4.1: with the trapped cases in the set, `run` still does not start without `--max-cost-usd`."""
+        with unittest.mock.patch("subprocess.run") as launched, redirect_stderr(io.StringIO()):
+            with self.assertRaises(SystemExit) as stop:
+                main(["run", "--output-dir", "/nonexistent-folder-for-the-test"])
+        self.assertEqual(stop.exception.code, 2)
+        launched.assert_not_called()
 
 
 class Documented(unittest.TestCase):
@@ -496,13 +672,37 @@ class Documented(unittest.TestCase):
         self.assertIn("| `accept-` | PR 226, 228 et 238, au tour 1 |", text)
         self.assertNotIn("huit", text)
         readme = (support.REPO_ROOT / "README.md").read_text(encoding="utf-8")
-        self.assertIn("les onze revues rejouées, les trois mesures", readme)
+        self.assertIn("les onze revues rejouées, les neuf cas piégés, les trois mesures", readme)
 
     def test_the_page_describes_false_reject_and_the_accept_family(self) -> None:
         """#67 A2: the third measure, the cases it reads and the graders they carry are on the page."""
         text = (support.REPO_ROOT / "docs" / "jeu-de-reference.md").read_text(encoding="utf-8")
         for word in ("false-reject", "`accept-`", "`accepts`", "`no-false-reject`"):
             self.assertIn(word, text)
+
+    def test_the_page_describes_the_trapped_cases_their_classes_and_how_they_are_built(self) -> None:
+        """#154 A5: the three classes, the script and its specs, the graders, and the class PR 226 cannot carry."""
+        text = (support.REPO_ROOT / "docs" / "jeu-de-reference.md").read_text(encoding="utf-8")
+        self.assertIn("## Les cas piégés", text)
+        for word in ("`trap-`", "`weakened-test`", "`out-of-scope`", "`unmet-criterion`", "`plant_defect.py`",
+                     "`plugins/forge/eval-traps/`", "`names-the-defect`", "`rejects`", "`no-false-accept`",
+                     "trois cas par classe", "octet pour octet"):
+            self.assertIn(word, text)
+        for name in TRAPPED:
+            self.assertIn(f"`{name}`", text)
+        self.assertRegex(text, r"PR 226[^\n]*aucun test")
+
+    def test_the_page_says_the_top_level_keys_are_real_only_and_names_the_nested_ones(self) -> None:
+        """#154 A5: the nested keys, and that `factory_slo.py` reads the top-level ones only."""
+        text = (support.REPO_ROOT / "docs" / "jeu-de-reference.md").read_text(encoding="utf-8")
+        for word in ("`real`", "`trapped`", "`per-class`", "cas réels", "`factory_slo.py` ne lit que"):
+            self.assertIn(word, text)
+        self.assertRegex(text, r"jamais dans les trois mesures|ne compte[^.]*cas réels")
+
+    def test_the_page_gives_the_limits_of_the_trapped_cases(self) -> None:
+        text = (support.REPO_ROOT / "docs" / "jeu-de-reference.md").read_text(encoding="utf-8")
+        self.assertIn("## Limites des cas piégés", text)
+        self.assertIn("--case 'trap-*'", text)
 
 
 if __name__ == "__main__":

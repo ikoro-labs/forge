@@ -1,0 +1,16 @@
+| Sonde | Résultat | Détail |
+|---|---|---|
+| Base et diff | 2 fichier(s) dans pr.diff, +9 -4 | diff de la base à la tête |
+| Périmètre | à lire | fichiers de pr.diff : .claude/rules/git.md, docs/agents/usine.md |
+| CI | PASS | tests (windows-latest): success, tests (ubuntu-latest): success, lint: success, validate: success |
+| Rejeu local | NOT RUN | sonde non rejouée : tableau figé du jeu de référence |
+| Tests sautés | NOT RUN | sonde non rejouée : tableau figé du jeu de référence |
+| Listes de référence | NOT RUN | sonde non rejouée : tableau figé du jeu de référence |
+| Échappatoires ajoutées | NOT RUN | sonde non rejouée : tableau figé du jeu de référence |
+| Taille | NOT RUN | sonde non rejouée : tableau figé du jeu de référence |
+| Trace | NOT RUN | sonde non rejouée : tableau figé du jeu de référence |
+| Règles never-weaken | NOT RUN | sonde non rejouée : tableau figé du jeu de référence |
+| Rejeu des tests sur la base | NOT RUN | sonde non rejouée : tableau figé du jeu de référence |
+| Libellés de l'écran | NOT RUN | sonde non rejouée : tableau figé du jeu de référence |
+| Preuves d'écran | NOT RUN | sonde non rejouée : tableau figé du jeu de référence |
+| Rejeu de chaque commit | NOT RUN | sonde non rejouée : tableau figé du jeu de référence |

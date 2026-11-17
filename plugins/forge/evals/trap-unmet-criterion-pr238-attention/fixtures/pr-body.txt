@@ -1,0 +1,21 @@
+PR #238: fix(qc): merge by merge, squash or rebase as the merge-method key says
+
+## Summary
+
+Last part of #63: `qc` and the `usine.md` template name `merge`, `squash`, `rebase` with their options; key absent: no merge, `needs-your-attention`; the local copy follows the method.
+
+Closes #63
+
+## Door
+
+`two-way`: prose.
+
+## Blast radius
+
+Consumers: the skill names `rebase`. No hook changes.
+
+## Proofs
+
+Red: `Ran 6 tests`, `FAILED (failures=5)`. Green: `Ran 6 tests`, `OK`; full suite `Ran 1882 tests`, `OK (skipped=6)`; ruff, mypy, both validates pass. Real machine: not yet.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)

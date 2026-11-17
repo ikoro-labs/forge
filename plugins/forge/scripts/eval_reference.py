@@ -16,6 +16,11 @@ right, so its `ACCEPT` is not counted in `false-accept`. It is read by hand. A c
 judge must return `ACCEPT`. It carries `accepts` (a line `VERDICT: ACCEPT`) and `no-false-reject` (no line
 `VERDICT: REJECT`).
 
+A case named `trap-<class>-<...>` is a frozen `accept-` case in which `plant_defect.py` planted one known
+defect of a class (`weakened-test`, `out-of-scope` or `unmet-criterion`): the judge must return `REJECT` and
+name the defect. It carries `rejects`, `no-false-accept` and the model-graded `names-the-defect`, and it
+is counted apart (see below), never in the three real shares.
+
 `score` reads the `aggregate-result.json` that `claude plugin eval` writes, and prints the JSON that
 `factory_slo.py --reference` reads:
 
@@ -29,6 +34,18 @@ judge must return `ACCEPT`. It carries `accepts` (a line `VERDICT: ACCEPT`) and 
 - `false-reject`: the share of runs of the `accept-` cases whose verdict is `REJECT`: a judge that rejects
   everything scores a perfect recall, and this share is what shows it. `factory_slo.py` reads only the
   first two keys; this one is not an objective.
+
+These three top-level keys cover the real cases only: a trapped run never enters them. When trapped cases
+ran, the JSON adds nested keys, which `factory_slo.py` does not read:
+
+    {"judge-recall": 0.9, "false-accept": 0.05, "false-reject": 0.1,
+     "real": {"judge-recall": 0.9, "false-accept": 0.05, "false-reject": 0.1},
+     "trapped": {"judge-recall": 0.8, "false-accept": 0.2},
+     "per-class": {"weakened-test": {"judge-recall": 0.7, "false-accept": 0.3}, ...}}
+
+- `trapped`: the share of runs of the `trap-` cases whose verdict is `REJECT`, and the share of runs of
+  those that carry `no-false-accept` whose verdict is `ACCEPT`; `per-class` gives the same two shares for
+  each class that ran. Without a run of a trapped case, no nested key is written and the JSON is the one above.
 
 A run that ended on an error is left out of every share and counted on stderr, never as a miss. A measure
 with no run behind it is left out of the JSON (the SLO reads it as "sans objet"), never written as 0 or 1.
@@ -50,7 +67,7 @@ import json
 import math
 import subprocess
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -60,6 +77,30 @@ ACCEPTED = "no-false-accept"
 KEPT = "no-false-reject"
 BLOCKER_PREFIX = "blocker-"
 ACCEPT_PREFIX = "accept-"
+TRAP_PREFIX = "trap-"
+CLASSES = ("weakened-test", "out-of-scope", "unmet-criterion")
+
+
+@dataclass
+class Tally:
+    """The runs of the trapped cases of one class, or of all of them: the same two shares as the real cases."""
+
+    found: int = 0
+    rejecting: int = 0
+    accepted: int = 0
+    runs: int = 0
+
+    @property
+    def recall(self) -> float | None:
+        return self.found / self.rejecting if self.rejecting else None
+
+    @property
+    def false_accept(self) -> float | None:
+        return self.accepted / self.runs if self.runs else None
+
+    def reference(self) -> dict[str, float]:
+        shares = {"judge-recall": self.recall, "false-accept": self.false_accept}
+        return {name: value for name, value in shares.items() if value is not None}
 
 
 @dataclass
@@ -74,6 +115,8 @@ class Measure:
     accept_runs: int = 0
     errors: int = 0
     partial: bool = False
+    trapped: Tally = field(default_factory=Tally)
+    classes: dict[str, Tally] = field(default_factory=dict)
 
     @property
     def recall(self) -> float | None:
@@ -87,10 +130,22 @@ class Measure:
     def false_reject(self) -> float | None:
         return self.false_rejected / self.accept_runs if self.accept_runs else None
 
-    def reference(self) -> dict[str, float]:
-        """The JSON `factory_slo.py --reference` reads, without a measure that has no run."""
+    def reference(self) -> dict[str, Any]:
+        """The JSON `factory_slo.py --reference` reads, without a measure that has no run.
+
+        The top-level keys are those of the real cases. When trapped cases ran, `real` repeats them, `trapped`
+        gives the two shares of all the trapped runs and `per-class` those of each class that ran.
+        """
         shares = {"judge-recall": self.recall, "false-accept": self.false_accept, "false-reject": self.false_reject}
-        return {name: value for name, value in shares.items() if value is not None}
+        out: dict[str, Any] = {name: value for name, value in shares.items() if value is not None}
+        trapped = self.trapped.reference()
+        if trapped:
+            if out:
+                out["real"] = dict(out)
+            out["trapped"] = trapped
+            out["per-class"] = {kind: self.classes[kind].reference() for kind in CLASSES
+                                if kind in self.classes and self.classes[kind].reference()}
+        return out
 
 
 def runs_of(case: dict[str, Any]) -> list[dict[str, Any]]:
@@ -113,7 +168,13 @@ def measure(result: dict[str, Any]) -> Measure:
     for case in result.get("cases") or []:
         if not isinstance(case, dict):
             continue
-        blocker = str(case.get("name", "")).startswith(BLOCKER_PREFIX)
+        name = str(case.get("name", ""))
+        blocker = name.startswith(BLOCKER_PREFIX)
+        tallies = [out.trapped]
+        if name.startswith(TRAP_PREFIX):
+            kind = next((kind for kind in CLASSES if name.startswith(f"{TRAP_PREFIX}{kind}-")), None)
+            if kind is not None:
+                tallies.append(out.classes.setdefault(kind, Tally()))
         for run in runs_of(case):
             if run.get("error"):
                 out.errors += 1
@@ -121,6 +182,16 @@ def measure(result: dict[str, Any]) -> Measure:
             rejects = grader(run, FOUND)
             accepts = grader(run, ACCEPTED)
             kept = grader(run, KEPT)
+            if name.startswith(TRAP_PREFIX):
+                # A trapped run never enters the real shares: the top-level keys stay what `factory_slo.py` read.
+                for tally in tallies:
+                    if rejects is not None:
+                        tally.rejecting += 1
+                        tally.found += bool(rejects.get("passed"))
+                    if accepts is not None:
+                        tally.runs += 1
+                        tally.accepted += not accepts.get("passed")
+                continue
             if blocker and rejects is not None:
                 out.blocker_runs += 1
                 out.found += bool(rejects.get("passed"))
@@ -142,6 +213,14 @@ def summary(counts: Measure) -> list[str]:
         lines.append(f"false-reject : {counts.false_rejected}/{counts.accept_runs} run(s) en REJECT, cas `{ACCEPT_PREFIX}`")
     else:
         lines.append(f"false-reject : sans objet (aucun run de cas `{ACCEPT_PREFIX}`)")
+    if counts.trapped.rejecting or counts.trapped.runs:
+        lines.append(f"pièges : judge-recall {counts.trapped.found}/{counts.trapped.rejecting}, "
+                     f"false-accept {counts.trapped.accepted}/{counts.trapped.runs} (hors des trois mesures)")
+        for kind in CLASSES:
+            tally = counts.classes.get(kind)
+            if tally is not None and (tally.rejecting or tally.runs):
+                lines.append(f"piège `{kind}` : judge-recall {tally.found}/{tally.rejecting}, "
+                             f"false-accept {tally.accepted}/{tally.runs}")
     if counts.errors:
         lines.append(f"{counts.errors} run(s) en erreur, laissés hors des trois mesures")
     if counts.partial:

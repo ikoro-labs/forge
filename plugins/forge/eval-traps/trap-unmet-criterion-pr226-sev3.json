@@ -1,0 +1,16 @@
+{
+  "name": "trap-unmet-criterion-pr226-sev3",
+  "class": "unmet-criterion",
+  "source": "accept-pr226-tour1",
+  "summary": "la ligne `sla` de `sev3` est retirée, le ticket en demande trois",
+  "defect": "Le verdict signale que la clé `sla` ne déclare pas `sev3` (le ticket et le corps de la PR demandent `sev1`, `sev2` et `sev3`), donc qu'un critère du ticket n'est pas tenu.",
+  "edits": [
+    {
+      "file": "docs/agents/usine.md",
+      "old": [
+        "- `sla` : `sev3 | 7 j | 30 j | 30 j`"
+      ],
+      "new": []
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "name": "trap-unmet-criterion-pr228-fail-open",
+  "class": "unmet-criterion",
+  "source": "accept-pr228-tour1",
+  "summary": "une liste de commits illisible ne refuse plus la fusion, le test qui le prouve reste dans le diff",
+  "defect": "Le verdict signale que `commits_refusal` rend `None` quand la liste des commits est illisible, donc que le critère « fermé par défaut : une liste illisible vaut refus » n'est pas tenu, ou que `test_an_unreadable_list_of_commits_refuses_the_merge` échouerait.",
+  "edits": [
+    {
+      "file": "plugins/forge/hooks/guard_git.py",
+      "old": [
+        "        return (",
+        "            \"the commits of the PR cannot be read (`gh pr view --json commits`): GitHub reads their\"",
+        "            \" messages at merge, and the guard refuses what it cannot check\"",
+        "        )"
+      ],
+      "new": [
+        "        return None"
+      ]
+    }
+  ]
+}

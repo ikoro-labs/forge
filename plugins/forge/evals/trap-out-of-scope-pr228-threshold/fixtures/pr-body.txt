@@ -1,0 +1,29 @@
+PR #228: feat(hooks): guard_git relit les messages des commits de la PR avant une fusion
+
+## Summary
+
+- `guard_git` reads the commits of a PR (`gh pr view --json commits`) before a merge.
+- It refuses when one closes a ticket the description or merge message cites with `Refs`, by the same keyword function as the other two readings.
+- The refusal names the short sha and the ticket, and says how to fix.
+- An unreadable list refuses. Every merge method is covered, squash included.
+
+Closes #64.
+
+## Door
+
+two-way: one hook, one revert.
+
+## Blast radius
+
+consumers: every agent merge makes one more `gh` call, and a failing `gh` refuses the merge. `guard_git.py` is a protected path (`protected-path`): the human merges.
+
+## Proofs
+
+- Red 1: `Ran 6 tests, FAILED (failures=7)`, `AssertionError: unexpectedly None` (no commit was read).
+- Red 2: `ImportError: cannot import name 'commits_via_gh'`.
+- Green: `test_guard_git_commits.py`, 22 tests OK. Squash tests passed at once (already covered by commit 1).
+- Full suite: 1820 tests OK (5 skipped). ruff: all checks passed. mypy: no issues in 122 files. `claude plugin validate .` and `plugins/forge`: passed.
+- Real `gh` read of PR 224: 7 commits, cut headline rejoined.
+- Not tried: a PR over 100 commits; Windows.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)

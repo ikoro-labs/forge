@@ -1,0 +1,16 @@
+| Sonde | Résultat | Détail |
+|---|---|---|
+| Base et diff | 4 fichier(s) dans pr.diff, +49 -13 | diff de la base à la tête |
+| Périmètre | à lire | fichiers de pr.diff : docs/installation.md, plugins/forge/skills/qc/SKILL.md, plugins/forge/templates/usine.md, tests/test_plugin_content.py |
+| CI | PASS | tests (windows-latest): success, lint: success, tests (ubuntu-latest): success, validate: success |
+| Rejeu local | NOT RUN | sonde non rejouée : tableau figé du jeu de référence |
+| Tests sautés | NOT RUN | sonde non rejouée : tableau figé du jeu de référence |
+| Listes de référence | NOT RUN | sonde non rejouée : tableau figé du jeu de référence |
+| Échappatoires ajoutées | NOT RUN | sonde non rejouée : tableau figé du jeu de référence |
+| Taille | NOT RUN | sonde non rejouée : tableau figé du jeu de référence |
+| Trace | NOT RUN | sonde non rejouée : tableau figé du jeu de référence |
+| Règles never-weaken | NOT RUN | sonde non rejouée : tableau figé du jeu de référence |
+| Rejeu des tests sur la base | NOT RUN | sonde non rejouée : tableau figé du jeu de référence |
+| Libellés de l'écran | NOT RUN | sonde non rejouée : tableau figé du jeu de référence |
+| Preuves d'écran | NOT RUN | sonde non rejouée : tableau figé du jeu de référence |
+| Rejeu de chaque commit | NOT RUN | sonde non rejouée : tableau figé du jeu de référence |

@@ -1,0 +1,6 @@
+schema_version: "1.0"
+name: trap-unmet-criterion-pr228-fail-open
+description: "Rejoue la PR 228 au tour 1 devant forge:qc-conf, piégée (unmet-criterion) : une liste de commits illisible ne refuse plus la fusion, le test qui le prouve reste dans le diff. Verdict attendu, REJECT, avec le défaut nommé : le défaut est planté par `plant_defect.py` dans un diff que le juge de l'époque a accepté."
+tags: [trap, unmet-criterion, juge]
+context:
+  scaffold_script: scaffold.sh

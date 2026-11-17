@@ -1,0 +1,54 @@
+Ticket #63: La méthode de fusion devient une clé, que `qc` lit et que `guard_git` vérifie
+
+## Constat
+
+`forge:qc` fusionne par `gh pr merge <n> --squash` (`plugins/forge/skills/qc/SKILL.md:75`), en dur. Ce dépôt exige un commit de fusion (`.claude/rules/git.md`) : chaque passage doit le corriger à la main, et un oubli fusionne contre la règle du projet sans que rien ne le refuse.
+
+Suivi : #55. Dépend de #62.
+
+## Ce qui est attendu
+
+- Une clé `merge-method` dans `usine.md`, une seule ligne : `merge`, `squash` ou `rebase`. Le gabarit `plugins/forge/templates/usine.md` la documente, sans valeur par défaut.
+- `forge:qc` fusionne avec l'option qui correspond (`--merge`, `--squash`, `--rebase`). Clé absente : il ne fusionne pas, pose `needs-your-attention` avec « sans objet (clé `merge-method` absente) », et l'humain fusionne.
+- `guard_git` refuse à un agent un `gh pr merge` dont la méthode diffère de la clé, ou qui n'en donne aucune. Une valeur inconnue dans la clé vaut refus, avec la ligne fautive.
+- Le passage sur la branche locale après une fusion (`SKILL.md:87`) suit la méthode : `git branch -d` voit une branche fusionnée par commit de fusion, pas par squash.
+- `docs/agents/usine.md` de ce dépôt déclare `merge-method` : `merge`.
+- Tests : chaque méthode acceptée, une méthode différente refusée, une commande sans méthode, une clé absente, une valeur inconnue.
+
+## Hors périmètre
+
+La relecture des messages des commits (#64).
+
+## Chemin protégé
+
+Touche `plugins/forge/hooks/guard_git.py` (clé `protected-path`) : la PR s'arrête à l'ACCEPT, et l'humain la fusionne.
+
+## Décision
+
+Demande de l'humain (`accepting-human`, 2026-10-24), issue de suivi #55.
+
+--- Commentaire du 2026-10-25T15:16:08Z
+Deux MINOR de comportement de la revue de #90 (ACCEPT au tour 1, verdict : https://github.com/ikoro-labs/forge/pull/90#issuecomment-6399384417), reportés ici parce que ce ticket touche le même code de fusion de `guard_git` :
+
+- **Liste de fichiers tronquée** (`plugins/forge/hooks/guard_git.py:1152` à la tête b237b4b). `gh pr view --json files` lit au plus 100 fichiers. Si une PR en a plus et que le fichier protégé tombe après le centième, la liste est prise pour complète et la fusion passe. Le juge n'a pas pu le vérifier sur le binaire `gh`. Parade proposée : lire aussi `changedFiles`, et refuser quand les deux comptes diffèrent.
+- **Renommage** (`guard_git.py:1134`). Pour un renommage, `files` ne donne que le chemin d'arrivée. Sortir un fichier d'un préfixe protégé (par exemple `git mv .claude/settings.json ...`) laisse donc fusionner. Aucun test ne couvre ce cas. Reste à vérifier si la sonde `protected-path` de `forge:qc-gate` voit l'ancien chemin.
+
+--- Commentaire du 2026-11-15T23:58:41Z
+Tri du 2026-11-16, lecture seule de `main` à 7dfcf61 (forge 1.14.0).
+
+**Case : partiel.** La clé `merge-method` existe et `/forge:qc` la lit (`skills/qc/SKILL.md:83-90`, `templates/usine.md:116-122`). Reste : la vérification par `guard_git` (méthode autre que la clé, clé absente, valeur inconnue : refus) et ses tests ; `grep merge-method plugins/forge/hooks/*.py` : 0. Clé absente : le skill dit « sans objet » sans poser `needs-your-attention`.
+
+--- Commentaire du 2026-11-17T01:08:14Z
+Last part: criteria and cases, `main` at 8a6a4ce. `guard_git` already checks the method (#224).
+
+- A1: key absent: `/forge:qc` does not merge, adds `needs-your-attention`, writes `fusion sans objet (clé merge-method absente)` in `Attention`.
+- A2: `skills/qc/SKILL.md` and `templates/usine.md` name `merge`, `squash`, `rebase` with `--merge`, `--squash`, `--rebase`.
+- A3: local branch after a merge: `git branch -d` works after `merge`, once the coder worktree is gone; after `squash` or `rebase`, the copy stays.
+
+A1.1 | qc step 8, key absent | label and `Attention` text
+A2.1 | qc skill | three values, three options
+A2.2 | template | three values
+A3.1 | qc local branch paragraph | `-d` after `merge` only
+AGREED: test-author, coder, qc-conf
+
+Out of scope: the #90 MINOR above (protected-path check), #64.
