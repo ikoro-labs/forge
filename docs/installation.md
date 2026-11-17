@@ -131,7 +131,7 @@ un test dont le nom n'est pas écrit dans le fichier, ou un assistant changé à
 placé, et un test qu'il ne place pas compte comme changé. Le rejeu complet n'a été essayé que sur un lanceur Python
 `unittest` écrit pour le test ; le rapport d'un vrai `pytest` a été lu et repéré sur un fichier d'essai, mais
 n'a pas été rejoué de bout en bout, et aucun lanceur d'un autre langage n'a été essayé.
-Ce dépôt n'a pas de rapport JUnit pour `unittest` : sa clé `red-replay` reste au grain du fichier.
+Ce dépôt lance sa suite par `pytest` épinglé (`--with pytest==9.2.0`), pour lancer les tests seulement : ses tests restent des classes `unittest`, et sa clé `red-replay` porte `{report}`, donc au grain du test. Ce rejeu de bout en bout sur ce dépôt n'a été essayé que sous Linux.
 
 Deux clés, `run-limits` (`<mémoire en Mo> | <délai en secondes>`) et `run-budget` (`<Mo disponibles au
 moins> | <charge à 1 min au plus> | <workers au plus> | <attente au plus en secondes>`), bornent toute

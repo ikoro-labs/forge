@@ -348,6 +348,27 @@ class ANameInsideATestPlacesNoCase(unittest.TestCase):
         cases = [junit_report.Case("tests.T", name, "pass") for name in ("test_a", "test_b", "test_made_by_a_loop")]
         self.assertEqual(self.names(cases, text, 4), ["tests.T.test_a", "tests.T.test_made_by_a_loop"])
 
+    def test_a_comment_at_column_zero_naming_a_test_does_not_cut_the_test_that_holds_it(self) -> None:
+        """F-0043 A3.1 (ticket #43): `# test_x` at column 0 inside `test_y`, `test_y` is read whole.
+
+        Python lets a comment sit at column 0 in the middle of a body. It is no definition of `test_x`,
+        and it must not end `test_y` there: a change below it still touches `test_y`.
+        """
+        import junit_report
+
+        text = (
+            "class T(unittest.TestCase):\n"
+            "    def test_y(self):\n"
+            "        self.assertTrue(True)\n"
+            "# test_x\n"
+            "        self.assertTrue(True)\n"
+            "\n"
+            "    def test_z(self):\n"
+            "        pass\n"
+        )
+        cases = [junit_report.Case("tests.T", name, "pass") for name in ("test_y", "test_z", "test_x")]
+        self.assertEqual(self.names(cases, text, 5), ["tests.T.test_y", "tests.T.test_x"])
+
 
 class TheLinesJustAboveATestAreItsOwn(unittest.TestCase):
     """What sits right above a test, removed or written over several lines, is a change of that test."""
