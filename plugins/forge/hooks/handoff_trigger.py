@@ -9,8 +9,12 @@ relay (stage "hard"). Past each notice, only a new user prompt gets a reminder: 
 after every tool call would interrupt the work.
 
 The threshold is CLAUDE_SESSION_TOKEN_LIMIT, 150k by default, whatever the model's window and with
-or without a feature: it stays below the point where the session compacts itself. Only
-handoff_relay.py sets it, to that same default; no settings, skill or session sets it.
+or without a feature: it stays below the point where the session compacts itself. It is the user's
+setting, in the `env` block of `~/.claude/settings.json`, between 50000 and 965000 (the hard cap,
+threshold plus 35k, stays under a million); handoff_relay.py passes a valid one to each successor,
+else 150k. An invalid threshold (not an integer, out of bounds) or invalid CLAUDE_HANDOFF_DRAIN_MINUTES
+(not a positive integer) is reported once per session by one line of `additionalContext`, and the
+default applies (150000, 45): the hook never blocks on a setting.
 
 State and handoffs live outside the plugin cache, which every version rewrites:
 `~/.claude/hooks/state/`, handoffs under `handoffs/<project>/<date>-r<N>.md`. The first-notice
@@ -48,6 +52,9 @@ from pathlib import Path
 from usine import project_root
 
 DEFAULT_LIMIT = 150000
+MIN_LIMIT = 50000
+MAX_LIMIT = 965000
+DEFAULT_DRAIN_MINUTES = 45
 HARD_MARGIN = 35000
 HOOKS = Path(__file__).resolve().parent
 MANIFEST = HOOKS.parent / ".claude-plugin" / "plugin.json"
@@ -61,6 +68,54 @@ KEYS = (
     "projet, feature, passage_depart, jetons_agents, en_vol, file_revue, sauvetage, successeur, "
     "hooks_version, seuil, contexte_passation"
 )
+
+
+def parse_limit(raw: object) -> int | None:
+    """The threshold a setting spells, or None when it is no integer between MIN_LIMIT and MAX_LIMIT."""
+    if isinstance(raw, bool) or not isinstance(raw, (int, str)):
+        return None
+    text = str(raw).strip()
+    if not text.isascii() or not text.isdigit():
+        return None
+    value = int(text)
+    return value if MIN_LIMIT <= value <= MAX_LIMIT else None
+
+
+def parse_minutes(raw: str) -> int | None:
+    """The drain minutes a setting spells, or None when it is no positive integer."""
+    text = raw.strip()
+    if not text.isascii() or not text.isdigit():
+        return None
+    return int(text) or None
+
+
+def thresholds() -> tuple[int, int, list[str]]:
+    """The threshold, the drain minutes and one line per invalid value, which fell back to its default."""
+    problems: list[str] = []
+    limit = DEFAULT_LIMIT
+    raw = os.environ.get("CLAUDE_SESSION_TOKEN_LIMIT", "")
+    if raw.strip():
+        parsed = parse_limit(raw)
+        if parsed is None:
+            problems.append(
+                f"CLAUDE_SESSION_TOKEN_LIMIT is `{raw}`, which is not an integer between {MIN_LIMIT} and "
+                f"{MAX_LIMIT}: the {DEFAULT_LIMIT} default applies. Fix it in the `env` block of "
+                "~/.claude/settings.json."
+            )
+        else:
+            limit = parsed
+    minutes = DEFAULT_DRAIN_MINUTES
+    raw = os.environ.get("CLAUDE_HANDOFF_DRAIN_MINUTES", "")
+    if raw.strip():
+        parsed = parse_minutes(raw)
+        if parsed is None:
+            problems.append(
+                f"CLAUDE_HANDOFF_DRAIN_MINUTES is `{raw}`, which is not a positive integer: the "
+                f"{DEFAULT_DRAIN_MINUTES} minutes default applies."
+            )
+        else:
+            minutes = parsed
+    return limit, minutes, problems
 
 
 def state_dir() -> Path:
@@ -307,7 +362,9 @@ def command(argv: list[str]) -> int:
     if len(argv) != 2 or argv[0] != "yield" or not handoff_header.SESSION_ID.match(argv[1]):
         print("usage: handoff_trigger.py yield <session id of the interactive session that takes over>")
         return 1
-    drain_minutes = int(os.environ.get("CLAUDE_HANDOFF_DRAIN_MINUTES", "45"))
+    _, drain_minutes, problems = thresholds()
+    for problem in problems:
+        print(problem)
     print(handover(argv[1], drain_minutes, project_root({"cwd": os.getcwd()})))
     return 0
 
@@ -319,15 +376,31 @@ def notice(payload: dict) -> str | None:
     transcript = Path(payload.get("transcript_path") or "")
     if not transcript.is_file():
         return None
-    limit = int(os.environ.get("CLAUDE_SESSION_TOKEN_LIMIT", DEFAULT_LIMIT))
-    drain_minutes = int(os.environ.get("CLAUDE_HANDOFF_DRAIN_MINUTES", "45"))
+    limit, drain_minutes, problems = thresholds()
+    session = payload.get("session_id", "unknown")
+    state = state_dir()
+    reported = ""
+    if problems:
+        # One line per session, with the first notice or alone: not one per tool call.
+        state.mkdir(parents=True, exist_ok=True)
+        flag = state / f"{session}.settings"
+        if not flag.exists():
+            flag.touch()
+            reported = " ".join(problems) + "\n"
+    message = handoff_notice(payload, transcript, limit, drain_minutes, session)
+    if message is None:
+        return reported.strip() or None
+    return reported + message
+
+
+def handoff_notice(payload: dict, transcript: Path, limit: int, drain_minutes: int, session: str) -> str | None:
+    """The drain, hard cap or reminder notice, or None below the limit or once told."""
     tokens = context_tokens(transcript)
     if tokens < limit:
         return None
     root = project_root(payload)
     state = state_dir()
     state.mkdir(parents=True, exist_ok=True)
-    session = payload.get("session_id", "unknown")
     marker = state / f"{session}.handoff"
     hard_marker = state / f"{session}.hard"
     if not marker.exists():

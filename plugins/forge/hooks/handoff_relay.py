@@ -10,10 +10,11 @@ Source: ikoro-labs/forge#3. Closing a session kills its subagents, so the relay 
 (exit 5) while an agent of the calling session is alive or the handoff header lists agents
 `en_vol`. --force is the hard cap of the drain: it is admitted only when the header lists
 the agents left for a rescue under `sauvetage`. Every check runs before the daily counter
-moves. The successor's drain threshold is set here and nowhere else: the default of
-handoff_trigger.py (150k), with or without a feature in the handoff, written in the header as
-`seuil`. It is always passed explicitly: the relay inherits the threshold of the session that
-runs it, which may differ.
+moves. The successor's drain threshold is set here: the user's CLAUDE_SESSION_TOKEN_LIMIT from the
+`env` block of ~/.claude/settings.json when it is valid (an integer from 50000 to 965000), else the
+default of handoff_trigger.py (150k), with or without a feature in the handoff, written in the
+header as `seuil`, and printed with its source. It is always passed explicitly: the relay inherits
+the threshold of the session that runs it, which may differ.
 
 Runs on Linux and Windows with the standard library, like every hook of the plugin:
 `uv run --no-project --quiet python handoff_relay.py`. It replaces handoff_relay.sh, which
@@ -59,6 +60,7 @@ from pathlib import Path
 from typing import Any, cast
 
 import handoff_header
+import handoff_trigger
 from handoff_trigger import DEFAULT_LIMIT
 
 HOOKS = Path(__file__).resolve().parent
@@ -80,6 +82,21 @@ def fail(message: str, code: int) -> int:
 def claude() -> str:
     """The claude executable; on Windows the .exe first, so that no cmd.exe reparses the prompt."""
     return (shutil.which("claude.exe") if WINDOWS else None) or shutil.which("claude") or "claude"
+
+
+def user_threshold() -> tuple[int, str]:
+    """The successor's threshold and where it comes from: the user's CLAUDE_SESSION_TOKEN_LIMIT in the
+    `env` block of ~/.claude/settings.json when it is valid, else the default. A missing, unreadable
+    or invalid setting is never an error here: handoff_trigger.py reports an invalid one."""
+    settings = Path.home() / ".claude" / "settings.json"
+    try:
+        env = json.loads(settings.read_text(encoding="utf-8")).get("env")
+        parsed = handoff_trigger.parse_limit(env.get("CLAUDE_SESSION_TOKEN_LIMIT"))
+    except (OSError, ValueError, AttributeError):
+        parsed = None
+    if parsed is None:
+        return DEFAULT_LIMIT, "default"
+    return parsed, str(settings)
 
 
 def counter_path(state: Path, project: Path) -> Path:
@@ -399,7 +416,7 @@ def relay(argv: list[str]) -> int:
         values = handoff_header.check(handoff)
     except (handoff_header.HeaderError, OSError, ValueError) as error:
         return fail(f"invalid handoff header: {error}", 2)
-    threshold = DEFAULT_LIMIT
+    threshold, source = user_threshold()
     owner = os.environ.get("CLAUDE_PID", "")
     refused = agents_refusal(values, project, owner, force)
     if refused:
@@ -438,6 +455,7 @@ def relay(argv: list[str]) -> int:
     )
     # The counter alone repeats across days and machines: the time keeps the name free.
     name = f"relais-{count}-{project.name}-{datetime.datetime.now():%H%M}"
+    print(f"threshold: {threshold} (source: {source})")
     if dry_run:
         print(f"dry run, would run: CLAUDE_SESSION_TOKEN_LIMIT={threshold} claude --bg --permission-mode auto -n {name} <prompt>")
         print(f"dry run, prompt: {prompt}")
