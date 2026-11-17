@@ -58,7 +58,7 @@ class RepositoryAsksStay(unittest.TestCase):
     def test_preuves(self):
         """Proofs demande le rouge avec sa raison, le vert, les commandes et le vrai poste (#46, #231, A2)."""
         body = section(REPO_TEMPLATE, "Proofs")
-        for ask in ("red", "reason", "green", "unittest discover", "claude plugin validate", "real machine", "not yet"):
+        for ask in ("red", "reason", "green", "python -m pytest tests", "claude plugin validate", "real machine", "not yet"):
             self.assertIn(ask, body)
 
     def test_sans_tiret_cadratin(self):

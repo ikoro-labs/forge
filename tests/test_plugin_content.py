@@ -348,8 +348,8 @@ class BaseReplayProbe(unittest.TestCase):
         config = load(support.REPO_ROOT)
         self.assertEqual(config["test-path"], ["tests/"])
         self.assertEqual(len(config["red-replay"]), 1)
-        self.assertIn("unittest discover -s tests", config["red-replay"][0])
-        self.assertIn("{name}", config["red-replay"][0])
+        self.assertIn("python -m pytest {file}", config["red-replay"][0])
+        self.assertIn("--junitxml={report}", config["red-replay"][0])
 
     def test_the_judge_reads_the_probe(self) -> None:
         """No F-NNNN: ticket #43, critère 2: un test de critère qui passe sur la base sans justification est un constat."""

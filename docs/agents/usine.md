@@ -21,7 +21,7 @@ La configuration de l'usine qui développe le plugin `forge` dans ce dépôt. Le
 
 ## Rejeu et contrôles
 
-- `ci-replay` : `uv run --no-project --quiet python -m unittest discover -s tests`
+- `ci-replay` : `uv run --no-project --quiet --with pytest==9.2.0 python -m pytest tests`
 - `ci-replay` : `uv run --no-project --quiet --with ruff==0.17.3 ruff check plugins/forge tests`
 - `ci-replay` : `uv run --no-project --quiet --with mypy==2.4.1 mypy`
 - `ci-replay` : `claude plugin validate .`
@@ -37,10 +37,12 @@ le choix de ce dépôt, que le ticket ne fixait pas.
 - `run-budget` : `4096 | 12 | 2 | 300`
 
 Les tests que la PR ajoute, rejoués par `forge:qc-gate` sur une copie de la base, où chacun doit
-échouer. Le motif `-p {name}` choisit le fichier dans `tests/`.
+échouer. `{file}` choisit le fichier dans `tests/`, et `{report}` donne au rejeu le grain du test : la
+commande y écrit un rapport JUnit XML, et chaque test ajouté ou changé qui passe sur la base est rendu.
+Le `pytest` est celui de `ci-replay`, même version épinglée.
 
 - `test-path` : `tests/`
-- `red-replay` : `uv run --no-project --quiet python -m unittest discover -s tests -p {name}`
+- `red-replay` : `uv run --no-project --quiet --with pytest==9.2.0 python -m pytest {file} --junitxml={report}`
 
 Les jobs de `.github/workflows/tests.yml`.
 
@@ -109,7 +111,7 @@ manifeste de la marketplace, et les gardes qui tiennent les agents eux-mêmes.
 
 La suite de tests de ce dépôt, dont la sortie se raccourcit quand elle passe.
 
-- `trimmed-command` : `python -m unittest discover -s tests`
+- `trimmed-command` : `python -m pytest tests`
 
 ## Clés absentes
 
@@ -121,7 +123,7 @@ La suite de tests de ce dépôt, dont la sortie se raccourcit quand elle passe.
 - `product-source`, `entry-gate` : les besoins viennent des tickets de ce dépôt.
 - `test-skill` : la façon d'écrire les tests est dans `.claude/rules/forge.md`.
 - `feature-gate` : la porte se vérifie à la main, dans les en-têtes des documents.
-- `install` : la suite n'a que la bibliothèque standard ; `uv` choisit le Python.
+- `install` : la suite n'a que la bibliothèque standard, et `pytest` (épinglé) arrive par `uv run --with` à chaque lancement ; `uv` choisit le Python.
 - `baselines`, `size-check`, `trace-check`, `trace-replay`, `review-grid` : aucun outil encore.
 - `em-dash-allowances` : aucun fichier n'en tolère.
 - `doc-frontmatter`, `doc-index`, `doc-cap` : ce dépôt n'a décidé ni de `type` de frontmatter, ni

@@ -50,7 +50,7 @@ Publier une version :
 4. Vérifier :
 
    ```sh
-   uv run --no-project --quiet python -m unittest discover -s tests
+   uv run --no-project --quiet --with pytest==9.2.0 python -m pytest tests
    claude plugin validate .
    claude plugin validate plugins/forge
    ```
