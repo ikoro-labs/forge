@@ -42,7 +42,7 @@ class CoderCap(unittest.TestCase):
         """Ticket #249, A2.1: a ticket with three PRs and a failing size-check is BLOCKED."""
         size = prose(CODER).split("**Taille**", 1)[1].split("## 5. Livrer", 1)[0]
         self.assertIn("gh pr list --state all", size)
-        self.assertRegex(size, r"trois PR")
+        self.assertRegex(size, r"(?i)trois PR au plus par ticket")
         self.assertRegex(size, r"`RESULT: BLOCKED`")
         self.assertRegex(size, r"pas de quatrième")
 

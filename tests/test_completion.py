@@ -34,17 +34,25 @@ DROPPED = {"state": "CLOSED", "stateReason": "NOT_PLANNED"}
 
 
 class Gh(FakeGh):
-    """gh simulated: `issue list` from bodies, `api .../issues/<n>/sub_issues` from `subs`."""
+    """gh simulated: `issue list` from bodies, `api .../issues/<n>/sub_issues` from `subs`, and
+    `pr list` from `prs`, the merged PRs as (number, body)."""
 
     def __init__(
         self,
         bodies: Sequence[str | tuple[str, dict]] | None,
         subs: dict[int, list[tuple[int, str, str]]] | None = None,
+        prs: Sequence[tuple[int, str]] | None = (),
     ) -> None:
         super().__init__(bodies)
         self.subs = subs or {}
+        self.prs = prs
 
     def __call__(self, argv: list[str], cwd: str | None) -> str | None:
+        if argv[:2] == ["pr", "list"]:
+            self.calls.append(argv)
+            if self.bodies is None or self.prs is None:
+                return None
+            return json.dumps([{"number": n, "body": body} for n, body in self.prs])
         if argv[:1] != ["api"]:
             return super().__call__(argv, cwd)
         self.calls.append(argv)
@@ -122,7 +130,9 @@ class Table(unittest.TestCase):
                     "2",
                     "1",
                     "#43, #44",
-                    "2026-11-14 09:30 UTC, gh issue list --search (no issue: in idee.md)",
+                    "0 / 18",
+                    "2026-11-14 09:30 UTC, gh issue list --search (no issue: in idee.md),"
+                    " gh pr list --state merged",
                 ]
             ],
         )
@@ -151,11 +161,49 @@ class Table(unittest.TestCase):
                 "2",
                 "1",
                 "#42, #48",
-                "2026-11-14 09:30 UTC, gh api sub_issues of #40",
+                "0 / 18",
+                "2026-11-14 09:30 UTC, gh api sub_issues of #40, gh pr list --state merged",
             ],
         )
-        self.assertEqual([argv[0] for argv in gh.calls], ["api"])
+        self.assertEqual([argv[0] for argv in gh.calls], ["api", "pr"])
         self.assertIn("--paginate", gh.calls[0])
+
+    def test_the_pr_budget_is_three_per_ticket_and_merged_prs_are_counted_per_ticket(self) -> None:
+        """Ticket #249, A3.1: 15 tickets show a PR budget of 45; the merged PRs are counted."""
+        project = Project(self)
+        feature = project.feature(1, budget=15, issue=40)
+        subs = [(41, "closed", "completed"), (42, "closed", "completed"), (43, "open", "")]
+        prs = [
+            (101, "Refs #41\n\nFeature: F-0001"),
+            (102, "Refs #41\n\nFeature: F-0001"),
+            (103, "Closes #41\n\nFeature: F-0001"),
+            (104, "Closes #42\n\nFeature: F-0001"),
+            (105, "Closes #99\n\nFeature: F-0001"),
+            (106, "No ticket cited\n\nFeature: F-0001"),
+        ]
+        gh = Gh([], {40: subs}, prs)
+        cells = rows(project.table(gh, feature))[0]
+        self.assertEqual(cells[7], "4 / 45 (#41: 3, #42: 1)")
+        calls = [argv for argv in gh.calls if argv[:2] == ["pr", "list"]]
+        self.assertEqual(len(calls), 1)
+        self.assertIn("merged", calls[0])
+        self.assertIn('"Feature: F-0001" in:body', calls[0])
+
+    def test_the_pr_budget_is_a_question_mark_without_a_ticket_budget(self) -> None:
+        """Ticket #249, A3: a design without a ticket budget has no PR budget, never a guess."""
+        project = Project(self)
+        feature = project.feature(1, issue=40)
+        design = project.root / "docs" / "features" / "0001-demo" / "design.md"
+        design.write_text("---\nfeature: F-0001\ndocument: design\n---\n", encoding="utf-8")
+        cells = rows(project.table(Gh([], {40: [(41, "open", "")]}), feature))[0]
+        self.assertEqual(cells[7], "0 / ?")
+
+    def test_a_pr_list_gh_cannot_make_stops_the_table(self) -> None:
+        """Ticket #249, A3: the PR count is read like the tickets: unreadable, no row is guessed."""
+        project = Project(self)
+        feature = project.feature(1, issue=40)
+        with self.assertRaises(CompletionError):
+            project.table(Gh([], {40: [(41, "open", "")]}, None), feature)
 
     def test_an_unreadable_sub_issue_list_stops_the_table(self) -> None:
         project = Project(self)
