@@ -9,6 +9,7 @@ included, given as `now`), `guard_output.outcome` on a `SendMessage` event holds
 import json
 import unittest
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import support  # noqa: F401 - puts the hooks and the scripts on the import path
 from guard_output import REFUSED, outcome
@@ -78,6 +79,210 @@ class ClockHook(unittest.TestCase):
         self.assertIn("15 minutes", refused.stderr)
         self.assertIn("host clock", refused.stderr)
         self.assertEqual((sent.code, sent.stderr), (0, ""))
+
+
+SESSION = "e1ae680a-d488-4e29-9f3b-0a1b2c3d4e5f"
+PATH = "/home/user/.claude/hooks/state/handoffs/forge/2026-11-16-r1.md"
+
+
+def with_field(text: str, line: str, type_: str) -> str:
+    """`text` as a billet of type `type_` that carries the extra field `line` after `type`."""
+    return text.replace("type: claim\n", f"type: {type_}\n{line}\n")
+
+
+def request(**changes: str | None) -> str:
+    """A `handoff-request` billet: the interactive session asks the background one to hand over."""
+    return with_field(billet(awaits="reply", **changes), f"session: {SESSION}", "handoff-request")
+
+
+def handoff(**changes: str | None) -> str:
+    """A `handoff` billet: the background session sends the path of its handoff."""
+    return with_field(billet(awaits="nothing", **changes), f"handoff: {PATH}", "handoff")
+
+
+class Template(unittest.TestCase):
+    def test_a6_227_the_template_names_the_two_types_their_field_and_their_check(self) -> None:
+        """#227 A6: what the hook enforces is what the template tells the session."""
+        text = (support.PLUGIN / "templates" / "billet.md").read_text(encoding="utf-8")
+        for word in ("`handoff-request`", "`session:", "`handoff`", "`handoff:", "successor-ok", "registre"):
+            with self.subTest(word=word):
+                self.assertIn(word, text)
+
+    def test_a6_227_the_template_still_declares_six_required_fields(self) -> None:
+        """#227 A6: the two added fields depend on the type, so the header's `required:` stays at six."""
+        header = (support.PLUGIN / "templates" / "billet.md").read_text(encoding="utf-8").splitlines()[0]
+        self.assertIn("required: from, type, resource, ticket, measure, awaits |", header)
+
+
+class Types(unittest.TestCase):
+    def test_a6_227_a_handoff_request_with_a_session_conforms(self) -> None:
+        """#227 A6: `type: handoff-request` and the field `session`, nothing else added."""
+        self.assertEqual(deviations(request(), "billet"), [])
+
+    def test_a6_227_a_handoff_with_a_path_conforms(self) -> None:
+        """#227 A6: `type: handoff` and the field `handoff`."""
+        self.assertEqual(deviations(handoff(), "billet"), [])
+
+    def test_a6_227_the_added_field_is_required_by_its_type(self) -> None:
+        """#227 A6: a request without `session`, a handoff without `handoff`, an empty value."""
+        no_session = billet().replace("type: claim", "type: handoff-request")
+        no_handoff = billet().replace("type: claim", "type: handoff")
+        self.assertEqual(
+            deviations(no_session, "billet"), ["the field `session` is missing (a billet of type `handoff-request`)"]
+        )
+        self.assertEqual(
+            deviations(no_handoff, "billet"), ["the field `handoff` is missing (a billet of type `handoff`)"]
+        )
+        self.assertEqual(deviations(request().replace(SESSION, ""), "billet"), ["the field `session` is empty"])
+        self.assertEqual(deviations(handoff().replace(PATH, ""), "billet"), ["the field `handoff` is empty"])
+
+    def test_a6_227_the_added_field_belongs_to_its_type_alone(self) -> None:
+        """#227 A6: `session` on a claim, `handoff` on a handoff request."""
+        found = deviations(with_field(billet(), f"session: {SESSION}", "claim"), "billet")
+        self.assertEqual(found, ["the field `session` belongs to a billet of type `handoff-request`, not `claim`"])
+        crossed = request().replace("---\n", f"handoff: {PATH}\n---\n")
+        self.assertEqual(
+            deviations(crossed, "billet"),
+            ["the field `handoff` belongs to a billet of type `handoff`, not `handoff-request`"],
+        )
+
+    def test_a6_227_the_message_for_an_unknown_field_names_the_two_handoff_fields(self) -> None:
+        """#227 A6: the closed set of fields stays closed, and the refusal says what the types add."""
+        found = deviations(billet().replace("---\n", "mood: calm\n---\n"), "billet")
+        self.assertEqual(
+            found,
+            [
+                "`mood` is not a field of the billet: from, type, resource, ticket, measure, awaits"
+                " (and `session` or `handoff`, for the two handoff types)"
+            ],
+        )
+
+    def test_a6_227_the_two_types_are_values_of_type(self) -> None:
+        """#227 A6: the list in the refusal and the template show both."""
+        found = deviations(billet(type="grab"), "billet")
+        self.assertIn("claim, release, info, question, reply, handoff-request, handoff", found[0])
+
+
+BACKGROUND = "9f3b7c21-5a64-4d0e-8c11-aa00bb11cc22"  # the id `claude --bg` gave the background session
+INTERACTIVE = "e1ae680a-d488-4e29-9f3b-0a1b2c3d4e5f"  # the id of the user's interactive session
+
+
+def registered(home: Path) -> None:
+    """The two sessions of the exchange, as Claude Code's registry lists them."""
+    register(home, 4242, sessionId=BACKGROUND, name="shipyard-bg", kind="bg", cwd="/x")
+    register(home, 4343, sessionId=INTERACTIVE, name="shipyard-ui", kind="interactive", cwd="/x")
+
+
+def write_handoff(folder: Path, successor: str | None) -> Path:
+    """A handoff file with its header, naming `successor` or none (the header the relay and
+    `set-successor` write; `successor-ok` reads it)."""
+    path = folder / "2026-11-16-r1.md"
+    path.write_text(
+        "---\nprojet: demo\nfeature:\npassage_depart: 1792494562\njetons_agents: 0\nen_vol: []\n"
+        f"file_revue: []\nsauvetage: []\nsuccesseur: {successor or ''}\nhooks_version: forge@test\n"
+        "seuil:\ncontexte_passation: 151000\n---\nResume prompt.\n",
+        encoding="utf-8",
+    )
+    return path
+
+
+def sent(to: str, text: str) -> tuple[int, str]:
+    result = outcome(json.dumps(send(to, text)))
+    return result.code, result.stderr
+
+
+class HandoffRequestHook(unittest.TestCase):
+    def request(self, session: str) -> str:
+        return with_field(billet(awaits="reply", measure=current()), f"session: {session}", "handoff-request")
+
+    def test_a6_227_a_session_of_the_registry_may_ask_for_the_handoff(self) -> None:
+        """#227 A6: the id is the one of the interactive session, in the registry; its short form too."""
+        with isolated() as project:
+            registered(project.parent / "home")
+            for session in (INTERACTIVE, INTERACTIVE[:8]):
+                with self.subTest(session=session):
+                    self.assertEqual(sent("shipyard-bg", self.request(session)), (0, ""))
+
+    def test_a6_227_an_id_outside_the_registry_does_not_leave(self) -> None:
+        """#227 A6: an invented id, a name in place of an id, a prefix too short to name a session."""
+        with isolated() as project:
+            registered(project.parent / "home")
+            for session in ("0123abcd-0000-4000-8000-000000000000", "shipyard-ui", INTERACTIVE[:6]):
+                with self.subTest(session=session):
+                    code, stderr = sent("shipyard-bg", self.request(session))
+                    self.assertEqual(code, REFUSED)
+                    self.assertIn(f"`session: {session}` is not the id of a session of the registry", stderr)
+
+
+class HandoffHook(unittest.TestCase):
+    def handoff(self, path: Path | str) -> str:
+        return with_field(billet(awaits="nothing", measure=current()), f"handoff: {path}", "handoff")
+
+    def test_a6_227_a_handoff_whose_header_names_the_receiver_leaves(self) -> None:
+        """#227 A6: the file exists and its `successeur` names the interactive session, by its id or short id."""
+        with isolated() as project:
+            registered(project.parent / "home")
+            for successor in (INTERACTIVE, INTERACTIVE[:8]):
+                with self.subTest(successor=successor):
+                    path = write_handoff(project, successor)
+                    self.assertEqual(sent("shipyard-ui", self.handoff(path)), (0, ""))
+                    self.assertEqual(sent(INTERACTIVE, self.handoff(path)), (0, ""))
+
+    def test_a6_227_a_path_with_no_file_does_not_leave(self) -> None:
+        """#227 A6: the session writes the handoff, then sends its path, not the other way round."""
+        with isolated() as project:
+            registered(project.parent / "home")
+            code, stderr = sent("shipyard-ui", self.handoff(project / "never-written.md"))
+        self.assertEqual(code, REFUSED)
+        self.assertIn("is no file", stderr)
+
+    def test_a6_227_a_header_that_names_another_session_does_not_leave(self) -> None:
+        """#227 A6: `successor-ok` would send the receiver away; the hook stops the message instead."""
+        with isolated() as project:
+            registered(project.parent / "home")
+            path = write_handoff(project, BACKGROUND)
+            code, stderr = sent("shipyard-ui", self.handoff(path))
+        self.assertEqual(code, REFUSED)
+        self.assertIn(f"names `{BACKGROUND}` as its successor, not the receiver `shipyard-ui`", stderr)
+
+    def test_a6_227_a_header_with_no_successor_does_not_leave(self) -> None:
+        """#227 A6: `set-successor` has not run: the receiver would be told to confirm by hand."""
+        with isolated() as project:
+            registered(project.parent / "home")
+            code, stderr = sent("shipyard-ui", self.handoff(write_handoff(project, None)))
+        self.assertEqual(code, REFUSED)
+        self.assertIn("names no successor", stderr)
+        self.assertIn("set-successor", stderr)
+
+    def test_a6_227_a_file_with_no_header_does_not_leave(self) -> None:
+        """#227 A6: a file that is no handoff."""
+        with isolated() as project:
+            registered(project.parent / "home")
+            notes = project / "notes.md"
+            notes.write_text("just notes\n", encoding="utf-8")
+            code, stderr = sent("shipyard-ui", self.handoff(notes))
+        self.assertEqual(code, REFUSED)
+        self.assertIn("has no readable header", stderr)
+
+    def test_a6_227_a_receiver_with_no_id_in_the_registry_does_not_leave(self) -> None:
+        """#227 A6: an address the registry does not resolve gives nothing to hold the header to."""
+        with isolated() as project:
+            registered(project.parent / "home")
+            path = write_handoff(project, INTERACTIVE)
+            code, stderr = sent("uds:/run/user/1000/cc-socks/9999.sock", self.handoff(path))
+        self.assertEqual(code, REFUSED)
+        self.assertIn("has no id in the registry", stderr)
+
+    def test_a6_227_the_format_and_the_host_deviations_come_back_together(self) -> None:
+        """#227 A6: a stale time and a missing file in one refusal."""
+        old = measure(time="2026-11-16T14:13+01:00")
+        with isolated() as project:
+            registered(project.parent / "home")
+            text = with_field(billet(awaits="nothing", measure=old), f"handoff: {project / 'no.md'}", "handoff")
+            code, stderr = sent("shipyard-ui", text)
+        self.assertEqual(code, REFUSED)
+        self.assertIn("host clock", stderr)
+        self.assertIn("is no file", stderr)
 
 
 if __name__ == "__main__":

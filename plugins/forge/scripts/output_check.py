@@ -116,9 +116,11 @@ GATE_MOST_TABLE_LINES = 30
 BILLET_WORDS = 60
 BILLET_SEPARATOR = "---"
 BILLET_CLOCK_MINUTES = 5
-BILLET_RESOURCE_KEY = "shared-resource"# The fields of the billet that take a closed list of values; `templates/billet.md` shows the same.
+BILLET_RESOURCE_KEY = "shared-resource"
+# The field each handoff type adds: the id of the session that asks, the path of the handoff file.
+BILLET_TYPE_FIELDS = {"handoff-request": "session", "handoff": "handoff"}# The fields of the billet that take a closed list of values; `templates/billet.md` shows the same.
 BILLET_VALUES = {
-    "type": ("claim", "release", "info", "question", "reply"),
+    "type": ("claim", "release", "info", "question", "reply", "handoff-request", "handoff"),
     "awaits": ("nothing", "reply"),
 }
 
@@ -474,6 +476,18 @@ def _measure(value: str, now: datetime | None = None) -> list[str]:
     return found
 
 
+def billet_fields(text: str) -> dict[str, str]:
+    """The `key: value` lines of a billet before its `---` line, the first of each key."""
+    fields: dict[str, str] = {}
+    for line in text.strip().splitlines():
+        if line.strip() == BILLET_SEPARATOR:
+            break
+        match = BILLET_FIELD.match(line.strip())
+        if match is not None and match.group(1) not in fields:
+            fields[match.group(1)] = match.group(2).strip()
+    return fields
+
+
 def _billet(
     text: str, template: str, config: Mapping[str, list[str]], now: datetime | None = None
 ) -> list[str]:
@@ -495,8 +509,12 @@ def _billet(
                 found.append(f"`{_quote(line.strip())}` is not a `key: value` line")
         elif match.group(1) in fields:
             found.append(f"the field `{match.group(1)}` appears twice")
-        elif declared and match.group(1) not in declared:
-            found.append(f"`{match.group(1)}` is not a field of the billet: {', '.join(declared)}")
+        elif declared and match.group(1) not in (*declared, *BILLET_TYPE_FIELDS.values()):
+            found.append(
+                f"`{match.group(1)}` is not a field of the billet: {', '.join(declared)}"
+                f" (and {' or '.join(f'`{name}`' for name in BILLET_TYPE_FIELDS.values())},"
+                " for the two handoff types)"
+            )
         else:
             fields[match.group(1)] = match.group(2).strip()
     for name in declared:
@@ -507,6 +525,14 @@ def _billet(
     for name, values in BILLET_VALUES.items():
         if fields.get(name) and fields[name] not in values:
             found.append(f"`{name}: {fields[name]}` is not one of {', '.join(values)}")
+    # The handoff types add one field each, and no other type takes it.
+    for kind, name in BILLET_TYPE_FIELDS.items():
+        if fields.get("type") == kind and name not in fields:
+            found.append(f"the field `{name}` is missing (a billet of type `{kind}`)")
+        elif fields.get("type") == kind and not fields[name]:
+            found.append(f"the field `{name}` is empty")
+        elif name in fields and fields.get("type") != kind:
+            found.append(f"the field `{name}` belongs to a billet of type `{kind}`, not `{fields.get('type')}`")
     # The values of `resource` are the project's own: no key, no list, and the check is not applicable.
     resources = config.get(BILLET_RESOURCE_KEY, [])
     if resources and fields.get("resource") and fields["resource"] not in (*resources, "none"):

@@ -83,13 +83,14 @@ def current() -> str:
 
 class Lines(unittest.TestCase):
     def test_a1_227_the_line_cap_of_the_template_header_holds(self) -> None:
-        """#227 A1: `max-lines` of `billet.md` (16) counts the written lines, blank ones excluded."""
-        short_lines = "\n".join(["five words on a line"] * 10)
+        """#227 A1: `max-lines` of `billet.md` (24, room for a handoff billet's seventh field)
+        counts the written lines, blank ones excluded."""
+        short_lines = "\n".join(["three words here"] * 18)
         found = deviations(BILLET.split("---")[0] + f"---\n{short_lines}\n", "billet")
         self.assertEqual(len(found), 1, found)
-        self.assertIn("17 lines, at most 16", found[0])
-        sixteen = "\n".join(["five words on a line"] * 9)
-        self.assertEqual(deviations(BILLET.split("---")[0] + f"---\n\n{sixteen}\n", "billet"), [])
+        self.assertIn("25 lines, at most 24", found[0])
+        seventeen = "\n".join(["three words here"] * 17)
+        self.assertEqual(deviations(BILLET.split("---")[0] + f"---\n\n{seventeen}\n", "billet"), [])
 
 
 class Measure(unittest.TestCase):
@@ -154,7 +155,11 @@ class Format(unittest.TestCase):
     def test_a3_227_a_field_the_template_does_not_declare_is_refused(self) -> None:
         """#227 A3: the set of fields is closed, so no session invents a variant."""
         found = deviations(billet().replace("---\n", "mood: calm\n---\n"), "billet")
-        self.assertEqual(found, ["`mood` is not a field of the billet: from, type, resource, ticket, measure, awaits"])
+        self.assertEqual(len(found), 1, found)
+        self.assertTrue(
+            found[0].startswith("`mood` is not a field of the billet: from, type, resource, ticket, measure, awaits"),
+            found,
+        )
 
     def test_a3_227_a_field_given_twice_is_refused(self) -> None:
         """#227 A3: the second `type` would be ignored in silence."""
