@@ -38,8 +38,21 @@ def run(verdict: str | None, error: str | None = None) -> dict[str, Any]:
     }
 
 
+def accept_run(verdict: str | None, error: str | None = None) -> dict[str, Any]:
+    """One run of an `accept-` case: `accepts` (a line `VERDICT: ACCEPT`) and `no-false-reject`."""
+    return {
+        "score": 0.0, "error": error, "costUsd": 0.5,
+        "graders": [] if error else [
+            {"name": "accepts", "passed": verdict == "ACCEPT", "weight": 1, "explanation": "", "withOnly": False},
+            {"name": "no-false-reject", "passed": verdict != "REJECT", "weight": 1, "explanation": "",
+             "withOnly": False},
+        ],
+    }
+
+
 def case(name: str, *verdicts: str | None, error: str | None = None) -> dict[str, Any]:
-    return {"name": name, "arms": {"with": [run(v, error) for v in verdicts]}}
+    make = accept_run if name.startswith("accept-") else run
+    return {"name": name, "arms": {"with": [make(v, error) for v in verdicts]}}
 
 
 def result(*cases: dict[str, Any], partial: bool = False) -> dict[str, Any]:
@@ -90,6 +103,49 @@ class Measures(unittest.TestCase):
 
     def test_the_result_says_when_it_is_partial(self) -> None:
         self.assertTrue(measure(result(case("blocker-a", "REJECT"), partial=True)).partial)
+
+
+class FalseReject(unittest.TestCase):
+    """#67 A2: `false-reject`, the share of runs of the `accept-` cases that the judge rejected."""
+
+    def test_one_of_three_accept_cases_judged_reject_counts_one_false_reject(self) -> None:
+        """#67 A2.1: three `accept-` cases, one run each, one of them REJECT."""
+        counts = measure(result(case("accept-a", "ACCEPT"), case("accept-b", "REJECT"), case("accept-c", "ACCEPT")))
+        self.assertEqual((counts.false_rejected, counts.accept_runs), (1, 3))
+        self.assertAlmostEqual(counts.reference()["false-reject"], 1 / 3)
+
+    def test_an_accept_case_judged_accept_is_not_a_false_accept(self) -> None:
+        """#67 A2.1: the verdict an `accept-` case expects stays out of `false-accept`."""
+        counts = measure(result(case("accept-a", "ACCEPT", "ACCEPT"), case("faux-accept-c", "REJECT")))
+        self.assertEqual(counts.reference(), {"false-accept": 0.0, "false-reject": 0.0})
+
+    def test_a_result_without_accept_cases_leaves_false_reject_out_and_says_so(self) -> None:
+        """#67 A2.2: "sans objet", never 0: the key is absent and the summary names the measure."""
+        counts = measure(result(case("blocker-a", "REJECT"), case("faux-accept-c", "REJECT")))
+        self.assertNotIn("false-reject", counts.reference())
+        self.assertIsNone(counts.false_reject)
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "aggregate-result.json"
+            path.write_text(json.dumps(result(case("blocker-a", "REJECT"))), encoding="utf-8")
+            out, err = io.StringIO(), io.StringIO()
+            with redirect_stdout(out), redirect_stderr(err):
+                self.assertEqual(main(["score", str(path)]), 0)
+        self.assertNotIn("false-reject", json.loads(out.getvalue()))
+        self.assertIn("false-reject : sans objet", err.getvalue())
+
+    def test_a_run_without_a_verdict_or_in_error_is_not_a_false_reject(self) -> None:
+        counts = measure(result(case("accept-a", None, "ACCEPT"), case("accept-b", None, error="API error")))
+        self.assertEqual((counts.false_rejected, counts.accept_runs, counts.errors), (0, 2, 1))
+
+    def test_the_summary_on_stderr_gives_the_false_reject_counts(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "aggregate-result.json"
+            path.write_text(json.dumps(result(case("accept-a", "REJECT", "ACCEPT"))), encoding="utf-8")
+            out, err = io.StringIO(), io.StringIO()
+            with redirect_stdout(out), redirect_stderr(err):
+                main(["score", str(path)])
+        self.assertIn("false-reject : 1/2", err.getvalue())
+        self.assertEqual(json.loads(out.getvalue()), {"false-reject": 0.5})
 
 
 class FormRead(unittest.TestCase):
@@ -296,6 +352,12 @@ class Documented(unittest.TestCase):
         self.assertIn("--scaffold", text)
         self.assertIn("judge-recall", text)
         self.assertIn("false-accept", text)
+
+    def test_the_page_describes_false_reject_and_the_accept_family(self) -> None:
+        """#67 A2: the third measure, the cases it reads and the graders they carry are on the page."""
+        text = (support.REPO_ROOT / "docs" / "jeu-de-reference.md").read_text(encoding="utf-8")
+        for word in ("false-reject", "`accept-`", "`accepts`", "`no-false-reject`"):
+            self.assertIn(word, text)
 
 
 if __name__ == "__main__":

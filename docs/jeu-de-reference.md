@@ -27,9 +27,17 @@ ligne `VERDICT:` :
 - `no-false-accept` réussit si aucune ligne `VERDICT: ACCEPT` n'y figure.
 
 Les cas `faux-accept-` ont en plus `names-the-defect`, une notation par un modèle qui dit si le verdict
-nomme le défaut manqué. Elle n'entre dans aucune des deux mesures : elle sert à lire un cas à la main.
+nomme le défaut manqué. Elle n'entre dans aucune des mesures : elle sert à lire un cas à la main.
 
-## Les deux mesures
+Les cas `accept-` attendent le verdict inverse et portent deux autres notations, sur la même ligne :
+
+- `accepts` réussit si une ligne `VERDICT: ACCEPT` y figure ;
+- `no-false-reject` réussit si aucune ligne `VERDICT: REJECT` y figure.
+
+Ils ne portent pas `no-false-accept` : un `ACCEPT` y est le bon verdict, et il ne compte pas dans
+`false-accept`.
+
+## Les trois mesures
 
 `eval_reference.py score` lit le `aggregate-result.json` de `claude plugin eval` et écrit le fichier
 que `factory_slo.py report --reference` lit :
@@ -39,13 +47,18 @@ uv run --no-project --quiet python plugins/forge/scripts/eval_reference.py score
 ```
 
 - `judge-recall` : part des runs des cas `blocker-` dont le verdict est `REJECT`.
-- `false-accept` : part des runs de tous les cas dont le verdict est `ACCEPT`. Chaque cas rejoue une PR
-  qui n'aurait pas dû être acceptée, donc chaque `ACCEPT` est un faux.
+- `false-accept` : part des runs des cas `blocker-` et `faux-accept-` dont le verdict est `ACCEPT`. Ces
+  cas rejouent une PR qui n'aurait pas dû être acceptée, donc chaque `ACCEPT` y est un faux.
+- `false-reject` : part des runs des cas `accept-` dont le verdict est `REJECT`. Sans elle, un juge qui
+  rejette tout aurait un `judge-recall` parfait. `factory_slo.py` ne lit que les deux premières clés :
+  aucun objectif de service ne porte sur celle-ci.
 
-Un run en erreur (appel qui échoue, délai dépassé) reste hors des deux parts et se compte sur la sortie
+Un run en erreur (appel qui échoue, délai dépassé) reste hors des trois parts et se compte sur la sortie
 d'erreur : ce n'est ni un `REJECT` ni un `ACCEPT`. Une mesure sans aucun run derrière elle manque du
-fichier, et l'objectif la lit « sans objet », jamais 0 ni 100 %. Un run sans ligne `VERDICT:` compte
-comme un défaut du juge dans `judge-recall` (il n'a pas rejeté) et pas comme un faux accept.
+fichier, et l'objectif la lit « sans objet », jamais 0 ni 100 % ; `false-reject` est « sans objet » tant
+qu'aucun cas `accept-` n'a tourné. Un run sans ligne `VERDICT:` compte
+comme un défaut du juge dans `judge-recall` (il n'a pas rejeté), et pas comme un faux accept ni un faux
+reject.
 
 ## Lancer le jeu
 
