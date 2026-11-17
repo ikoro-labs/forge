@@ -22,6 +22,8 @@ EVALS = support.PLUGIN / "evals"
 BLOCKERS = {"blocker-pr11-tour1", "blocker-pr13-tour1", "blocker-pr28-tour1", "blocker-pr30-tour1",
             "blocker-pr51-tour1"}
 FALSE_ACCEPTS = {"faux-accept-pr13-tour2", "faux-accept-pr14-tour1", "faux-accept-pr23-tour1"}
+# The two cases whose missed defect was only a MINOR: they carry no `no-false-accept`, so an ACCEPT there is not counted.
+MINOR_ONLY = {"faux-accept-pr13-tour2", "faux-accept-pr23-tour1"}
 # PR accepted at round 1, merged, never fixed since: the head and the base the judge saw at round 1.
 ACCEPTS = {
     "accept-pr226-tour1": ("ad904b756aa76913e7a42e2d9288d386077eafd8", "d972447662d60b530d64134145a46071fe36529f"),
@@ -44,6 +46,15 @@ def run(verdict: str | None, error: str | None = None) -> dict[str, Any]:
     }
 
 
+def minor_run(verdict: str | None, error: str | None = None) -> dict[str, Any]:
+    """One run of a case whose missed defect was a MINOR: the `rejects` grader only, no `no-false-accept`."""
+    return {
+        "score": 0.0, "error": error, "costUsd": 0.5,
+        "graders": [] if error else [{"name": "rejects", "passed": verdict == "REJECT", "weight": 1, "explanation": "",
+                     "withOnly": False}],
+    }
+
+
 def accept_run(verdict: str | None, error: str | None = None) -> dict[str, Any]:
     """One run of an `accept-` case: `accepts` (a line `VERDICT: ACCEPT`) and `no-false-reject`."""
     return {
@@ -57,7 +68,7 @@ def accept_run(verdict: str | None, error: str | None = None) -> dict[str, Any]:
 
 
 def case(name: str, *verdicts: str | None, error: str | None = None) -> dict[str, Any]:
-    make = accept_run if name.startswith("accept-") else run
+    make = accept_run if name.startswith("accept-") else minor_run if "-minor" in name else run
     return {"name": name, "arms": {"with": [make(v, error) for v in verdicts]}}
 
 
@@ -111,6 +122,53 @@ class Measures(unittest.TestCase):
         self.assertTrue(measure(result(case("blocker-a", "REJECT"), partial=True)).partial)
 
 
+class MinorOnly(unittest.TestCase):
+    """#67 part 3 A1: a case whose missed defect was only a MINOR does not count toward `false-accept`."""
+
+    def test_a_minor_only_case_judged_accept_is_not_a_false_accept(self) -> None:
+        """#67 A1.1: the ACCEPT of a MINOR-only case leaves `false-accept` at 0."""
+        counts = measure(result(case("blocker-a", "REJECT", "REJECT"), case("faux-accept-c-minor", "ACCEPT", "ACCEPT")))
+        self.assertEqual(counts.reference(), {"judge-recall": 1.0, "false-accept": 0.0})
+
+    def test_a_blocker_case_judged_accept_is_still_counted(self) -> None:
+        """#67 A1.2: next to a MINOR-only case judged ACCEPT, the ACCEPT of a BLOCKER case counts."""
+        counts = measure(result(case("blocker-a", "ACCEPT", "REJECT"), case("faux-accept-c-minor", "ACCEPT")))
+        self.assertEqual((counts.accepted, counts.runs), (1, 2))
+        self.assertAlmostEqual(counts.reference()["false-accept"], 0.5)
+
+    def test_a_blocker_faux_accept_case_judged_accept_is_still_counted(self) -> None:
+        """#67 A1.2: a `faux-accept-` case that carries `no-false-accept` keeps counting."""
+        counts = measure(result(case("faux-accept-d", "ACCEPT", "REJECT"), case("faux-accept-c-minor", "ACCEPT")))
+        self.assertEqual(counts.reference(), {"false-accept": 0.5})
+
+    def test_only_a_minor_only_case_leaves_false_accept_without_a_measure(self) -> None:
+        """Without any run behind it, `false-accept` is "sans objet", never 0."""
+        self.assertEqual(measure(result(case("faux-accept-c-minor", "ACCEPT"))).reference(), {})
+
+    def test_the_two_weak_cases_carry_no_no_false_accept_grader_and_the_others_keep_it(self) -> None:
+        """#67 A1: the data says it: PR 13 round 2 and PR 23 leave `false-accept`, PR 14 and the blockers stay."""
+        for folder in sorted(path for path in EVALS.iterdir() if path.is_dir()):
+            if folder.name in ACCEPTS:
+                continue
+            with self.subTest(case=folder.name):
+                grader = folder / "graders" / "no-false-accept.md"
+                self.assertEqual(grader.is_file(), folder.name not in MINOR_ONLY)
+                self.assertTrue((folder / "graders" / "rejects.md").is_file())
+
+    def test_the_two_weak_cases_say_in_their_description_that_they_are_left_out_of_false_accept(self) -> None:
+        for name in MINOR_ONLY:
+            with self.subTest(case=name):
+                text = (EVALS / name / "case.yaml").read_text(encoding="utf-8")
+                self.assertIn("MINOR", text)
+                self.assertIn("hors de `false-accept`", text)
+
+    def test_the_script_says_why_those_cases_leave_false_accept(self) -> None:
+        import eval_reference
+        doc = eval_reference.__doc__ or ""
+        self.assertIn("only a MINOR", doc)
+        self.assertIn("not counted in `false-accept`", doc)
+
+
 class FalseReject(unittest.TestCase):
     """#67 A2: `false-reject`, the share of runs of the `accept-` cases that the judge rejected."""
 
@@ -119,6 +177,18 @@ class FalseReject(unittest.TestCase):
         counts = measure(result(case("accept-a", "ACCEPT"), case("accept-b", "REJECT"), case("accept-c", "ACCEPT")))
         self.assertEqual((counts.false_rejected, counts.accept_runs), (1, 3))
         self.assertAlmostEqual(counts.reference()["false-reject"], 1 / 3)
+
+    def test_the_json_holds_the_share_and_the_printed_line_the_count(self) -> None:
+        """#67 part 3 A2.1: one ACCEPT case of three judged REJECT, JSON 0.333, line `1/3`."""
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "aggregate-result.json"
+            path.write_text(json.dumps(result(case("accept-a", "ACCEPT"), case("accept-b", "REJECT"),
+                                              case("accept-c", "ACCEPT"))), encoding="utf-8")
+            out, err = io.StringIO(), io.StringIO()
+            with redirect_stdout(out), redirect_stderr(err):
+                main(["score", str(path)])
+        self.assertEqual(round(json.loads(out.getvalue())["false-reject"], 3), 0.333)
+        self.assertIn("false-reject : 1/3", err.getvalue())
 
     def test_an_accept_case_judged_accept_is_not_a_false_accept(self) -> None:
         """#67 A2.1: the verdict an `accept-` case expects stays out of `false-accept`."""
@@ -330,11 +400,13 @@ class CaseForm(unittest.TestCase):
             with self.subTest(case=folder.name):
                 self.assertFalse((folder / "graders" / "accepts.md").exists())
                 rejects = frontmatter(folder / "graders" / "rejects.md")
-                accepts = frontmatter(folder / "graders" / "no-false-accept.md")
                 self.assertEqual((rejects["type"], rejects["match"]), ("regex", "contains"))
-                self.assertEqual((accepts["type"], accepts["match"]), ("regex", "not_contains"))
                 self.assertTrue((folder / "graders" / "rejects.md").read_text(encoding="utf-8").endswith(
                     "^VERDICT: REJECT\\s*$\n"))
+                if folder.name in MINOR_ONLY:
+                    continue
+                accepts = frontmatter(folder / "graders" / "no-false-accept.md")
+                self.assertEqual((accepts["type"], accepts["match"]), ("regex", "not_contains"))
                 self.assertTrue((folder / "graders" / "no-false-accept.md").read_text(encoding="utf-8").endswith(
                     "^VERDICT: ACCEPT\\s*$\n"))
 
@@ -383,6 +455,31 @@ class CaseForm(unittest.TestCase):
 
 
 class Documented(unittest.TestCase):
+    def page(self) -> str:
+        return (support.REPO_ROOT / "docs" / "jeu-de-reference.md").read_text(encoding="utf-8")
+
+    def test_the_page_says_the_two_weak_cases_leave_false_accept_and_why(self) -> None:
+        """#67 part 3 A1: the page states the rule and no longer claims every ACCEPT of a `faux-accept-` case counts."""
+        text = self.page()
+        self.assertIn("hors de `false-accept`", text)
+        self.assertIn("PR 13 au tour 2 et de la PR 23", text)
+        self.assertNotIn("des cas `blocker-` et `faux-accept-` dont le verdict est `ACCEPT`", text)
+
+    def test_the_page_says_the_json_key_is_a_share_and_the_printed_line_a_count(self) -> None:
+        """#67 part 3 A2: `false-reject` is 0.333 in the JSON and `1/3` on the line."""
+        text = self.page()
+        self.assertIn("0.333", text)
+        self.assertIn("`1/3`", text)
+
+    def test_the_page_states_whether_the_eval_command_exists_in_the_version_the_ci_pins(self) -> None:
+        """#67 part 3 A3: the pinned version, how it was checked, and that no case was run there."""
+        workflow = (support.REPO_ROOT / ".github" / "workflows" / "tests.yml").read_text(encoding="utf-8")
+        pinned = re.search(r"claude-code@([\d.]+)", workflow)
+        self.assertIsNotNone(pinned)
+        assert pinned is not None
+        text = self.page()
+        self.assertIn(f"`claude plugin eval` existe dans la version {pinned.group(1)}", text)
+        self.assertIn("plugin eval --help", text)
     """#67 point 3: the page of `docs/` gives the launch command and its ceiling."""
 
     def test_the_page_gives_the_command_and_the_ceiling(self) -> None:

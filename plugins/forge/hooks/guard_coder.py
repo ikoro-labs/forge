@@ -316,13 +316,14 @@ def _names_suite(words: list[str]) -> bool:
         return True
     if names[0] not in LAUNCHERS and not PYTHON.fullmatch(names[0]):
         return False
-    if any(name in NOT_A_RUN for name in names):
-        return False
     for index, name in enumerate(names[1:], start=1):
-        if name in SUITE_MODULES and words[index - 1] == "-m":
-            return True
-        if name in SUITE_PROGRAMS and words[index - 1] not in VALUE_OPTIONS:
-            return True
+        named = (name in SUITE_MODULES and words[index - 1] == "-m") or (
+            name in SUITE_PROGRAMS and words[index - 1] not in VALUE_OPTIONS
+        )
+        if named:
+            # `uv add pytest` installs the suite: a subcommand before its name. After the name, a
+            # word of `NOT_A_RUN` is an argument of the suite (`-k sync`) and exempts nothing.
+            return not any(before in NOT_A_RUN for before in names[:index])
     return False
 
 

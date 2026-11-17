@@ -538,6 +538,88 @@ class Trigger(unittest.TestCase):
         self.assertIsNone(self.notice(199_000))
         self.assertIn("235k tokens", self.notice(200_000) or "")
 
+    def test_an_invalid_limit_is_reported_once_and_150k_applies(self) -> None:
+        """ikoro-labs/forge#127 A2.1: `200k` or 40000 gives a notice naming the value, the limit is 150000."""
+        for value in ("200k", "40000", "965001", "1.5e5"):
+            with self.subTest(value=value):
+                state = self.home / ".claude" / "hooks" / "state"
+                if state.exists():
+                    shutil.rmtree(state)
+                os.environ["CLAUDE_SESSION_TOKEN_LIMIT"] = value
+                below = self.notice(149_999) or ""
+                self.assertIn("CLAUDE_SESSION_TOKEN_LIMIT", below)
+                self.assertIn(f"`{value}`", below)
+                self.assertIn("150000", below)
+                self.assertNotIn("launch nothing new", below)
+                # One line per session, not one per tool call.
+                self.assertIsNone(self.notice(149_999))
+                # The default applies: 150000 opens the drain, whatever the invalid value was.
+                drain = self.notice(150_000) or ""
+                self.assertIn("launch nothing new", drain)
+                self.assertIn("185k tokens", drain)
+
+    def test_an_invalid_limit_does_not_hide_the_drain_notice(self) -> None:
+        """ikoro-labs/forge#127 A2.1: the line comes with the drain notice when both are due."""
+        os.environ["CLAUDE_SESSION_TOKEN_LIMIT"] = "40000"
+        message = self.notice(150_000) or ""
+        self.assertIn("`40000`", message)
+        self.assertIn("launch nothing new", message)
+
+    def test_the_bounds_of_the_limit_are_valid(self) -> None:
+        """ikoro-labs/forge#127 A2: 50000 and 965000 are the bounds, kept."""
+        for value, tokens in (("50000", 50_000), ("965000", 965_000)):
+            with self.subTest(value=value):
+                state = self.home / ".claude" / "hooks" / "state"
+                if state.exists():
+                    shutil.rmtree(state)
+                os.environ["CLAUDE_SESSION_TOKEN_LIMIT"] = value
+                message = self.notice(tokens) or ""
+                self.assertIn("launch nothing new", message)
+                self.assertNotIn("CLAUDE_SESSION_TOKEN_LIMIT is", message)
+
+    def test_invalid_drain_minutes_are_reported_and_45_applies(self) -> None:
+        """ikoro-labs/forge#127 A2.2: drain `abc` gives a notice naming it, the drain cap is 45 minutes."""
+        os.environ["CLAUDE_HANDOFF_DRAIN_MINUTES"] = "abc"
+        message = self.notice(150_000) or ""
+        self.assertIn("CLAUDE_HANDOFF_DRAIN_MINUTES", message)
+        self.assertIn("`abc`", message)
+        self.assertIn("45 minutes", message)
+        self.assertIn("launch nothing new", message)
+        marker = self.home / ".claude" / "hooks" / "state" / "s1.handoff"
+        old = time.time() - 46 * 60
+        os.utime(marker, (old, old))
+        self.assertIn("Hard cap reached", self.notice(150_000) or "")
+
+    def test_an_invalid_value_never_blocks_the_hook(self) -> None:
+        """ikoro-labs/forge#127 A2: the hook exits 0 and prints one additionalContext, never a denial."""
+        line = {"type": "assistant", "message": {"usage": {"input_tokens": 1000}}}
+        self.transcript.write_text(json.dumps(line) + "\n", encoding="utf-8")
+        payload = {"transcript_path": str(self.transcript), "session_id": "s1", "hook_event_name": "PostToolUse"}
+        result = subprocess.run(
+            [sys.executable, str(support.PLUGIN / "hooks" / "handoff_trigger.py")],
+            input=json.dumps(payload), cwd=self.project, capture_output=True, encoding="utf-8", check=False,
+            env={**isolated_home(self.home), "CLAUDE_SESSION_TOKEN_LIMIT": "200k",
+                 "CLAUDE_HANDOFF_DRAIN_MINUTES": "abc", "CLAUDE_PROJECT_DIR": str(self.project)},
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        self.assertEqual(output["hookSpecificOutput"]["hookEventName"], "PostToolUse")
+        context = output["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("`200k`", context)
+        self.assertIn("`abc`", context)
+        self.assertNotIn("permissionDecision", result.stdout)
+
+    def test_yield_with_invalid_drain_minutes_falls_back_to_45(self) -> None:
+        """ikoro-labs/forge#127 A2.2: the yield command reports the value and does not crash."""
+        result = subprocess.run(
+            [sys.executable, str(support.PLUGIN / "hooks" / "handoff_trigger.py"), "yield", "abcdef12-3456"],
+            cwd=self.project, capture_output=True, encoding="utf-8", check=False,
+            env={**isolated_home(self.home), "CLAUDE_HANDOFF_DRAIN_MINUTES": "abc"},
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("`abc`", result.stdout)
+        self.assertIn("45 minutes", " ".join(result.stdout.split()))
+
     def test_the_docs_and_docstrings_give_150k_as_the_threshold(self) -> None:
         """ikoro-labs/forge#127 A3: hook docstrings, docs/sessions.md and README.md say 150 000."""
         import handoff_relay
@@ -556,6 +638,20 @@ class Trigger(unittest.TestCase):
                 self.assertRegex(texts[name], r"\b150k\b|150 000")
         self.assertRegex(texts["docs/sessions.md"], r"150 000")
         self.assertRegex(texts["docs/sessions.md"], r"\| `CLAUDE_SESSION_TOKEN_LIMIT` \| 150000 \|")
+
+    def test_the_docs_call_the_threshold_the_users_setting_with_its_bounds(self) -> None:
+        """ikoro-labs/forge#127 A3: docs/sessions.md names the user's setting, its bounds and the fallbacks."""
+        text = (support.REPO_ROOT / "docs" / "sessions.md").read_text(encoding="utf-8")
+        section = text.split("### Le seuil", 1)[1].split("###", 1)[0]
+        self.assertRegex(section, r"réglage de l'utilisateur")
+        self.assertIn("`env`", section)
+        self.assertIn("~/.claude/settings.json", section)
+        self.assertRegex(section, r"50 000")
+        self.assertRegex(section, r"965 000")
+        self.assertRegex(section, r"150 000")
+        self.assertNotRegex(section, r"Seul le relais le pose")
+        self.assertNotRegex(section, r"Aucun `settings.json` ne doit le fixer")
+        self.assertRegex(text, r"\| `CLAUDE_HANDOFF_DRAIN_MINUTES` \| 45 \|[^\n]*invalide")
 
     def test_a_subagent_is_never_told(self) -> None:
         self.assertIsNone(self.notice(200_000, agent_id="a1"))
@@ -992,6 +1088,62 @@ class Relay(unittest.TestCase):
         self.assertEqual(path.read_text(encoding="utf-8"), before)
         self.assertFalse(self.counter.exists())
         self.assertFalse(self.log.exists())
+
+    def settings_file(self, text: str | None) -> None:
+        """The user's settings.json holding `text`, or no file at all for None."""
+        settings = self.home / ".claude" / "settings.json"
+        settings.unlink(missing_ok=True)
+        if text is not None:
+            settings.parent.mkdir(parents=True, exist_ok=True)
+            settings.write_text(text, encoding="utf-8")
+
+    def user_setting(self, value: object) -> None:
+        self.settings_file(json.dumps({"env": {"CLAUDE_SESSION_TOKEN_LIMIT": value}}))
+
+    def test_the_successor_gets_the_valid_user_threshold(self) -> None:
+        """ikoro-labs/forge#127 A1.1: user env 200000 gives `seuil` 200000 and a successor on 200000, with or
+        without a feature, and the relay prints where the value comes from."""
+        for feature in ("F-0001", ""):
+            for value in ("200000", 200000):
+                with self.subTest(feature=feature, value=value):
+                    self.user_setting(value)
+                    path = handoff(self.home, feature=feature)
+                    result = self.relay(path, CLAUDE_HANDOFF_CLOSE_DRY_RUN="", CLAUDE_HANDOFF_RELAY_MAX="50")
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertTrue(self.log.read_text(encoding="utf-8").splitlines()[-1].startswith("200000 --bg"))
+                    self.assertEqual(handoff_header.check(path)["seuil"], ["200000"])
+                    self.assertRegex(result.stdout, r"threshold: 200000 \(source: .*settings\.json\)")
+
+    def test_the_successor_falls_back_to_150k_without_a_valid_user_threshold(self) -> None:
+        """ikoro-labs/forge#127 A1.2: no user env, or `200k`, gives 150000, and the source is the default."""
+        def env(value: object) -> str:
+            return json.dumps({"env": {"CLAUDE_SESSION_TOKEN_LIMIT": value}})
+
+        cases = {
+            "no settings": None,
+            "no env block": "{}",
+            "broken file": "{not json",
+            "200k": env("200k"),
+            "under the bound": env("49999"),
+            "over the bound": env(965001),
+            "not a number": env(True),
+        }
+        for label, text in cases.items():
+            with self.subTest(case=label):
+                self.settings_file(text)
+                path = handoff(self.home, feature="F-0001")
+                result = self.relay(path, CLAUDE_HANDOFF_CLOSE_DRY_RUN="", CLAUDE_SESSION_TOKEN_LIMIT="400000", CLAUDE_HANDOFF_RELAY_MAX="50")
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertTrue(self.log.read_text(encoding="utf-8").splitlines()[-1].startswith("150000 --bg"))
+                self.assertEqual(handoff_header.check(path)["seuil"], ["150000"])
+                self.assertRegex(result.stdout, r"threshold: 150000 \(source: default\)")
+
+    def test_a_dry_run_prints_the_user_threshold_and_its_source(self) -> None:
+        """ikoro-labs/forge#127 A1.1: the dry run names the same value and source."""
+        self.user_setting("200000")
+        result = self.relay(handoff(self.home))
+        self.assertIn("CLAUDE_SESSION_TOKEN_LIMIT=200000 claude --bg", result.stdout)
+        self.assertRegex(result.stdout, r"threshold: 200000 \(source: .*settings\.json\)")
 
     def test_the_successor_gets_150k_with_or_without_a_feature(self) -> None:
         """ikoro-labs/forge#127 A2.1 and A2.2: `seuil` is 150000 with a feature and without one."""
