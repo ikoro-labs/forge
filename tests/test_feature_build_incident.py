@@ -4,7 +4,6 @@ Sans cette étape, le skill `incident` dit « à lancer » et rien ne le lance :
 ou un ticket `sev1` ou `sev2` fusionné, se termine sans revue écrite.
 """
 
-import re
 import unittest
 
 import support
