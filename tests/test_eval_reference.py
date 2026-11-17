@@ -25,6 +25,7 @@ FALSE_ACCEPTS = {"faux-accept-pr13-tour2", "faux-accept-pr14-tour1", "faux-accep
 # PR accepted at round 1, merged, never fixed since: the head and the base the judge saw at round 1.
 ACCEPTS = {
     "accept-pr226-tour1": ("ad904b756aa76913e7a42e2d9288d386077eafd8", "d972447662d60b530d64134145a46071fe36529f"),
+    "accept-pr228-tour1": ("76b372830b04f4af363a7f558e3475b5ebe25975", "0d51e8a299f7fd7bd79f9084f00261d19ad6a4b9"),
 }
 FIXTURES = ("ticket.txt", "pr-body.txt", "pr.diff", "gate.txt", "claude.txt", "rules-forge.txt",
             "rules-git.txt", "usine.txt")
