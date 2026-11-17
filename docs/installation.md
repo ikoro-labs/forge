@@ -320,6 +320,38 @@ sans ses commandes de porte ni sa grille, `/forge:qc` rend des sondes « sans ob
 qu'une revue configurée, et une clé qui pointe un chemin disparu donne un `NOT RUN` à chaque PR
 jusqu'à sa correction.
 
+## Les appels `gh api` admis
+
+`guard_git` ne laisse passer un `gh api` que s'il figure sur une liste d'acceptation : sa méthode et
+son chemin doivent correspondre à une ligne de la liste du plugin ou à une ligne de la clé
+`gh-api-allow` de `docs/agents/usine.md`, une `<méthode> | <motif de chemin> | <raison>` par appel
+(le gabarit `templates/usine.md` la documente ; sans la clé, seule la liste du plugin s'applique, et
+une ligne à qui il manque une partie n'autorise rien et est citée dans le refus). Un motif est celui
+des clés de chemin du plugin : `*` pour une partie d'un segment, `**/` pour des dossiers. La liste du
+plugin tient les appels que ses skills et ses agents citent (lectures d'une PR, de ses fichiers, de ses
+commentaires, de ses checks, de la CI, des sous-tickets), l'écriture d'un commentaire, d'un
+sous-ticket et d'une étiquette, la requête GraphQL (dont le contenu reste jugé) et la fusion d'une
+PR (que les règles de fusion jugent) ; un test lit chaque `gh api` que les skills et les agents
+citent et vérifie qu'il est accepté.
+
+- La méthode se lit comme `gh` la lit : le dernier `-X` ou `--method` compte (`-X GET -X DELETE` est
+  un `DELETE`), sinon `POST` dès qu'un champ (`-f`, `-F`, `--field`, `--raw-field`) ou `--input` est
+  donné, sinon `GET`. `HEAD` se juge comme `GET`.
+- Un appel que le garde ne sait pas lire est refusé, l'appel et la raison nommés : un chemin, une
+  méthode ou une option qui contiennent une variable ou une substitution (`gh api "$URL"`), un
+  chemin avec un glob, une expansion d'accolades, un `#`, un `%`, un segment vide, `.` ou `..`, une
+  URL absolue, pas de chemin du tout. La valeur d'un champ peut contenir une variable
+  (`-f body="$BODY"`) : elle ne change ni la méthode ni le chemin. Une requête GraphQL est lue comme
+  avant (arguments, heredoc, fichiers) et refusée quand elle ne se lit pas.
+- Une redirection d'un autre descripteur que 0 (`3< fichier`) n'est pas l'entrée standard de la
+  commande : elle ne nourrit ni `--input -` ni `-F query=@-`.
+- La clé n'ouvre pas un geste du propriétaire : les écritures listées ci-dessous restent refusées,
+  quelle que soit la ligne.
+
+Limite : une variable non quotée dans la valeur d'un champ peut, développée, ajouter des mots à
+l'appel (`-f body=$X` avec `X="a -X DELETE"`) ; le garde ne voit pas les guillemets d'origine. Écrire
+la valeur dans un fichier et la passer par `-F body=@fichier` évite le cas.
+
 ## Les gestes du propriétaire du dépôt
 
 `guard_git` refuse à tout agent les gestes qui reviennent au propriétaire du dépôt, et le refus
@@ -358,10 +390,11 @@ dit que l'humain les fait et que l'agent les liste en fin de compte rendu. La li
   affectation `ACTIONS_RUNNER_INPUT_*` est refusée, où qu'elle soit (devant la commande, après
   `env` ou `export`, seule, dans `bash -c` ou un heredoc), car le runner y lit son enregistrement.
 
-La lecture passe toujours : un `GET` ou `HEAD` explicite (le dernier `-X`/`--method` compte, comme
-pour gh, et la valeur d'une option comme `--jq` ou `-q` n'est pas une méthode), avec `-f`/`-F` ou
-non, ou l'absence de méthode, de champ et de `--input` (avec un champ ou `--input`, gh envoie un
-`POST`). Un projet ajoute ses gestes avec la clé `owner-gesture` de `docs/agents/usine.md`, une
+Une lecture n'est pas un geste du propriétaire : un `GET` ou `HEAD` explicite (le dernier
+`-X`/`--method` compte, comme pour gh, et la valeur d'une option comme `--jq` ou `-q` n'est pas une
+méthode), avec `-f`/`-F` ou non, ou l'absence de méthode, de champ et de `--input` (avec un champ ou
+`--input`, gh envoie un `POST`), ne fait pas partie de ces refus ; elle passe seulement si la liste
+d'acceptation ci-dessus l'admet. Un projet ajoute ses gestes avec la clé `owner-gesture` de `docs/agents/usine.md`, une
 ligne `<préfixe de commande> | <raison>` chacune ; sans la clé, la liste intégrée s'applique
 seule. Ce comportement resserre celui des projets qui gardaient ces gestes dans leurs propres
 hooks : ceux-ci peuvent rester, ils tournent à côté.
