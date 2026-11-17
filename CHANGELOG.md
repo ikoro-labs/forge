@@ -9,6 +9,55 @@ Ce dépôt a été recréé le 2026-10-23 ; l'ancien est `ikoro-labs/forge-archi
 numéros de PR et de ticket nus (`#38`) renvoient à l'ancien dépôt ; un renvoi au nouveau dépôt
 porte son nom (`ikoro-labs/forge#7`).
 
+## [1.16.0] - 2026-11-17
+
+La passation se fait à 150 000 jetons, avec ou sans feature, et par billet ; une fusion relit les
+messages des commits de la PR. Version mineure : deux billets nouveaux, aucune clé nouvelle.
+
+- Hooks : le seuil de passation passe à 150 000 jetons, avec ou sans feature ; le relais lit
+  `DEFAULT_LIMIT` de `handoff_trigger.py` et le donne au successeur (ikoro-labs/forge#237, partie 1
+  de ikoro-labs/forge#127).
+- Hooks : `guard_git` lit les commits d'une PR avant sa fusion et la refuse quand l'un ferme un
+  ticket que la description ou le message de fusion ne cite qu'en `Refs` ; une liste illisible vaut
+  refus, quelle que soit la méthode (ikoro-labs/forge#228, ikoro-labs/forge#64).
+- Hooks : `guard_output` refuse un billet dont l'heure s'écarte de plus de 5 minutes de l'horloge du
+  poste (ikoro-labs/forge#236, point A5 de ikoro-labs/forge#227).
+- Skills : les billets `handoff-request` et `handoff` remplacent la prose de la passation, dans
+  l'étape 0 de `forge:feature-build` et dans ce qu'imprime `handoff_trigger.py yield` ; le hook
+  vérifie la session demandeuse dans le registre et le successeur nommé par la passation
+  (ikoro-labs/forge#236, point A6 de ikoro-labs/forge#227).
+- Skills : `forge:qc` fusionne par `--merge`, `--squash` ou `--rebase` selon `merge-method` ; sans
+  la clé, il ne fusionne pas et pose `needs-your-attention` ; la copie locale de la branche suit la
+  méthode (ikoro-labs/forge#238, ikoro-labs/forge#63).
+- Gabarits : `usine.md` nomme les trois valeurs de `merge-method` ; `billet.md` ajoute les types
+  `handoff-request` et `handoff`, et son plafond passe de 16 à 24 lignes.
+- Tests : le seuil avec et sans feature, les messages des commits pour chaque méthode, l'heure et
+  les billets de passation, les trois méthodes de fusion du skill `qc`.
+- Gestes humains : une session ouverte avec `CLAUDE_SESSION_TOKEN_LIMIT` garde son propre seuil ;
+  sans la variable, elle passe la main à 150 000 jetons.
+- Resté dehors : le seuil propre à un utilisateur, conservé par le relais, est la suite de
+  ikoro-labs/forge#127 ; le journal des refus des gardes (ikoro-labs/forge#240) attend sa revue, puis
+  la fusion de l'humain. L'essai de bout en bout est sans objet ici (clé `e2e-repo` absente). Rien d'éprouvé
+  sous Windows en local, ni dans une vraie session.
+
+### Objectifs de service
+
+État de chaque objectif au 2026-11-17.
+
+| Objectif | Cible | Fenêtre | Valeur | Budget restant | État |
+|---|---|---|---|---|---|
+| `accept-round-1` | >= 80 % | 30 j | 62.03 % | 0 % sur 20 % | épuisé |
+| `lead-time p90` | <= 24 h | 30 j | 534.3 h | 0 h sur 24 h | épuisé |
+| `release-lag p90` | <= 24 h | 30 j | 493.6 h | 0 h sur 24 h | épuisé |
+| `escaped-defects` | <= 10 % | 30 j | 0.93 % | 9.07 % sur 10 % | tenu |
+| `change-failure` | <= 10 % | 30 j | 0.93 % | 9.07 % sur 10 % | tenu |
+| `human-touch` | <= 10 % | 30 j | 15.32 % | 0 % sur 10 % | épuisé |
+| `main-green` | >= 100 % | 30 j | 95.24 % | 0 % sur 0 % | épuisé |
+| `judge-recall` | >= 95 % | 30 j | sans objet | aucun résultat du jeu de référence (option `--reference` absente) | sans objet |
+| `false-accept` | <= 0 % | 30 j | sans objet | aucun résultat du jeu de référence (option `--reference` absente) | sans objet |
+
+Aucun `escaped-defect` ouvert depuis le 2026-11-16.
+
 ## [1.15.0] - 2026-11-16
 
 La revue rejoue chaque commit, sonde ses BLOCKER et se mesure sur un jeu de référence ; l'usine
