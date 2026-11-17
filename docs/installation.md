@@ -813,7 +813,9 @@ can also run on a body before it posts it:
 
 The reply carries five fields: `Done`, `Measured`, `Awaiting your decision`, `CI and runners` and
 `Features` (or `Fait`, `Mesure`, `Attend ta décision`, `CI et runners`, `Features`, the last being the
-same word in both languages). `CI and runners` is one line, which `scripts/report_mail.py --line`
+same word in both languages). The first three are the rows of one table headed `| Field | State |` (or
+`| Champ | État |`), with its separator row; the guard refuses one of them written as a prose line or a
+heading, or a row with no state. `CI and runners` is one line, which `scripts/report_mail.py --line`
 prints from the `report-*` keys of `usine.md` (see [Le mail de relevé](#le-mail-de-relevé)); without
 those keys the line reads `not applicable`.
 

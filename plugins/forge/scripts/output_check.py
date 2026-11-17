@@ -19,6 +19,9 @@ The rules, the same for every kind that has them:
 - at most the `max-lines:` of that header line (`0` for none), in written lines: blank lines and HTML
   comments do not count.
   A project replaces a template with the key `output-template` (`<kind> | <path>`);
+- the first three fields of a session reply (`Done`, `Measured`, `Awaiting your decision`, or their
+  French names) are the rows of one table headed `| Field | State |` or `| Champ | État |`: one of them
+  written outside that table, or a row with no state, is refused;
 - the `Features` field of a session reply is the block `report_mail.py --features` prints
   (`features_block.py` says its shape): it is checked for that shape, and left out of the line cap,
   the word cap and the paragraph cap, which hold for the rest of the reply;
@@ -61,6 +64,11 @@ TEMPLATE_KEY = "output-template"
 AGENT_FORMAT_KEY = "output-agent-format"
 EXTRA_KEYS_KEY = "output-extra-keys"
 FEATURES_LABEL = "Features"
+# The fields of a session reply that are the rows of one table, by their first label, and the headers
+# that table takes: the one in English, the one in French.
+TABLE_FIELDS = ("Done", "Measured", "Awaiting your decision")
+TABLE_HEADERS = (("field", "state"), ("champ", "état"))
+TABLE_SEPARATOR_CELL = re.compile(r"^:?-{3,}:?$")
 
 
 @dataclass(frozen=True)
@@ -327,6 +335,63 @@ def _features(lines: list[str], template: str) -> tuple[range, int] | None:
     return range(index, features_block.end(lines, index)), index
 
 
+def _cells(line: str) -> list[str]:
+    """The cells of a table row, the outer pipes left out; empty when the line is no row."""
+    stripped = line.strip()
+    if not (stripped.startswith("|") and stripped.endswith("|") and len(stripped) > 1):
+        return []
+    return [cell.strip() for cell in re.split(r"(?<!\\)\|", stripped[1:-1])]
+
+
+def _field_table(lines: list[str]) -> range:
+    """The lines of the first `| Field | State |` (or `| Champ | État |`) table, header and separator
+    included; empty when the text has none. A header without its separator row opens no table."""
+    for index, line in enumerate(lines[:-1]):
+        header = tuple(cell.lower() for cell in _cells(line))
+        separator = _cells(lines[index + 1])
+        if header in TABLE_HEADERS and len(separator) == 2 and all(
+            TABLE_SEPARATOR_CELL.match(cell) for cell in separator
+        ):
+            end = index + 2
+            while end < len(lines) and lines[end].lstrip().startswith("|"):
+                end += 1
+            return range(index, end)
+    return range(0)
+
+
+def _table_row(lines: list[str], table: range, labels: list[str]) -> int | None:
+    """The index of the row of `table` whose first cell is one of `labels`, markup left out."""
+    wanted = [label.lower() for label in labels]
+    for index in table[2:]:
+        cells = _cells(lines[index])
+        if cells and MARKUP.sub("", cells[0]).strip("*_`: ").lower() in wanted:
+            return index
+    return None
+
+
+def _table_fields(lines: list[str], template: str) -> list[str]:
+    """What departs from the rule that `Done`, `Measured` and `Awaiting your decision` (or their French
+    names) are the rows of one table; a field that `template` does not require is not read."""
+    table = _field_table(lines)
+    found: list[str] = []
+    for labels in required_fields(template):
+        if labels[0] not in TABLE_FIELDS:
+            continue
+        name = " or ".join(f"`{label}`" for label in labels)
+        outside = [i for i, line in enumerate(lines) if i not in table and _field_line([line], labels) == 0]
+        row = _table_row(lines, table, labels)
+        if outside:
+            found.append(
+                f"the field {name} is written outside the table: the three fields are the rows of one"
+                " table headed `| Field | State |` or `| Champ | État |`, with its separator row"
+            )
+        elif row is None:
+            found.append(f"the field {name} is missing (template `session-reply`)")
+        elif len(_cells(lines[row])) < 2 or not _cells(lines[row])[1]:
+            found.append(f"the field {name} is empty")
+    return found
+
+
 def _keys(lines: list[str], first: str) -> dict[str, str]:
     """`KEY: value` lines of the last block that opens with `first:`, continuations joined."""
     starts = [i for i, line in enumerate(lines) if line.strip().startswith(f"{first}:")]
@@ -588,7 +653,12 @@ def deviations(
             f"{written} lines, at most {most_lines} (template `{kind}`): blank lines and HTML"
             " comments do not count"
         )
+    in_table = kind == "session-reply"
+    if in_table:
+        found += _table_fields(lines, template)
     for labels in required_fields(template):
+        if in_table and labels[0] in TABLE_FIELDS:
+            continue
         index = _field_line(whole, labels)
         name = " or ".join(f"`{label}`" for label in labels)
         if index is None:

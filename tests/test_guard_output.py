@@ -17,7 +17,8 @@ from guard_output import REFUSED, outcome, state_dir
 
 TICKET = "Motif: demande-kevin\nWhat is missing.\n\n## Criteria\n\n- A1: a test.\n"
 REPLY_WITHOUT_FEATURES = (
-    "Done: merged #12.\n\nMeasured: CI 4 min, run 99.\n\nAwaiting your decision: nothing.\n\n"
+    "| Field | State |\n|---|---|\n| Done | merged #12. |\n| Measured | CI 4 min, run 99. |\n"
+    "| Awaiting your decision | nothing. |\n\n"
     "CI and runners: pc 2/2 online; main success abc1234.\n"
 )
 # What `scripts/report_mail.py --features` prints for an open feature (F-0181 A11).
