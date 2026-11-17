@@ -7,6 +7,8 @@ No test here calls a model: the result of a run is a made-up `aggregate-result.j
 import io
 import json
 import re
+import shutil
+import subprocess
 import tempfile
 import unittest
 import unittest.mock
@@ -514,6 +516,18 @@ class TrappedCases(unittest.TestCase):
                     for relative in files:
                         self.assertEqual((committed / relative).read_bytes(), (planted / relative).read_bytes(),
                                          str(relative))
+
+    @unittest.skipUnless(shutil.which("git") and (support.REPO_ROOT / ".git").exists(),
+                         "`git check-attr` reads the attributes of a git checkout")
+    def test_every_case_and_every_spec_is_checked_out_with_lf_endings(self) -> None:
+        """#154 A2.4, under Windows: `* text=auto` checks the cases out as CRLF while `plant` writes LF."""
+        files = [path.relative_to(support.REPO_ROOT).as_posix() for folder in (EVALS, SPECS)
+                 for path in sorted(folder.rglob("*")) if path.is_file()]
+        self.assertGreater(len(files), 100)
+        attributes = subprocess.run(["git", "check-attr", "--stdin", "eol"], cwd=support.REPO_ROOT,
+                                    input="\n".join(files), capture_output=True, text=True, check=True).stdout
+        crlf = [line for line in attributes.splitlines() if not line.endswith(": eol: lf")]
+        self.assertEqual(crlf, [])
 
     def test_each_case_differs_from_its_source_in_the_diff_and_at_most_the_gate_table(self) -> None:
         for names in TRAPS.values():

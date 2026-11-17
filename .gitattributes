@@ -1,3 +1,7 @@
 * text=auto
 *.py text eol=lf
 *.sh text eol=lf
+# The reference cases and the specs that plant their defects are compared byte for byte
+# (`plant_defect.py` writes LF): they are checked out as LF on every system.
+plugins/forge/evals/** text eol=lf
+plugins/forge/eval-traps/** text eol=lf
