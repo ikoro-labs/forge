@@ -225,7 +225,10 @@ phrase que le script a rendue ; un second échec se traite comme `RESULT: FAILED
 - `RESULT: BLOCKED` : d'abord l'agent `forge:staff-engineer` (outil Agent, au premier plan), ou
   `forge:product-owner` si la question est produit ou UX, avec la question, la recommandation du
   coder, le ticket et la feature. Un `TECHNICAL` de `forge:product-owner` part, une fois, vers
-  `forge:staff-engineer`. Selon le verdict :
+  `forge:staff-engineer`. Un `BLOCKED` du plafond de trois PR par ticket (le coder n'ouvre pas de
+  quatrième partie) est une décision de découpage : passe-le à `forge:staff-engineer`, qui dit si le
+  ticket tient dans ce qui est livré ou si la feature se recoupe ; le budget de tickets est fermé, et
+  aucun ticket ne naît du plafond. Selon le verdict :
   - `DECIDED` : commente le ticket (`Décision (<agent>, <ligne MATRIX_CELL>)`, la décision, sa
     source ; `needs-your-attention` si `VETO: yes`), puis relance un `forge:coder` sur le ticket
     avec ce bloc ; sa PR écrit la décision là où dit `WRITE_TO`. Pas d'arrêt.

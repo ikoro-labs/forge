@@ -46,6 +46,11 @@ Applique `${CLAUDE_PLUGIN_ROOT}/templates/features/protocole.md`, document `desi
    dépendances déclarées. Trois règles :
    - **Un contexte neuf.** Chaque ticket tient dans un seul contexte neuf, celui d'un
      `forge:coder` : s'il n'y tient pas, coupe-le.
+   - **Trois PR au plus.** Chaque ticket est taillé pour trois PR au plus, parties en `Refs #n`
+     comprises : `feature-tickets` compte des tickets, pas des PR, et un ticket livré en parties
+     sans plafond ne borne rien. Un ticket qui en prendrait davantage est coupé avant d'être
+     publié, en tickets du budget (`feature-tickets`), jamais en une quatrième partie. Le budget
+     en PR de la feature est `feature-tickets` fois 3.
    - **Le prérefactoring d'abord.** Quand le changement demandé serait difficile dans le code tel
      qu'il est, rends-le facile d'abord (le prérefactoring), puis fais le changement facile. Le
      prérefactoring a son propre ticket, qui bloque ceux qui en dépendent, et ne change aucun

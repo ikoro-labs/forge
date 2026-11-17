@@ -10,7 +10,11 @@ tracking issue (the `issue:` of its `idee.md`), read by `gh api .../sub_issues -
 ticket closed as not planned stands apart, out of the count; the others are open, or closed. `%` is closed over closed plus open, rounded, its denominator in the
 cell, and `sans objet (aucun ticket publié)` without any; never over the budget, which a feature
 may not fill. The budget is the `feature-tickets` of the feature's `design.md`, `?`
-without one. `Suivi` is the `issue:` of its `idee.md`. Each row carries the UTC time it was read and
+without one. A ticket is sized for at most `PRS_PER_TICKET` PRs, so the `PR fusionnées / budget PR`
+cell is the merged PRs over `feature-tickets` times `PRS_PER_TICKET` (`?` without a budget), the
+merged PRs of each ticket in brackets (`4 / 45 (#41: 3, #42: 1)`). They are read by one
+`gh pr list --state merged --search "Feature: F-NNNN"`: a PR counts for the tickets its body
+cites with `Closes #n` or `Refs #n`, once for each. `Suivi` is the `issue:` of its `idee.md`. Each row carries the UTC time it was read and
 its source.
 
 A feature is open while its folder has no `README.md` (the delivered feature) and the `etat` of its
@@ -23,6 +27,7 @@ the cell. A feature gh cannot read stops the script (exit 2): a row is never gue
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import subprocess
 import sys
@@ -51,7 +56,11 @@ CLOSED_ROLES = ("hors-perimetre", "abandonnee")
 FOLDER = re.compile(r"^(\d{4})-")
 SUB_ISSUES_SOURCE = "gh api sub_issues of"
 SEARCH_SOURCE = "gh issue list --search (no issue: in idee.md)"
+PR_SOURCE = "gh pr list --state merged"
 NO_TICKET = "sans objet (aucun ticket publié)"
+PRS_PER_TICKET = 3
+PR_LIMIT = "1000"
+TICKET_CITED = re.compile(r"\b(?:Closes|Refs)[ \t]+#(\d+)\b", re.IGNORECASE)
 Clock = Callable[[], datetime]
 
 
@@ -207,6 +216,39 @@ def searched(feature: str, root: Path, run: Runner) -> list[dict] | None:
     return [issue for issue in issues.values() if counts_for(issue["body"]) == feature]
 
 
+def merged_prs(feature: str, tickets: set[int], root: Path, run: Runner) -> dict[int, int] | None:
+    """The merged PRs of each ticket of `feature` (a PR cites it by `Closes #n` or `Refs #n`).
+
+    None when gh cannot say. A PR citing no ticket of the feature is left out.
+    """
+    argv = ["pr", "list", "--state", "merged", "--search", f'"Feature: {feature}" in:body']
+    output = run([*argv, "--json", "number,body", "--limit", PR_LIMIT], str(root))
+    if output is None:
+        return None
+    try:
+        prs = json.loads(output)
+    except ValueError:
+        return None
+    if not isinstance(prs, list):
+        return None
+    per_ticket: dict[int, int] = {}
+    for pr in prs:
+        body = pr.get("body") if isinstance(pr, dict) else None
+        if not isinstance(body, str):
+            return None
+        for number in {int(cited) for cited in TICKET_CITED.findall(body)} & tickets:
+            per_ticket[number] = per_ticket.get(number, 0) + 1
+    return per_ticket
+
+
+def pr_cell(per_ticket: Mapping[int, int], budget: int | None) -> str:
+    """`<merged> / <budget PR>`, the budget `feature-tickets` times three (`?` without one)."""
+    total = sum(per_ticket.values())
+    wanted = budget * PRS_PER_TICKET if budget is not None else "?"
+    detail = ", ".join(f"#{number}: {count}" for number, count in sorted(per_ticket.items()))
+    return f"{total} / {wanted}" + (f" ({detail})" if detail else "")
+
+
 def row(
     feature: str, folder: Path, root: Path, directory: str, run: Runner, now: Clock
 ) -> list[str]:
@@ -222,6 +264,9 @@ def row(
         source = SEARCH_SOURCE
     if found is None:
         raise CompletionError(f"gh cannot list the tickets of {feature}: no row is guessed")
+    prs = merged_prs(feature, {int(issue["number"]) for issue in found}, root, run)
+    if prs is None:
+        raise CompletionError(f"gh cannot list the merged PRs of {feature}: no row is guessed")
     read_at = now()
     still_open, closed, out = tally(found)
     return [
@@ -232,7 +277,8 @@ def row(
         str(len(still_open)),
         str(len(out)),
         ", ".join(f"#{number}" for number in still_open) or "aucun",
-        f"{read_at.astimezone(timezone.utc):%Y-%m-%d %H:%M} UTC, {source}",
+        pr_cell(prs, budget),
+        f"{read_at.astimezone(timezone.utc):%Y-%m-%d %H:%M} UTC, {source}, {PR_SOURCE}",
     ]
 
 
