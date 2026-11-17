@@ -463,37 +463,38 @@ class Trigger(unittest.TestCase):
         return handoff_trigger.notice(payload)
 
     def test_below_the_limit_nothing_is_said(self) -> None:
-        self.assertIsNone(self.notice(299_999))
+        """ikoro-labs/forge#127 A1.1: without the variable, 149999 tokens warn nobody."""
+        self.assertIsNone(self.notice(149_999))
 
-    def test_a_context_of_200k_is_below_the_default_limit(self) -> None:
-        """ikoro-labs/forge#205 A1.1: without the variable, 200k tokens warn nobody."""
-        self.assertIsNone(self.notice(200_000))
+    def test_the_default_limit_opens_the_drain_at_150k(self) -> None:
+        """ikoro-labs/forge#127 A1.2: without the variable, 150000 tokens give the drain notice."""
+        self.assertIn("launch nothing new", self.notice(150_000) or "")
 
     def test_the_limit_opens_the_drain_once(self) -> None:
-        message = self.notice(300_000)
+        message = self.notice(150_000)
         self.assertIsNotNone(message)
         self.assertIn("launch nothing new", message or "")
         self.assertIn(f"forge@{VERSION}", message or "")
-        self.assertIn("335k tokens or 45 minutes", message or "")
+        self.assertIn("185k tokens or 45 minutes", message or "")
         self.assertIn(f'uv run --no-project --quiet python "{RELAY}"', message or "")
         self.assertIn(str(self.home / ".claude" / "hooks" / "state" / "handoffs" / "demo"), message or "")
         self.assertIn("en_vol", message or "")
-        self.assertIsNone(self.notice(301_000))
-        self.assertIn("stage drain", self.notice(301_000, "UserPromptSubmit") or "")
+        self.assertIsNone(self.notice(151_000))
+        self.assertIn("stage drain", self.notice(151_000, "UserPromptSubmit") or "")
 
     def test_a12_the_handoff_instruction_asks_for_the_features_block(self) -> None:
         """F-0181 A12: the session copies `report_mail.py --features` into the handoff body, so that
         its successor starts from the same state."""
         script = support.PLUGIN / "scripts" / "report_mail.py"
         command = f'uv run --no-project --quiet python "{script}" --features'
-        drain = " ".join((self.notice(300_000) or "").split())
+        drain = " ".join((self.notice(150_000) or "").split())
         self.assertIn(command, drain)
         self.assertRegex(drain, r"under `Features:`")
 
     def test_the_handoffs_can_live_outside_any_claude_folder(self) -> None:
         os.environ["FORGE_TEST_ROOT"] = str(self.home)
         os.environ["CLAUDE_HANDOFF_DIR"] = os.path.join("$FORGE_TEST_ROOT", "passations")
-        message = self.notice(300_000) or ""
+        message = self.notice(150_000) or ""
         self.assertIn(str(self.home / "passations" / "demo" / f"{datetime.date.today().isoformat()}-r1.md"), message)
         self.assertNotIn(str(self.home / ".claude" / "hooks" / "state" / "handoffs"), message)
         self.assertTrue((self.home / ".claude" / "hooks" / "state" / "s1.handoff").exists())
@@ -511,7 +512,7 @@ class Trigger(unittest.TestCase):
         worktree = self.project / ".claude" / "worktrees" / "feature-x"
         git("worktree", "add", "-q", "-b", "feature-x", str(worktree), cwd=self.project)
         os.environ["CLAUDE_PROJECT_DIR"] = str(worktree)
-        message = self.notice(300_000) or ""
+        message = self.notice(150_000) or ""
         day = datetime.date.today().isoformat()
         self.assertIn(str(self.home / ".claude" / "hooks" / "state" / "handoffs" / "demo" / f"{day}-r1.md"), message)
 
@@ -521,21 +522,40 @@ class Trigger(unittest.TestCase):
         self.assertEqual(handoff_trigger.project_name(self.project), "demo")
 
     def test_the_hard_cap_comes_with_the_tokens_or_the_clock(self) -> None:
-        self.notice(300_000)
-        self.assertIn("Hard cap reached", self.notice(335_000) or "")
-        self.assertIsNone(self.notice(340_000))
-        self.assertIn("stage hard", self.notice(340_000, "UserPromptSubmit") or "")
+        self.notice(150_000)
+        self.assertIn("Hard cap reached", self.notice(185_000) or "")
+        self.assertIsNone(self.notice(190_000))
+        self.assertIn("stage hard", self.notice(190_000, "UserPromptSubmit") or "")
 
         marker = self.home / ".claude" / "hooks" / "state" / "s1.handoff"
         (self.home / ".claude" / "hooks" / "state" / "s1.hard").unlink()
         old = time.time() - 46 * 60
         os.utime(marker, (old, old))
-        self.assertIn("46 minutes", self.notice(310_000) or "")
+        self.assertIn("46 minutes", self.notice(160_000) or "")
 
-    def test_an_orchestration_relay_drains_at_its_own_threshold(self) -> None:
-        os.environ["CLAUDE_SESSION_TOKEN_LIMIT"] = "400000"
-        self.assertIsNone(self.notice(399_000))
-        self.assertIn("435k tokens", self.notice(400_000) or "")
+    def test_a_set_variable_overrides_the_default_limit(self) -> None:
+        os.environ["CLAUDE_SESSION_TOKEN_LIMIT"] = "200000"
+        self.assertIsNone(self.notice(199_000))
+        self.assertIn("235k tokens", self.notice(200_000) or "")
+
+    def test_the_docs_and_docstrings_give_150k_as_the_threshold(self) -> None:
+        """ikoro-labs/forge#127 A3: hook docstrings, docs/sessions.md and README.md say 150 000."""
+        import handoff_relay
+
+        texts = {
+            "handoff_trigger": handoff_trigger.__doc__ or "",
+            "handoff_relay": handoff_relay.__doc__ or "",
+            "docs/sessions.md": (support.REPO_ROOT / "docs" / "sessions.md").read_text(encoding="utf-8"),
+            "README.md": (support.REPO_ROOT / "README.md").read_text(encoding="utf-8"),
+        }
+        for name, text in texts.items():
+            with self.subTest(name=name):
+                self.assertNotRegex(text, r"\b(300|400) ?000\b|\b(300|400)k\b")
+        for name in ("handoff_trigger", "README.md"):
+            with self.subTest(name=name):
+                self.assertRegex(texts[name], r"\b150k\b|150 000")
+        self.assertRegex(texts["docs/sessions.md"], r"150 000")
+        self.assertRegex(texts["docs/sessions.md"], r"\| `CLAUDE_SESSION_TOKEN_LIMIT` \| 150000 \|")
 
     def test_a_subagent_is_never_told(self) -> None:
         self.assertIsNone(self.notice(200_000, agent_id="a1"))
@@ -545,19 +565,19 @@ class Trigger(unittest.TestCase):
         settings.parent.mkdir(parents=True)
         own = f'python3 "{handoff_trigger.HOOKS}/handoff_trigger.py"'
         settings.write_text(json.dumps({"hooks": {"PostToolUse": [{"hooks": [{"command": own}]}]}}), encoding="utf-8")
-        self.assertIsNotNone(self.notice(300_000))
+        self.assertIsNotNone(self.notice(150_000))
         copy = f"python3 {self.home}/.claude/hooks/handoff_trigger.py"
         settings.write_text(json.dumps({"hooks": {"PostToolUse": [{"hooks": [{"command": copy}]}]}}), encoding="utf-8")
         (self.home / ".claude" / "hooks" / "state" / "s1.handoff").unlink()
-        self.assertIsNone(self.notice(300_000))
+        self.assertIsNone(self.notice(150_000))
 
     def test_the_user_skill_is_cited_only_when_it_exists(self) -> None:
-        self.assertNotIn("SKILL.md", self.notice(300_000) or "")
+        self.assertNotIn("SKILL.md", self.notice(150_000) or "")
         skill = self.home / ".claude" / "skills" / "handoff" / "SKILL.md"
         skill.parent.mkdir(parents=True)
         skill.write_text("---\nname: handoff\n---\n", encoding="utf-8")
         (self.home / ".claude" / "hooks" / "state" / "s1.handoff").unlink()
-        self.assertIn(str(skill), self.notice(300_000) or "")
+        self.assertIn(str(skill), self.notice(150_000) or "")
 
     def yield_to(self, *argv: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
@@ -606,7 +626,7 @@ class Trigger(unittest.TestCase):
 
     def test_the_hook_prints_its_notice_for_claude_code(self) -> None:
         self.transcript.write_text(
-            json.dumps({"type": "assistant", "message": {"usage": {"input_tokens": 300_000}}}) + "\n",
+            json.dumps({"type": "assistant", "message": {"usage": {"input_tokens": 150_000}}}) + "\n",
             encoding="utf-8",
         )
         event = {"transcript_path": str(self.transcript), "session_id": "s2", "hook_event_name": "UserPromptSubmit"}
@@ -968,15 +988,15 @@ class Relay(unittest.TestCase):
         before = path.read_text(encoding="utf-8")
         result = self.relay(path)
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("CLAUDE_SESSION_TOKEN_LIMIT=400000 claude --bg", result.stdout)
+        self.assertIn("CLAUDE_SESSION_TOKEN_LIMIT=150000 claude --bg", result.stdout)
         self.assertEqual(path.read_text(encoding="utf-8"), before)
         self.assertFalse(self.counter.exists())
         self.assertFalse(self.log.exists())
 
-    def test_a_feature_gives_the_successor_400k_and_none_gives_300k(self) -> None:
-        """ikoro-labs/forge#205 A2: `seuil` is 300000 without a feature, 400000 with one."""
+    def test_the_successor_gets_150k_with_or_without_a_feature(self) -> None:
+        """ikoro-labs/forge#127 A2.1 and A2.2: `seuil` is 150000 with a feature and without one."""
         prose = "aucune (demande ponctuelle hors forge)"
-        for feature, threshold in (("F-0001", "400000"), ("", "300000"), (prose, "300000")):
+        for feature, threshold in (("F-0001", "150000"), ("", "150000"), (prose, "150000")):
             with self.subTest(feature=feature):
                 path = handoff(self.home, feature=feature)
                 result = self.relay(path, CLAUDE_HANDOFF_CLOSE_DRY_RUN="", CLAUDE_SESSION_TOKEN_LIMIT="400000")

@@ -10,10 +10,10 @@ Source: ikoro-labs/forge#3. Closing a session kills its subagents, so the relay 
 (exit 5) while an agent of the calling session is alive or the handoff header lists agents
 `en_vol`. --force is the hard cap of the drain: it is admitted only when the header lists
 the agents left for a rescue under `sauvetage`. Every check runs before the daily counter
-moves. The successor's drain threshold is set here and nowhere else: 400k when the handoff
-carries a feature, 300k otherwise, written in the header as `seuil`. It is always passed
-explicitly: the relay inherits the threshold of the session that runs it, which may be the
-400k of an orchestration.
+moves. The successor's drain threshold is set here and nowhere else: the default of
+handoff_trigger.py (150k), with or without a feature in the handoff, written in the header as
+`seuil`. It is always passed explicitly: the relay inherits the threshold of the session that
+runs it, which may differ.
 
 Runs on Linux and Windows with the standard library, like every hook of the plugin:
 `uv run --no-project --quiet python handoff_relay.py`. It replaces handoff_relay.sh, which
@@ -59,6 +59,7 @@ from pathlib import Path
 from typing import Any, cast
 
 import handoff_header
+from handoff_trigger import DEFAULT_LIMIT
 
 HOOKS = Path(__file__).resolve().parent
 HEADER = HOOKS / "handoff_header.py"
@@ -398,7 +399,7 @@ def relay(argv: list[str]) -> int:
         values = handoff_header.check(handoff)
     except (handoff_header.HeaderError, OSError, ValueError) as error:
         return fail(f"invalid handoff header: {error}", 2)
-    threshold = 400000 if handoff_header.features(values) else 300000
+    threshold = DEFAULT_LIMIT
     owner = os.environ.get("CLAUDE_PID", "")
     refused = agents_refusal(values, project, owner, force)
     if refused:

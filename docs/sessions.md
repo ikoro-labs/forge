@@ -159,9 +159,10 @@ draine.
 
 ### Le seuil
 
-`CLAUDE_SESSION_TOKEN_LIMIT`, 300 000 par défaut. Seul le relais le relève, à 400 000 pour un
-successeur dont la passation porte une feature, c'est-à-dire un identifiant `F-NNNN` dans
-`feature` (du texte comme « aucune » n'en est pas une). Aucun `settings.json` ne doit le fixer.
+`CLAUDE_SESSION_TOKEN_LIMIT`, 150 000 par défaut, quelle que soit la fenêtre du modèle et que la
+passation porte une feature ou non : le seuil, et le plafond dur 35 000 jetons plus haut, restent
+sous le point où la session se compacte elle-même. Seul le relais le pose, à cette même valeur,
+pour chaque successeur. Aucun `settings.json` ne doit le fixer.
 
 ### La passation
 
@@ -221,7 +222,7 @@ interactive ou un `CLAUDE_PID` inconnu, et (code 2) une passation qui ne nomme a
 
 | Variable | Défaut | Effet |
 | --- | --- | --- |
-| `CLAUDE_SESSION_TOKEN_LIMIT` | 300000 | seuil de drainage, posé par le relais seulement |
+| `CLAUDE_SESSION_TOKEN_LIMIT` | 150000 | seuil de drainage, posé par le relais seulement |
 | `CLAUDE_HANDOFF_DRAIN_MINUTES` | 45 | minutes de drainage avant le plafond dur |
 | `CLAUDE_HANDOFF_DIR` | `~/.claude/hooks/state/handoffs` | dossier des passations, `~` et variables développés (`%LOCALAPPDATA%\forge\handoffs`) ; les marqueurs et compteurs restent dans `~/.claude/hooks/state` |
 | `CLAUDE_HANDOFF_RELAY_MAX` | 200 | relais par projet et par jour (code 3 au-delà) |
