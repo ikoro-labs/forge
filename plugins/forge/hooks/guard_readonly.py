@@ -12,6 +12,9 @@ Plugin hooks run for every agent, so this one first reads `agent_type`. Two list
   list: no commit, push, history rewrite or configuration write, no checkout or cleaning of the
   project's own working copy, and no GitHub write.
 
+A command behind a `--` (an outside tool's rewrite) is judged as a command too: by the gate's deny
+list, and, for a reader, when it names `git` or `gh`, even after a prefix a project allows.
+
 To both, Edit, Write, MultiEdit and NotebookEdit are refused. As in `guard_git`, this guards
 against an accident, not against intent. An event the hook cannot read is refused, and
 `hooks.json` turns any crash into a refusal.
@@ -34,7 +37,9 @@ from guard_git import (
     gh_act,
     gh_command,
     verb_of,
+    with_behind_dashes,
 )
+from guard_infra import behind_dashes
 from refusal_journal import record
 from usine import load, project_root
 from utf8_stdio import use_utf8
@@ -177,20 +182,31 @@ def reader_refusal(command: str, allowed_prefixes: Iterable[str] = ()) -> str | 
             return f"`{' '.join(words)}` writes `{written[0]}` by a redirection"
         if not words:
             continue
-        if any(words[: len(prefix)] == prefix for prefix in prefixes):
-            continue
-        if any(word.startswith("--output") for word in words[1:]):
-            return f"`{' '.join(words)}` writes a file by `--output`"
-        if words[0] == "git":
-            if _git_reads(words[1:]):
-                continue
-        elif words[0] == "gh":
-            if _gh_reads(words):
-                continue
-        elif _plain_read(words):
-            continue
-        return f"`{' '.join(words)}` is not a read this role may run"
+        if reason := _unread(words, prefixes):
+            return reason
+        # What follows a `--` is judged as a command when it names git or gh: the prefix a
+        # project allows (`node /x/tool`) lets its own words by, not the command it wraps.
+        for behind in behind_dashes(words):
+            if behind[0] in ("git", "gh") and (reason := _unread(behind, [])):
+                return reason
     return None
+
+
+def _unread(words: list[str], prefixes: list[list[str]]) -> str | None:
+    """Why `words`, one simple command, is not a read this role may run, or None when it is."""
+    if any(words[: len(prefix)] == prefix for prefix in prefixes):
+        return None
+    if any(word.startswith("--output") for word in words[1:]):
+        return f"`{' '.join(words)}` writes a file by `--output`"
+    if words[0] == "git":
+        if _git_reads(words[1:]):
+            return None
+    elif words[0] == "gh":
+        if _gh_reads(words):
+            return None
+    elif _plain_read(words):
+        return None
+    return f"`{' '.join(words)}` is not a read this role may run"
 
 
 def _inside(directory: str | None, project: str) -> bool:
@@ -206,7 +222,7 @@ def gate_refusal(command: str, cwd: str | None, project: str) -> str | None:
     """Why qc-gate may not run `command`, or None: a deny list, so the head copy can be built."""
     here = cwd
     saved: list[str | None] = []
-    for item in _commands(command):
+    for item in with_behind_dashes(_commands(command)):
         if isinstance(item, str):
             if item == "(":
                 saved.append(here)

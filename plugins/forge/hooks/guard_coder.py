@@ -32,7 +32,9 @@ The command is parsed with `guard_git`'s splitter, which reads a backslash as an
 does; from a `PowerShell` call, where it escapes nothing, the backslashes become slashes first so
 that a Windows path stays whole. A commit message that says
 `gh pr merge` is data, and the reserved words of the shell (`if`, `then`, `time`, `!`...) and the
-script of a `bash -c` do not hide the command they run. As there, this guards against an accident, not against intent: a wrapper
+script of a `bash -c` do not hide the command they run, nor do the words after a `--` (an outside tool's
+rewrite of the command, `node /x/tool shrink -- gh pr merge 5`), judged as a command too; a suite stays
+free after `bounded_run.py --`. As there, this guards against an accident, not against intent: a wrapper
 (`env gh`, `gh.exe`) or `gh api` on the same endpoint is intent and is left alone.
 An event the hook cannot read is refused, and `hooks.json` turns any crash into a refusal.
 """
@@ -62,7 +64,9 @@ from guard_git import (
     native_directory,
     segments,
     verb_of,
+    with_behind_dashes,
 )
+from guard_infra import behind_dashes
 from refusal_journal import record
 from usine import load, project_root
 from utf8_stdio import use_utf8
@@ -354,17 +358,20 @@ def _suite_refusal(command: str, config: Mapping[str, list[str]] | None) -> str 
     for item in _commands(command):
         if not isinstance(item, list):
             continue
-        seen = looked_through(after_keywords(item), "")
-        if seen.script is not None:  # the script of a `bash -c` runs the same way
-            if reason := _suite_refusal(seen.script, config):
-                return reason
-            continue
-        words = seen.words
-        if not words or _bounded(words):
-            continue
-        if _names_suite(words) or any(_runs_line(words, line) for line in lines):
-            script = Path(__file__).resolve().parent.parent / "scripts" / BOUNDED_RUN
-            return BOUNDED_FORM.format(shown=" ".join(words)[:80], script=script.as_posix())
+        # What follows a `--` of a command run bare is judged too; after `bounded_run.py --` it is
+        # the bounded suite itself, which the form permits.
+        for part in [item] if _bounded(item) else [item, *behind_dashes(item)]:
+            seen = looked_through(after_keywords(part), "")
+            if seen.script is not None:  # the script of a `bash -c` runs the same way
+                if reason := _suite_refusal(seen.script, config):
+                    return reason
+                continue
+            words = seen.words
+            if not words or _bounded(words):
+                continue
+            if _names_suite(words) or any(_runs_line(words, line) for line in lines):
+                script = Path(__file__).resolve().parent.parent / "scripts" / BOUNDED_RUN
+                return BOUNDED_FORM.format(shown=" ".join(words)[:80], script=script.as_posix())
     return None
 
 
@@ -372,7 +379,7 @@ def _git_commands(command: str, cwd: str | None, root: str | None) -> str | None
     """Why a git command is refused: its act, or a directory outside `root` when `root` is known."""
     here = cwd
     saved: list[str | None] = []
-    for item in _commands(command):
+    for item in with_behind_dashes(_commands(command)):
         if isinstance(item, str):
             if item == "(":
                 saved.append(here)  # a subshell's `cd` ends with it
@@ -406,7 +413,7 @@ def _git_commands(command: str, cwd: str | None, root: str | None) -> str | None
 
 
 def _runs_git(command: str) -> bool:
-    for item in _commands(command):
+    for item in with_behind_dashes(_commands(command)):
         words = [w for w in item if "=" not in w or w.startswith("-")] if isinstance(item, list) else []
         if words and words[0] == "git":
             return True
@@ -445,7 +452,7 @@ def refusal(
         # A backslash escapes nothing in PowerShell, but the POSIX splitter eats it: `C:\work\tree`
         # would reach the guard as `C:worktree`, a relative path. Slashes are read by Windows too.
         command = command.replace("\\", "/")
-    for item in _commands(command):
+    for item in with_behind_dashes(_commands(command)):
         if isinstance(item, list) and (act := gh_act(item)) is not None:
             if reason := REFUSED_GH.get(act[:2]):
                 return reason
