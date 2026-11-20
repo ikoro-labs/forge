@@ -412,6 +412,31 @@ nombre entier fait échouer le contrôle.
 
 - `ticket-budget` : `<300000>`
 
+Le délai après lequel une question restée sans réponse d'un humain reçoit une décision par défaut, une
+seule ligne : un nombre au-dessus de 0 suivi de `h` ou de `j`, comme dans la clé `sla`. Une question est
+un ticket ou une PR ouverts qui portent `ready-for-human`, `needs-info` ou `needs-your-attention` ;
+elle attend depuis la dernière pose d'une de ces étiquettes, et `scripts/question_delay.py due` liste
+celles qui dépassent le délai. `forge:feature-build` les passe à `forge:staff-engineer` ou à
+`forge:product-owner`, puis `scripts/question_delay.py route` agit sur leur verdict : une décision
+`DECIDED` que la matrice donne, avec sa source et `REVERSIBLE: yes`, est postée comme décision par
+défaut (`Décision (<agent>, <case>)`), que l'humain peut défaire d'un commentaire ; tout autre verdict
+(`RESERVED`, `DOMAIN`, `TECHNICAL`, une décision sans source ou irréversible) laisse la question à
+l'humain, qui reçoit un rappel et `needs-your-attention`. Chaque décision par défaut et chaque rappel
+relance le délai. Sans la clé, « sans objet (clé `question-default-delay` absente) » : aucune question
+n'est listée ni tranchée, et aucun délai n'est deviné. Une valeur illisible, ou une clé répétée, fait
+échouer la commande (code 2).
+
+- `question-default-delay` : `<24 h>`
+
+Les sessions voisines à consulter avant de proposer un levier (une amélioration, une optimisation, une
+suite), une par ligne. `guard_ticket_budget` refuse un ticket dont le corps porte une ligne `Lever:` sans
+ligne `Peers:` qui nomme chacune de ces sessions (un nom entier, pas un morceau de mot), ou sans ligne
+`Searched:` qui dit ce qui a été cherché. Le garde lit la présence, jamais la vérité : il ne vérifie ni
+qu'un pair a répondu ni que la recherche a eu lieu. Sans la clé, « sans objet (clé `lever-peers` absente) » :
+une ligne `Lever:` ne demande ni `Peers:` ni `Searched:`, et aucune session n'est devinée.
+
+- `lever-peers` : `<nom de la session voisine>`
+
 Les noms des checks obligatoires de la branche protégée, un par ligne, comparés par
 `forge:qc-gate` aux check-runs de la PR et à la protection en place.
 

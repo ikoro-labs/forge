@@ -392,6 +392,23 @@ def parse_domain(text: str) -> dict[str, str]:
     return {"ANSWER": kind, **{key: fields[key][0] for key in expected}}
 
 
+# The deciders' block (`agents/staff-engineer.md` and `agents/product-owner.md`, "Sortie").
+DECIDER_VERDICTS = ("DECIDED", "DOMAIN", "TECHNICAL", "RESERVED")
+DECIDER_KEYS = {
+    "VERDICT", "QUESTION", "DECISION", "GROUND", "MATRIX_CELL", "REVERSIBLE", "USER_IMPACT", "VETO",
+    "REFERENTIAL_UPDATE", "WRITE_TO", "READ",
+}
+
+
+def parse_decider(text: str) -> dict[str, str]:
+    """The block of `forge:staff-engineer` or `forge:product-owner`, each key with its value (maybe empty)."""
+    fields = _fields(text, "VERDICT", set(DECIDER_KEYS))
+    verdict = fields["VERDICT"][0]
+    if verdict not in DECIDER_VERDICTS:
+        raise OutputError(f"`VERDICT: {verdict}`: the value must be {', '.join(DECIDER_VERDICTS)}")
+    return {key: values[0] for key, values in fields.items()}
+
+
 PARSERS: dict[str, Callable[[str], Mapping[str, object]]] = {"result": parse_result, "verdict": parse_verdict, "domain": parse_domain}
 
 

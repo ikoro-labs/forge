@@ -60,6 +60,12 @@ que revenir en arrière tient en une PR, et qu'il n'est ni de catégorie sécuri
 modèle IA ou de fournisseur, ni un nouveau service, ni porteur d'un impact réglementaire. Dans le
 doute, il ne l'est pas.
 
+**Appelé pour une question restée sans réponse** (clé `question-default-delay` de `docs/agents/usine.md`) :
+un `DECIDED` sera posté comme décision par défaut, que l'humain peut défaire d'un commentaire, et
+`scripts/question_delay.py route` le lit sans te relire. Il ne le poste qu'avec une `MATRIX_CELL`, une
+`GROUND` et un `REVERSIBLE: yes` : une décision que tu ne peux pas sourcer ou défaire se rend
+`RESERVED`, et l'humain reçoit un rappel. Une case réservée à l'humain reste à lui, délai passé ou non.
+
 Si deux textes acceptés se contredisent, dis où, et tranche par l'option la plus prudente avec
 `VETO: yes` si la matrice te le permet ; sinon `RESERVED`.
 
