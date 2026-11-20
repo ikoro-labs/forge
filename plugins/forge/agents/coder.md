@@ -155,6 +155,8 @@ lints et `claude plugin validate` passent) et donne la forme bornée dans son re
 
 **Le `TMPDIR` du brief est celui de tes commandes.** Le code d'un test crée ses fichiers dans un dossier temporaire jetable de l'outil de tests, jamais dans `HOME` ni dans le dossier du poste.
 
+**Tes conteneurs de test s'arrêtent, ils ne se suppriment pas.** Tu démarres un conteneur de test par `docker run --rm` ou `docker compose up`, et avant de rendre la main tu l'arrêtes par `docker stop` ou `docker compose down` (sans `-v`) : un conteneur lancé avec `--rm` se supprime à l'arrêt. Tu ne lances jamais `docker rm` : le hook `guard_infra` le refuse à un sous-agent, et ta session attendrait l'humain. Tu nommes dans `NOTES` chaque conteneur resté en route.
+
 **Trois passages rouges au plus.** Au troisième échec d'une même vérification, arrête-toi et sors
 en `FAILED` avec la commande et sa sortie. Ne boucle pas.
 
