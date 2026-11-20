@@ -8,10 +8,10 @@ Cases of the ticket: A1.1, A2.1.
 import io
 import re
 import unittest
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 
 import support  # noqa: F401  puts the scripts on the import path
-from ticket_graph import main
+from ticket_graph import GraphError, main
 
 TRACKING = 10
 ISSUE = r"repos/\{owner\}/\{repo\}/issues/(\d+)(?:/(sub_issues|dependencies/blocked_by))?"
@@ -86,6 +86,51 @@ class Publication(unittest.TestCase):
         )
         run(github, "link", str(TRACKING), "14", "15")
         self.assertEqual(github.blocked, {14: {11, 12, 13}})
+
+
+class Check(unittest.TestCase):
+    def test_a2_1_a_text_dependency_without_graph_link_is_named(self) -> None:
+        """#269 A2: the check names the ticket whose text declares a dependency the graph lacks."""
+        github = FakeGitHub({11: "First ticket.", 12: "Blocked by #11"})
+        github.subs[TRACKING] = {11, 12}
+        code, out = run(github, "check", str(TRACKING), "11", "12")
+        self.assertEqual(code, 1)
+        self.assertIn("#12 declares `Blocked by #11`", out)
+        self.assertIn("GRAPH missing", out)
+
+    def test_a2_the_check_is_clean_once_the_graph_holds_every_link(self) -> None:
+        """#269 A2: publication is done only when the list is empty."""
+        github = FakeGitHub({11: "First ticket.", 12: "Blocked by #11"})
+        run(github, "link", str(TRACKING), "11", "12")
+        code, out = run(github, "check", str(TRACKING), "11", "12")
+        self.assertEqual((code, out.strip()), (0, "GRAPH ok"))
+
+    def test_a2_a_ticket_that_is_not_a_sub_issue_is_named(self) -> None:
+        """#269 A2: a ticket left out of the tracking issue is invisible to feature-build too."""
+        github = FakeGitHub({11: "First ticket."})
+        code, out = run(github, "check", str(TRACKING), "11")
+        self.assertEqual(code, 1)
+        self.assertIn("#11 is not a sub-issue of #10", out)
+
+    def test_a2_the_check_changes_nothing(self) -> None:
+        """#269 A2: the check only reads."""
+        github = FakeGitHub({11: "First ticket.", 12: "Blocked by #11"})
+        run(github, "check", str(TRACKING), "11", "12")
+        self.assertEqual([c for c in github.calls if "-X" in c], [])
+
+    def test_a2_a_graph_gh_cannot_read_is_never_ok(self) -> None:
+        """#269 A2: a failing gh exits 2 and prints no `GRAPH ok`."""
+
+        def failing(argv: list[str]) -> str:
+            raise GraphError("gh: HTTP 403")
+
+        err = io.StringIO()
+        out = io.StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
+            code = main(["check", str(TRACKING), "11"], gh=failing)
+        self.assertEqual(code, 2)
+        self.assertNotIn("ok", out.getvalue())
+        self.assertIn("HTTP 403", err.getvalue())
 
 
 if __name__ == "__main__":

@@ -85,6 +85,22 @@ def link(gh: Gh, tracking: int, tickets: Sequence[int]) -> list[str]:
     return done
 
 
+def check(gh: Gh, tracking: int, tickets: Sequence[int]) -> list[str]:
+    """What the graph lacks, one line each; empty when the graph holds the text."""
+    missing: list[str] = []
+    attached = _numbers(gh, tracking, SUB_ISSUES)
+    for ticket in tickets:
+        if ticket not in attached:
+            missing.append(f"#{ticket} is not a sub-issue of #{tracking}")
+        held = _numbers(gh, ticket, BLOCKED_BY)
+        missing.extend(
+            f"#{ticket} declares `Blocked by #{blocker}` and the graph has no blocked_by link"
+            for blocker in declared(_body(gh, ticket))
+            if blocker not in held
+        )
+    return missing
+
+
 def main(argv: Sequence[str] | None = None, gh: Gh = _run_gh) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     if len(args) < 3 or args[0] not in ("link", "check") or not all(a.isdigit() for a in args[1:]):
@@ -96,10 +112,14 @@ def main(argv: Sequence[str] | None = None, gh: Gh = _run_gh) -> int:
             for line in link(gh, tracking, tickets):
                 print(line)
             return 0
+        missing = check(gh, tracking, tickets)
     except GraphError as error:
         print(error, file=sys.stderr)
         return 2
-    return 0
+    for line in missing:
+        print(line)
+    print("GRAPH missing" if missing else "GRAPH ok")
+    return 1 if missing else 0
 
 
 if __name__ == "__main__":
