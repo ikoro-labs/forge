@@ -73,6 +73,7 @@ from guard_git import (
 )
 from guard_readonly import reader_refusal
 from usine import load, parse, project_root
+from utf8_stdio import use_utf8
 
 CEILING = 15
 FEATURE_DIR_KEY = "feature-dir"
@@ -1353,4 +1354,5 @@ def guarded_main() -> int:
 
 
 if __name__ == "__main__":
+    use_utf8()
     raise SystemExit(guarded_main())

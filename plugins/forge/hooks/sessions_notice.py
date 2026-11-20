@@ -23,6 +23,8 @@ import os
 import sys
 from pathlib import Path
 
+from utf8_stdio import use_utf8
+
 HOOKS = Path(__file__).resolve().parent
 HEADER = HOOKS / "handoff_header.py"
 SKILL = HOOKS.parent / "skills" / "feature-build" / "SKILL.md"
@@ -70,4 +72,5 @@ def main(stdin) -> int:
 
 
 if __name__ == "__main__":
+    use_utf8()
     sys.exit(main(sys.stdin))

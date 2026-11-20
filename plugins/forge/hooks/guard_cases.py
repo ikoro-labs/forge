@@ -44,6 +44,7 @@ from gh_bodies import (
 )
 from guard_git import UNKNOWN, _moved, gh_act
 from usine import load, project_root
+from utf8_stdio import use_utf8
 
 REFUSED = 2
 TIMEOUT_SECONDS = 20
@@ -302,4 +303,5 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    use_utf8()
     raise SystemExit(main())

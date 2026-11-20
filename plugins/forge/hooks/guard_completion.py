@@ -27,6 +27,7 @@ from collections.abc import Iterator, Mapping
 from pathlib import Path
 
 from usine import load, project_root, split_value
+from utf8_stdio import use_utf8
 
 HEADERS = (
     "Feature",
@@ -231,4 +232,5 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    use_utf8()
     raise SystemExit(main())

@@ -130,6 +130,7 @@ from budget import KEY as BUDGET_KEY
 from budget import merge_refusal, state_path
 from refusal_journal import record
 from usine import load, pattern_regex, project_root, split_value
+from utf8_stdio import use_utf8
 
 # The project's own owner gestures, one per line: `<command prefix> | <reason>`.
 OWNER_KEY = "owner-gesture"
@@ -2465,4 +2466,5 @@ def guarded_main() -> int:
 
 
 if __name__ == "__main__":
+    use_utf8()
     raise SystemExit(guarded_main())

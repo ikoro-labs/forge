@@ -37,6 +37,7 @@ from pathlib import Path
 from doc_rules import doc_problems
 from handoff_header import ProcessGroup, group_options
 from usine import load, matches, project_root, split_value
+from utf8_stdio import use_utf8
 
 EM_DASH = chr(0x2014)
 ALLOWANCES_KEY = "em-dash-allowances"
@@ -172,4 +173,5 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    use_utf8()
     raise SystemExit(main())
