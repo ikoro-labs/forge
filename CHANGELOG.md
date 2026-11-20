@@ -9,6 +9,58 @@ Ce dépôt a été recréé le 2026-10-23 ; l'ancien est `ikoro-labs/forge-archi
 numéros de PR et de ticket nus (`#38`) renvoient à l'ancien dépôt ; un renvoi au nouveau dépôt
 porte son nom (`ikoro-labs/forge#7`).
 
+## [1.18.0] - 2026-11-20
+
+Les skills de la chaîne d'une feature peuvent être lancés par l'agent, les gardes jugent ce qui suit un
+`--`, et une question restée sans réponse se tranche par défaut. Version mineure : trois clés nouvelles,
+`agent-autonomy`, `question-default-delay` et `lever-peers`.
+
+- Skills : dix des douze skills qui interdisaient l'appel par le modèle s'ouvrent à lui quand la clé
+  `agent-autonomy` vaut `on` ; sans la clé, l'étape revient à l'humain avec la commande à taper, et les
+  questions passent d'abord à `forge:product-owner` ou `forge:staff-engineer`. `feature-accept` et
+  `release` restent tapés par l'humain (ikoro-labs/forge#268, ikoro-labs/forge#266).
+- Skills : `feature-design` relie les tickets publiés dans le graphe de GitHub (sous-issues de l'issue
+  de suivi, liens `blocked_by`) et contrôle le graphe, par `ticket_graph.py link` et `check`
+  (ikoro-labs/forge#270, ikoro-labs/forge#269).
+- Skills : `feature-build` tranche par défaut une question restée sans réponse au-delà de la clé
+  `question-default-delay` quand le décideur la dit réversible, sinon relance l'humain
+  (`question_delay.py`) (ikoro-labs/forge#267, ikoro-labs/forge#260).
+- Hooks : `guard_ticket_budget` refuse un corps `Lever:` sans ligne `Peers:` (sessions de la clé
+  `lever-peers`) ni `Searched:` (ikoro-labs/forge#267).
+- Hooks : les quatre gardes jugent aussi la commande écrite après un `--`, qu'un outil peut envelopper
+  (ikoro-labs/forge#262, ikoro-labs/forge#259).
+- Hooks : les hooks lisent et écrivent leurs flux en UTF-8 ; sous Windows, une réponse en français
+  passait mal la garde de sortie (ikoro-labs/forge#258, ikoro-labs/forge#257).
+- Évaluations : neuf cas piégés, plantés par `plant_defect.py` dans des cas `accept-` figés, et un score
+  par classe (ikoro-labs/forge#256, partie 1 de ikoro-labs/forge#154).
+- Dépôt, hors plugin : la matrice des droits de décision (`docs/agents/decisions.md`,
+  ikoro-labs/forge#261), un code owner sur chaque `protected-path` (ikoro-labs/forge#265), la page
+  d'idée de F-0001 (ikoro-labs/forge#264), l'épingle montée à 1.17.0 (ikoro-labs/forge#255).
+- Gestes humains : un projet qui veut que l'agent lance les skills de la chaîne déclare
+  `agent-autonomy` ; `question-default-delay` et `lever-peers` restent sans objet tant qu'elles sont
+  absentes.
+- Resté dehors : l'essai de bout en bout est sans objet ici (clé `e2e-repo` absente). Le lancement des
+  skills par l'agent n'a pas encore été essayé dans une vraie session ; rien d'éprouvé sous Windows en
+  local, sauf la lecture en UTF-8 (#258, suite verte sous Windows).
+
+### Objectifs de service
+
+État de chaque objectif au 2026-11-20.
+
+| Objectif | Cible | Fenêtre | Valeur | Budget restant | État |
+|---|---|---|---|---|---|
+| `accept-round-1` | >= 80 % | 30 j | 64.08 % | 0 % sur 20 % | épuisé |
+| `lead-time p90` | <= 24 h | 30 j | 542.2 h | 0 h sur 24 h | épuisé |
+| `release-lag p90` | <= 24 h | 30 j | 493.3 h | 0 h sur 24 h | épuisé |
+| `escaped-defects` | <= 10 % | 30 j | 0.76 % | 9.24 % sur 10 % | tenu |
+| `change-failure` | <= 10 % | 30 j | 0.76 % | 9.24 % sur 10 % | tenu |
+| `human-touch` | <= 10 % | 30 j | 19.85 % | 0 % sur 10 % | épuisé |
+| `main-green` | >= 100 % | 30 j | 96.63 % | 0 % sur 0 % | épuisé |
+| `judge-recall` | >= 95 % | 30 j | sans objet | aucun résultat du jeu de référence (option `--reference` absente) | sans objet |
+| `false-accept` | <= 0 % | 30 j | sans objet | aucun résultat du jeu de référence (option `--reference` absente) | sans objet |
+
+Aucun `escaped-defect` ouvert depuis le 2026-11-17.
+
 ## [1.17.0] - 2026-11-17
 
 `guard_git` n'admet plus un `gh api` hors d'une liste, les refus des gardes sont journalisés, et un
