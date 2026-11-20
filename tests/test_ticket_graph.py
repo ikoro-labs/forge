@@ -98,6 +98,31 @@ class Check(unittest.TestCase):
         self.assertIn("#12 declares `Blocked by #11`", out)
         self.assertIn("GRAPH missing", out)
 
+    def test_a2_1_a_dependency_written_in_prose_is_named_not_ok(self) -> None:
+        """#269 A2.1: a dependency the script cannot read (not a line `Blocked by #n`) is named, never `GRAPH ok`."""
+        for body in ("Suivi : #55. Dépend de #76.", "Tracking: #55. Blocked by #76."):
+            with self.subTest(body=body):
+                github = FakeGitHub({76: "Blocker.", 77: body})
+                github.subs[TRACKING] = {76, 77}
+                code, out = run(github, "check", str(TRACKING), "76", "77")
+                self.assertEqual(code, 1)
+                self.assertIn("#77 mentions a dependency the script does not read", out)
+                self.assertIn("GRAPH missing", out)
+                self.assertNotIn("GRAPH ok", out)
+
+    def test_a2_1_a_read_declaration_is_not_reported_as_unread(self) -> None:
+        """#269 A2.1: a line `Blocked by #n` that the graph holds is clean."""
+        github = FakeGitHub({11: "First.", 12: "Blocked by #11\n\nSecond ticket."})
+        github.subs[TRACKING] = {11, 12}
+        github.blocked = {12: {11}}
+        code, out = run(github, "check", str(TRACKING), "11", "12")
+        self.assertEqual((code, out.strip()), (0, "GRAPH ok"))
+
+    def test_a2_1_the_ticket_template_declares_the_line_the_script_reads(self) -> None:
+        """#269 A2.1: the template tells the writer the one dependency line, `Blocked by #n`."""
+        text = (support.PLUGIN / "templates" / "ticket.md").read_text(encoding="utf-8")
+        self.assertRegex(text, r"(?m)^Blocked by: ")
+
     def test_a2_the_check_is_clean_once_the_graph_holds_every_link(self) -> None:
         """#269 A2: publication is done only when the list is empty."""
         github = FakeGitHub({11: "First ticket.", 12: "Blocked by #11"})

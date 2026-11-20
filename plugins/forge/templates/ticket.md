@@ -1,6 +1,7 @@
 <!-- template: ticket | max-lines: 25, this comment excluded | required: Motif, Criteria | rules: socle.md -->
 Motif: <case allowed by the repository> <source: link, or the date of the human's decision>
 Feature: F-NNNN <optional; required when the motif is `fusion-bloquee`>
+Blocked by: #<n>, #<m> <optional; the one line the dependency graph reads, at the start of a line>
 
 <What is wrong or missing, for whom, in three sentences at most. Facts with their source.>
 

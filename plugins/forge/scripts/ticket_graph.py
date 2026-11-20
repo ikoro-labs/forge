@@ -4,11 +4,13 @@
     python ticket_graph.py check <suivi> <ticket>...
 
 `link` runs at publication: each ticket becomes a sub-issue of the tracking issue `<suivi>`, and
-each dependency its text declares (a line `Blocked by #n`, `#n, #m` or `#n and #m`) becomes a
-`blocked_by` link of the graph. A link the graph already holds is not added twice. `check` runs
-after it and lists each ticket that is not a sub-issue of the tracking issue, and each declared
-dependency the graph lacks, one line each: `GRAPH ok` and exit 0 when nothing is listed, `GRAPH
-missing` and exit 1 otherwise. A call to `gh` that fails exits 2 with its error: an unread graph is
+each dependency its text declares (a line that starts with `Blocked by`, then `#n`, `#n, #m` or
+`#n and #m`) becomes a `blocked_by` link of the graph. A link the graph already holds is not added
+twice. `check` runs after it and lists each ticket that is not a sub-issue of the tracking issue,
+each declared dependency the graph lacks, and each ticket whose body mentions a dependency
+(`Blocked by`, `Depends on`, `Dépend de`, `Bloqué par` and `#n`) outside such a line, because the
+script does not read it: `GRAPH ok` and exit 0 when nothing is listed, `GRAPH missing` and exit 1
+otherwise. A dependency is thus either a line the script reads, or a line `check` names. A call to `gh` that fails exits 2 with its error: an unread graph is
 never an `ok`. `feature-build` and `report_mail.py` read the graph (`issue_dependencies_summary`), not
 the text, so a dependency written only in a ticket's body blocks nothing for them. The calls run in
 the repository of the working directory (`gh api` fills `{owner}/{repo}`). The standard library only.
@@ -30,6 +32,10 @@ DEPENDENCY_LINE = re.compile(
     r"(?im)^[ \t]*(?:[-*][ \t]+)?(?:\*\*)?Blocked by(?:\*\*)?[ \t]*:?[ \t]*"
     r"(#\d+(?:[ \t]*(?:,|and)[ \t]*#\d+)*)"
 )
+MENTION = re.compile(
+    r"(?i)\b(?:blocked[ \t]+by|depends?[ \t]+on|dépend(?:ent)?[ \t]+de|bloqué[e]?[ \t]+par)"
+    r"(?:\*\*)?[ \t]*:?[ \t]*#\d+"
+)
 
 
 class GraphError(RuntimeError):
@@ -44,6 +50,16 @@ def declared(body: str) -> list[int]:
             if int(number) not in numbers:
                 numbers.append(int(number))
     return numbers
+
+
+def unread(body: str) -> list[str]:
+    """The mentions of a dependency that no line `Blocked by #n` carries, so that nothing reads them."""
+    read = [found.span() for found in DEPENDENCY_LINE.finditer(body)]
+    return [
+        found.group(0)
+        for found in MENTION.finditer(body)
+        if not any(start <= found.start() < end for start, end in read)
+    ]
 
 
 def _run_gh(argv: list[str]) -> str:
@@ -97,6 +113,11 @@ def check(gh: Gh, tracking: int, tickets: Sequence[int]) -> list[str]:
             f"#{ticket} declares `Blocked by #{blocker}` and the graph has no blocked_by link"
             for blocker in declared(_body(gh, ticket))
             if blocker not in held
+        )
+        missing.extend(
+            f"#{ticket} mentions a dependency the script does not read (`{mention}`): "
+            "write it as a line `Blocked by #n`"
+            for mention in unread(_body(gh, ticket))
         )
     return missing
 

@@ -72,8 +72,11 @@ Applique `${CLAUDE_PLUGIN_ROOT}/templates/features/protocole.md`, document `desi
    chaque ticket devient sous-issue de l'issue de suivi, et chaque ligne `Blocked by #n` de son
    corps un lien `blocked_by`. Puis lance
    `uv run --no-project --quiet python ${CLAUDE_PLUGIN_ROOT}/scripts/ticket_graph.py check <suivi> <tickets>` :
-   il liste chaque ticket hors de l'issue de suivi et chaque dépendance écrite que le graphe n'a pas ; la
-   publication n'est pas terminée tant que la liste n'est pas vide, et un code de sortie 2 (graphe
+   il liste chaque ticket hors de l'issue de suivi, chaque ligne `Blocked by #n` que le graphe n'a pas
+   et chaque ticket dont le corps annonce une dépendance (`Blocked by`, `Depends on`, `Dépend de`,
+   `Bloqué par`, suivi de `#n`) ailleurs que sur une telle ligne, que le script ne lit pas : une
+   dépendance s'écrit donc sur une ligne qui commence par `Blocked by` (le gabarit `ticket.md` la
+   porte). La publication n'est pas terminée tant que la liste n'est pas vide, et un code de sortie 2 (graphe
    illisible) ne vaut pas `GRAPH ok`.
 
    **La matrice.** Chaque ticket cite les identifiants de la source qu'il couvre (une ligne
