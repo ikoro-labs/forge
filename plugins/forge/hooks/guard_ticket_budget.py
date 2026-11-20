@@ -25,6 +25,11 @@ moments:
   accepted, has no `feature-tickets`, has one above `CEILING`, or when the tickets the feature
   already has fill its budget: those GitHub's search finds, open or closed, plus those this hook
   let through in the last `RESERVATION_SECONDS` that the search may not show yet.
+- **A lever.** With the key `lever-peers` declared, a body that carries a `Lever:` line is refused
+  without a `Peers:` line that names each session of the key (a whole word) or without a
+  `Searched:` line with something after it, and the refusal names the line or the peer. The check
+  reads presence, never truth. Without the key it is not applicable (sans objet), `Searched:`
+  included. It comes before the reason and the reservation: a refused lever reserves nothing.
 - **Editing a ticket.** `gh issue edit`, a PATCH by `gh api` on `repos/<owner>/<repo>/issues/<n>`
   and the update tool of a GitHub MCP server may not add, remove or change a `Motif :` or
   `Feature:` line of the ticket's body. A body set by an `updateIssue` mutation is refused.
@@ -77,6 +82,7 @@ from utf8_stdio import use_utf8
 
 CEILING = 15
 FEATURE_DIR_KEY = "feature-dir"
+LEVER_PEERS_KEY = "lever-peers"
 TEMPLATE = Path(__file__).resolve().parent.parent / "templates" / "usine.md"
 OUT_OF_BUDGET = frozenset({"main-rouge", "securite"})
 # A human's own request: `demande-<who>`, the repository naming its human after the dash.
@@ -103,6 +109,9 @@ UNREADABLE = (
 
 MOTIF_LINE = re.compile(r"^[ \t]*Motif[ \t]*:[ \t]*(\S.*?)[ \t]*$", re.MULTILINE)
 FEATURE_LINE = re.compile(r"^[ \t]*Feature[ \t]*:[ \t]*(F-\d{4})\b", re.MULTILINE)
+LEVER_LINE = re.compile(r"^[ \t]*Lever[ \t]*:", re.MULTILINE)
+PEERS_LINE = re.compile(r"^[ \t]*Peers[ \t]*:[ \t]*(\S.*?)[ \t]*$", re.MULTILINE)
+SEARCHED_LINE = re.compile(r"^[ \t]*Searched[ \t]*:[ \t]*\S", re.MULTILINE)
 NAMED_FEATURE = re.compile(r"^(?:to-tickets|feature-new)\s+(F-\d{4})\b")
 ISSUES_ENDPOINT = re.compile(r"^/?repos/([^/]+)/([^/]+)/issues/?(?:\?.*)?$")
 ISSUE_ENDPOINT = re.compile(r"^/?repos/([^/]+)/([^/]+)/issues/(\d+)/?(?:\?.*)?$")
@@ -487,6 +496,38 @@ def placement(body: str) -> Placement:
             )
         return Placement("feature", feature_match.group(1))
     return Placement("refused", NO_REASON)
+
+
+def lever_refusal(body: str, config: Mapping[str, list[str]]) -> str | None:
+    """Why a `Lever:` body is refused, or None: it names each peer and says what was searched.
+
+    The check reads presence, never truth: a peer named, a `Searched:` line with a word after it.
+    Without the key `lever-peers` the check is not applicable (sans objet), `Searched:` included.
+    """
+    peers = [peer for peer in config.get(LEVER_PEERS_KEY, []) if peer]
+    text = body.replace("\r\n", "\n")
+    if not peers or not LEVER_LINE.search(text):
+        return None
+    named = " ".join(PEERS_LINE.findall(text))
+    if not named:
+        return (
+            "a `Lever:` ticket names its peers: add a `Peers:` line that names each session of the"
+            f" key `{LEVER_PEERS_KEY}` ({', '.join(f'`{peer}`' for peer in peers)})"
+        )
+    missing = [
+        peer for peer in peers if not re.search(rf"(?<![\w-]){re.escape(peer)}(?![\w-])", named)
+    ]
+    if missing:
+        return (
+            "the `Peers:` line of a `Lever:` ticket names each session of the key"
+            f" `{LEVER_PEERS_KEY}`: {', '.join(f'`{peer}`' for peer in missing)} is missing"
+        )
+    if not SEARCHED_LINE.search(text):
+        return (
+            "a `Lever:` ticket says what was searched before it: add a `Searched:` line (the"
+            " tickets and comments looked at)"
+        )
+    return None
 
 
 def counts_for(body: str) -> str | None:
@@ -1110,6 +1151,8 @@ def ticket_refusal(
     """Why the ticket `creation` may not be opened, or None (it is then reserved in `state`)."""
     if creation.body is None:
         return UNREADABLE
+    if reason := lever_refusal(creation.body, config):
+        return reason
     place = placement(creation.body)
     if place.kind == "refused":
         return place.detail

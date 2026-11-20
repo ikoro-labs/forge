@@ -608,6 +608,13 @@ the plugin and not a key of `usine.md`. `guard_ticket_budget` holds it at four m
   with `state: open` bring a ticket closed as not planned back in its feature's count: the hook
   counts as for a new ticket and refuses past the budget. A number or a state it cannot read, or a
   ticket gh cannot give, is refused; `reopenIssue` and an `updateIssue` that sets `state` are refused.
+- **At each lever.** With the key `lever-peers` declared in `usine.md` (one session per line), a
+  ticket whose body has a `Lever:` line is refused unless it also has a `Peers:` line that names every
+  session of the key as a whole word and a `Searched:` line with something after it; the refusal names
+  the line, or the peer left out, and comes before the reason check and the reservation, so a refused
+  lever reserves nothing. The check reads presence, never truth: it cannot tell that a peer answered or
+  that the search was done. Without the key it is not applicable (`Searched:` included): a `Lever:` line
+  asks for nothing.
 
 The budget counts tickets, not PRs. A ticket is sized for at most three PRs (`feature-design` step 6
 and `forge:product-owner` apply it when they cut), so a feature's PR budget is `feature-tickets` times

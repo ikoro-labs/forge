@@ -279,6 +279,86 @@ class ClosedBudget(unittest.TestCase):
         self.assertIn("add a part", project.create(ticket("to-tickets F-0001"), gh) or "")
 
 
+PEERS_USINE = (
+    "# Usine\n- `feature-dir` : `docs/features`\n"
+    "- `lever-peers` : `shipyard`\n- `lever-peers` : `meridian`\n"
+)
+
+
+def lever(*lines: str) -> str:
+    """A ticket of a human's request that carries a `Lever:` line and the lines given after it."""
+    return "\n".join(["Motif : demande-kevin", "", "Lever: cache the plugin data", *lines, ""])
+
+
+class Levers(unittest.TestCase):
+    """#260 A3, A4: a `Lever:` body names its peers and what was searched, or it is refused."""
+
+    def test_a_lever_without_peers_is_refused_and_the_line_is_named(self) -> None:
+        """#260 A3 (A3.1): no `Peers:` line, the refusal names `Peers:`."""
+        project = Project(self, None, usine=PEERS_USINE)
+        reason = project.create(lever("Searched: gh issue list, `cache` in titles"), FakeGh(None))
+        self.assertIn("`Peers:`", reason or "")
+
+    def test_a_lever_that_leaves_a_peer_out_is_refused_and_the_peer_is_named(self) -> None:
+        """#260 A3 (A3.2): `meridian` is not on the `Peers:` line, the refusal names it and not `shipyard`."""
+        project = Project(self, None, usine=PEERS_USINE)
+        reason = project.create(lever("Peers: shipyard", "Searched: open tickets"), FakeGh(None))
+        self.assertIn("`meridian`", reason or "")
+        self.assertNotIn("`shipyard`", reason or "")
+
+    def test_a_peer_inside_another_word_does_not_count(self) -> None:
+        """#260 A3 (A3.2): the name is read as a word, `meridianre` does not name `meridian`."""
+        project = Project(self, None, usine=PEERS_USINE)
+        body = lever("Peers: shipyard, meridianre", "Searched: open tickets")
+        self.assertIn("`meridian`", project.create(body, FakeGh(None)) or "")
+
+    def test_a_lever_without_searched_is_refused_and_the_line_is_named(self) -> None:
+        """#260 A3: the peers are named, the `Searched:` line is missing or empty, the refusal names it."""
+        project = Project(self, None, usine=PEERS_USINE)
+        for lines in (("Peers: shipyard, meridian",), ("Peers: shipyard, meridian", "Searched:   ")):
+            with self.subTest(lines=lines):
+                self.assertIn("`Searched:`", project.create(lever(*lines), FakeGh(None)) or "")
+
+    def test_a_lever_that_names_its_peers_and_its_search_passes(self) -> None:
+        """#260 A3: both lines present, the ticket goes on to the checks of its reason."""
+        project = Project(self, None, usine=PEERS_USINE)
+        body = lever("Peers: shipyard (none), meridian (asked)", "Searched: tickets and comments")
+        self.assertIsNone(project.create(body, FakeGh(None)))
+
+    def test_the_guard_checks_presence_not_truth(self) -> None:
+        """#260 A4: a `Searched:` that says nothing true, a peer named with no proof, still passes."""
+        project = Project(self, None, usine=PEERS_USINE)
+        body = lever("Peers: shipyard meridian", "Searched: nothing, I did not look")
+        self.assertIsNone(project.create(body, FakeGh(None)))
+
+    def test_a_body_without_a_lever_line_is_unchanged(self) -> None:
+        """#260 A3 (A3.3): no `Lever:` line, no `Peers:` or `Searched:` is asked."""
+        project = Project(self, None, usine=PEERS_USINE)
+        self.assertIsNone(project.create(ticket("demande-kevin"), FakeGh(None)))
+        self.assertIsNone(project.create("Motif : demande-kevin\n\nThe Lever: word mid-line.\n", FakeGh(None)))
+
+    def test_without_the_key_the_check_is_not_applicable(self) -> None:
+        """#260 A3 (A3.4): no key `lever-peers`, a `Lever:` body goes through with no `Peers:` or `Searched:`."""
+        project = Project(self, None)
+        self.assertIsNone(project.create(lever(), FakeGh(None)))
+
+    def test_a_refused_lever_reserves_nothing(self) -> None:
+        """#260 A3: the refusal comes before the reservation, the fixed retry is not turned away."""
+        project = Project(self, None, usine=PEERS_USINE)
+        first = "Motif : feature-new F-0001\n\nLever: x\n"
+        self.assertIn("`Peers:`", project.create(first, FakeGh([])) or "")
+        fixed = first + "Peers: shipyard, meridian\nSearched: tickets\n"
+        self.assertIsNone(project.create(fixed, FakeGh([])))
+
+    def test_the_template_documents_the_key_without_a_default(self) -> None:
+        """#260 A3 (A3.4): the template of `usine.md` documents `lever-peers` and its absence."""
+        template = " ".join(
+            (support.PLUGIN / "templates" / "usine.md").read_text(encoding="utf-8").split()
+        )
+        self.assertIn("- `lever-peers` : `<", template)
+        self.assertIn("sans objet (clé `lever-peers` absente)", template)
+
+
 class Reason(unittest.TestCase):
     MESSAGE = "every ticket names its reason: Motif : <one of the admitted reasons>"
 

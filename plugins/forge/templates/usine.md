@@ -399,6 +399,15 @@ nombre entier fait échouer le contrôle.
 
 - `ticket-budget` : `<300000>`
 
+Les sessions voisines à consulter avant de proposer un levier (une amélioration, une optimisation, une
+suite), une par ligne. `guard_ticket_budget` refuse un ticket dont le corps porte une ligne `Lever:` sans
+ligne `Peers:` qui nomme chacune de ces sessions (un nom entier, pas un morceau de mot), ou sans ligne
+`Searched:` qui dit ce qui a été cherché. Le garde lit la présence, jamais la vérité : il ne vérifie ni
+qu'un pair a répondu ni que la recherche a eu lieu. Sans la clé, « sans objet (clé `lever-peers` absente) » :
+une ligne `Lever:` ne demande ni `Peers:` ni `Searched:`, et aucune session n'est devinée.
+
+- `lever-peers` : `<nom de la session voisine>`
+
 Les noms des checks obligatoires de la branche protégée, un par ligne, comparés par
 `forge:qc-gate` aux check-runs de la PR et à la protection en place.
 
