@@ -42,3 +42,13 @@ l'agent ou à l'humain que le verdict désigne.
   et dans le corps de la PR, et laisse-la attendre l'humain.
 - **Sans la clé `decision-matrix`**, les deux agents rendent tout en `RESERVED` : la commande suit
   la ligne ci-dessus pour chaque question.
+
+## 4. Ce que la clé n'ouvre pas
+
+- **`feature-accept`** garde `disable-model-invocation: true` : seul un humain de la clé
+  `accepting-human` l'écrit, en la tapant. Un document que le modèle produit reste `en-revue`, et
+  la commande suivante qu'il dit est celle de l'acceptation, à l'humain.
+- **`release`** garde `disable-model-invocation: true` et reste commandée par la clé
+  `release-trigger` : ni `agent-autonomy` ni son absence ne change quand l'agent publie.
+- **Ce que la matrice réserve à l'humain** (clé `decision-matrix`, sa section réservée) reste à lui,
+  clé ouverte ou non : l'étape 3 le dit pour chaque question.

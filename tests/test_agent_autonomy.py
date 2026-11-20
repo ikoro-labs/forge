@@ -73,5 +73,19 @@ class QuestionsGoToTheDecisionAgents(unittest.TestCase):
         self.assertRegex(prose(PROTOCOLE), r"Questionner par tours.{0,1500}autonomie\.md")
 
 
+class WhatStaysWithTheHuman(unittest.TestCase):
+    def test_feature_accept_and_release_keep_the_flag(self) -> None:
+        """Ticket #266 A3.1 : le drapeau reste sur feature-accept et release."""
+        for name in HUMAN_ONLY:
+            with self.subTest(skill=name):
+                self.assertEqual(frontmatter(SKILLS / name / "SKILL.md").get("disable-model-invocation"), "true")
+
+    def test_the_rule_opens_neither_acceptance_nor_publication(self) -> None:
+        """Ticket #266 A3 : la règle dit que l'autonomie n'accepte rien et que `release` garde `release-trigger`."""
+        text = prose(RULE)
+        self.assertRegex(text, r"`feature-accept`.{0,200}humain de la clé `accepting-human`")
+        self.assertRegex(text, r"`release`.{0,200}clé `release-trigger`")
+
+
 if __name__ == "__main__":
     unittest.main()
