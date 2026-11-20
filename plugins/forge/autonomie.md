@@ -24,3 +24,21 @@ des agents sur ce projet. Le plugin ne la pose jamais.
   ligne fautive.
 - **Clé à `on`** : la commande s'exécute. Le modèle l'a lancée à la place de l'humain, et rien de ce
   qu'il décide n'attend sa lecture avant d'être écrit : l'humain relit après coup.
+
+## 3. Les questions, avec la clé
+
+Aucune question ne part vers un humain avant d'être passée à un agent décideur : une question
+produit (parcours, périmètre, formulation, priorité) à `forge:product-owner`, une question technique
+(architecture, contrat, CI, règle du dépôt) à `forge:staff-engineer`, selon la matrice que désigne
+la clé `decision-matrix`, avant tout humain. Un verdict `TECHNICAL` ou `DOMAIN` passe une fois à
+l'agent ou à l'humain que le verdict désigne.
+
+- **`DECIDED`** : la décision est prise. Écris-la dans la section Décisions du document que la
+  commande produit, avec sa raison, sa source et la ligne `MATRIX_CELL` de l'agent, et dans la séance
+  quand il y en a une. Une case sous veto (`VETO: yes`) demande en plus l'étiquette que le projet
+  réserve à l'humain (clé `report-attention-label`), sur la PR que la commande ouvre.
+- **`RESERVED`** : la décision appartient à l'humain. N'en prends aucune à sa place : nomme la case
+  ou le geste que l'agent cite, donne sa recommandation, écris la question ouverte dans le document
+  et dans le corps de la PR, et laisse-la attendre l'humain.
+- **Sans la clé `decision-matrix`**, les deux agents rendent tout en `RESERVED` : la commande suit
+  la ligne ci-dessus pour chaque question.

@@ -57,5 +57,21 @@ class OpeningTheSkills(unittest.TestCase):
         self.assertEqual(parse(TEMPLATE.read_text(encoding="utf-8")).get("agent-autonomy"), ["on"])
 
 
+class QuestionsGoToTheDecisionAgents(unittest.TestCase):
+    def test_a_question_goes_to_the_decision_agent_before_the_human(self) -> None:
+        """Ticket #266 A2.1 : avec la clé, product-owner ou staff-engineer d'abord, la décision écrite."""
+        text = prose(RULE)
+        self.assertRegex(text, r"`forge:product-owner`.{0,200}`forge:staff-engineer`.{0,200}avant tout humain")
+        self.assertRegex(text, r"section Décisions.{0,200}`MATRIX_CELL`")
+
+    def test_a_reserved_cell_is_named_to_the_human(self) -> None:
+        """Ticket #266 A2 : ce qu'un agent rend `RESERVED` reste à l'humain, avec la case nommée."""
+        self.assertRegex(prose(RULE), r"`RESERVED`.{0,300}nomme la case")
+
+    def test_the_protocol_applies_the_rule_to_the_questions_of_each_turn(self) -> None:
+        """Ticket #266 A2 : le protocole commun renvoie à la règle à l'étape des questions."""
+        self.assertRegex(prose(PROTOCOLE), r"Questionner par tours.{0,1500}autonomie\.md")
+
+
 if __name__ == "__main__":
     unittest.main()
