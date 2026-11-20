@@ -5,7 +5,7 @@ titre: forge alimente le poste de pilotage
 porteur: ikoro-labs
 etat: active
 demande_par: interne, l'humain de la clé accepting-human (2026-11-20) et la session du poste de pilotage
-issue: <à reporter>
+issue: 263
 date: 2026-11-20
 ---
 
