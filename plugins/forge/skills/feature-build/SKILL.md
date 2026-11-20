@@ -124,6 +124,34 @@ passage (étape 4). Par défaut : 5 tickets, 3 coders, 6 heures et 3 000 000 jet
    frontière). `human-merge` ne te concerne pas : `/forge:qc` s'y plie et `guard_git` refuse la
    fusion ; les PR attendent alors l'humain, et tu le rapportes. `alert` n'ajoute que l'étiquette de
    l'issue de suivi. Une ligne « autonomie rendue » se rapporte aussi.
+9. **Les questions restées sans réponse.** Une question qui attend un humain trop longtemps bloque
+   l'usine : lance
+
+   ```
+   uv run --no-project --quiet python "${CLAUDE_PLUGIN_ROOT}/scripts/question_delay.py" due <projet>
+   ```
+
+   Sans la clé `question-default-delay`, la commande répond « sans objet (clé `question-default-delay`
+   absente) » : aucune question n'est tranchée, aucun délai n'est deviné, et tu le dis dans le compte
+   rendu. Un code de sortie non nul : arrête-toi et rends son message. Pour chaque ligne `ECHUE: #<n>`
+   (un ticket ou une PR portant `ready-for-human`, `needs-info` ou `needs-your-attention` depuis plus
+   que le délai), passe la question à `forge:staff-engineer` (outil Agent, au premier plan), ou à
+   `forge:product-owner` si elle est produit, avec la question lue sur le ticket ou la PR et la mention
+   « sans réponse depuis plus de <délai> : décide si la matrice te donne la décision ». Écris son bloc
+   dans un fichier, puis lance
+
+   ```
+   uv run --no-project --quiet python "${CLAUDE_PLUGIN_ROOT}/scripts/question_delay.py" route <projet> <fichier> --item <n> --agent <staff-engineer|product-owner> --apply
+   ```
+
+   Le script lit le verdict, jamais toi. `post-default` : il poste la décision par défaut
+   (`Décision (<agent>, <case>)`, réversible, que l'humain défait d'un commentaire) et retire
+   `ready-for-human` et `needs-info` ; relance ensuite un `forge:coder` sur le ticket avec ce bloc,
+   comme pour un `DECIDED` de l'étape 2. `remind-human` (`RESERVED`, `DOMAIN`, `TECHNICAL`, une
+   décision sans source ou irréversible) : il poste le rappel et pose `needs-your-attention`, la
+   décision reste à l'humain, et tu ne la prends ni ne la contournes. Une ligne `NON DATEE` n'est pas
+   traitée : nomme-la dans le compte rendu. Chaque décision par défaut et chaque rappel relance le
+   délai de la question. Aucune question n'arrête le passage.
 
 ## 1. L'état des tickets
 

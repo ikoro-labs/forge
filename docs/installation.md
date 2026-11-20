@@ -437,6 +437,27 @@ qui échoue ou dépasse son délai, vaut refus. Sans la clé, le garde ne refuse
 consigne de `forge:qc` reste (s'arrêter avant la fusion) : le garde est le filet, la consigne évite
 le refus. Essayé sur Linux seulement, par les tests ; pas encore sur un vrai poste Windows.
 
+## Les questions restées sans réponse
+
+Une question qui attend un humain trop longtemps bloque l'usine. La clé `question-default-delay` de
+`usine.md` (une ligne, un nombre suivi de `h` ou de `j`) en fixe le délai ; `scripts/question_delay.py due`
+liste les tickets et les PR ouverts qui portent `ready-for-human`, `needs-info` ou `needs-your-attention`
+depuis plus que ce délai (depuis la dernière pose de l'étiquette, ou depuis la dernière décision par défaut
+ou le dernier rappel), et `forge:feature-build` les passe à `forge:staff-engineer` ou à
+`forge:product-owner`. `question_delay.py route ... --apply` lit leur verdict, pas l'agent qui orchestre :
+
+- `DECIDED`, avec une case de la matrice, une source et un `REVERSIBLE: yes` (exigé du `staff-engineer` ; `product-owner` n'écrit pas la ligne) : la
+  décision est postée comme `Décision (<agent>, <case>) par défaut`, que l'humain défait d'un commentaire ;
+  `ready-for-human` et `needs-info` sont retirés, `needs-your-attention` posé si la case laisse un veto.
+- Tout le reste (`RESERVED`, `DOMAIN`, `TECHNICAL`, une décision sans source, irréversible ou, pour le `staff-engineer`, sans ligne `REVERSIBLE:`) : la décision
+  reste à l'humain, qui reçoit un rappel et `needs-your-attention`. Une case réservée à l'humain par la
+  matrice n'est donc jamais tranchée par défaut.
+
+Chaque décision par défaut et chaque rappel relancent le délai. Sans la clé, rien n'est listé, tranché ni
+écrit (« sans objet »), et aucun délai n'est deviné ; une valeur illisible fait échouer la commande. Le
+script ne vérifie pas que l'agent a bien lu la matrice : il lit son verdict. Essayé sur Linux seulement, par
+les tests, `gh` simulé ; pas encore contre un vrai dépôt ni sous Windows.
+
 ## The infrastructure guard
 
 `guard_infra` runs before every `Bash` and `PowerShell` call. A command it holds is refused to a
@@ -616,6 +637,13 @@ the plugin and not a key of `usine.md`. `guard_ticket_budget` holds it at four m
   with `state: open` bring a ticket closed as not planned back in its feature's count: the hook
   counts as for a new ticket and refuses past the budget. A number or a state it cannot read, or a
   ticket gh cannot give, is refused; `reopenIssue` and an `updateIssue` that sets `state` are refused.
+- **At each lever.** With the key `lever-peers` declared in `usine.md` (one session per line), a
+  ticket whose body has a `Lever:` line is refused unless it also has a `Peers:` line that names every
+  session of the key as a whole word and a `Searched:` line with something after it; the refusal names
+  the line, or the peer left out, and comes before the reason check and the reservation, so a refused
+  lever reserves nothing. The check reads presence, never truth: it cannot tell that a peer answered or
+  that the search was done. Without the key it is not applicable (`Searched:` included): a `Lever:` line
+  asks for nothing.
 
 The budget counts tickets, not PRs. A ticket is sized for at most three PRs (`feature-design` step 6
 and `forge:product-owner` apply it when they cut), so a feature's PR budget is `feature-tickets` times

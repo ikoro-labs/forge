@@ -60,6 +60,12 @@ document interne ou confidentiel d'un éditeur, même mentionné ailleurs.
   geste qu'aucun agent ne peut faire (signer, accorder un accès, ouvrir un budget, s'engager envers
   un client ou sur un prix). Tu nommes la case ou le geste, et tu donnes ta recommandation.
 
+**Appelé pour une question restée sans réponse** (clé `question-default-delay` de `docs/agents/usine.md`) :
+un `DECIDED` sera posté comme décision par défaut, que l'humain peut défaire d'un commentaire, et
+`scripts/question_delay.py route` le lit sans te relire. Il ne le poste qu'avec une `MATRIX_CELL` et une
+`GROUND` : une décision que tu ne peux pas sourcer se rend `RESERVED`, et l'humain reçoit un rappel.
+Une case réservée à l'humain reste à lui, délai passé ou non.
+
 Pour l'entrée d'une feature au périmètre, tu appliques à la lettre la règle que désigne la clé
 `entry-gate` : une feature entre parce que cette règle l'admet, source citée, jamais parce qu'un
 concurrent l'a. Sans cette clé, l'entrée au périmètre est `RESERVED`.

@@ -33,7 +33,7 @@ configuration, ses règles, ses skills de domaine.
 
 Une question technique ou produit en chemin va d'abord à `forge:staff-engineer` ou à
 `forge:product-owner`, qui la tranchent selon la matrice des droits de décision du projet, ou
-disent qu'elle revient à un humain. Des hooks gardent le tout : aucun agent ne pousse sur `main`,
+disent qu'elle revient à un humain ; passé le délai de la clé `question-default-delay`, une décision que la matrice leur donne se poste par défaut, réversible, et ce qu'elle réserve à l'humain lui est rappelé. Des hooks gardent le tout : aucun agent ne pousse sur `main`,
 ne fusionne une PR rouge, ou ne sort de son rôle.
 
 ## Ce que le plugin apporte
@@ -71,7 +71,7 @@ ne fusionne une PR rouge, ou ne sort de son rôle.
 | `guard_infra` | the infrastructure gestures (`docker rm`, `systemctl restart`, `lxc delete`..., and anything off the read list on a host of the `infra-hosts` key): refused to a subagent, asked in the main session; see [The infrastructure guard](#the-infrastructure-guard) |
 | `guard_coder` | le coder ne fusionne pas, ne relit pas, ne lance ni `forge:qc` ni la revue de bout en bout, ne ferme pas de ticket, n'écrit que dans son worktree, ne pousse ni avec `-u`, ni avec `-f`, ni avec `--force-with-lease`, ne rebase pas (`git rebase`, `git pull --rebase`), n'indexe pas l'arbre entier (`git add -A`, `.`, `:/`, `git commit -a`), ne lance pas de suite (`python -m unittest`, `pytest`, une ligne de `ci-replay` ou de `red-replay`) sans `bounded_run.py --`, y compris derrière `if`, `then`, `time`, `!` ou `bash -c` |
 | `guard_readonly` | les juges et les décideurs lisent, n'écrivent jamais |
-| `guard_ticket_budget` | a design holds `feature-tickets: N`, N at most 15, never raised once accepted nor below the tickets published; every ticket names an admitted reason (`Motif :`) that no edit changes, and a feature never opens more tickets than its budget nor a second tracking ticket, by gh, a nested shell or a GitHub MCP tool ([details](docs/installation.md#the-ticket-budget-of-a-feature)) |
+| `guard_ticket_budget` | a design holds `feature-tickets: N`, N at most 15, never raised once accepted nor below the tickets published; every ticket names an admitted reason (`Motif :`) that no edit changes, and a feature never opens more tickets than its budget nor a second tracking ticket, by gh, a nested shell or a GitHub MCP tool; with the key `lever-peers`, a ticket with a `Lever:` line names each peer on a `Peers:` line and says what it `Searched:` ([details](docs/installation.md#the-ticket-budget-of-a-feature)) |
 | `guard_cases` | une PR de feature s'ouvre sur des cas de validation acceptés (`AGREED:`) ; un verdict ne bloque que sur ces cas gelés, une règle du socle ou une régression |
 | `guard_coder_model` | un `forge:coder` (ou `coder`) lancé par `Agent`, `Task` ou un `Workflow` tourne sur `sonnet`, sur `opus` avec la ligne `ESCALATION: #<PR> round 3`, sur `haiku` avec la ligne `MODE: sync`, jamais sur un autre modèle ; un `effort` donné vaut `high` ; des options qu'il ne lit pas sont refusées |
 | `guard_pause` | tant que `.claude/PAUSED` existe, aucun agent n'est lancé |
