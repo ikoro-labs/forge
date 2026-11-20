@@ -675,6 +675,22 @@ Limits, tried on Linux only, by the tests with a simulated gh, not yet in a real
 - a GraphQL body variable fed by a JSON `--input` is refused as a precaution, and so is a backtick in
   a double-quoted body under PowerShell, where it is an escape.
 
+## Les liens du graphe entre tickets
+
+`/forge:feature-build` (étape 1) et la ligne `In parallel:` de `report_mail.py` lisent le graphe de
+GitHub (`issue_dependencies_summary.blocked_by`) : un `Blocked by #n` écrit seulement dans le corps
+d'un ticket ne bloque rien pour eux. Après la publication des tickets, `/forge:feature-design` lance
+`scripts/ticket_graph.py link <suivi> <tickets>` : chaque ticket devient sous-issue de l'issue de
+suivi (`POST .../issues/<suivi>/sub_issues`), et chaque ligne `Blocked by #n` (ou `#n, #m`, `#n and #m`)
+de son corps un lien `blocked_by` (`POST .../issues/<ticket>/dependencies/blocked_by`). Un lien que le
+graphe a déjà n'est pas ajouté une seconde fois. Puis `ticket_graph.py check <suivi> <tickets>` liste
+chaque ticket hors de l'issue de suivi et chaque dépendance écrite que le graphe n'a pas, imprime
+`GRAPH ok` (code 0) ou `GRAPH missing` (code 1), et sort en code 2 quand un appel de `gh` échoue : un
+graphe illisible n'est jamais `ok`. La publication n'est pas terminée tant que la liste n'est pas
+vide. Les appels partent du script, pas de la commande d'un agent : `guard_git` n'a pas de ligne à
+ajouter à sa liste de `gh api`. Les tickets publiés avant ce changement ne sont pas repris. Éprouvé
+par des tests où `gh` est simulé, sous Linux ; pas encore sur un vrai dépôt.
+
 ## Le tableau de complétion
 
 `scripts/completion.py` imprime un tableau Markdown, une ligne par feature ouverte (ou par `F-NNNN`

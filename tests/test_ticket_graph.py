@@ -133,5 +133,25 @@ class Check(unittest.TestCase):
         self.assertIn("HTTP 403", err.getvalue())
 
 
+class DesignSkill(unittest.TestCase):
+    def setUp(self) -> None:
+        text = (support.PLUGIN / "skills" / "feature-design" / "SKILL.md").read_text(encoding="utf-8")
+        self.skill = " ".join(text.split())
+
+    def test_a1_the_slicing_publishes_the_graph_links_with_the_script(self) -> None:
+        """#269 A1: feature-design step 6 runs `link` after the tickets are published."""
+        self.assertIn("${CLAUDE_PLUGIN_ROOT}/scripts/ticket_graph.py link", self.skill)
+        self.assertIn("`Blocked by #n`", self.skill)
+
+    def test_a2_publication_is_not_done_while_the_check_lists_something(self) -> None:
+        """#269 A2: feature-design runs `check` and does not hand over to feature-build on a non-empty list."""
+        self.assertIn("${CLAUDE_PLUGIN_ROOT}/scripts/ticket_graph.py check", self.skill)
+        self.assertRegex(self.skill, r"publication (?:is|n'est) (?:not done|pas terminée)")
+        self.assertLess(
+            self.skill.index("ticket_graph.py check"),
+            self.skill.index("Commande suivante"),
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

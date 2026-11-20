@@ -132,6 +132,7 @@ plugins/forge/                    le plugin
   scripts/parse_output.py         lecture du RESULT du coder et du verdict du juge
   scripts/token_audit.py          les jetons de chaque rôle, lus dans les journaux de Claude Code
   scripts/ticket_budget.py        la somme des jetons d'agents par ticket, contre la clé `ticket-budget`
+  scripts/ticket_graph.py         les sous-issues et les liens blocked_by des tickets publiés, et le contrôle du graphe
   scripts/factory_slo.py          les indicateurs de service de l'usine, calculés sans modèle
   scripts/incident.py             la lecture d'une revue d'incident et le refus de celle sans correctif
   scripts/completion.py           le tableau de complétion des features, compté comme le budget

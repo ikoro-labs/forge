@@ -65,6 +65,17 @@ Applique `${CLAUDE_PLUGIN_ROOT}/templates/features/protocole.md`, document `desi
    Each published ticket (`gh issue create`) carries the line `Motif : to-tickets F-NNNN`; once the
    list is published, it is closed.
 
+   **Le graphe.** Un `Blocked by #n` écrit seulement dans le texte d'un ticket ne bloque rien pour
+   `forge:feature-build` ni pour `report_mail.py`, qui lisent le graphe de GitHub. Une fois les
+   tickets publiés (les bloqueurs d'abord, pour que leur numéro soit connu), lance
+   `uv run --no-project --quiet python ${CLAUDE_PLUGIN_ROOT}/scripts/ticket_graph.py link <suivi> <tickets>` :
+   chaque ticket devient sous-issue de l'issue de suivi, et chaque ligne `Blocked by #n` de son
+   corps un lien `blocked_by`. Puis lance
+   `uv run --no-project --quiet python ${CLAUDE_PLUGIN_ROOT}/scripts/ticket_graph.py check <suivi> <tickets>` :
+   il liste chaque ticket hors de l'issue de suivi et chaque dépendance écrite que le graphe n'a pas ; la
+   publication n'est pas terminée tant que la liste n'est pas vide, et un code de sortie 2 (graphe
+   illisible) ne vaut pas `GRAPH ok`.
+
    **La matrice.** Chaque ticket cite les identifiants de la source qu'il couvre (une ligne
    `Couvre : <identifiants>` dans son corps). Quand `matrice.md` existe dans le dossier de la
    feature (gabarit `${CLAUDE_PLUGIN_ROOT}/templates/features/matrice.md`), reporte-y le ticket de
