@@ -87,7 +87,7 @@ class GuardGit(unittest.TestCase):
         self.assertIn("GIT_DIR", verdict_text)
 
     def test_a_cd_behind_dashes_moves_nothing_after_it(self) -> None:
-        """#259 A1 : le `cd` d'une commande derrière le `--` ne change pas le répertoire de la suivante."""
+        """Non-régression, passe aussi sur la base. #259 A1 : le `cd` d'une commande derrière le `--` ne change pas le répertoire de la suivante."""
         calls: list[str | None] = []
 
         def branch_of(directory: str | None) -> str:
@@ -119,7 +119,7 @@ class GuardInfra(unittest.TestCase):
         self.assertIn("docker", verdict_text)
 
     def test_a_read_behind_dashes_is_not_guarded(self) -> None:
-        """F-0259 A2 : un `docker ps` enveloppé passe comme seul."""
+        """Non-régression, passe aussi sur la base. F-0259 A2 : un `docker ps` enveloppé passe comme seul."""
         self.assertIsNone(infra_says(f"{WRAPPER} docker ps"))
 
     def test_an_ordinary_double_dash_with_a_variable_is_not_guarded(self) -> None:
@@ -180,7 +180,7 @@ class GuardReadonly(unittest.TestCase):
         self.assertIsNotNone(gate_refusal(f"{WRAPPER} gh pr merge 5", None, "/p"))
 
     def test_the_gate_keeps_a_wrapped_read(self) -> None:
-        """F-0259 A2 : une lecture enveloppée passe, et `git checkout -- f` hors de la copie aussi."""
+        """Non-régression, passe aussi sur la base. F-0259 A2 : une lecture enveloppée passe, et `git checkout -- f` hors de la copie aussi."""
         self.assertIsNone(gate_refusal(f"{WRAPPER} git status", None, "/p"))
         self.assertIsNone(gate_refusal("git log -- docs", None, "/p"))
 
@@ -193,7 +193,7 @@ class GuardReadonly(unittest.TestCase):
         self.assertIsNotNone(reader_refusal(f"{WRAPPER} gh pr merge 5", allowed))
 
     def test_a_reader_whose_prefix_is_allowed_keeps_a_wrapped_read(self) -> None:
-        """F-0259 A2 : et une lecture derrière le même `--` passe."""
+        """Non-régression, passe aussi sur la base. F-0259 A2 : et une lecture derrière le même `--` passe."""
         allowed = ["node /x/tool"]
         self.assertIsNone(reader_refusal(f"{WRAPPER} git status", allowed))
         self.assertIsNone(reader_refusal("git diff main -- docs", allowed))
@@ -209,7 +209,7 @@ class GuardReadonly(unittest.TestCase):
                 self.assertIn("not a read", verdict_text)
 
     def test_a_reader_whose_prefix_is_allowed_keeps_any_wrapped_read(self) -> None:
-        """#259 A2 : une lecture quelconque derrière le même `--` passe, comme seule."""
+        """Non-régression, passe aussi sur la base. #259 A2 : une lecture quelconque derrière le même `--` passe, comme seule."""
         allowed = ["node /x/tool"]
         for tail in ("cat README.md", "sed -n 1,5p f", "grep -rn foo docs", "git log --oneline"):
             with self.subTest(tail=tail):
