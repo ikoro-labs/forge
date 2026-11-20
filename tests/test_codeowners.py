@@ -1,0 +1,44 @@
+"""Chaque `protected-path` de ce dépôt a un propriétaire du code dans `.github/CODEOWNERS` (#74).
+
+Le ruleset de `main` exige l'approbation d'un propriétaire du code : sans ligne, un chemin protégé
+ne serait gardé que par `guard_git`, qu'une session hors plugin ne charge pas.
+"""
+
+import unittest
+
+import support
+from usine import load
+
+CODEOWNERS = support.REPO_ROOT / ".github" / "CODEOWNERS"
+
+
+def owned_patterns() -> dict[str, list[str]]:
+    """Each pattern of CODEOWNERS and its owners, comments and blank lines left out."""
+    owned: dict[str, list[str]] = {}
+    for line in CODEOWNERS.read_text(encoding="utf-8").splitlines():
+        words = line.split("#", 1)[0].split()
+        if words:
+            owned[words[0]] = words[1:]
+    return owned
+
+
+def pattern_for(protected: str) -> str:
+    """The CODEOWNERS pattern of a `protected-path`: a folder as is, a name prefix with `*`."""
+    return "/" + protected if protected.endswith("/") else "/" + protected + "*"
+
+
+class EveryProtectedPathHasACodeOwner(unittest.TestCase):
+    def test_each_protected_path_has_its_pattern_and_an_owner(self) -> None:
+        protected = load(support.REPO_ROOT).get("protected-path", [])
+        self.assertTrue(protected, "docs/agents/usine.md declares no protected-path")
+        owned = owned_patterns()
+        for path in protected:
+            with self.subTest(path=path):
+                pattern = pattern_for(path)
+                self.assertIn(pattern, owned, f"{pattern} missing from .github/CODEOWNERS")
+                self.assertTrue(owned[pattern], f"{pattern} has no owner")
+
+    def test_a_folder_keeps_its_slash_and_a_prefix_gets_a_star(self) -> None:
+        self.assertEqual(pattern_for(".github/"), "/.github/")
+        self.assertEqual(pattern_for("plugins/forge/hooks/guard_"), "/plugins/forge/hooks/guard_*")
+        self.assertEqual(pattern_for(".claude/settings.json"), "/.claude/settings.json*")
