@@ -8,10 +8,16 @@ sans valeur devinée.
 
 ## 1. Qui a lancé la commande
 
-- **L'humain l'a tapée** : le tour porte un bloc `<command-name>`. La commande s'exécute comme
-  toujours, sans lire la clé : l'autonomie du projet ne retire rien à l'humain.
-- **Le modèle l'a lancée** (outil Skill, aucun bloc `<command-name>` dans le tour) : lis la clé, à
-  l'étape 2.
+Le bloc `<command-name>` d'un tour dit quelle commande l'humain a tapée. Il ne vaut que pour le skill
+qu'il nomme : compare sa valeur au nom du skill que tu exécutes (celui de ce `SKILL.md`, avec ou sans
+le préfixe `forge:`), jamais à « une commande du tour ».
+
+- **L'humain l'a tapée** : le tour porte un bloc `<command-name>` qui porte le nom du skill que tu
+  exécutes. La commande s'exécute comme toujours, sans lire la clé : l'autonomie du projet ne retire
+  rien à l'humain.
+- **Le modèle l'a lancée** (outil Skill) : aucun bloc `<command-name>` du tour ne porte ton nom. Un
+  bloc pour une autre commande ne compte pas : l'humain a tapé `/forge:feature-new`, puis le modèle a
+  lancé `feature-frame` ? Pour `feature-frame`, le modèle l'a lancée. Lis la clé, à l'étape 2.
 
 ## 2. La clé `agent-autonomy`
 

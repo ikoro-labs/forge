@@ -52,6 +52,12 @@ class OpeningTheSkills(unittest.TestCase):
         """Ticket #266 A1 : la clé ne retire rien à l'humain, qui tape la commande."""
         self.assertRegex(prose(RULE), r"`<command-name>`.{0,300}sans lire la clé")
 
+    def test_a_command_block_for_another_skill_does_not_count_as_typed(self) -> None:
+        """Ticket #266 A1.1 : /feature-new tapé, puis feature-frame lancé par le modèle, sans la clé : à l'humain."""
+        text = prose(RULE)
+        self.assertRegex(text, r"`<command-name>`.{0,200}nom du skill que tu exécutes")
+        self.assertRegex(text, r"autre commande.{0,300}le modèle l'a lancée")
+
     def test_the_key_is_documented_in_the_template_and_read_as_a_line(self) -> None:
         """Ticket #266 A1 : le gabarit documente la clé, et sa ligne d'exemple se lit comme une entrée."""
         self.assertEqual(parse(TEMPLATE.read_text(encoding="utf-8")).get("agent-autonomy"), ["on"])
