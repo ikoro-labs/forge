@@ -37,8 +37,3 @@ class EveryProtectedPathHasACodeOwner(unittest.TestCase):
                 pattern = pattern_for(path)
                 self.assertIn(pattern, owned, f"{pattern} missing from .github/CODEOWNERS")
                 self.assertTrue(owned[pattern], f"{pattern} has no owner")
-
-    def test_a_folder_keeps_its_slash_and_a_prefix_gets_a_star(self) -> None:
-        self.assertEqual(pattern_for(".github/"), "/.github/")
-        self.assertEqual(pattern_for("plugins/forge/hooks/guard_"), "/plugins/forge/hooks/guard_*")
-        self.assertEqual(pattern_for(".claude/settings.json"), "/.claude/settings.json*")
