@@ -35,7 +35,8 @@ on any other host.
 
 Every command is parsed: a guarded program is found in its words, so quotes and escapes
 (`dock''er`, `d\\ocker`) hide none. The wrappers `sudo`, `env`, `heavy-slot`, `systemd-run`,
-`timeout`, `nice`, `nohup`, `exec`, `command`, `time`, `xargs` and `sshpass` are taken off; `sh -c`,
+`timeout`, `nice`, `nohup`, `exec`, `command`, `time`, `xargs` and `sshpass` are taken off, and the
+words after a `--` are judged as a command too (`behind_dashes`, shared with the other guards); `sh -c`,
 `bash -c`, `eval`, a shell reading a heredoc, `;`, `&&`, `||`, `|`, `$(...)`, backticks and process
 substitutions are walked, and `export VAR=...` is followed. What the guard cannot read is guarded:
 a program or a verb named by a variable or a substitution (`${D}er rm`, `"$PY" -m pytest`,
@@ -452,6 +453,46 @@ def unwrap_with_env(words: list[str]) -> tuple[list[str], dict[str, str]]:
 def unwrap(words: list[str]) -> list[str]:
     """The words of the command that actually runs, assignments, keywords and wrappers taken off."""
     return unwrap_with_env(words)[0]
+
+
+# The programs whose own parser reads a `--`: `ssh host -- cmd` and `lxc exec box -- cmd` are judged
+# where their command is read (on the host or in the instance), not once more as a local command.
+OWN_DASHES = frozenset({"ssh", "lxc"})
+
+
+def behind_dashes(words: list[str], unreadable: bool = False) -> list[list[str]]:
+    """The commands that the words after each `--` of a simple command may be, to judge on their own.
+
+    An outside tool can rewrite a command into `<program> <path> <verb> -- <command>`: the program
+    the shell runs is the wrapper, and the command it wraps comes after the `--`. Every `--` starts
+    one candidate (`a -- b -- c` gives `b -- c` and `c`), judged by each guard as it judges a command
+    behind `env` or `sudo`. The words are kept as they are: an ordinary `--` (`git checkout -- f`,
+    `rm -- "$f"`) gives a candidate that names no program the guards hold, and the command itself
+    stays judged whole. A candidate whose program the guard cannot read (a variable, a
+    substitution, `env -S`) is dropped: it is an operand far more often than a command, and
+    refusing every `git add -- "$f"` would refuse what no one asks to refuse. A program that reads
+    its own `--` (`OWN_DASHES`) ends the search. `unreadable` keeps those candidates, for the
+    guard that only asks whether a program is named by the shell.
+    """
+    found: list[list[str]] = []
+    rest = words
+    while "--" in rest:
+        try:
+            inner = unwrap(rest)
+            if inner and program_name(inner[0]) in OWN_DASHES:
+                break
+        except UnclearError:
+            pass  # a program named by a variable: its `--` is still looked at
+        rest = rest[rest.index("--") + 1 :]
+        try:
+            unwrap(rest)  # raises when the program is one the guard cannot read
+        except UnclearError:
+            if unreadable and rest:
+                found.append(rest)
+            continue
+        if rest:
+            found.append(rest)
+    return found
 
 
 def _assign(env: dict[str, str], words: Iterable[str]) -> None:
@@ -910,6 +951,7 @@ class Judge:
         bodies: str,
         depth: int,
         env: Mapping[str, str] | None = None,
+        tails: bool = True,
     ) -> str | None:
         words, redirections = strip_redirections(words)
         if remote is not None and (target := _writes_a_file(redirections)):
@@ -921,6 +963,12 @@ class Judge:
         if not words:
             return None
         name, args = program_name(words[0]), words[1:]
+        if tails and remote is None:
+            # The command behind a `--` (an outside tool's rewrite). On a declared host the
+            # command is already refused unless it is a read, wrapper included.
+            for behind in behind_dashes(words):
+                if reason := self.command(behind, None, "", depth, env, tails=False):
+                    return reason
         if name in SHELLS:
             dash_c, operands = _shell_script(args)
             if dash_c and operands:

@@ -40,7 +40,8 @@ Refused, with the reason on stderr and exit code 2 so Claude Code blocks the cal
 The command is parsed, not grepped: a commit message that says "push --force" is data. Heredoc
 bodies are dropped first, then the command is split on shell operators with `shlex`. A wrapper
 hides no refusal: assignments, `env`, `sudo`, `command`, `timeout`, `nice`, `nohup`, `xargs` and
-the others `guard_infra` takes off are taken off, a path or `.exe` is read as its program
+the others `guard_infra` takes off are taken off, the words after a `--` (an outside tool's rewrite,
+`node /x/tool shrink -- git push origin main`) are judged as a command too, a path or `.exe` is read as its program
 (`/usr/bin/gh`, `git.exe`), and the script of `sh -c` or of a shell reading a heredoc is judged
 like the command itself. The human can always run the command himself.
 
@@ -246,6 +247,25 @@ def _commands(command: str) -> list[list[str] | str]:
 def segments(command: str) -> list[list[str]]:
     """Simple commands, each as its words; `cd x &&` and environment assignments are kept."""
     return [item for item in _commands(command) if isinstance(item, list)]
+
+
+def with_behind_dashes(items: list[list[str] | str]) -> list[list[str] | str]:
+    """`items` with, after each simple command that has a `--`, the commands behind it in a subshell.
+
+    A command an outside tool rewrote (`node /x/tool shrink -- git push origin main`) is judged as
+    the command it wraps too, as behind `env` or `sudo` (`guard_infra.behind_dashes` tells which
+    words). They sit between `(` and `)` so that a `cd` among them moves nothing after them, and
+    they count as other commands beside the first: a merge behind a `--` is not run alone.
+    """
+    # Imported here: guard_infra imports this module.
+    from guard_infra import behind_dashes  # noqa: PLC0415
+
+    expanded: list[list[str] | str] = []
+    for item in items:
+        expanded.append(item)
+        if isinstance(item, list) and (tails := behind_dashes(item)):
+            expanded += ["(", *tails, ")"]
+    return expanded
 
 
 # The flags gh takes before its group with a value, as the next word: `-R` and `--repo`, which
@@ -1439,6 +1459,7 @@ def _shell_named_merge(text: str, depth: int = 0) -> bool:
         MAX_DEPTH,
         UnclearError,
         UnsplitError,
+        behind_dashes,
         simple_commands,
         substitutions,
         unwrap_with_env,
@@ -1462,9 +1483,11 @@ def _shell_named_merge(text: str, depth: int = 0) -> bool:
         except UnsplitError:  # a backtick never closed: the text is read as plain words
             outer, inner = part, []
         try:
-            found += simple_commands(outer)
+            simple = simple_commands(outer)
         except UnsplitError:  # a quote never closed, as `_commands` reads it
-            found.append(outer.split())
+            simple = [outer.split()]
+        # The command behind a `--` is one too, a program the shell names (`-- $G pr merge 5`) included.
+        found += simple + [b for words in simple for b in behind_dashes(words, unreadable=True)]
         pending += [(nested, level + 1) for nested in inner]
     # A sign may sit inside one word: `G='gh pr merge'; $G 5`.
     signs = (part for words in found for word in words for part in word.split())
@@ -1844,8 +1867,8 @@ def location_refusal(words: list[str], bodies: str = "") -> str | None:
 def commands_location_refusal(command: str) -> str | None:
     """The first `location_refusal` among the simple commands of `command`."""
     bodies = split_heredocs(command)[1]
-    for words in segments(command):
-        if reason := location_refusal(words, bodies):
+    for words in with_behind_dashes(_commands(command)):
+        if isinstance(words, list) and (reason := location_refusal(words, bodies)):
             return reason
     return None
 
@@ -1911,7 +1934,7 @@ def refusal(
         switched = merges = False
         here = begin
         saved: list[str | None] = []
-        items = _commands(text)
+        items = with_behind_dashes(_commands(text))
         for item in items:
             if isinstance(item, str):
                 if item == "(":

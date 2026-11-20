@@ -490,6 +490,14 @@ and escapes hide none (`dock''er rm`, `d\ocker rm`, `"dock"er rm`). **Looked thr
 `nohup`, `exec`, `command`, `time`, `xargs` and `sshpass`; `sh -c`, `bash -c`, `eval` and a heredoc
 fed to a shell; `;`, `&&`, `||`, `|` and a newline; `$(...)`, backticks (not under PowerShell,
 where a backtick escapes) and `<(...)`, also in the body of a heredoc whose delimiter is unquoted.
+**Behind a `--`**: another tool's hook may rewrite a command into `<program> <path> <verb> -- <command>`,
+which would make the guards judge the wrapper. The words after each `--` are judged as a command too,
+by `guard_git` (its refusals, a merge being refused as not run alone), `guard_infra`, `guard_coder` and
+`guard_readonly` (the gate; a reader whose `readonly-command` prefix opens the wrapper still has the whole
+command behind the `--` judged against the read list), as behind `env` or `sudo`. An ordinary `--` (`git checkout -- f`) stays
+judged whole. What this does not read: after the `--`, a program named by a variable (`rm -- "$f"` is
+no command, so `guard_infra` drops it; `guard_git` reads it as a merge only when a word of the call is a
+merge sign), and the words after the `--` of `ssh` and `lxc`, which those programs read themselves.
 A part the guard cannot read is held: a program or a verb named by a variable (`docker $VERB`,
 `D=dock; ${D}er rm x`, `$CMD rm web`), a shell reading a pipe (`... | bash`), `env -S`, an option
 `heavy-slot` does not take. A text the lexer cannot split (unbalanced quotes, an unclosed
