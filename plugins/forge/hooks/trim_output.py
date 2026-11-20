@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import cast
 
 from usine import load, project_root
+from utf8_stdio import use_utf8
 
 TRIM_KEY = "trimmed-command"
 MAX_LINES = 60
@@ -104,4 +105,5 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    use_utf8()
     raise SystemExit(main())

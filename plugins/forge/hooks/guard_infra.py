@@ -64,6 +64,7 @@ from typing import Literal
 
 from guard_git import _MASK, _UNMASK, HEREDOC, TIMEOUT_SECONDS, _run
 from usine import load, project_root
+from utf8_stdio import use_utf8
 
 HOSTS_KEY = "infra-hosts"
 VERIFY_KEY = "infra-verify"
@@ -1226,4 +1227,5 @@ def guarded_main() -> int:
 
 
 if __name__ == "__main__":
+    use_utf8()
     raise SystemExit(guarded_main())

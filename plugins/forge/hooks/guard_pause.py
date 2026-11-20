@@ -12,6 +12,7 @@ import json
 import sys
 
 from usine import project_root
+from utf8_stdio import use_utf8
 
 SWITCH = (".claude", "PAUSED")
 
@@ -46,4 +47,5 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    use_utf8()
     raise SystemExit(main())

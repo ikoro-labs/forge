@@ -63,6 +63,7 @@ from gh_bodies import (  # noqa: E402
 from guard_git import UNKNOWN, _moved  # noqa: E402
 from output_check import agent_kind, billet_fields, deviations  # noqa: E402
 from usine import load, project_root  # noqa: E402
+from utf8_stdio import use_utf8  # noqa: E402
 
 REFUSED = 3
 AGENT_ID = re.compile(r"[A-Za-z0-9_-]+")
@@ -441,4 +442,5 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    use_utf8()
     raise SystemExit(main())

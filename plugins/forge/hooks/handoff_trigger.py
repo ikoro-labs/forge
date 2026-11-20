@@ -50,6 +50,7 @@ import time
 from pathlib import Path
 
 from usine import project_root
+from utf8_stdio import use_utf8
 
 DEFAULT_LIMIT = 150000
 MIN_LIMIT = 50000
@@ -424,6 +425,7 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    use_utf8()
     if len(sys.argv) > 1:
         # Run by a session, not by Claude Code as a hook: its exit code is its answer.
         if hasattr(sys.stdout, "reconfigure"):

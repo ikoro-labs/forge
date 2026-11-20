@@ -61,6 +61,7 @@ from pathlib import Path
 
 import handoff_header
 from usine import load, project_root
+from utf8_stdio import use_utf8
 
 GIT_TIMEOUT = 20
 MAX_TRANSCRIPT = 64 * 1024 * 1024  # a larger transcript is not read: the doubt keeps
@@ -347,4 +348,5 @@ def main(stdin) -> int:
 
 
 if __name__ == "__main__":
+    use_utf8()
     sys.exit(main(sys.stdin))

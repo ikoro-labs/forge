@@ -21,6 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 from output_check import deviations  # noqa: E402
 from report_mail import MAIL_FILE, state_dir  # noqa: E402
 from usine import load, project_root  # noqa: E402
+from utf8_stdio import use_utf8  # noqa: E402
 
 REFUSED = 3
 SEND = re.compile(r"report_mail\.py\b(?=[^;&|\n]*--sent\b)[^;&|\n]*")
@@ -80,4 +81,5 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    use_utf8()
     raise SystemExit(main())

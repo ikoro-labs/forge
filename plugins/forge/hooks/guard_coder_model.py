@@ -34,6 +34,7 @@ from functools import partial
 from pathlib import Path
 
 from usine import project_root
+from utf8_stdio import use_utf8
 
 REFUSED = 2
 CODER = frozenset({"forge:coder", "coder"})
@@ -289,4 +290,5 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    use_utf8()
     raise SystemExit(main())

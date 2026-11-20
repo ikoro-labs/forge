@@ -37,6 +37,7 @@ from guard_git import (
 )
 from refusal_journal import record
 from usine import load, project_root
+from utf8_stdio import use_utf8
 
 GATE = "forge:qc-gate"
 READERS = frozenset(
@@ -313,4 +314,5 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    use_utf8()
     raise SystemExit(main())
