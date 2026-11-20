@@ -2,10 +2,12 @@
 name: slo
 description: "Rendre le rapport des objectifs de service de l'usine (SLO) : chaque objectif, sa valeur, son budget d'erreur restant, son état et sa tendance par rapport à la fenêtre précédente. À la demande, sans rien modifier. Avec l'argument --publier, réécrit le rapport dans l'issue de suivi (clé slo-issue)."
 argument-hint: "[--publier] [--json] [--reference <fichier>]"
-disable-model-invocation: true
 ---
 
 # Le rapport des objectifs de service
+
+Avant tout, applique `${CLAUDE_PLUGIN_ROOT}/autonomie.md` : lancé par le modèle plutôt que tapé par
+l'humain, ce skill ne s'exécute que si la clé `agent-autonomy` de `docs/agents/usine.md` l'ouvre.
 
 1. **Le projet** est la copie principale du dépôt, pas un worktree : `git rev-parse --path-format=absolute
    --git-common-dir` rend `<projet>/.git`, et le projet est son dossier parent.

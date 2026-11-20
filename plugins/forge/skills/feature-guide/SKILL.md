@@ -2,10 +2,12 @@
 name: feature-guide
 description: "Mener une conception guidée avec un expert métier qui n'est pas développeur : une question à la fois, dans ses mots, une rédaction proposée à valider ou corriger, dans un document vivant qui devient une source du projet une fois validé."
 argument-hint: F-NNNN
-disable-model-invocation: true
 ---
 
 # Conduire une conception avec un expert métier
+
+Avant tout, applique `${CLAUDE_PLUGIN_ROOT}/autonomie.md` : lancé par le modèle plutôt que tapé par
+l'humain, ce skill ne s'exécute que si la clé `agent-autonomy` de `docs/agents/usine.md` l'ouvre.
 
 Applique `${CLAUDE_PLUGIN_ROOT}/templates/features/protocole.md`. Ce skill est pour l'expert qui sait
 ce que le produit doit faire et n'écrit pas de Markdown technique : c'est toi qui tiens la plume, lui

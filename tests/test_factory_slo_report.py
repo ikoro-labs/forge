@@ -393,7 +393,7 @@ class Content(unittest.TestCase):
         """Ticket #58 : un skill `forge:slo` lance le rapport ; il ne publie que sur demande."""
         text = (support.PLUGIN / "skills" / "slo" / "SKILL.md").read_text(encoding="utf-8")
         self.assertIn("name: slo", text)
-        self.assertIn("disable-model-invocation: true", text)
+        self.assertNotIn("disable-model-invocation", text)  # ticket #266 A1 : le modèle peut le lancer, clé agent-autonomy
         self.assertIn('uv run --no-project --quiet python "${CLAUDE_PLUGIN_ROOT}/scripts/factory_slo.py" report', text)
         self.assertIn("Sans `--publier`, le script ne modifie rien", text)
         self.assertIn("sans objet (clé `slo-issue` absente)", text)

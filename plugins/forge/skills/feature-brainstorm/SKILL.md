@@ -2,10 +2,12 @@
 name: feature-brainstorm
 description: "Tenir une séance de brainstorming sur une feature, à n'importe quelle étape : chaque question, réponse et décision est écrite dans seances/, et les documents apportés entrent dans sources/. À utiliser pour réfléchir, trancher ou importer une note, un PDF ou un échange tenu ailleurs."
 argument-hint: F-NNNN <sujet>
-disable-model-invocation: true
 ---
 
 # Séance de brainstorming
+
+Avant tout, applique `${CLAUDE_PLUGIN_ROOT}/autonomie.md` : lancé par le modèle plutôt que tapé par
+l'humain, ce skill ne s'exécute que si la clé `agent-autonomy` de `docs/agents/usine.md` l'ouvre.
 
 C'est ici que l'équipe réfléchit, au lieu d'une conversation ou d'un document partagé ailleurs : ce
 qui n'est pas dans le dossier de la feature n'a pas été décidé.

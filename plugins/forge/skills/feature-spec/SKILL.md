@@ -2,10 +2,12 @@
 name: feature-spec
 description: "Écrire la spec d'une feature dont le cadrage est accepté : stories INVEST en nombre nécessaire à la source entière, critères « Étant donné, quand, alors », non-goals, exigences non fonctionnelles, contrats en prose, impact sur les règles du métier."
 argument-hint: F-NNNN
-disable-model-invocation: true
 ---
 
 # Spécifier une feature
+
+Avant tout, applique `${CLAUDE_PLUGIN_ROOT}/autonomie.md` : lancé par le modèle plutôt que tapé par
+l'humain, ce skill ne s'exécute que si la clé `agent-autonomy` de `docs/agents/usine.md` l'ouvre.
 
 Applique `${CLAUDE_PLUGIN_ROOT}/templates/features/protocole.md`, document `spec` : le cadrage doit
 être accepté. La spec est un fichier du dépôt, pas une issue : c'est elle que les tickets et les PR

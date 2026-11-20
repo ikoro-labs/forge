@@ -2,10 +2,12 @@
 name: feature-new
 description: "Ouvrir une feature à partir d'une idée brute : crée <feature-dir>/NNNN-slug/idee.md et l'issue de suivi. Première commande de la chaîne des features."
 argument-hint: <l'idée en une phrase>
-disable-model-invocation: true
 ---
 
 # Ouvrir une feature
+
+Avant tout, applique `${CLAUDE_PLUGIN_ROOT}/autonomie.md` : lancé par le modèle plutôt que tapé par
+l'humain, ce skill ne s'exécute que si la clé `agent-autonomy` de `docs/agents/usine.md` l'ouvre.
 
 Applique d'abord `${CLAUDE_PLUGIN_ROOT}/templates/features/protocole.md` (sauf l'étape 3 : aucune
 condition d'entrée).
