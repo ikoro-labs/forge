@@ -2,10 +2,12 @@
 name: audit-jetons
 description: "Compter les jetons dépensés par chaque rôle de l'usine sur ce projet, par modèle et par effort, et comparer un avant et un après (une montée de version, un changement de modèle). Lu dans les journaux que Claude Code écrit déjà. Ne modifie rien."
 argument-hint: "[--depuis <date>] [--jusqua <date>] [--coupure <date>]"
-disable-model-invocation: true
 ---
 
 # Les jetons de chaque rôle
+
+Avant tout, applique `${CLAUDE_PLUGIN_ROOT}/autonomie.md` : lancé par le modèle plutôt que tapé par
+l'humain, ce skill ne s'exécute que si la clé `agent-autonomy` de `docs/agents/usine.md` l'ouvre.
 
 1. **Le projet** est la copie principale du dépôt, pas un worktree : ses worktrees y sont comptés.
    `git rev-parse --path-format=absolute --git-common-dir` rend `<projet>/.git` ; le projet est

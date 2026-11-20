@@ -2,10 +2,12 @@
 name: feature-status
 description: "Dire où en est chaque feature et la commande suivante à lancer, lu dans les en-têtes des documents du dossier des features (clé feature-dir). Ne modifie rien."
 argument-hint: "[F-NNNN]"
-disable-model-invocation: true
 ---
 
 # Où en sont les features
+
+Avant tout, applique `${CLAUDE_PLUGIN_ROOT}/autonomie.md` : lancé par le modèle plutôt que tapé par
+l'humain, ce skill ne s'exécute que si la clé `agent-autonomy` de `docs/agents/usine.md` l'ouvre.
 
 Le projet décrit son usine dans `docs/agents/usine.md` ; ce skill en lit la clé `feature-dir`. Sans
 elle, il n'y a pas de dossier des features : dis-le et arrête-toi.

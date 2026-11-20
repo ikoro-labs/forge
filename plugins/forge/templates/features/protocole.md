@@ -90,7 +90,9 @@ Ouvre d'abord la séance `seances/AAAA-MM-JJ-<auteur>-<document>.md` depuis le g
 
 Une question technique passe d'abord par l'agent `forge:staff-engineer`, une question produit par
 `forge:product-owner` : ce qu'ils tranchent s'écrit dans la séance avec leur ligne `MATRIX_CELL`, et
-seul ce qu'ils rendent `RESERVED` ou `DOMAIN` reste une question pour l'humain.
+seul ce qu'ils rendent `RESERVED` ou `DOMAIN` reste une question pour l'humain. Quand le modèle a
+lancé la commande (clé `agent-autonomy`), `${CLAUDE_PLUGIN_ROOT}/autonomie.md`, étape 3, dit en plus
+où la décision s'écrit dans le document et ce que devient la question qu'un agent réserve à l'humain.
 
 Si l'humain répond « décide par défaut », tranche sur la pratique établie du métier du projet et
 des équipes logicielles, et écris la décision dans la section « Décisions prises par défaut » du

@@ -2,10 +2,12 @@
 name: improve-codebase-architecture
 description: "Revue d'architecture d'une zone du code, de préférence avant le design d'une feature : repérer les modules superficiels, présenter les approfondissements dans un rapport HTML, les trancher avec un humain, puis consigner l'issue de chaque candidat."
 argument-hint: "[F-NNNN | chemin]"
-disable-model-invocation: true
 ---
 
 # Improve Codebase Architecture
+
+Avant tout, applique `${CLAUDE_PLUGIN_ROOT}/autonomie.md` : lancé par le modèle plutôt que tapé par
+l'humain, ce skill ne s'exécute que si la clé `agent-autonomy` de `docs/agents/usine.md` l'ouvre.
 
 Repérer les frictions d'architecture et proposer des **approfondissements** : des refontes qui
 transforment des modules superficiels en modules profonds, pour garder un code testable et lisible

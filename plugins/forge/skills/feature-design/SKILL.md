@@ -2,10 +2,12 @@
 name: feature-design
 description: "Écrire le design d'une feature dont la spec est acceptée : contextes touchés, ports et adapters, modèle de données, frontière de confiance, observabilité, coutures de test, découpage en tickets, et les ADR déclenchés."
 argument-hint: F-NNNN
-disable-model-invocation: true
 ---
 
 # Concevoir une feature
+
+Avant tout, applique `${CLAUDE_PLUGIN_ROOT}/autonomie.md` : lancé par le modèle plutôt que tapé par
+l'humain, ce skill ne s'exécute que si la clé `agent-autonomy` de `docs/agents/usine.md` l'ouvre.
 
 Applique `${CLAUDE_PLUGIN_ROOT}/templates/features/protocole.md`, document `design` : la spec doit
 être acceptée.

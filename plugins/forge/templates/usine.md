@@ -34,6 +34,19 @@ seuls, sous veto, ou jamais. Sans elle, ils ne tranchent rien et rendent tout en
 
 - `decision-matrix` : `<docs/agents/decisions.md>`
 
+L'autonomie des agents sur ce projet, que l'utilisateur du projet ouvre et que le plugin ne pose
+jamais. La seule valeur est `on`. Avec elle, un skill de la chaîne des features (`feature-new`
+jusqu'à `feature-design`, `feature-guide`, `feature-brainstorm`, `feature-status`) et les skills
+`slo`, `audit-jetons` et `improve-codebase-architecture` peuvent être lancés par le modèle, et leurs
+questions vont d'abord à `forge:product-owner` ou à `forge:staff-engineer`, selon la clé
+`decision-matrix`. Sans la clé, ou avec une autre valeur, un skill lancé par le modèle écrit
+« sans objet (clé `agent-autonomy` absente) » et rend l'étape à l'humain, avec la commande à taper ;
+une commande tapée par l'humain s'exécute toujours. `feature-accept` reste tapé par un humain de la
+clé `accepting-human`, et `release` reste commandé par la clé `release-trigger` : cette clé ne les
+ouvre pas. La règle est dans `plugins/forge/autonomie.md`.
+
+- `agent-autonomy` : `on`
+
 L'agent du projet qui tranche les questions de doctrine du métier (`DOMAIN`). Sans lui, elles vont à
 un humain.
 

@@ -2,10 +2,12 @@
 name: feature-frame
 description: "Écrire le cadrage d'une feature : problème, périmètre, condition d'entrée, observabilité, risques, critères d'arrêt datés, taille S/M/L. Deuxième étape de la chaîne, après /forge:feature-new."
 argument-hint: F-NNNN
-disable-model-invocation: true
 ---
 
 # Cadrer une feature
+
+Avant tout, applique `${CLAUDE_PLUGIN_ROOT}/autonomie.md` : lancé par le modèle plutôt que tapé par
+l'humain, ce skill ne s'exécute que si la clé `agent-autonomy` de `docs/agents/usine.md` l'ouvre.
 
 Applique `${CLAUDE_PLUGIN_ROOT}/templates/features/protocole.md`, document `cadrage`. 45 minutes au
 plus ; une page en taille S. Si le projet a déjà un cadrage accepté, prends-le pour modèle.

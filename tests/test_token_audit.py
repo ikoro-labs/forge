@@ -276,7 +276,7 @@ class CommandLine(Logs):
 class Skill(unittest.TestCase):
     def test_the_skill_runs_the_script_from_the_plugin_root(self) -> None:
         text = (support.PLUGIN / "skills" / "audit-jetons" / "SKILL.md").read_text(encoding="utf-8")
-        self.assertIn("disable-model-invocation: true", text)
+        self.assertNotIn("disable-model-invocation", text)  # ticket #266 A1 : le modèle peut le lancer, clé agent-autonomy
         self.assertIn(
             'uv run --no-project --quiet python "${CLAUDE_PLUGIN_ROOT}/scripts/token_audit.py"', text
         )

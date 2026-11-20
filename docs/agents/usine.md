@@ -121,6 +121,8 @@ La suite de tests de ce dépôt, dont la sortie se raccourcit quand elle passe.
 
 ## Clés absentes
 
+- `agent-autonomy` : l'utilisateur de ce dépôt ne l'a pas inscrite ; le plugin ne la pose jamais, et
+  tant qu'elle manque, un skill lancé par le modèle rend l'étape à l'humain.
 - `release-trigger` : la publication reste un geste de l'humain tant qu'il n'a pas choisi le nombre de
   fusions et le délai qui déclenchent une version ; aucune valeur n'est devinée, l'agent ne publie rien.
 - `domain-arbiter`, `domain-skill`, `glossary` : le plugin n'a pas de métier propre.
