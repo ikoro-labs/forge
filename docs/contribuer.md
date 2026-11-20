@@ -137,6 +137,7 @@ plugins/forge/                    le plugin
   scripts/completion.py           le tableau de complétion des features, compté comme le budget
   scripts/e2e_trial.py            l'essai de bout en bout de l'usine sur un dépôt d'essai, avant une version
   scripts/release.py              le déclencheur d'une version et les quatre conditions de sa publication par l'agent
+  scripts/question_delay.py       les questions restées sans réponse au-delà de la clé `question-default-delay`, et la suite d'un verdict
   socle.md                        le socle commun des critères de revue, règles F-n
   templates/                      usine.md, ticket.md, pr.md, verdict.md, adr.md, features/
 tests/                            tests des hooks, du parseur et du contenu

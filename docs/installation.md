@@ -437,6 +437,27 @@ qui échoue ou dépasse son délai, vaut refus. Sans la clé, le garde ne refuse
 consigne de `forge:qc` reste (s'arrêter avant la fusion) : le garde est le filet, la consigne évite
 le refus. Essayé sur Linux seulement, par les tests ; pas encore sur un vrai poste Windows.
 
+## Les questions restées sans réponse
+
+Une question qui attend un humain trop longtemps bloque l'usine. La clé `question-default-delay` de
+`usine.md` (une ligne, un nombre suivi de `h` ou de `j`) en fixe le délai ; `scripts/question_delay.py due`
+liste les tickets et les PR ouverts qui portent `ready-for-human`, `needs-info` ou `needs-your-attention`
+depuis plus que ce délai (depuis la dernière pose de l'étiquette, ou depuis la dernière décision par défaut
+ou le dernier rappel), et `forge:feature-build` les passe à `forge:staff-engineer` ou à
+`forge:product-owner`. `question_delay.py route ... --apply` lit leur verdict, pas l'agent qui orchestre :
+
+- `DECIDED`, avec une case de la matrice, une source et, quand le bloc en a une, un `REVERSIBLE: yes` : la
+  décision est postée comme `Décision (<agent>, <case>) par défaut`, que l'humain défait d'un commentaire ;
+  `ready-for-human` et `needs-info` sont retirés, `needs-your-attention` posé si la case laisse un veto.
+- Tout le reste (`RESERVED`, `DOMAIN`, `TECHNICAL`, une décision sans source ou irréversible) : la décision
+  reste à l'humain, qui reçoit un rappel et `needs-your-attention`. Une case réservée à l'humain par la
+  matrice n'est donc jamais tranchée par défaut.
+
+Chaque décision par défaut et chaque rappel relancent le délai. Sans la clé, rien n'est listé, tranché ni
+écrit (« sans objet »), et aucun délai n'est deviné ; une valeur illisible fait échouer la commande. Le
+script ne vérifie pas que l'agent a bien lu la matrice : il lit son verdict. Essayé sur Linux seulement, par
+les tests, `gh` simulé ; pas encore contre un vrai dépôt ni sous Windows.
+
 ## The infrastructure guard
 
 `guard_infra` runs before every `Bash` and `PowerShell` call. A command it holds is refused to a

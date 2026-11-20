@@ -33,7 +33,7 @@ configuration, ses règles, ses skills de domaine.
 
 Une question technique ou produit en chemin va d'abord à `forge:staff-engineer` ou à
 `forge:product-owner`, qui la tranchent selon la matrice des droits de décision du projet, ou
-disent qu'elle revient à un humain. Des hooks gardent le tout : aucun agent ne pousse sur `main`,
+disent qu'elle revient à un humain ; passé le délai de la clé `question-default-delay`, une décision que la matrice leur donne se poste par défaut, réversible, et ce qu'elle réserve à l'humain lui est rappelé. Des hooks gardent le tout : aucun agent ne pousse sur `main`,
 ne fusionne une PR rouge, ou ne sort de son rôle.
 
 ## Ce que le plugin apporte
