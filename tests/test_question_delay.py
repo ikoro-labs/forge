@@ -246,6 +246,18 @@ class Reserved(unittest.TestCase):
                 self.assertTrue(gh.bodies()[0].startswith("Rappel (question-default-delay)"), gh.bodies())
                 self.assertNotIn("Décision (", gh.bodies()[0])
 
+    def test_a_staff_engineer_block_without_a_reversible_line_stays_with_the_human(self) -> None:
+        """#260 A2: `forge:staff-engineer` must write `REVERSIBLE: yes`; a block without the line is not a default."""
+        project = Project(self)
+        gh = waiting(["ready-for-human"], 30)
+        code, out = project.route(gh, DECIDED, "--apply")  # `DECIDED` has no `REVERSIBLE:` line
+        self.assertEqual(code, 0, out)
+        self.assertEqual(len(gh.bodies()), 1)
+        self.assertTrue(gh.bodies()[0].startswith("Rappel (question-default-delay)"), gh.bodies())
+        self.assertNotIn("Décision (", gh.bodies()[0])
+        self.assertEqual(gh.added(), ["labels[]=needs-your-attention"])
+        self.assertEqual(gh.removed(), [])
+
     def test_a_verdict_that_is_not_a_decision_stays_with_the_human(self) -> None:
         """#260 A2: `DOMAIN` and `TECHNICAL` hand the question elsewhere; no default is invented."""
         project = Project(self)

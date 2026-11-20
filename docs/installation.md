@@ -446,10 +446,10 @@ depuis plus que ce délai (depuis la dernière pose de l'étiquette, ou depuis l
 ou le dernier rappel), et `forge:feature-build` les passe à `forge:staff-engineer` ou à
 `forge:product-owner`. `question_delay.py route ... --apply` lit leur verdict, pas l'agent qui orchestre :
 
-- `DECIDED`, avec une case de la matrice, une source et, quand le bloc en a une, un `REVERSIBLE: yes` : la
+- `DECIDED`, avec une case de la matrice, une source et un `REVERSIBLE: yes` (exigé du `staff-engineer` ; `product-owner` n'écrit pas la ligne) : la
   décision est postée comme `Décision (<agent>, <case>) par défaut`, que l'humain défait d'un commentaire ;
   `ready-for-human` et `needs-info` sont retirés, `needs-your-attention` posé si la case laisse un veto.
-- Tout le reste (`RESERVED`, `DOMAIN`, `TECHNICAL`, une décision sans source ou irréversible) : la décision
+- Tout le reste (`RESERVED`, `DOMAIN`, `TECHNICAL`, une décision sans source, irréversible ou, pour le `staff-engineer`, sans ligne `REVERSIBLE:`) : la décision
   reste à l'humain, qui reçoit un rappel et `needs-your-attention`. Une case réservée à l'humain par la
   matrice n'est donc jamais tranchée par défaut.
 

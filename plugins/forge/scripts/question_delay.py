@@ -17,12 +17,13 @@ passes each due question to `forge:staff-engineer` or `forge:product-owner`.
 `REVERSIBLE:`, `VETO:`) and plans one of two actions on the item `--item`:
 
     - `post-default`: the verdict is `DECIDED`, with its cell, its decision and its source, and a
-      `REVERSIBLE:` line, when the block has one, that says `yes`. The comment `Décision (<agent>,
+      `REVERSIBLE: yes` line (`--agent staff-engineer` requires the line; `product-owner` writes none,
+      and a line it does write must say `yes`). The comment `Décision (<agent>,
       <case>) par défaut (question-default-delay)` is posted, the labels `ready-for-human` and
       `needs-info` the item holds are removed, and `needs-your-attention` is added when the cell
       leaves the human a veto (`VETO: yes`);
     - `remind-human`: any other verdict (`RESERVED`, `DOMAIN`, `TECHNICAL`), or a `DECIDED` that has no
-      cell, no source or is not reversible. No decision is invented: the comment `Rappel
+      cell, no source, or is not reversible (a staff-engineer block without `REVERSIBLE:` included). No decision is invented: the comment `Rappel
       (question-default-delay)` says why and `needs-your-attention` is added where the item lacks it.
 
 Nothing is written without `--apply`; the plan is printed (`--json` for one document). The two
@@ -227,8 +228,12 @@ class Plan:
         }
 
 
-def undecided(fields: dict[str, str]) -> str | None:
-    """Why a verdict is not a default decision, or None when it is one."""
+def undecided(fields: dict[str, str], agent: str) -> str | None:
+    """Why a verdict is not a default decision, or None when it is one.
+
+    `forge:staff-engineer` must write `REVERSIBLE: yes`. `forge:product-owner` writes no such line, its
+    matrix cells being reversible by construction; a line it does write still has to say `yes`.
+    """
     verdict = fields["VERDICT"]
     if verdict != "DECIDED":
         return f"le verdict est {verdict}, que la matrice ne donne pas à un agent"
@@ -237,6 +242,8 @@ def undecided(fields: dict[str, str]) -> str | None:
     if not fields.get("GROUND", "").strip():
         return "la décision n'a pas de source : sans source, ce n'est pas une décision"
     reversible = fields.get("REVERSIBLE")
+    if reversible is None and agent == "staff-engineer":
+        return "la décision ne dit pas si elle est réversible (pas de ligne `REVERSIBLE:`)"
     if reversible is not None and not reversible.strip().lower().startswith("yes"):
         return f"la décision n'est pas réversible ({reversible.strip() or 'sans raison'})"
     return None
@@ -249,7 +256,7 @@ def plan_for(fields: dict[str, str], item: dict, agent: str, delay_text: str) ->
     cell = fields.get("MATRIX_CELL", "").strip()
     decision = fields.get("DECISION", "").strip()
     ground = fields.get("GROUND", "").strip()
-    why = undecided(fields)
+    why = undecided(fields, agent)
     if why is None:
         comment = (
             f"Décision ({agent}, {cell}) par défaut ({KEY}) : {decision}\n\n"
