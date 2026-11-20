@@ -16,9 +16,9 @@ Les skills de la chaîne d'une feature peuvent être lancés par l'agent, les ga
 `agent-autonomy`, `question-default-delay` et `lever-peers`.
 
 - Skills : dix des douze skills qui interdisaient l'appel par le modèle s'ouvrent à lui quand la clé
-  `agent-autonomy` vaut `on` ; sans la clé, l'étape revient à l'humain avec la commande à taper, et les
-  questions passent d'abord à `forge:product-owner` ou `forge:staff-engineer`. `feature-accept` et
-  `release` restent tapés par l'humain (ikoro-labs/forge#268, ikoro-labs/forge#266).
+  `agent-autonomy` vaut `on`, et les questions passent alors d'abord à `forge:product-owner` ou
+  `forge:staff-engineer` ; sans la clé, l'étape revient à l'humain avec la commande à taper.
+  `feature-accept` et `release` restent tapés par l'humain (ikoro-labs/forge#268, ikoro-labs/forge#266).
 - Skills : `feature-design` relie les tickets publiés dans le graphe de GitHub (sous-issues de l'issue
   de suivi, liens `blocked_by`) et contrôle le graphe, par `ticket_graph.py link` et `check`
   (ikoro-labs/forge#270, ikoro-labs/forge#269).
@@ -40,8 +40,8 @@ Les skills de la chaîne d'une feature peuvent être lancés par l'agent, les ga
   `agent-autonomy` ; `question-default-delay` et `lever-peers` restent sans objet tant qu'elles sont
   absentes.
 - Resté dehors : l'essai de bout en bout est sans objet ici (clé `e2e-repo` absente). Le lancement des
-  skills par l'agent n'a pas encore été essayé dans une vraie session ; rien d'éprouvé sous Windows en
-  local, sauf la lecture en UTF-8 (#258, suite verte sous Windows).
+  skills par l'agent n'a pas encore été essayé dans une vraie session ; rien d'éprouvé sur un poste
+  Windows ; la lecture en UTF-8 n'y passe que la suite de la CI (ikoro-labs/forge#258).
 
 ### Objectifs de service
 
