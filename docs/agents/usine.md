@@ -8,6 +8,12 @@ La configuration de l'usine qui développe le plugin `forge` dans ce dépôt. Le
 
 - `accepting-human` : `ikoro-labs`
 
+La matrice des droits de décision : ce que `forge:staff-engineer` et `forge:product-owner` tranchent
+seuls, et ce que l'humain se réserve (fusion d'un chemin protégé, publication et épingle, réglages du
+dépôt, la matrice elle-même, un risque de sécurité sans correctif réversible).
+
+- `decision-matrix` : `docs/agents/decisions.md`
+
 ## Domaines et règles du dépôt
 
 - `domain-rules` : `.claude/rules/forge.md`
@@ -117,8 +123,6 @@ La suite de tests de ce dépôt, dont la sortie se raccourcit quand elle passe.
 
 - `release-trigger` : la publication reste un geste de l'humain tant qu'il n'a pas choisi le nombre de
   fusions et le délai qui déclenchent une version ; aucune valeur n'est devinée, l'agent ne publie rien.
-- `decision-matrix` : aucune matrice encore ; `forge:staff-engineer` et `forge:product-owner`
-  rendent tout en `RESERVED`, et chaque décision revient à l'humain qui accepte.
 - `domain-arbiter`, `domain-skill`, `glossary` : le plugin n'a pas de métier propre.
 - `product-source`, `entry-gate` : les besoins viennent des tickets de ce dépôt.
 - `test-skill` : la façon d'écrire les tests est dans `.claude/rules/forge.md`.
