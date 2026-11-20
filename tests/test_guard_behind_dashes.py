@@ -199,6 +199,22 @@ class GuardReadonly(unittest.TestCase):
         self.assertIsNone(reader_refusal("git diff main -- docs", allowed))
         self.assertIsNone(reader_refusal("grep -n -- foo README.md", allowed))
 
+    def test_a_reader_whose_prefix_is_allowed_is_refused_any_wrapped_non_read(self) -> None:
+        """#259 A2 : le préfixe `readonly-command` d'un projet n'ouvre aucune commande après le `--`, pas seulement git et gh."""
+        allowed = ["node /x/tool"]
+        for tail in ("rm -rf docs", "sed -i s/a/b/ f", "/usr/bin/git push origin x", "touch f"):
+            with self.subTest(tail=tail):
+                verdict_text = reader_refusal(f"{WRAPPER} {tail}", allowed)
+                assert verdict_text is not None
+                self.assertIn("not a read", verdict_text)
+
+    def test_a_reader_whose_prefix_is_allowed_keeps_any_wrapped_read(self) -> None:
+        """#259 A2 : une lecture quelconque derrière le même `--` passe, comme seule."""
+        allowed = ["node /x/tool"]
+        for tail in ("cat README.md", "sed -n 1,5p f", "grep -rn foo docs", "git log --oneline"):
+            with self.subTest(tail=tail):
+                self.assertIsNone(reader_refusal(f"{WRAPPER} {tail}", allowed))
+
     def test_the_filter_names_the_gate_and_the_readers_only(self) -> None:
         """F-0259 A2 : le filtre de `guard_readonly` tient pour la commande enveloppée."""
 

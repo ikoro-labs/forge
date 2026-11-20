@@ -184,17 +184,24 @@ def reader_refusal(command: str, allowed_prefixes: Iterable[str] = ()) -> str | 
             continue
         if reason := _unread(words, prefixes):
             return reason
-        # What follows a `--` is judged as a command when it names git or gh: the prefix a
-        # project allows (`node /x/tool`) lets its own words by, not the command it wraps.
+        # What follows a `--` is judged as a command, with no prefix: the prefix a project allows
+        # (`node /x/tool`) lets its own words by, not the command it wraps. A command the ordinary
+        # list lets by keeps its own `--` (`git diff main -- docs`), and only a tail naming git or
+        # gh is read as a command there.
+        prefixed = _has_prefix(words, prefixes)
         for behind in behind_dashes(words):
-            if behind[0] in ("git", "gh") and (reason := _unread(behind, [])):
+            if (prefixed or behind[0] in ("git", "gh")) and (reason := _unread(behind, [])):
                 return reason
     return None
 
 
+def _has_prefix(words: list[str], prefixes: list[list[str]]) -> bool:
+    return any(words[: len(prefix)] == prefix for prefix in prefixes)
+
+
 def _unread(words: list[str], prefixes: list[list[str]]) -> str | None:
     """Why `words`, one simple command, is not a read this role may run, or None when it is."""
-    if any(words[: len(prefix)] == prefix for prefix in prefixes):
+    if _has_prefix(words, prefixes):
         return None
     if any(word.startswith("--output") for word in words[1:]):
         return f"`{' '.join(words)}` writes a file by `--output`"
