@@ -33,7 +33,8 @@ configuration, ses règles, ses skills de domaine.
 
 Une question technique ou produit en chemin va d'abord à `forge:staff-engineer` ou à
 `forge:product-owner`, qui la tranchent selon la matrice des droits de décision du projet, ou
-disent qu'elle revient à un humain. Des hooks gardent le tout : aucun agent ne pousse sur `main`,
+disent qu'elle revient à un humain. Un projet dont l'utilisateur écrit la clé `agent-autonomy` laisse
+le modèle lancer lui-même ces commandes, sauf `/forge:feature-accept` et `/forge:release`. Des hooks gardent le tout : aucun agent ne pousse sur `main`,
 ne fusionne une PR rouge, ou ne sort de son rôle.
 
 ## Ce que le plugin apporte

@@ -113,6 +113,20 @@ agent fusionner doit donc poser la clé, sans quoi la fusion lui revient. Éprou
 `tests/test_guard_git_merge_method.py` ; la lecture de la méthode d'une fusion par `gh api` n'a pas
 été jouée sur un vrai dépôt GitHub.
 
+La clé `agent-autonomy` (valeur `on`, ticket #266) ouvre l'autonomie des agents sur le projet : dix des
+douze skills qui interdisaient le modèle (`feature-new` jusqu'à `feature-design`, `feature-guide`,
+`feature-brainstorm`, `feature-status`, `slo`, `audit-jetons`, `improve-codebase-architecture`) peuvent
+être lancés par lui. Le drapeau `disable-model-invocation` est statique pour tout le plugin : il ne
+peut pas varier d'un projet à l'autre, alors c'est la règle `plugins/forge/autonomie.md` qui lit la
+clé. Lancé par le modèle sans la clé, un skill n'écrit rien et dit la commande à taper ; lancé par
+l'humain, il s'exécute toujours. Avec la clé, ses questions vont d'abord à `forge:product-owner` ou à
+`forge:staff-engineer`, la décision s'écrit dans le document avec sa case de la matrice, et ce que la
+matrice réserve à l'humain lui reste, la case nommée. `feature-accept` et `release` gardent le drapeau :
+la clé ne les ouvre pas, et `release` reste commandée par `release-trigger`. Éprouvé par les tests de
+`tests/test_agent_autonomy.py`, qui lisent le texte des skills et de la règle ; la distinction entre une
+commande tapée (un bloc `<command-name>` dans le tour) et un lancement par l'outil Skill n'a pas été
+jouée dans une vraie session de Claude Code.
+
 Deux clés, `test-path` (un préfixe de chemin des fichiers de test, une ligne par préfixe) et
 `red-replay` (la commande qui lance un fichier de test, avec `{file}` ou `{name}`), ouvrent la sonde
 de rejeu de `forge:qc-gate` : `plugins/forge/scripts/base_replay.py` pose les tests que la PR ajoute
