@@ -41,9 +41,15 @@ jusqu'à `feature-design`, `feature-guide`, `feature-brainstorm`, `feature-statu
 questions vont d'abord à `forge:product-owner` ou à `forge:staff-engineer`, selon la clé
 `decision-matrix`. Sans la clé, ou avec une autre valeur, un skill lancé par le modèle écrit
 « sans objet (clé `agent-autonomy` absente) » et rend l'étape à l'humain, avec la commande à taper ;
-une commande tapée par l'humain s'exécute toujours. `feature-accept` reste tapé par un humain de la
-clé `accepting-human`, et `release` reste commandé par la clé `release-trigger` : cette clé ne les
-ouvre pas. La règle est dans `plugins/forge/autonomie.md`.
+une commande tapée par l'humain s'exécute toujours. La clé est aussi l'interrupteur de la fusion et de la
+publication. Avec elle, `forge:qc` fusionne un ACCEPT hors `protected-path` (une entrée `never-weaken` et une
+action `human-merge` active l'arrêtent encore), et `release` publie, tag compris, quand l'essai de bout en bout
+passe et qu'aucun `sev1` n'est ouvert ; l'état des SLO est cité dans la PR de version, il ne bloque pas. Sans la
+clé, `forge:qc` poste son verdict, pose `needs-your-attention` et ne fusionne jamais, et `release` n'ouvre que
+la PR de version : l'humain reprend la main sur un projet en retirant la ligne. `feature-accept` reste tapé par
+un humain de la clé `accepting-human`, et `release` reste commandé par la clé `release-trigger` pour savoir
+quand une version est due : la clé n'ouvre pas ces deux skills au modèle. La règle est dans
+`plugins/forge/autonomie.md`.
 
 - `agent-autonomy` : `on`
 

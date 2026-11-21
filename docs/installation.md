@@ -151,10 +151,21 @@ clé. Lancé par le modèle sans la clé, un skill n'écrit rien et dit la comma
 l'humain, il s'exécute toujours. Avec la clé, ses questions vont d'abord à `forge:product-owner` ou à
 `forge:staff-engineer`, la décision s'écrit dans le document avec sa case de la matrice, et ce que la
 matrice réserve à l'humain lui reste, la case nommée. `feature-accept` et `release` gardent le drapeau :
-la clé ne les ouvre pas, et `release` reste commandée par `release-trigger`. Éprouvé par les tests de
-`tests/test_agent_autonomy.py`, qui lisent le texte des skills et de la règle ; la distinction entre une
-commande tapée (un bloc `<command-name>` dans le tour) et un lancement par l'outil Skill n'a pas été
-jouée dans une vraie session de Claude Code.
+la clé ne les ouvre pas au modèle, et `release` reste commandée par `release-trigger`, qui dit quand une
+version est due.
+
+Depuis le ticket #280, la même clé est l'interrupteur de la fusion et de la publication, et l'humain
+reprend la main sur un projet en la retirant. À `on`, `forge:qc` fusionne un ACCEPT hors `protected-path`
+(une entrée `never-weaken` et une action `human-merge` active l'arrêtent encore), et `release` publie, tag
+compris, quand l'essai de bout en bout passe et qu'aucun `sev1` n'est ouvert ; l'état des SLO est cité dans
+la PR de version, il ne bloque pas. Sans la clé, `forge:qc` poste son verdict, pose `needs-your-attention` et
+ne fusionne jamais (même lancé par l'humain : il fusionne lui-même), et `release` ouvre la PR de version
+seule. Un projet qui montait de version en laissant `forge:qc` fusionner doit donc écrire la clé, sans quoi
+chaque ACCEPT attend l'humain. Éprouvé par les tests de `tests/test_agent_autonomy.py`,
+`tests/test_agent_autonomy_switch.py` et `tests/test_release.py`, qui lisent le texte des skills et de la
+règle et rejouent `release.py check` sur des dépôts jetables ; la distinction entre une commande tapée (un
+bloc `<command-name>` dans le tour) et un lancement par l'outil Skill, et la fusion par `forge:qc` selon la
+clé, n'ont pas été jouées dans une vraie session de Claude Code.
 
 Deux clés, `test-path` (un préfixe de chemin des fichiers de test, une ligne par préfixe) et
 `red-replay` (la commande qui lance un fichier de test, avec `{file}` ou `{name}`), ouvrent la sonde
