@@ -53,7 +53,7 @@ case, donne sa recommandation et pose `needs-your-attention`.
 | Case | Décision ou geste réservé | Raison |
 | --- | --- | --- |
 | `H1` | Fusionner une PR qui touche un `protected-path` de `usine.md` | Ces chemins tiennent les gardes des agents et `CODEOWNERS`, qui les garde : un agent ne s'en juge pas lui-même. |
-| `H2` | Publier une version (le tag `forge--v<X.Y.Z>`) | Un tag poussé ne se déplace ni ne se supprime. La montée de l'épingle est une PR que l'agent fusionne sur ACCEPT (2026-11-21). |
+| `H2` | Retirée le 2026-11-21 : l'agent publie, tag compris, et fusionne la montée de l'épingle sur ACCEPT | Choix de l'humain ; les conditions sont dans `.claude/rules/git.md`. |
 | `H3` | Protection des branches, réglages du dépôt, changement de compte ou de permission | Hors de la portée des agents, et un mauvais réglage ouvre une voie que la revue ne couvre pas. |
 | `H4` | Cette matrice : l'ajout, le retrait ou le changement d'une case | Elle dit ce que l'humain délègue ; lui seul la tranche. |
 | `H5` | Un risque de sécurité prouvé sans correctif réversible | Un geste qu'on ne défait pas se décide avec lui. |

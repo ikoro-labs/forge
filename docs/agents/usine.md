@@ -9,8 +9,8 @@ La configuration de l'usine qui développe le plugin `forge` dans ce dépôt. Le
 - `accepting-human` : `ikoro-labs`
 
 La matrice des droits de décision : ce que `forge:staff-engineer` et `forge:product-owner` tranchent
-seuls, et ce que l'humain se réserve (fusion d'un chemin protégé, publication, réglages du
-dépôt, la matrice elle-même, un risque de sécurité sans correctif réversible).
+seuls, et ce que l'humain se réserve (fusion d'un chemin protégé, c'est-à-dire d'un garde des
+agents, réglages du dépôt, la matrice elle-même, un risque de sécurité sans correctif réversible).
 
 - `decision-matrix` : `docs/agents/decisions.md`
 
