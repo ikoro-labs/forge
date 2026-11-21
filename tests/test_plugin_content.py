@@ -28,11 +28,11 @@ LEVELS = {"fable", "opus", "sonnet", "haiku"}
 AGENT_LEVELS = {
     "qc-gate": "haiku",
     "coder": "sonnet",
-    "qc-conf": "opus",
-    "staff-engineer": "opus",
-    "product-owner": "opus",
-    "review-judge": "opus",
-    "review-recheck": "opus",
+    "qc-conf": "sonnet",
+    "staff-engineer": "sonnet",
+    "product-owner": "sonnet",
+    "review-judge": "sonnet",
+    "review-recheck": "sonnet",
 }
 # Thinking is billed as output: each agent thinks as long as its task needs, no longer.
 AGENT_EFFORTS = {
@@ -110,6 +110,28 @@ class Frontmatter(unittest.TestCase):
                 model = frontmatter(path).get("model")
                 self.assertIn(model, LEVELS)
                 self.assertEqual(model, AGENT_LEVELS[path.stem])
+
+    def test_the_models_doc_gives_each_agent_its_level_and_how_a_quality_drop_is_read(self) -> None:
+        """Ticket #281 A1, A2: the table says the level the front matter holds; the drop is read in five measures."""
+        text = " ".join((support.REPO_ROOT / "docs" / "modeles-et-jetons.md").read_text(encoding="utf-8").split())
+        for agent, level in AGENT_LEVELS.items():
+            with self.subTest(agent=agent):
+                row = re.search(rf"\| [^|]*`forge:{agent}`[^|]* \| `(\w+)` \|", text)
+                self.assertIsNotNone(row, f"no table row for forge:{agent}")
+                assert row is not None
+                self.assertEqual(row.group(1), level)
+        for measure in ("accept-round-1", "escaped-defects", "false-accept", "judge-recall", "tokens-per-merge"):
+            with self.subTest(measure=measure):
+                self.assertIn(f"`{measure}`", text)
+        self.assertIn("avant et après la date de publication", text)
+
+    def test_the_architecture_diagram_names_the_level_of_each_agent(self) -> None:
+        """Ticket #281: the diagram does not keep saying opus for an agent that runs on sonnet."""
+        for name in ("architecture.svg", "architecture.excalidraw"):
+            text = (support.REPO_ROOT / "docs" / name).read_text(encoding="utf-8")
+            with self.subTest(name=name):
+                self.assertNotIn("opus, effort", text)
+                self.assertNotIn("autre niveau", text)
 
     def test_every_agent_names_its_effort(self) -> None:
         self.assertEqual(set(AGENT_EFFORTS), {path.stem for path in AGENTS})

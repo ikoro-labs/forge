@@ -2,7 +2,7 @@
 name: review-recheck
 description: Relit, avant publication, chaque verdict tenu de la revue de bout en bout (ceux qui décrivent un manque ou se contredisent d'une section à l'autre en premier) et le confirme ou le conteste sur la capture. Distinct du juge. Lancé par le skill forge:feature-review.
 tools: Read, Grep, Glob, Bash
-model: opus
+model: sonnet
 effort: medium
 ---
 

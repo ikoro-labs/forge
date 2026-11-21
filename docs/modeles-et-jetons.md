@@ -12,9 +12,37 @@ le moins cher qui fait le travail, le plus fort là seulement où une erreur co�
 | --- | --- | --- |
 | `forge:qc-gate` | `haiku` | Il rejoue des commandes et recopie leurs mesures, sans avis. |
 | `forge:coder` | `sonnet` | Le plus gros consommateur ; un modèle moyen code un ticket bien découpé. Opus au tour 3, Haiku en mode sync : voir plus bas. |
-| `forge:qc-conf` | `opus` | Le garde-fou de la qualité ; il lit surtout le diff, sa tâche reste courte. Un autre niveau que le coder rend moins probable qu'une même erreur échappe aux deux. |
-| `forge:staff-engineer`, `forge:product-owner` | `opus` | Appelés rarement, et leur décision engage la suite. |
-| `forge:review-judge`, `forge:review-recheck` | `opus` | Ils jugent des captures contre la source, et un `tenu` publié à tort cache un écart à la clôture ; le juge réfléchit en `high`, la seconde lecture en `medium`. |
+| `forge:qc-conf` | `sonnet` | Le garde-fou de la qualité ; il lit surtout le diff, sa tâche reste courte. Il tourne sur le même niveau que le coder : l'écart de modèle qui rendait moins probable qu'une même erreur échappe aux deux est donné pour une période d'essai, voir « Lire une baisse de qualité ». |
+| `forge:staff-engineer`, `forge:product-owner` | `sonnet` | Appelés rarement, et leur décision engage la suite : l'effort (`high` pour le premier, `medium` pour le second) reste le levier de la profondeur. |
+| `forge:review-judge`, `forge:review-recheck` | `sonnet` | Ils jugent des captures contre la source, et un `tenu` publié à tort cache un écart à la clôture ; le juge réfléchit en `high`, la seconde lecture en `medium`. |
+
+Aucun agent du plugin ne tourne plus sur `opus` : le niveau n'apparaît que dans l'escalade du coder
+au tour 3, tenue par le hook `guard_coder_model` (voir plus bas). Les cinq agents passés de `opus`
+à `sonnet` (`forge:qc-conf`, `forge:staff-engineer`, `forge:product-owner`, `forge:review-judge`,
+`forge:review-recheck`) gardent leur effort ; `forge:qc-gate` reste sur `haiku` et `forge:coder` sur
+`sonnet`. Un test (`tests/test_plugin_content.py`) épingle le niveau de chaque agent.
+
+**Lire une baisse de qualité.** Ce changement est une période d'essai : il se lit en comparant les
+mêmes mesures avant et après la date de publication de la version qui le livre (celle du
+`CHANGELOG.md`), jamais sur un seul chiffre. Une baisse de qualité d'un juge ou d'un concepteur ne
+se voit pas sur le moment ; elle apparaît dans ces mesures :
+
+| Mesure | Où la lire | Ce qu'une dégradation y ressemble |
+| --- | --- | --- |
+| `accept-round-1` | SLI de `docs/indicateurs-de-service.md`, fenêtre de la clé `slo` | la part des PR acceptées au premier verdict baisse |
+| `escaped-defects` | même page | plus de tickets `escaped-defect` par PR fusionnée : le juge laisse passer |
+| `false-accept` | dernier résultat du jeu de référence (`docs/jeu-de-reference.md`) | le juge accepte un cas piégé qu'il devait rejeter |
+| `judge-recall` | même résultat | le juge retrouve moins de défauts connus |
+| jetons par PR fusionnée | `tokens-per-merge`, et `/forge:audit-jetons --coupure <date de publication>` pour le détail par rôle | un modèle plus faible peut coûter plus de tours : le coût par PR ne baisse pas autant qu'attendu, ou monte |
+
+`false-accept` et `judge-recall` ne se calculent que sur un rejeu du jeu de référence : il faut en
+lancer un avant la publication (le juge est encore sur `opus`) et un après (il est sur `sonnet`), à
+la main sous un plafond de coût, sinon la comparaison n'a pas de point d'avant. La règle tient si `accept-round-1`,
+`escaped-defects`, `false-accept` et `judge-recall` ne se dégradent pas et que le coût par PR
+fusionnée baisse ; sinon, remettre `model: opus` à l'agent en cause est un changement d'une ligne
+dans son front matter. Rien n'est mesuré à ce jour : le tableau ci-dessus est la décision, pas son
+résultat. Un lancement qui fixe `model` l'emporte sur le front matter, pour un poste qui veut garder
+`opus` pour un rôle.
 
 La session principale, celle qui lance les skills, n'est pas réglée par le plugin : c'est le
 modèle choisi par `/model`, souvent le plus gros poste de consommation.
