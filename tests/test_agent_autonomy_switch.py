@@ -45,5 +45,45 @@ class ConsumerPinIsNotAHumanGesture(unittest.TestCase):
         self.assertIn("que l'agent fusionne sur ACCEPT", text)
 
 
+class TheMergeFollowsTheKey(unittest.TestCase):
+    """`forge:qc` reads `agent-autonomy` at the merge: `on` merges an ACCEPT, absent hands it to the human."""
+
+    def section(self) -> str:
+        text = prose(QC)
+        start = text.index("## Autonomie")
+        end = text.find(" ## ", start + 1)
+        return text[start : end if end != -1 else len(text)]
+
+    def test_the_key_on_merges_an_accept_outside_the_protected_paths(self) -> None:
+        """#280 A1.1 : clé `on`, ACCEPT : fusionné, hors `protected-path`."""
+        text = self.section()
+        self.assertRegex(text, r"`agent-autonomy` : `on`.{0,200}ACCEPT.{0,100}fusionne")
+
+    def test_the_key_absent_posts_the_verdict_labels_and_never_merges(self) -> None:
+        """#280 A2.1 : clé absente, ACCEPT : le verdict est posté, `needs-your-attention` posée, aucune fusion."""
+        text = self.section()
+        self.assertRegex(text, r"[Cc]lé absente.{0,400}ne fusionne jamais.{0,200}`needs-your-attention`")
+        self.assertIn("fusion sans objet (clé `agent-autonomy` absente)", text)
+        self.assertIn("`fusionnée par l'agent : non`", text)
+
+    def test_a_value_other_than_on_is_the_key_absent(self) -> None:
+        """#280 A2 : `oui`, `true` ou une clé répétée ne valent pas `on`."""
+        self.assertRegex(self.section(), r"[Uu]ne valeur autre que `on`.{0,120}clé répétée.{0,120}absente")
+
+    def test_who_typed_the_command_does_not_open_the_merge(self) -> None:
+        """#280 A2 : même tapé par l'humain, `/forge:qc` ne fusionne pas sans la clé (l'humain fusionne lui-même)."""
+        self.assertRegex(self.section(), r"[Mm]ême lancé par l'humain.{0,200}(ne fusionne pas|l'humain fusionne)")
+
+    def test_the_protected_paths_and_human_merge_still_stop_the_merge_with_the_key_on(self) -> None:
+        """#280 A4 : `protected-path`, `human-merge` et `never-weaken` arrêtent la fusion même clé `on`, même sur ACCEPT."""
+        text = self.section()
+        for phrase in ("`protected-path`", "`human-merge`", "`never-weaken`"):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, text)
+        self.assertRegex(text, r"clé `on`.{0,200}ne lève (aucun|aucune)")
+        qc = prose(QC)
+        self.assertRegex(qc, r"ACCEPT : fusionne \(étape 8\), sauf ce que les règles \*\*Autonomie\*\*")
+
+
 if __name__ == "__main__":
     unittest.main()

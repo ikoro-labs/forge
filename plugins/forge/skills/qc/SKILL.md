@@ -17,8 +17,8 @@ rien, pose `needs-your-attention` avec l'écart, arrête-toi.
 Toi, tu orchestres, tu postes et tu fusionnes. Personne ne relit après toi : l'humain n'est
 qu'alerté.
 
-Le projet décrit son usine dans `docs/agents/usine.md` ; ce skill en lit les clés `protected-path`,
-`never-weaken` et `budget-action`.
+Le projet décrit son usine dans `docs/agents/usine.md` ; ce skill en lit les clés `agent-autonomy`,
+`protected-path`, `never-weaken` et `budget-action`.
 
 ## Une passe ou deux
 
@@ -89,7 +89,7 @@ habituel, et une PR de prose en rend souvent une.
    dans sa description (`gh pr edit <n> --body-file`) ; sur une autre, Dependabot compris, en
    commentaire. Elle est réécrite à chaque tour, jamais laissée périmée.
 7. **Suite.**
-   - ACCEPT : fusionne (étape 8), sauf ce que les règles **Budget d'erreur** et **Chemins
+   - ACCEPT : fusionne (étape 8), sauf ce que les règles **Autonomie**, **Budget d'erreur** et **Chemins
      protégés** plus bas arrêtent.
    - REJECT in round 1 or 2: corrige chaque `BLOCKER`, et seulement eux, pousse, puis reprends à
      l'étape 1. Les `MINOR` et `NOTE` restent dans le verdict. Depuis `/forge:feature-build`, la
@@ -143,6 +143,25 @@ habituel, et une PR de prose en rend souvent une.
    Si la protection de la base refuse parce que la branche est en retard, `gh pr update-branch <n>`,
    attends les checks, et reprends cette étape depuis le report des PR empilées. Checks rouges :
    ce n'est pas un ACCEPT, reprends à l'étape 1.
+
+## Autonomie
+
+La clé `agent-autonomy` est l'interrupteur de la fusion par l'agent : l'humain l'ouvre et la ferme sur
+chaque projet, et ce skill la lit à chaque passage, avant l'étape 8.
+
+- **`agent-autonomy` : `on`** : un ACCEPT se fusionne, à l'étape 8. La clé `on` ne lève aucun arrêt des règles
+  qui suivent : un chemin de la clé `protected-path`, une entrée de la clé `never-weaken` et une action
+  `human-merge` active arrêtent la fusion comme avant, même sur ACCEPT.
+- **Clé absente** : sans objet (clé `agent-autonomy` absente). Le verdict est posté (étape 5) et le rapport écrit
+  (étape 6) comme toujours, mais ne fusionne jamais : la PR reste ouverte sur son ACCEPT, pose
+  `needs-your-attention`, écris dans `Attention` `fusion sans objet (clé `agent-autonomy` absente)` et
+  `fusionnée par l'agent : non` dans `Verdict`, puis arrête-toi : l'humain fusionne.
+- Une valeur autre que `on`, ou une clé répétée, vaut clé absente : cite la ligne fautive dans `Attention`.
+- Même lancé par l'humain, `/forge:qc` ne fusionne pas sans la clé : l'humain qui la veut fermée fusionne
+  lui-même, et le skill n'a pas à deviner s'il a tapé la commande en connaissance de cause.
+
+La clé ne touche ni la revue ni le verdict : seule la fusion change. Elle ne touche pas non plus `guard_git`,
+qui garde la méthode de fusion (`merge-method`), les checks et les chemins protégés.
 
 ## Budget d'erreur
 
