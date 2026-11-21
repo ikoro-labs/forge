@@ -75,6 +75,28 @@ class ProtectedPaths(unittest.TestCase):
         self.assertIsNone(merge("git status", boom))
 
 
+class PinPr(unittest.TestCase):
+    """#278 A4: the key `pin-bump` opens the pin PR, it does not open its merge."""
+
+    def test_a_pin_pr_on_a_protected_settings_file_is_refused_to_an_agent(self) -> None:
+        verdict = merge("gh pr merge 7 --merge", listing(".claude/settings.json"))
+        assert verdict is not None
+        self.assertIn(".claude/settings.json", verdict)
+        self.assertIn("humain", verdict)
+
+    def test_a_pin_pr_is_refused_while_a_human_merge_action_is_active(self) -> None:
+        verdict = refusal(
+            "gh pr merge 7 --merge", "feat/x", always_green,
+            budget=lambda: "l'action `human-merge` de l'objectif lead-time est active",
+            protected_paths=[], changed_files=listing(".claude/settings.json"),
+        )
+        assert verdict is not None
+        self.assertIn("human-merge", verdict)
+
+    def test_a_pin_pr_on_an_unprotected_settings_file_is_not_the_guards_to_refuse(self) -> None:
+        self.assertIsNone(merge("gh pr merge 7 --merge", listing(".claude/settings.json"), protected=[".github/"]))
+
+
 class FailsClosed(unittest.TestCase):
     def test_an_unreadable_list_refuses_when_the_key_is_declared(self) -> None:
         verdict = merge("gh pr merge 5", unreadable)

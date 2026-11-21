@@ -90,6 +90,32 @@ Un poste qui n'a pas lancé `claude plugin update` garde l'ancienne version, et 
 en dehors de `/plugin` : après chaque montée, comparer `claude plugin list --json` au `ref` du
 projet.
 
+### Laisser la session ouvrir la PR de montée : la clé `pin-bump`
+
+Par défaut, personne n'est averti qu'un tag plus récent existe. Un projet qui le veut déclare la clé
+`pin-bump` (`auto`, sa seule valeur) dans `docs/agents/usine.md` : c'est son accord, donné une fois,
+pour que la session ouvre la PR de l'étape 1. Aucun billet d'une autre session n'en tient lieu.
+
+Le hook `pin_notice.py` (`SessionStart`) lit le `ref` de `forge@<marketplace>` dans
+`.claude/settings.json`, liste par `gh api` les tags de la marketplace qui portent le même préfixe
+(`forge--v`), garde le plus haut `X.Y.Z` (comparé en nombres : une préversion est ignorée) et, s'il est
+plus récent que le `ref`, ajoute à la session un avis qui le nomme, avec l'épinglé. Il se tait :
+
+- sans la clé, et alors il ne demande rien au réseau ;
+- pour un sous-agent, et quand le `ref` est déjà le tag le plus récent ;
+- tant qu'une PR ouverte change `.claude/settings.json` (la PR de montée est déjà là) ;
+- dès qu'il ne sait pas : `gh` absent ou en échec, réseau coupé, fichier ou événement illisible, ou
+  délai dépassé (8 secondes par appel `gh`, 20 secondes au total par le `timeout` de `hooks.json`). Il
+  sort toujours en 0 : il observe, il ne bloque jamais la session.
+
+La clé ne change pas qui fusionne. `forge:qc` juge la PR de montée comme n'importe quelle autre et
+la fusionne sur ACCEPT ; un fichier du diff sous un `protected-path` (déclarer `.claude/settings.json`
+y laisse la fusion à l'humain, comme dans ce dépôt) ou une action `human-merge` active l'arrête, par
+`forge:qc` et par `guard_git`. Les deux commandes de l'étape 2 restent un geste de l'humain sur chaque
+poste, et jamais pendant un `/forge:feature-build` actif. Ce dépôt ne déclare pas la clé : sa propre
+épingle reste montée par l'humain. Essayé par les tests seulement (`gh` simulé), sous Linux ; pas encore
+dans une vraie session, ni sous Windows.
+
 ## Configurer : `docs/agents/usine.md`
 
 Le seul fichier où un projet décrit son usine au plugin : qui accepte, la matrice de décision,
