@@ -21,6 +21,12 @@ n'agit qu'une fois l'épingle montée à une version qui la lit (1.18.0).
 
 - `agent-autonomy` : `on`
 
+Quand l'agent publie une version, choisi par l'humain le 2026-11-21 : cinq fusions en attente d'un tag,
+ou deux jours d'attente pour la plus ancienne. L'agent ne publie seul que si les conditions de
+`.claude/rules/git.md` tiennent ; sinon il ouvre la PR de version et la rend à l'humain.
+
+- `release-trigger` : `5 | 2 j`
+
 ## Domaines et règles du dépôt
 
 - `domain-rules` : `.claude/rules/forge.md`
@@ -128,8 +134,6 @@ La suite de tests de ce dépôt, dont la sortie se raccourcit quand elle passe.
 
 ## Clés absentes
 
-- `release-trigger` : la publication reste un geste de l'humain tant qu'il n'a pas choisi le nombre de
-  fusions et le délai qui déclenchent une version ; aucune valeur n'est devinée, l'agent ne publie rien.
 - `domain-arbiter`, `domain-skill`, `glossary` : le plugin n'a pas de métier propre.
 - `product-source`, `entry-gate` : les besoins viennent des tickets de ce dépôt.
 - `test-skill` : la façon d'écrire les tests est dans `.claude/rules/forge.md`.
