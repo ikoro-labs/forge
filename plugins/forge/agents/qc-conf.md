@@ -2,7 +2,7 @@
 name: qc-conf
 description: Juge une PR et rend ACCEPT ou REJECT à partir du ticket, du diff et du tableau de forge:qc-gate. Lancé par le skill forge:qc.
 tools: Read, Grep, Glob, Bash
-model: opus
+model: sonnet
 effort: medium
 ---
 

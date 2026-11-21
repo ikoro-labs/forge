@@ -2,7 +2,7 @@
 name: review-judge
 description: Juge l'écran réel d'une feature contre sa source (exigences, parcours voulu, glossaire), élément par élément, sur les captures d'une exécution, et rend un verdict par identifiant. Lancé par le skill forge:feature-review, jamais par l'agent qui a codé.
 tools: Read, Grep, Glob, Bash
-model: opus
+model: sonnet
 effort: high
 ---
 
