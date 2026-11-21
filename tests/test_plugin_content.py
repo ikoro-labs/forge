@@ -131,6 +131,7 @@ class Frontmatter(unittest.TestCase):
             text = (support.REPO_ROOT / "docs" / name).read_text(encoding="utf-8")
             with self.subTest(name=name):
                 self.assertNotIn("opus, effort", text)
+                self.assertNotIn("autre niveau", text)
 
     def test_every_agent_names_its_effort(self) -> None:
         self.assertEqual(set(AGENT_EFFORTS), {path.stem for path in AGENTS})
