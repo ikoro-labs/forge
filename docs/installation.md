@@ -109,11 +109,13 @@ plus récent que le `ref`, ajoute à la session un avis qui le nomme, avec l'ép
   sort toujours en 0 : il observe, il ne bloque jamais la session.
 
 La clé ne change pas qui fusionne. `forge:qc` juge la PR de montée comme n'importe quelle autre et
-la fusionne sur ACCEPT ; un fichier du diff sous un `protected-path` (déclarer `.claude/settings.json`
-y laisse la fusion à l'humain, comme dans ce dépôt) ou une action `human-merge` active l'arrête, par
-`forge:qc` et par `guard_git`. Les deux commandes de l'étape 2 restent un geste de l'humain sur chaque
-poste, et jamais pendant un `/forge:feature-build` actif. Ce dépôt ne déclare pas la clé : sa propre
-épingle reste montée par l'humain. Essayé par les tests seulement (`gh` simulé), sous Linux ; pas encore
+la fusionne sur ACCEPT, à condition que la clé `agent-autonomy` soit `on` ; un fichier du diff sous un
+`protected-path` (un projet qui déclare `.claude/settings.json` y laisse la fusion à l'humain) ou une
+action `human-merge` active l'arrête, par `forge:qc` et par `guard_git`. L'épingle est déléguée à
+l'agent, projets consommateurs compris (décision de l'humain du 2026-11-21) : ce n'est plus un geste
+de l'humain. Les deux commandes de l'étape 2 se lancent sur chaque poste une fois la PR fusionnée, et
+jamais pendant un `/forge:feature-build` actif. Ce dépôt ne déclare pas la clé : son épingle se monte
+par la PR de version, que l'agent fusionne sur ACCEPT. Essayé par les tests seulement (`gh` simulé), sous Linux ; pas encore
 dans une vraie session, ni sous Windows.
 
 ## Configurer : `docs/agents/usine.md`
@@ -870,9 +872,7 @@ Ce qu'aucun agent ne fait à la place d'un humain :
 2. Sur chaque poste (bureau, PC personnel), dans chaque projet : approuver le dossier et lancer
    les deux commandes de l'étape 3 d'**Installer dans un projet**. Un utilisateur sans droit
    d'écriture installe le plugin et monte de version de la même façon.
-3. À chaque montée d'épingle, sur chaque poste et dans chaque projet : les deux commandes de
-   **Monter de version**.
-4. Une fois `forge` 1.1.0 installé dans chaque projet du poste qui fait des passations : retirer de
+3. Une fois `forge` 1.1.0 installé dans chaque projet du poste qui fait des passations : retirer de
    `~/.claude/settings.json` les entrées `UserPromptSubmit` et `PostToolUse` qui lancent la copie
    `~/.claude/hooks/handoff_trigger.py`, puis cette copie et ses deux voisins
    (`handoff_header.py`, `handoff_relay.sh`) ; garder `~/.claude/hooks/state/`, qui porte les
@@ -880,16 +880,22 @@ Ce qu'aucun agent ne fait à la place d'un humain :
    `bash ~/.claude/hooks/handoff_relay.sh` par la même règle sur le relais du plugin
    (`~/.claude/plugins/cache/ikoro-labs/forge/<version>/hooks/handoff_relay.sh`). Jusque-là, le
    hook du plugin se tait et la copie reste celle qui tourne.
-5. À la montée vers `forge` 1.2.0 : remplacer la règle de permission qui autorise
+4. À la montée vers `forge` 1.2.0 : remplacer la règle de permission qui autorise
    `bash ~/.claude/plugins/cache/ikoro-labs/forge/<version>/hooks/handoff_relay.sh` par
    `uv run --no-project --quiet python ~/.claude/plugins/cache/ikoro-labs/forge/<version>/hooks/handoff_relay.py`.
    Le relais bash n'existe plus.
-6. Dans ce dépôt, une fois par poste qui y développe : les deux commandes de l'étape 3
+5. Dans ce dépôt, une fois par poste qui y développe : les deux commandes de l'étape 3
    d'**Installer dans un projet**, depuis sa racine.
    `main` est protégée par un ruleset qui exige les checks de la clé `required-contexts` de
    `docs/agents/usine.md` (Settings, Rules, Rulesets, ciblant la branche par défaut). Sans
    protection, seul `guard_git` retient une fusion dont un check n'est pas vert. `forge:qc-gate`
    lit la protection dans les rulesets comme dans l'ancienne protection de branche.
+
+La montée d'épingle n'en est plus un, depuis le 2026-11-21 : la PR qui la porte, dans ce dépôt comme
+dans un projet consommateur, est ouverte et fusionnée sur ACCEPT par l'agent (voir **Laisser la session
+ouvrir la PR de montée**). Les deux commandes de **Monter de version** restent à lancer sur chaque
+poste une fois la PR fusionnée ; aucun garde de forge ne les réserve à l'humain, mais aucun agent ne
+les a encore lancées sur un vrai poste.
 
 ## Output structure
 
