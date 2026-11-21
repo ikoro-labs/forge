@@ -117,9 +117,12 @@ de l'usine, avec la classe de leur correctif. `factory_slo.py incidents` les com
 
 ## Revue
 
-Ce qu'aucun agent ne fusionne, même sur ACCEPT : les gardes qui tiennent les agents eux-mêmes, et
-`CODEOWNERS`, qui les garde. Choisi par l'humain le 2026-11-21 (« tout sauf les gardes ») : la CI,
-l'épingle de ce dépôt et le manifeste de la marketplace passent à l'agent, sur ACCEPT.
+Ce qu'aucun agent ne fusionne, même sur ACCEPT : les gardes (`guard_*`, `hooks.json`) et `CODEOWNERS`.
+Ce périmètre ne dit pas que les gardes sont hors d'atteinte d'un agent : l'épingle de ce dépôt
+(`.claude/settings.json`), qui choisit la version du plugin et donc les gardes que la session charge,
+n'est plus protégée. L'humain l'a déléguée à l'agent le 2026-11-21, avec la CI et le manifeste de la
+marketplace : une PR qui change l'épingle est fusionnée sur ACCEPT, et l'agent épingle de même les
+projets consommateurs. Le seul recours contre une épingle qui retire un garde est la revue de cette PR.
 
 - `protected-path` : `.github/CODEOWNERS`
 - `protected-path` : `plugins/forge/hooks/hooks.json`
