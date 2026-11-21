@@ -16,8 +16,10 @@ agents, réglages du dépôt, la matrice elle-même, un risque de sécurité san
 
 L'autonomie des agents, ouverte par l'utilisateur de ce dépôt le 2026-11-20 : le modèle peut lancer
 les skills de la chaîne des features, et leurs questions vont d'abord aux agents de décision.
-`feature-accept` reste tapé par l'humain, et la publication reste réglée par `release-trigger`. Elle
-n'agit qu'une fois l'épingle montée à une version qui la lit (1.18.0).
+`feature-accept` reste tapé par l'humain, et `release-trigger` dit quand une version est due. Depuis le
+ticket #280, la clé est aussi l'interrupteur de la fusion par `forge:qc` et de la publication : l'humain
+reprend la main sur ce dépôt en retirant la ligne. Elle n'agit qu'une fois l'épingle montée à une
+version qui la lit (1.18.0 pour les skills, la version qui livre #280 pour la fusion et la publication).
 
 - `agent-autonomy` : `on`
 

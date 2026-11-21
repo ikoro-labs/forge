@@ -109,11 +109,13 @@ plus récent que le `ref`, ajoute à la session un avis qui le nomme, avec l'ép
   sort toujours en 0 : il observe, il ne bloque jamais la session.
 
 La clé ne change pas qui fusionne. `forge:qc` juge la PR de montée comme n'importe quelle autre et
-la fusionne sur ACCEPT ; un fichier du diff sous un `protected-path` (déclarer `.claude/settings.json`
-y laisse la fusion à l'humain, comme dans ce dépôt) ou une action `human-merge` active l'arrête, par
-`forge:qc` et par `guard_git`. Les deux commandes de l'étape 2 restent un geste de l'humain sur chaque
-poste, et jamais pendant un `/forge:feature-build` actif. Ce dépôt ne déclare pas la clé : sa propre
-épingle reste montée par l'humain. Essayé par les tests seulement (`gh` simulé), sous Linux ; pas encore
+la fusionne sur ACCEPT, à condition que la clé `agent-autonomy` soit `on` ; un fichier du diff sous un
+`protected-path` (un projet qui déclare `.claude/settings.json` y laisse la fusion à l'humain) ou une
+action `human-merge` active l'arrête, par `forge:qc` et par `guard_git`. L'épingle est déléguée à
+l'agent, projets consommateurs compris (décision de l'humain du 2026-11-21) : ce n'est plus un geste
+de l'humain. Les deux commandes de l'étape 2 se lancent sur chaque poste une fois la PR fusionnée, et
+jamais pendant un `/forge:feature-build` actif. Ce dépôt ne déclare pas la clé : son épingle se monte
+par la PR de version, que l'agent fusionne sur ACCEPT. Essayé par les tests seulement (`gh` simulé), sous Linux ; pas encore
 dans une vraie session, ni sous Windows.
 
 ## Configurer : `docs/agents/usine.md`
@@ -148,10 +150,21 @@ clé. Lancé par le modèle sans la clé, un skill n'écrit rien et dit la comma
 l'humain, il s'exécute toujours. Avec la clé, ses questions vont d'abord à `forge:product-owner` ou à
 `forge:staff-engineer`, la décision s'écrit dans le document avec sa case de la matrice, et ce que la
 matrice réserve à l'humain lui reste, la case nommée. `feature-accept` et `release` gardent le drapeau :
-la clé ne les ouvre pas, et `release` reste commandée par `release-trigger`. Éprouvé par les tests de
-`tests/test_agent_autonomy.py`, qui lisent le texte des skills et de la règle ; la distinction entre une
-commande tapée (un bloc `<command-name>` dans le tour) et un lancement par l'outil Skill n'a pas été
-jouée dans une vraie session de Claude Code.
+la clé ne les ouvre pas au modèle, et `release` reste commandée par `release-trigger`, qui dit quand une
+version est due.
+
+Depuis le ticket #280, la même clé est l'interrupteur de la fusion et de la publication, et l'humain
+reprend la main sur un projet en la retirant. À `on`, `forge:qc` fusionne un ACCEPT hors `protected-path`
+(une entrée `never-weaken` et une action `human-merge` active l'arrêtent encore), et `release` publie, tag
+compris, quand l'essai de bout en bout passe et qu'aucun `sev1` n'est ouvert ; l'état des SLO est cité dans
+la PR de version, il ne bloque pas. Sans la clé, `forge:qc` poste son verdict, pose `needs-your-attention` et
+ne fusionne jamais (même lancé par l'humain : il fusionne lui-même), et `release` ouvre la PR de version
+seule. Un projet qui montait de version en laissant `forge:qc` fusionner doit donc écrire la clé, sans quoi
+chaque ACCEPT attend l'humain. Éprouvé par les tests de `tests/test_agent_autonomy.py`,
+`tests/test_agent_autonomy_switch.py` et `tests/test_release.py`, qui lisent le texte des skills et de la
+règle et rejouent `release.py check` sur des dépôts jetables ; la distinction entre une commande tapée (un
+bloc `<command-name>` dans le tour) et un lancement par l'outil Skill, et la fusion par `forge:qc` selon la
+clé, n'ont pas été jouées dans une vraie session de Claude Code.
 
 Deux clés, `test-path` (un préfixe de chemin des fichiers de test, une ligne par préfixe) et
 `red-replay` (la commande qui lance un fichier de test, avec `{file}` ou `{name}`), ouvrent la sonde
@@ -870,9 +883,7 @@ Ce qu'aucun agent ne fait à la place d'un humain :
 2. Sur chaque poste (bureau, PC personnel), dans chaque projet : approuver le dossier et lancer
    les deux commandes de l'étape 3 d'**Installer dans un projet**. Un utilisateur sans droit
    d'écriture installe le plugin et monte de version de la même façon.
-3. À chaque montée d'épingle, sur chaque poste et dans chaque projet : les deux commandes de
-   **Monter de version**.
-4. Une fois `forge` 1.1.0 installé dans chaque projet du poste qui fait des passations : retirer de
+3. Une fois `forge` 1.1.0 installé dans chaque projet du poste qui fait des passations : retirer de
    `~/.claude/settings.json` les entrées `UserPromptSubmit` et `PostToolUse` qui lancent la copie
    `~/.claude/hooks/handoff_trigger.py`, puis cette copie et ses deux voisins
    (`handoff_header.py`, `handoff_relay.sh`) ; garder `~/.claude/hooks/state/`, qui porte les
@@ -880,16 +891,22 @@ Ce qu'aucun agent ne fait à la place d'un humain :
    `bash ~/.claude/hooks/handoff_relay.sh` par la même règle sur le relais du plugin
    (`~/.claude/plugins/cache/ikoro-labs/forge/<version>/hooks/handoff_relay.sh`). Jusque-là, le
    hook du plugin se tait et la copie reste celle qui tourne.
-5. À la montée vers `forge` 1.2.0 : remplacer la règle de permission qui autorise
+4. À la montée vers `forge` 1.2.0 : remplacer la règle de permission qui autorise
    `bash ~/.claude/plugins/cache/ikoro-labs/forge/<version>/hooks/handoff_relay.sh` par
    `uv run --no-project --quiet python ~/.claude/plugins/cache/ikoro-labs/forge/<version>/hooks/handoff_relay.py`.
    Le relais bash n'existe plus.
-6. Dans ce dépôt, une fois par poste qui y développe : les deux commandes de l'étape 3
+5. Dans ce dépôt, une fois par poste qui y développe : les deux commandes de l'étape 3
    d'**Installer dans un projet**, depuis sa racine.
    `main` est protégée par un ruleset qui exige les checks de la clé `required-contexts` de
    `docs/agents/usine.md` (Settings, Rules, Rulesets, ciblant la branche par défaut). Sans
    protection, seul `guard_git` retient une fusion dont un check n'est pas vert. `forge:qc-gate`
    lit la protection dans les rulesets comme dans l'ancienne protection de branche.
+
+La montée d'épingle n'en est plus un, depuis le 2026-11-21 : la PR qui la porte, dans ce dépôt comme
+dans un projet consommateur, est ouverte et fusionnée sur ACCEPT par l'agent (voir **Laisser la session
+ouvrir la PR de montée**). Les deux commandes de **Monter de version** restent à lancer sur chaque
+poste une fois la PR fusionnée ; aucun garde de forge ne les réserve à l'humain, mais aucun agent ne
+les a encore lancées sur un vrai poste.
 
 ## Output structure
 

@@ -144,7 +144,8 @@ class Trigger(Base):
         self.assertIn("DECLENCHEUR: sans objet (clé `release-tag` absente)", out)
 
 
-SLO = ("`slo` : `main-green | >= 90 % | 30`", "`slo` : `accept-round-1 | >= 80 % | 30`")
+AUTONOMY = "`agent-autonomy` : `on`"
+SLO = ("`slo` : `main-green | >= 90 % | 30`","`slo` : `accept-round-1 | >= 80 % | 30`")
 
 
 class SloCondition(Base):
@@ -320,12 +321,12 @@ class EssaiCondition(Base):
 
 
 class Check(Base):
-    """`check` : le déclencheur, les quatre conditions, et la décision qui en sort."""
+    """`check` : le déclencheur, les trois conditions qui bloquent, l'état des objectifs cité, et la décision."""
 
     def setUp(self) -> None:
         super().setUp()
         self.script = Path(self.tmp.name) / "faux_essai.py"
-        self.configure(*SLO, "`budget-action` : `main-green | human-merge`", "`release-trigger` : `1 | 30 j`")
+        self.configure(*SLO, "`budget-action` : `main-green | human-merge`", "`release-trigger` : `1 | 30 j`", AUTONOMY)
         oid = self.world.commit("feat: une fusion qui attend", "2026-11-14T10:00:00Z")
         self.world.answers["pr list"] = [pr(1, "2026-11-14T10:00:00Z", state="MERGED", mergedAt="2026-11-14T10:00:00Z", mergeCommit={"oid": oid})]
         self.world.answers["label list"] = [{"name": "sev1"}]
@@ -351,30 +352,64 @@ class Check(Base):
         return code, out
 
     def test_everything_held_publishes(self) -> None:
-        """Ticket #71 : déclencheur atteint, quatre conditions tenues : l'agent publie seul."""
+        """Ticket #280 A1 : déclencheur atteint, clé `on`, aucun `sev1`, essai vert : l'agent publie seul."""
         code, out = self.check()
         self.assertEqual(code, 0)
         self.assertIn("DECISION: publier", out)
-        for name in ("slo", "budget", "sev1", "essai"):
+        for name in ("autonomie", "sev1", "essai"):
             self.assertIn(f"CONDITION: {name} | tenue |", out)
         self.assertNotIn("MANQUE", out)
         self.assertTrue(self.launched())
 
+    def test_exhausted_slo_and_an_active_budget_action_are_cited_and_do_not_block(self) -> None:
+        """Ticket #280 A1.2 : SLO épuisé, essai vert : `publier`, et l'état des objectifs est cité."""
+        self.write_state({"main-green": "épuisé", "accept-round-1": "menacé"}, epuises=["main-green / 30 j"])
+        code, out = self.check()
+        self.assertEqual(code, 0)
+        self.assertIn("DECISION: publier", out)
+        self.assertNotIn("MANQUE", out)
+        self.assertIn("ETAT: slo | non tenue |", out)
+        self.assertIn("main-green (épuisé)", out)
+        self.assertIn("ETAT: budget | non tenue |", out)
+        self.assertNotIn("CONDITION: slo", out)
+        self.assertNotIn("CONDITION: budget", out)
+        self.assertTrue(self.launched())
+
+    def test_an_unreadable_slo_state_is_cited_and_does_not_block_either(self) -> None:
+        """Ticket #280 A1 : un état des SLO périmé se dit (`non vérifiable`) sans arrêter la publication."""
+        self.write_state({"main-green": "tenu", "accept-round-1": "tenu"}, minutes=90)
+        _, out = self.check()
+        self.assertIn("DECISION: publier", out)
+        self.assertIn("ETAT: slo | non vérifiable |", out)
+
+    def test_a_key_absent_opens_only_the_version_pr_and_does_not_launch_the_trial(self) -> None:
+        """Ticket #280 A2.2 : clé `agent-autonomy` absente, déclencheur atteint : `humain`, la PR de version seule."""
+        self.configure(*SLO, "`release-trigger` : `1 | 30 j`")
+        code, out = self.check()
+        self.assertEqual(code, 0)
+        self.assertIn("DECISION: humain", out)
+        self.assertIn("CONDITION: autonomie | non vérifiable | sans objet (clé `agent-autonomy` absente)", out)
+        self.assertIn("MANQUE: autonomie, essai\n", out)
+        self.assertNotIn("DECISION: publier", out)
+        self.assertFalse(self.launched())
+
+    def test_a_value_other_than_on_is_not_the_key_open(self) -> None:
+        """Ticket #280 A2 : une valeur autre que `on` ne publie pas, et la ligne fautive est citée."""
+        self.configure(*SLO, "`release-trigger` : `1 | 30 j`", "`agent-autonomy` : `oui`")
+        _, out = self.check()
+        self.assertIn("DECISION: humain", out)
+        self.assertIn("CONDITION: autonomie | non tenue |", out)
+        self.assertIn("`oui`", out)
+
     def test_each_missing_condition_hands_the_release_back_to_the_human_and_names_it(self) -> None:
         """Ticket #71 : une condition manquante, seule, rend la publication à l'humain, nommée."""
-        def slo() -> None:
-            self.write_state({"main-green": "tenu", "accept-round-1": "menacé"})
-
-        def budget() -> None:
-            self.write_state({"main-green": "tenu", "accept-round-1": "tenu"}, epuises=["main-green / 30 j"])
-
         def sev1() -> None:
             self.world.answers["issue list"] = [{"number": 7, "title": "garde contourné"}]
 
         def essai() -> None:
             self.trial("RESULTAT: FAIL\nETAPE: pr\nRAISON: aucune PR", code=1)
 
-        for name, break_it in (("slo", slo), ("budget", budget), ("sev1", sev1), ("essai", essai)):
+        for name, break_it in (("sev1", sev1), ("essai", essai)):
             with self.subTest(condition=name):
                 self.setUp()
                 break_it()
@@ -387,10 +422,10 @@ class Check(Base):
 
     def test_several_missing_conditions_are_all_named(self) -> None:
         """Ticket #71 : toutes les conditions manquantes sont nommées, pas seulement la première."""
-        self.write_state({"main-green": "épuisé", "accept-round-1": "tenu"})
+        self.configure(*SLO, "`release-trigger` : `1 | 30 j`")
         self.world.answers["issue list"] = [{"number": 7, "title": "x"}]
         _, out = self.check()
-        self.assertIn("MANQUE: slo, budget, sev1, essai\n", out)
+        self.assertIn("MANQUE: autonomie, sev1, essai\n", out)
 
     def test_the_trial_is_not_launched_while_a_cheaper_condition_is_already_missing(self) -> None:
         """Ticket #71 : l'essai coûte de vrais appels de modèle : il ne part pas quand une autre condition manque."""
@@ -425,8 +460,8 @@ class Check(Base):
         self.assertEqual(code, 2)
         self.assertNotIn("DECISION", out)
 
-    def test_json_carries_the_decision_the_trigger_and_each_condition(self) -> None:
-        """Ticket #71 : `--json` rend un seul document : décision, déclencheur, conditions, manque."""
+    def test_json_carries_the_decision_the_trigger_each_condition_and_the_cited_states(self) -> None:
+        """Ticket #71 : `--json` rend un seul document : décision, déclencheur, conditions, manque, états cités."""
         self.world.answers["issue list"] = [{"number": 7, "title": "x"}]
         code, out = self.check("--json")
         self.assertEqual(code, 0)
@@ -434,7 +469,8 @@ class Check(Base):
         self.assertEqual(document["decision"], "humain")
         self.assertEqual(document["declencheur"]["statut"], "atteint")
         self.assertEqual(document["declencheur"]["fusions_en_attente"], 1)
-        self.assertEqual([item["nom"] for item in document["conditions"]], ["slo", "budget", "sev1", "essai"])
+        self.assertEqual([item["nom"] for item in document["conditions"]], ["autonomie", "sev1", "essai"])
+        self.assertEqual([item["nom"] for item in document["etats"]], ["slo", "budget"])
         self.assertEqual(document["manque"], ["sev1", "essai"])
 
     def test_the_default_trial_is_the_script_of_the_plugin_and_is_never_run_here(self) -> None:
