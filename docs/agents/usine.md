@@ -9,8 +9,8 @@ La configuration de l'usine qui développe le plugin `forge` dans ce dépôt. Le
 - `accepting-human` : `ikoro-labs`
 
 La matrice des droits de décision : ce que `forge:staff-engineer` et `forge:product-owner` tranchent
-seuls, et ce que l'humain se réserve (fusion d'un chemin protégé, publication et épingle, réglages du
-dépôt, la matrice elle-même, un risque de sécurité sans correctif réversible).
+seuls, et ce que l'humain se réserve (fusion d'un chemin protégé, c'est-à-dire d'un garde des
+agents, réglages du dépôt, la matrice elle-même, un risque de sécurité sans correctif réversible).
 
 - `decision-matrix` : `docs/agents/decisions.md`
 
@@ -117,12 +117,14 @@ de l'usine, avec la classe de leur correctif. `factory_slo.py incidents` les com
 
 ## Revue
 
-Ce qu'aucun agent ne fusionne, même sur ACCEPT : la CI, l'épingle de l'usine de ce dépôt, le
-manifeste de la marketplace, et les gardes qui tiennent les agents eux-mêmes.
+Ce qu'aucun agent ne fusionne, même sur ACCEPT : les gardes (`guard_*`, `hooks.json`) et `CODEOWNERS`.
+Ce périmètre ne dit pas que les gardes sont hors d'atteinte d'un agent : l'épingle de ce dépôt
+(`.claude/settings.json`), qui choisit la version du plugin et donc les gardes que la session charge,
+n'est plus protégée. L'humain l'a déléguée à l'agent le 2026-11-21, avec la CI et le manifeste de la
+marketplace : une PR qui change l'épingle est fusionnée sur ACCEPT, et l'agent épingle de même les
+projets consommateurs. Le seul recours contre une épingle qui retire un garde est la revue de cette PR.
 
-- `protected-path` : `.github/`
-- `protected-path` : `.claude/settings.json`
-- `protected-path` : `.claude-plugin/marketplace.json`
+- `protected-path` : `.github/CODEOWNERS`
 - `protected-path` : `plugins/forge/hooks/hooks.json`
 - `protected-path` : `plugins/forge/hooks/guard_`
 

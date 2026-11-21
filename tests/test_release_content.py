@@ -73,12 +73,21 @@ class ReleaseSkill(unittest.TestCase):
 
 class ReleasePages(unittest.TestCase):
     def test_the_contributing_page_says_the_agent_publishes_and_on_which_conditions(self) -> None:
-        """Ticket #71 : `docs/contribuer.md` dit la publication par l'agent et ses quatre conditions."""
+        """Ticket #71 : `docs/contribuer.md` dit la publication par l'agent et ses deux conditions (#280)."""
         text = prose(CONTRIBUER)
-        for phrase in ("`/forge:release`", "`release-trigger`", "tous les SLO sont `tenu`", "aucun ticket `sev1` n'est ouvert", "essai de bout en bout"):
+        for phrase in ("`/forge:release`", "`release-trigger`", "aucun ticket `sev1` n'est ouvert", "essai de bout en bout"):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, text)
         self.assertRegex(text, r"[Ss]inon.{0,160}`needs-your-attention`")
+
+    def test_the_contributing_page_and_the_git_rules_state_the_same_conditions(self) -> None:
+        """Ticket #280 : les deux pages disent deux conditions, et l'état des SLO cité sans bloquer."""
+        for path in (CONTRIBUER, GIT_RULES):
+            text = prose(path)
+            with self.subTest(file=path.name):
+                self.assertNotIn("tous les SLO sont `tenu`", text)
+                self.assertNotIn("quatre conditions", text)
+                self.assertRegex(text, r"SLO.{0,200}sans la bloquer")
 
     def test_the_git_rules_say_the_agent_publishes_and_never_moves_a_tag(self) -> None:
         """Ticket #71 : `.claude/rules/git.md` dit la publication par l'agent, ses conditions et le tag."""

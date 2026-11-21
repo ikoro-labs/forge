@@ -37,3 +37,14 @@ class EveryProtectedPathHasACodeOwner(unittest.TestCase):
                 pattern = pattern_for(path)
                 self.assertIn(pattern, owned, f"{pattern} missing from .github/CODEOWNERS")
                 self.assertTrue(owned[pattern], f"{pattern} has no owner")
+
+
+class TheDocsSayWhatTheProtectedPathsDoNotCover(unittest.TestCase):
+    def test_the_pin_is_delegated_to_the_agent_and_the_docs_say_so(self) -> None:
+        """Ticket #280 : l'épingle choisit les gardes chargés ; hors des chemins protégés, la doc le dit."""
+        self.assertNotIn(".claude/settings.json", load(support.REPO_ROOT).get("protected-path", []))
+        for name in ("usine.md", "decisions.md"):
+            text = " ".join((support.REPO_ROOT / "docs" / "agents" / name).read_text(encoding="utf-8").split())
+            with self.subTest(file=name):
+                self.assertIn("l'épingle de ce dépôt", text)
+                self.assertRegex(text, r"(déléguée à l'agent|Délégué par l'humain)")
