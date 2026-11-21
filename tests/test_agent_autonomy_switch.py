@@ -4,7 +4,6 @@ The texts the agent reads are the seam: a skill, a rule, a template or a page th
 sentences changes who merges or publishes, without a test failing anywhere else.
 """
 
-import re
 import unittest
 from pathlib import Path
 
@@ -80,9 +79,47 @@ class TheMergeFollowsTheKey(unittest.TestCase):
         for phrase in ("`protected-path`", "`human-merge`", "`never-weaken`"):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, text)
-        self.assertRegex(text, r"clé `on`.{0,200}ne lève (aucun|aucune)")
+        self.assertRegex(text, r"valeur `on` ne lève aucun arrêt")
         qc = prose(QC)
         self.assertRegex(qc, r"ACCEPT : fusionne \(étape 8\), sauf ce que les règles \*\*Autonomie\*\*")
+
+
+class BothWaysAreDescribed(unittest.TestCase):
+    """#280 A3 : the rule, the template and the pages say what the key opens and what its absence leaves."""
+
+    SETTINGS = (
+        ("the rule", RULE),
+        ("the template", TEMPLATE),
+        ("the installation page", INSTALLATION),
+        ("this repository's configuration", support.REPO_ROOT / "docs" / "agents" / "usine.md"),
+    )
+
+    def test_each_place_says_the_key_opens_the_merge_and_the_publication(self) -> None:
+        for label, path in self.SETTINGS:
+            with self.subTest(place=label):
+                text = prose(path)
+                start = text.index("interrupteur")
+                around = text[max(0, start - 300) : start + 1200]
+                self.assertRegex(around, r"interrupteur de la fusion")
+                self.assertRegex(around, r"(et|ou) de la publication|publie")
+
+    def test_each_place_says_what_the_absence_leaves_to_the_human(self) -> None:
+        for label, path in self.SETTINGS[:3]:
+            with self.subTest(place=label):
+                text = prose(path)
+                self.assertRegex(text, r"(Sans la clé|Clé absente|clé absente|sans la clé).{0,500}(ne fusionne|fusion sans objet|PR de version seule|ouvre la PR de version)")
+
+    def test_the_rule_no_longer_says_the_key_leaves_the_release_alone(self) -> None:
+        text = prose(RULE)
+        self.assertNotIn("ni `agent-autonomy` ni son absence ne change quand l'agent publie", text)
+        self.assertRegex(text, r"`release`.{0,300}`agent-autonomy`.{0,300}PR de version")
+
+    def test_the_template_and_the_page_no_longer_say_release_stays_with_its_trigger_alone(self) -> None:
+        for path in (TEMPLATE, INSTALLATION):
+            with self.subTest(file=path.name):
+                text = prose(path)
+                self.assertNotIn("`release` reste commandé par la clé `release-trigger` : cette clé ne les ouvre pas", text)
+                self.assertNotIn("la clé ne les ouvre pas, et `release` reste commandée par `release-trigger`", text)
 
 
 if __name__ == "__main__":

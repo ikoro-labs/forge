@@ -149,7 +149,7 @@ habituel, et une PR de prose en rend souvent une.
 La clé `agent-autonomy` est l'interrupteur de la fusion par l'agent : l'humain l'ouvre et la ferme sur
 chaque projet, et ce skill la lit à chaque passage, avant l'étape 8.
 
-- **`agent-autonomy` : `on`** : un ACCEPT se fusionne, à l'étape 8. La clé `on` ne lève aucun arrêt des règles
+- **`agent-autonomy` : `on`** : un ACCEPT se fusionne, à l'étape 8. La valeur `on` ne lève aucun arrêt des règles
   qui suivent : un chemin de la clé `protected-path`, une entrée de la clé `never-weaken` et une action
   `human-merge` active arrêtent la fusion comme avant, même sur ACCEPT.
 - **Clé absente** : sans objet (clé `agent-autonomy` absente). Le verdict est posté (étape 5) et le rapport écrit
