@@ -297,6 +297,23 @@ rien, et aucune valeur n'est supposée. Une valeur illisible ou une clé répét
 
 - `release-trigger` : `<10 | 7 j>`
 
+La montée de l'épingle de forge dans ce projet, que l'utilisateur du projet ouvre et que le plugin ne pose
+jamais. La seule valeur est `auto`. Avec elle, le hook `SessionStart` `pin_notice.py` dit à la session
+qu'un tag plus récent que le `ref` de `.claude/settings.json` existe (`forge--v<X.Y.Z>`, le préfixe
+étant celui du `ref` épinglé, le plus haut `X.Y.Z` de la marketplace, comparé en nombres) : la clé est
+l'accord de l'humain pour que la session ouvre la PR de montée, et aucun billet n'en tient lieu. Le hook
+se tait sans la clé (et ne demande alors rien au réseau), pour un sous-agent, quand l'épingle est déjà le
+tag le plus récent, et tant qu'une PR ouverte change `.claude/settings.json`. Il est borné dans le temps,
+et sort toujours en 0 sans rien dire quand `gh` manque, échoue ou dépasse son délai, quand le réseau est
+coupé ou qu'un fichier ne se lit pas. La clé ne décide pas la fusion : `forge:qc` fusionne la PR de
+montée sur ACCEPT comme toute PR, et un fichier du diff sous un `protected-path` (déclare
+`.claude/settings.json` pour que l'humain garde la montée) ou une action `human-merge` active l'arrête
+comme avant ; le geste sur chaque poste (`claude plugin marketplace add`, puis `claude plugin update`)
+reste à l'humain. Sans la clé, « sans objet (clé `pin-bump` absente) » : rien ne se dit, aucune valeur
+n'est supposée.
+
+- `pin-bump` : `auto`
+
 `factory_slo.py` lit aussi `required-contexts` (`main-green`) et `protected-path` (`human-touch`), et
 deux conventions du projet : l'étiquette `escaped-defect`, posée sur un ticket de défaut trouvé après la
 fusion, avec dans son corps la ligne `Échappé de #<pr>` qui nomme la PR en cause ; et, pour la gravité
