@@ -1161,13 +1161,11 @@ def verdict(
     try:
         found = judge.text(command, None, 0)
     except UnsplitError as unsplit:
-        # A text bash cannot run either, but whose earlier lines it may: held when it may hide a
-        # guarded program or a variable.
-        found = (
-            f"the guard cannot read {unsplit}, and guards what it cannot read"
-            if _may_hide(command)
-            else None
-        )
+        # A text bash cannot run either, but whose earlier lines it may: when it may hide a
+        # guarded program or a variable, it is denied in the main session too, and rewritten.
+        if _may_hide(command):
+            return "deny", f"the guard cannot read {unsplit}, and guards what it cannot read"
+        found = None
     except UnclearError as unclear:
         found = f"the guard cannot read {unclear}, and guards what it cannot read"
     if found is None:

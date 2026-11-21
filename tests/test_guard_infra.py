@@ -326,6 +326,18 @@ class ParsedTriggers(Case):
             with self.subTest(command=command):
                 self.assertIn("cannot read", judged(command, declared=[]) or "")
 
+    def test_an_unsplit_text_that_may_hide_one_is_denied_in_the_main_session(self) -> None:
+        """#276 A1: bash cannot run such a text either, so it is denied, as in a subagent."""
+        command = "sed -i 's/x ?$/le d'un/' f"  # `d'un` inside a single-quoted sed, and a `$`
+        for agent in (False, True):
+            with self.subTest(agent=agent):
+                event: dict[str, object] = {"tool_input": {"command": command}}
+                if agent:
+                    event["agent_id"] = "a1"
+                found = verdict(event, [], fake_ssh_config, fake_dns)
+                assert found is not None
+                self.assertEqual(found[0], "deny")
+
     def test_a_powershell_assignment_is_no_program(self) -> None:
         for command in ("$x = Get-Item foo", "$x=Get-Item foo", "$n += 1"):
             with self.subTest(command=command):
