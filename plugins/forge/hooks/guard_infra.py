@@ -42,8 +42,8 @@ substitutions are walked, and `export VAR=...` is followed. What the guard canno
 a program or a verb named by a variable or a substitution (`${D}er rm`, `"$PY" -m pytest`,
 `$(which python)`: name the program itself), a shell reading a pipe, a destination or a
 Docker context it cannot resolve, a `-F` ssh config. A text the lexer cannot split (unbalanced
-quotes, an unclosed substitution) is guarded when it holds a `$` or a guarded program's name once
-its quotes and backslashes are taken off.
+quotes, an unclosed substitution) is refused, in the main session too, when it holds a `$` or a
+guarded program's name once its quotes and backslashes are taken off: bash could not run it.
 
 Out of reach, on purpose: the hook sees the typed command only. A script that cleans its own
 resources (`bash infra/e2e-stack.sh`) and testcontainers run what they run. This guards against an
@@ -1161,13 +1161,15 @@ def verdict(
     try:
         found = judge.text(command, None, 0)
     except UnsplitError as unsplit:
-        # A text bash cannot run either, but whose earlier lines it may: held when it may hide a
-        # guarded program or a variable.
-        found = (
-            f"the guard cannot read {unsplit}, and guards what it cannot read"
-            if _may_hide(command)
-            else None
-        )
+        # A text bash cannot run either, but whose earlier lines it may: when it may hide a
+        # guarded program or a variable, it is denied in the main session too, and rewritten.
+        if _may_hide(command):
+            return "deny", (
+                f"the guard cannot read {unsplit}: the quotes or substitutions are unbalanced, and"
+                " bash could not run this text either. Rewrite the command with a heredoc"
+                " (`<<'EOF'`) or write the text to a file"
+            )
+        found = None
     except UnclearError as unclear:
         found = f"the guard cannot read {unclear}, and guards what it cannot read"
     if found is None:

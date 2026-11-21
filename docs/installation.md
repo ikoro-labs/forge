@@ -537,7 +537,9 @@ A part the guard cannot read is held: a program or a verb named by a variable (`
 `D=dock; ${D}er rm x`, `$CMD rm web`), a shell reading a pipe (`... | bash`), `env -S`, an option
 `heavy-slot` does not take. A text the lexer cannot split (unbalanced quotes, an unclosed
 substitution) is held when, its quotes and backslashes taken off, it holds a `$` or the name of a
-guarded program; otherwise it passes, since the shell cannot run it either. Under PowerShell,
+guarded program, and then refused in the main session as in a subagent (bash could not run it
+either: the reason asks for a heredoc or a file, not for the human's answer); otherwise it passes,
+since the shell cannot run it either. Under PowerShell,
 `$name = <command>` judges the command.
 
 **Out of reach, on purpose**: the hook sees the typed command only. A script that cleans its own
