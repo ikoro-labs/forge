@@ -103,8 +103,8 @@ modèle, que lorsque les trois autres conditions tiennent.
 
 Quand tout tient, la PR de version passe par `/forge:qc`, puis l'agent pose le tag annoté sur le commit de
 fusion, au motif de la clé `release-tag`, et le pousse. Un tag ne se déplace ni ne se supprime. L'agent ne
-monte pas l'épingle de ce dépôt, et ne pose aucune règle de tags côté serveur : ce sont des PR et des gestes
-de l'humain.
+monte pas l'épingle de ce dépôt dans la même passe : c'est une PR à part, que l'agent fusionne sur ACCEPT.
+Il ne pose aucune règle de tags côté serveur : c'est un geste de l'humain.
 
 Éprouvé sur des réponses `gh` fictives, des dépôts git jetables et un faux essai, sous Linux. Pas encore
 essayé sur un vrai poste : ni le skill dans une vraie session, ni un tag posé par l'agent.

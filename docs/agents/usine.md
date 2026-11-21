@@ -9,7 +9,7 @@ La configuration de l'usine qui développe le plugin `forge` dans ce dépôt. Le
 - `accepting-human` : `ikoro-labs`
 
 La matrice des droits de décision : ce que `forge:staff-engineer` et `forge:product-owner` tranchent
-seuls, et ce que l'humain se réserve (fusion d'un chemin protégé, publication et épingle, réglages du
+seuls, et ce que l'humain se réserve (fusion d'un chemin protégé, publication, réglages du
 dépôt, la matrice elle-même, un risque de sécurité sans correctif réversible).
 
 - `decision-matrix` : `docs/agents/decisions.md`
@@ -117,12 +117,11 @@ de l'usine, avec la classe de leur correctif. `factory_slo.py incidents` les com
 
 ## Revue
 
-Ce qu'aucun agent ne fusionne, même sur ACCEPT : la CI, l'épingle de l'usine de ce dépôt, le
-manifeste de la marketplace, et les gardes qui tiennent les agents eux-mêmes.
+Ce qu'aucun agent ne fusionne, même sur ACCEPT : les gardes qui tiennent les agents eux-mêmes, et
+`CODEOWNERS`, qui les garde. Choisi par l'humain le 2026-11-21 (« tout sauf les gardes ») : la CI,
+l'épingle de ce dépôt et le manifeste de la marketplace passent à l'agent, sur ACCEPT.
 
-- `protected-path` : `.github/`
-- `protected-path` : `.claude/settings.json`
-- `protected-path` : `.claude-plugin/marketplace.json`
+- `protected-path` : `.github/CODEOWNERS`
 - `protected-path` : `plugins/forge/hooks/hooks.json`
 - `protected-path` : `plugins/forge/hooks/guard_`
 

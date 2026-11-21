@@ -33,5 +33,5 @@ Quand ce dépôt déclare la clé `release-trigger`, l'agent publie lui-même, p
 l'heure), aucune action de `budget-action` n'est active, l'essai de bout en bout passe sur la tête de `main`
 et aucun `sev1` n'est ouvert. Une condition qui manque, ou qu'on ne peut pas lire, vaut condition non
 remplie : l'agent ouvre alors la PR de version, pose `needs-your-attention` avec la condition manquante, et
-la publication revient à l'humain. Sans la clé, il ne publie rien. Les règles de tags côté serveur et la
-montée de l'épingle restent des gestes de l'humain.
+la publication revient à l'humain. Sans la clé, il ne publie rien. Les règles de tags côté serveur restent
+un geste de l'humain ; la montée de l'épingle est une PR, que l'agent fusionne sur ACCEPT.
