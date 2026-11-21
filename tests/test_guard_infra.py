@@ -338,6 +338,14 @@ class ParsedTriggers(Case):
                 assert found is not None
                 self.assertEqual(found[0], "deny")
 
+    def test_the_reason_tells_how_to_rewrite_an_unsplit_text(self) -> None:
+        """#276 A2: unbalanced quotes, bash could not run it either, a heredoc or a file."""
+        found = judged("sed -i 's/x ?$/le d'un/' f", declared=[]) or ""
+        self.assertIn("unbalanced", found)
+        self.assertIn("bash could not run", found)
+        self.assertIn("heredoc", found)
+        self.assertIn("file", found)
+
     def test_a_powershell_assignment_is_no_program(self) -> None:
         for command in ("$x = Get-Item foo", "$x=Get-Item foo", "$n += 1"):
             with self.subTest(command=command):

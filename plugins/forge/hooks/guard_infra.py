@@ -1164,7 +1164,11 @@ def verdict(
         # A text bash cannot run either, but whose earlier lines it may: when it may hide a
         # guarded program or a variable, it is denied in the main session too, and rewritten.
         if _may_hide(command):
-            return "deny", f"the guard cannot read {unsplit}, and guards what it cannot read"
+            return "deny", (
+                f"the guard cannot read {unsplit}: the quotes or substitutions are unbalanced, and"
+                " bash could not run this text either. Rewrite the command with a heredoc"
+                " (`<<'EOF'`) or write the text to a file"
+            )
         found = None
     except UnclearError as unclear:
         found = f"the guard cannot read {unclear}, and guards what it cannot read"
