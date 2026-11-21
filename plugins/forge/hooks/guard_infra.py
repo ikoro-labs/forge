@@ -42,8 +42,8 @@ substitutions are walked, and `export VAR=...` is followed. What the guard canno
 a program or a verb named by a variable or a substitution (`${D}er rm`, `"$PY" -m pytest`,
 `$(which python)`: name the program itself), a shell reading a pipe, a destination or a
 Docker context it cannot resolve, a `-F` ssh config. A text the lexer cannot split (unbalanced
-quotes, an unclosed substitution) is guarded when it holds a `$` or a guarded program's name once
-its quotes and backslashes are taken off.
+quotes, an unclosed substitution) is refused, in the main session too, when it holds a `$` or a
+guarded program's name once its quotes and backslashes are taken off: bash could not run it.
 
 Out of reach, on purpose: the hook sees the typed command only. A script that cleans its own
 resources (`bash infra/e2e-stack.sh`) and testcontainers run what they run. This guards against an
