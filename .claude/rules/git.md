@@ -29,10 +29,10 @@ C'est la session forge qui publie, en suivant `docs/contribuer.md` :
    fusion de `main`, puis poussé. Un tag ne se déplace ni ne se supprime une fois poussé.
 
 Quand ce dépôt déclare la clé `release-trigger`, l'agent publie lui-même, par `/forge:release` (voir
-`docs/contribuer.md`). L'agent publie seul, tag compris, si, et seulement si, l'essai de bout en bout passe
-sur la tête de `main` et aucun `sev1` n'est ouvert. L'état des SLO et des actions de `budget-action` est
-cité dans la PR de version, sans la bloquer : choix de l'humain du 2026-11-21, que le skill suivra avec
-#280 (jusque-là, il bloque encore sur les SLO). Une condition qui manque, ou qu'on ne peut pas lire, vaut condition non
+`docs/contribuer.md`). L'agent publie seul, tag compris, si, et seulement si, la clé `agent-autonomy` est
+`on`, l'essai de bout en bout passe sur la tête de `main` et aucun `sev1` n'est ouvert. L'état des SLO et
+des actions de `budget-action` est cité dans la PR de version, sans la bloquer : choix de l'humain du
+2026-11-21, que le skill suit. Une condition qui manque, ou qu'on ne peut pas lire, vaut condition non
 remplie : l'agent ouvre alors la PR de version, pose `needs-your-attention` avec la condition manquante, et
 la publication revient à l'humain. Sans la clé, il ne publie rien. Les règles de tags côté serveur restent
 un geste de l'humain ; la montée de l'épingle est une PR, que l'agent fusionne sur ACCEPT.

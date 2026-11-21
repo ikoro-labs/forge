@@ -30,16 +30,33 @@ class ReleaseSkill(unittest.TestCase):
         self.assertTrue(fields.get("description"))
         self.assertEqual(fields.get("disable-model-invocation"), "true")
 
-    def test_it_names_the_four_conditions_and_the_four_keys_it_reads(self) -> None:
-        """Ticket #71 : SLO tenus dans l'heure, budget, essai sur la tête de la base, aucun `sev1`."""
+    def test_it_names_the_three_conditions_and_the_keys_it_reads(self) -> None:
+        """Ticket #280 A1 : la clé `agent-autonomy` à `on`, l'essai sur la tête de la base, aucun `sev1`."""
         text = prose(SKILL)
         for phrase in (
-            "tous `tenu`", "calculé il y a moins d'une heure", "aucune action de la clé `budget-action`",
+            "la clé `agent-autonomy` est `on`",
             "`RESULTAT: PASS` sur exactement la tête de la base", "aucun ticket `sev1` ouvert",
             "clé `release-trigger`", "clé `release-tag`",
         ):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, text)
+
+    def test_the_slo_states_are_cited_in_the_version_pr_and_never_block(self) -> None:
+        """Ticket #280 A1.2 : l'état des SLO et de `budget-action` est cité, il ne bloque pas la publication."""
+        text = prose(SKILL)
+        self.assertRegex(text, r"[Ll]es SLO et le budget d'erreur ne sont pas des conditions.{0,300}la PR de version les cite.{0,100}ne bloquent pas")
+        self.assertRegex(text, r"lignes `ETAT:`")
+        for stale in ("tous `tenu` dans `slo-status.json`", "aucune action de la clé `budget-action` n'est active, `alert` comprise",
+                      "les quatre conditions", "`release.py condition slo|budget|sev1"):
+            with self.subTest(stale=stale):
+                self.assertNotIn(stale, text)
+        self.assertNotRegex(frontmatter(SKILL)["description"], r"tous les SLO sont tenus")
+
+    def test_a_key_absent_only_opens_the_version_pr(self) -> None:
+        """Ticket #280 A2.2 : clé `agent-autonomy` absente, déclencheur atteint : la PR de version seule, jamais le tag."""
+        text = prose(SKILL)
+        self.assertIn("agent-autonomy absente : la PR de version seule", frontmatter(SKILL)["description"])
+        self.assertRegex(text, r"[Cc]lé `agent-autonomy` absente.{0,200}ouvre la PR de version.{0,200}(ne publie|sans tag)")
 
     def test_a_missing_condition_opens_the_version_pr_and_hands_it_to_the_human(self) -> None:
         """Ticket #71 : sinon, la PR de version s'ouvre, `needs-your-attention` dit la condition, l'humain reprend."""
