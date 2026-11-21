@@ -86,20 +86,22 @@ due quand N fusions attendent un tag de la clé `release-tag`, ou quand la plus 
 que le délai ; la première des deux bornes atteinte la déclenche. Sans la clé, la publication reste un geste
 de l'humain, et l'agent ne publie rien (`sans objet`).
 
-L'agent publie seul si, et seulement si, ces quatre conditions tiennent, lues par
+L'agent publie seul, tag compris, si, et seulement si, ces deux conditions tiennent, lues par
 `plugins/forge/scripts/release.py check` :
 
-- tous les SLO sont `tenu` dans `slo-status.json`, calculé il y a moins d'une heure ;
-- aucune action de `budget-action` n'est active (`alert` comprise) ;
 - l'essai de bout en bout passe sur la tête de la base : `RESULTAT: PASS` sur exactement ce commit, arbre
   non modifié ;
 - aucun ticket `sev1` n'est ouvert, sur un dépôt qui porte l'étiquette (l'agent ne la crée pas).
+
+L'état des SLO (`slo-status.json`) et celui des actions de `budget-action` sont cités dans la PR de
+version, sans la bloquer : choix de l'humain du 2026-11-21, que le script `release.py check` et le skill
+suivront avec #280 ; jusque-là, ils bloquent encore sur les SLO.
 
 Une condition qui manque, parce qu'elle n'est pas tenue ou parce que le projet ne permet pas de la lire (une
 clé absente, un état périmé, une étiquette qui n'existe pas), vaut condition non remplie, jamais « tenue ».
 Sinon, l'agent ouvre quand même la PR de version, pose `needs-your-attention` avec la condition qui manque,
 et la revue, la fusion et le tag reviennent à l'humain. Il ne lance l'essai, qui coûte de vrais appels de
-modèle, que lorsque les trois autres conditions tiennent.
+modèle, que lorsque l'autre condition tient.
 
 Quand tout tient, la PR de version passe par `/forge:qc`, puis l'agent pose le tag annoté sur le commit de
 fusion, au motif de la clé `release-tag`, et le pousse. Un tag ne se déplace ni ne se supprime. L'agent ne
@@ -137,7 +139,7 @@ plugins/forge/                    le plugin
   scripts/incident.py             la lecture d'une revue d'incident et le refus de celle sans correctif
   scripts/completion.py           le tableau de complétion des features, compté comme le budget
   scripts/e2e_trial.py            l'essai de bout en bout de l'usine sur un dépôt d'essai, avant une version
-  scripts/release.py              le déclencheur d'une version et les quatre conditions de sa publication par l'agent
+  scripts/release.py              le déclencheur d'une version et les conditions de sa publication par l'agent
   scripts/question_delay.py       les questions restées sans réponse au-delà de la clé `question-default-delay`, et la suite d'un verdict
   socle.md                        le socle commun des critères de revue, règles F-n
   templates/                      usine.md, ticket.md, pr.md, verdict.md, adr.md, features/
