@@ -733,7 +733,10 @@ le home ou le dépôt est ignoré.
 
 Le dossier des bundles de sauvetage (`*.bundle`, `git bundle create`). Le hook supprime chaque bundle
 dont toutes les têtes existent dans le dépôt et sont contenues dans `main` ou une branche distante ;
-un bundle illisible, ou dont une tête manque au dépôt, reste et est signalé.
+un bundle illisible, ou dont une tête manque au dépôt, reste et est signalé. `guard_git` lit aussi ce
+dossier : il laisse passer `git branch -D` sur une branche locale quand un bundle que `git bundle verify`
+accepte tient chaque commit qu'aucune branche distante ne tient. Sans la clé, ou sans bundle, le refus reste
+et le geste revient à l'humain.
 
 - `rescue-bundle-dir` : `<~/.cache/rescue-bundles>`
 

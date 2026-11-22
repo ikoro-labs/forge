@@ -4,7 +4,11 @@ Refused, with the reason on stderr and exit code 2 so Claude Code blocks the cal
 
 - a commit on `main`, a push to `main`, any `--force` push (`--force-with-lease` on a feature
   branch stays allowed: restacking a PR after its base merged needs it);
-- `git branch -D`, `git reset --hard`, `git clean -f`, and `--no-verify`, which skips the hooks;
+- `git branch -D`, except for a local branch whose commits that no remote ref holds are all in a
+  bundle of the folder of the project's `rescue-bundle-dir` key that `git bundle verify` accepts
+  and whose pack can be read (`bundle_covers`); the deletion must run alone, and without the key
+  or a bundle the refusal stays and gives the human's command ready to run;
+- `git reset --hard`, `git clean -f`, and `--no-verify`, which skips the hooks;
 - `gh pr merge` while any check of the PR is not green;
 - `gh pr merge`, for every agent whatever its name, while a `human-merge` line of the project's
   `budget-action` key is active (its SLO was exhausted in `slo-status.json` and is not back to `tenu`), and, closed by
@@ -122,6 +126,7 @@ import shutil
 import stat
 import subprocess
 import sys
+import tempfile
 from collections.abc import Callable, Iterable, Sequence
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath, PureWindowsPath
@@ -142,6 +147,7 @@ API_ALLOW_KEY = "gh-api-allow"
 PROTECTED_KEY = "protected-path"
 # The one way the project merges a PR: `merge`, `squash` or `rebase`.
 METHOD_KEY = "merge-method"
+BUNDLE_KEY = "rescue-bundle-dir"
 MERGE_METHODS = ("merge", "squash", "rebase")
 
 # Every external call has a timeout: a hook that hangs blocks the agent's command.
@@ -394,7 +400,21 @@ def _directory_of(args: list[str], cwd: str | None) -> str | None:
     return directory
 
 
-def _git_refusal(args: list[str], branch: str, switched: bool) -> str | None:
+BRANCH_DELETION_REFUSAL = (
+    "forced branch deletion: it is allowed only when every commit of the branch that no remote"
+    " holds is in a bundle that `git bundle verify` accepts, in the folder of the project's"
+    f" `{BUNDLE_KEY}` key (`git bundle create <folder>/<name>.bundle <branch> --not --remotes`, run"
+    " alone and before the deletion). Not covered here: the gesture is the human's, so give them"
+    " the command, ready to run (`git branch -d` refuses an unmerged branch)"
+)
+
+
+def _git_refusal(
+    args: list[str],
+    branch: str,
+    switched: bool,
+    covered: Callable[[list[str]], bool] = lambda _names: False,
+) -> str | None:
     args = _subcommand_and_args(args)
     if not args:
         return None
@@ -409,7 +429,8 @@ def _git_refusal(args: list[str], branch: str, switched: bool) -> str | None:
         if _pushes_to_main(rest, branch):
             return "push to main: open a pull request instead"
     if sub == "branch" and _deletes_by_force(rest):
-        return "forced branch deletion: use `git branch -d`, which refuses an unmerged branch"
+        names = _deletion_targets(rest)
+        return None if names and covered(names) else BRANCH_DELETION_REFUSAL
     if sub == "reset" and "--hard" in rest:
         return "reset --hard discards work: use `git stash` or a new branch"
     if sub == "clean" and any(arg.startswith("-") and "f" in arg for arg in rest):
@@ -423,6 +444,24 @@ def _deletes_by_force(args: list[str]) -> bool:
     deletes = "D" in short or "d" in short or "--delete" in args
     forced = "D" in short or "f" in short or "--force" in args
     return deletes and forced
+
+
+def _deletion_targets(args: list[str]) -> list[str] | None:
+    """The local branches a plain forced deletion names, None for any other form.
+
+    Only `-D`, `-d`, `-f`, `-q` (alone or together) and `--delete`, `--force`, `--quiet` are read:
+    `-r`, `-a`, `-m`, `--list`, `--` and every option the guard does not know make the form not plain.
+    """
+    names: list[str] = []
+    for arg in args:
+        if not arg.startswith("-"):
+            names.append(arg)
+        elif arg.startswith("--"):
+            if arg not in ("--delete", "--force", "--quiet"):  # `--` too: its operands run as a command
+                return None
+        elif set(arg[1:]) - set("Ddfq"):
+            return None
+    return names or None
 
 
 # GitHub closes the issue that follows one of these words in a merged commit message or in the
@@ -1898,6 +1937,7 @@ def refusal(
     merge_method: Sequence[str] | None = None,
     commit_messages: CommitMessages = lambda *_target: [],
     gh_api_allow: Iterable[str] | None = None,
+    branch_deletion_covered: Callable[[str | None, list[str]], bool] = lambda *_: False,
 ) -> str | None:
     """Why the command is refused, or None when it may run.
 
@@ -1973,7 +2013,14 @@ def refusal(
                 args = words[1:]
                 if any(switch <= set(args) for switch in BRANCH_SWITCH):
                     switched = True
-                if reason := _git_refusal(args, branch_where(_directory_of(args, here)), switched):
+                acts_in = _directory_of(args, here)
+
+                def covered(names: list[str], acts_in: str | None = acts_in, alone: bool = alone) -> bool:
+                    # Read only for a deletion that runs alone, in a directory the guard knows: a
+                    # command before it could change the branch after the bundle was read.
+                    return alone and acts_in != UNKNOWN and branch_deletion_covered(acts_in, names)
+
+                if reason := _git_refusal(args, branch_where(acts_in), switched, covered):
                     return reason, merges
             if gesture := owner_gesture(words, here, bodies, read_text):
                 return _owner_refusal(gesture), merges
@@ -2212,6 +2259,110 @@ def _run(argv: list[str], cwd: str | None) -> subprocess.CompletedProcess[str] |
         )
     except (subprocess.TimeoutExpired, OSError):
         return None
+
+
+# The newest bundles of the folders that are read. Each one that `verify` accepts costs at least four
+# git processes (`bundle verify`, `init`, `bundle unbundle`, one `verify-pack` per index), each under
+# TIMEOUT_SECONDS: the cap bounds the count, not the time. Past the hook's 60 s `timeout` in
+# hooks.json, `onFailure: block` refuses the command, so a slow folder refuses and never allows.
+MAX_BUNDLES = 20
+
+
+def _bundles_in(folders: Iterable[str]) -> list[Path]:
+    """The newest `*.bundle` files of the absolute folders (`~` expanded); a relative one is ignored."""
+    found: list[Path] = []
+    for value in folders:
+        folder = Path(os.path.expanduser(value))
+        try:
+            if folder.is_absolute():
+                found += [p for p in folder.glob("*.bundle") if p.is_file() and not p.is_symlink()]
+        except OSError:
+            continue
+    try:
+        found.sort(key=lambda path: path.stat().st_mtime, reverse=True)
+    except OSError:
+        return []
+    return found[:MAX_BUNDLES]
+
+
+def _git_lines(git: str, where: str, *args: str) -> list[str] | None:
+    """The output lines of a git command that succeeded, None when it failed or did not finish."""
+    done = _run([git, *args], where)
+    return done.stdout.split("\n") if done is not None and done.returncode == 0 else None
+
+
+def _unpushed_commits(git: str, where: str, name: str) -> set[str] | None:
+    """The commits of the local branch `name` that no remote ref holds; None when it is no such branch."""
+    ref = f"refs/heads/{name}"
+    if not name or name.startswith("-") or _git_lines(git, where, "check-ref-format", ref) is None:
+        return None
+    tip = _git_lines(git, where, "rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}")
+    if not tip or not tip[0]:
+        return None
+    commits = _git_lines(git, where, "rev-list", tip[0], "--not", "--remotes")
+    return None if commits is None else {line for line in commits if line}
+
+
+def _bundle_objects(git: str, where: str, objects: str, bundle: Path) -> set[str] | None:
+    """The objects in the pack of a bundle that `git bundle verify` accepts, None when it cannot be read.
+
+    `verify` reads the header and the prerequisites only: it accepts a cut pack and a header that
+    names a tip the pack lacks. The pack is unbundled in a throwaway repository, which borrows the
+    objects of the real one for the thin bases of a bundle with prerequisites, and listed there.
+    """
+    if _git_lines(git, where, "bundle", "verify", str(bundle)) is None:
+        return None
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as scratch:
+        if _git_lines(git, scratch, "init", "--bare", "--quiet", ".") is None:
+            return None
+        # `newline="\n"`: under Windows text mode writes `\r\n`, and git reads `<path>\r`.
+        (Path(scratch) / "objects" / "info" / "alternates").write_text(
+            objects + "\n", encoding="utf-8", newline="\n"
+        )
+        if _git_lines(git, scratch, "bundle", "unbundle", str(bundle)) is None:
+            return None
+        found: set[str] = set()
+        for index in (Path(scratch) / "objects" / "pack").glob("*.idx"):
+            lines = _git_lines(git, scratch, "verify-pack", "-v", str(index))
+            if lines is None:
+                return None
+            for line in lines:
+                words = line.split()
+                if words and re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", words[0]):
+                    found.add(words[0])
+        return found
+
+
+def bundle_covers(directory: str | None, names: list[str], folders: Iterable[str]) -> bool:
+    """Whether each local branch of `names` is held by a bundle of `folders` (key `rescue-bundle-dir`).
+
+    A branch is held when one bundle passes `git bundle verify`, has a pack that can be read, and
+    holds every commit of the branch that no remote ref holds. Anything the guard cannot read or
+    run (no git, a timeout, a directory that is no repository, an absent folder) is not held.
+    Nothing is written in the repository.
+    """
+    git = shutil.which("git")
+    where = native_directory(directory)
+    bundles = _bundles_in(folders)
+    if not git or not where or not names or not bundles:
+        return False
+    common = _git_lines(git, where, "rev-parse", "--git-common-dir")
+    if not common or not common[0]:
+        return False
+    objects = str((Path(where) / common[0] / "objects").resolve())
+    contents: dict[Path, set[str] | None] = {}
+
+    def holds(bundle: Path, commits: set[str]) -> bool:
+        if bundle not in contents:
+            contents[bundle] = _bundle_objects(git, where, objects, bundle)
+        found = contents[bundle]
+        return found is not None and commits <= found
+
+    for name in names:
+        commits = _unpushed_commits(git, where, name)
+        if commits is None or not any(holds(bundle, commits) for bundle in bundles):
+            return False
+    return True
 
 
 def current_branch(cwd: str | None) -> str:
@@ -2463,6 +2614,9 @@ def main() -> int:
         merge_method=config.get(METHOD_KEY, []),
         commit_messages=commits_via_gh(cwd),
         gh_api_allow=config.get(API_ALLOW_KEY, []),
+        branch_deletion_covered=lambda directory, names: bundle_covers(
+            directory or cwd, names, config.get(BUNDLE_KEY, [])
+        ),
     )
     if reason is None:
         return 0
