@@ -180,5 +180,60 @@ class KeysAbsent(LockfileAgeCase):
         self.assertEqual(self.registry.requests, [])
 
 
+class UvLockAges(LockfileAgeCase):
+    USINE = ("`lockfile` : `uv.lock | pypi`", "`dependency-min-age` : `7`")
+
+    def test_an_old_package_is_rendered_with_its_two_dates_and_does_not_flag(self) -> None:
+        """Ticket #155: a package added long ago is `OLD`, with the dates read on the registry."""
+        base = self.commit({"uv.lock": uv_lock()})
+        head = self.commit({"uv.lock": uv_lock(("requests", "2.32.0"))})
+        self.registry.pypi("requests", first=4000, releases={"2.32.0": 400})
+        code, lines, _ = self.run_probe(self.usine(*self.USINE), base, head)
+        self.assertEqual(code, 0)
+        self.assertEqual(len(lines), 1)
+        status, lockfile, package, detail = lines[0].split("\t")
+        self.assertEqual((status, lockfile, package), ("OLD", "uv.lock", "requests 2.32.0"))
+        self.assertIn("ajouté", detail)
+        self.assertIn("paquet publié le", detail)
+        self.assertIn("version publiée le", detail)
+        self.assertIn("400 j", detail)
+        self.assertIn("seuil 7 j", detail)
+
+    def test_a_recent_package_is_rendered_young_and_the_exit_code_flags_it(self) -> None:
+        """Ticket #155: a package whose version is younger than the threshold is `YOUNG`."""
+        base = self.commit({"uv.lock": uv_lock()})
+        head = self.commit({"uv.lock": uv_lock(("fresh-pkg", "0.1.0"))})
+        self.registry.pypi("fresh-pkg", first=2, releases={"0.1.0": 2})
+        code, lines, _ = self.run_probe(self.usine(*self.USINE), base, head)
+        self.assertEqual(code, 1)
+        self.assertEqual(len(lines), 1)
+        status, lockfile, package, detail = lines[0].split("\t")
+        self.assertEqual((status, lockfile, package), ("YOUNG", "uv.lock", "fresh-pkg 0.1.0"))
+        self.assertIn("(2 j)", detail)
+        self.assertIn("seuil 7 j", detail)
+
+    def test_a_new_version_of_an_old_package_is_judged_on_the_age_of_the_version(self) -> None:
+        """Ticket #155: the package is years old, the version was published hours ago: `YOUNG`."""
+        base = self.commit({"uv.lock": uv_lock(("requests", "2.31.0"))})
+        head = self.commit({"uv.lock": uv_lock(("requests", "2.32.0"))})
+        self.registry.pypi("requests", first=4000, releases={"2.31.0": 400, "2.32.0": 0.2})
+        code, lines, _ = self.run_probe(self.usine(*self.USINE), base, head)
+        self.assertEqual(code, 1)
+        status, _, package, detail = lines[0].split("\t")
+        self.assertEqual((status, package), ("YOUNG", "requests 2.32.0"))
+        self.assertIn("version 2.31.0 -> 2.32.0", detail)
+        self.assertIn("(4000 j)", detail)
+
+    def test_the_threshold_is_the_value_of_the_key_not_a_fixed_number(self) -> None:
+        """Ticket #155: 6.9 days is young under a 7-day threshold, old under a 3-day one."""
+        base = self.commit({"uv.lock": uv_lock()})
+        head = self.commit({"uv.lock": uv_lock(("pkg", "1.0.0"))})
+        self.registry.pypi("pkg", first=60, releases={"1.0.0": 6.9})
+        _, seven, _ = self.run_probe(self.usine("`lockfile` : `uv.lock | pypi`", "`dependency-min-age` : `7`"), base, head)
+        _, three, _ = self.run_probe(self.usine("`lockfile` : `uv.lock | pypi`", "`dependency-min-age` : `3`"), base, head)
+        self.assertTrue(seven[0].startswith("YOUNG\t"))
+        self.assertTrue(three[0].startswith("OLD\t"))
+
+
 if __name__ == "__main__":
     unittest.main()
