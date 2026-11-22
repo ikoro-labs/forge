@@ -86,22 +86,26 @@ due quand N fusions attendent un tag de la clé `release-tag`, ou quand la plus 
 que le délai ; la première des deux bornes atteinte la déclenche. Sans la clé, la publication reste un geste
 de l'humain, et l'agent ne publie rien (`sans objet`).
 
-L'agent publie seul, tag compris, si, et seulement si, ces deux conditions tiennent, lues par
+L'agent publie seul, tag compris, si, et seulement si, la clé `agent-autonomy` est `on` (l'interrupteur
+que l'humain ouvre et ferme sur le projet) et ces deux conditions tiennent, lues par
 `plugins/forge/scripts/release.py check` :
 
 - l'essai de bout en bout passe sur la tête de la base : `RESULTAT: PASS` sur exactement ce commit, arbre
   non modifié ;
 - aucun ticket `sev1` n'est ouvert, sur un dépôt qui porte l'étiquette (l'agent ne la crée pas).
 
+La clé `agent-autonomy` absente, l'agent ouvre la PR de version et rien d'autre : pas de revue lancée par lui,
+pas de fusion, pas de tag (`needs-your-attention` dit pourquoi).
+
 L'état des SLO (`slo-status.json`) et celui des actions de `budget-action` sont cités dans la PR de
-version, sans la bloquer : choix de l'humain du 2026-11-21, que le script `release.py check` et le skill
-suivront avec #280 ; jusque-là, ils bloquent encore sur les SLO.
+version, sans la bloquer : choix de l'humain du 2026-11-21, que `release.py check` (lignes `ETAT:`) et le
+skill suivent.
 
 Une condition qui manque, parce qu'elle n'est pas tenue ou parce que le projet ne permet pas de la lire (une
-clé absente, un état périmé, une étiquette qui n'existe pas), vaut condition non remplie, jamais « tenue ».
+clé absente, une étiquette qui n'existe pas), vaut condition non remplie, jamais « tenue ».
 Sinon, l'agent ouvre quand même la PR de version, pose `needs-your-attention` avec la condition qui manque,
 et la revue, la fusion et le tag reviennent à l'humain. Il ne lance l'essai, qui coûte de vrais appels de
-modèle, que lorsque l'autre condition tient.
+modèle, que lorsque les deux autres conditions (`agent-autonomy` et `sev1`) tiennent.
 
 Quand tout tient, la PR de version passe par `/forge:qc`, puis l'agent pose le tag annoté sur le commit de
 fusion, au motif de la clé `release-tag`, et le pousse. Un tag ne se déplace ni ne se supprime. L'agent ne

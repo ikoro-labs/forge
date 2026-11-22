@@ -31,6 +31,16 @@ des agents sur ce projet. Le plugin ne la pose jamais.
 - **Clé à `on`** : la commande s'exécute. Le modèle l'a lancée à la place de l'humain, et rien de ce
   qu'il décide n'attend sa lecture avant d'être écrit : l'humain relit après coup.
 
+La même clé est l'interrupteur de la fusion et de la publication. Elle se ferme comme elle s'ouvre : l'humain
+reprend la main sur un projet en retirant la ligne.
+
+- **Clé à `on`** : `forge:qc` fusionne un ACCEPT hors `protected-path` (ses autres arrêts restent : une entrée
+  `never-weaken`, une action `human-merge` active), et `release` publie, tag compris, quand l'essai de bout en
+  bout passe et qu'aucun ticket `sev1` n'est ouvert ; l'état des SLO est cité dans la PR de version, il ne
+  bloque pas.
+- **Clé absente** : `forge:qc` poste son verdict, pose `needs-your-attention` et ne fusionne jamais ; `release`
+  n'ouvre que la PR de version. L'humain fusionne et publie.
+
 ## 3. Les questions, avec la clé
 
 Aucune question ne part vers un humain avant d'être passée à un agent décideur : une question
@@ -55,6 +65,7 @@ l'agent ou à l'humain que le verdict désigne.
   `accepting-human` l'écrit, en la tapant. Un document que le modèle produit reste `en-revue`, et
   la commande suivante qu'il dit est celle de l'acceptation, à l'humain.
 - **`release`** garde `disable-model-invocation: true` et reste commandée par la clé
-  `release-trigger` : ni `agent-autonomy` ni son absence ne change quand l'agent publie.
+  `release-trigger`, qui dit quand une version est due. `agent-autonomy` dit si l'agent publie : absente, `release`
+  ouvre la PR de version et s'arrête, sans tag.
 - **Ce que la matrice réserve à l'humain** (clé `decision-matrix`, sa section réservée) reste à lui,
   clé ouverte ou non : l'étape 3 le dit pour chaque question.

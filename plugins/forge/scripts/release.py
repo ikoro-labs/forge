@@ -1,7 +1,7 @@
 """The conditions of a continuous release: when a version is due, and whether the agent may publish it.
 
     python release.py trigger <project>
-    python release.py condition <slo|budget|sev1|essai> <project> [--plugin DIR] [--essai SCRIPT]
+    python release.py condition <autonomie|sev1|essai|slo|budget> <project> [--plugin DIR] [--essai SCRIPT]
     python release.py check <project> [--json] [--plugin DIR] [--essai SCRIPT]
     python release.py tag <project> <version>
 
@@ -15,22 +15,29 @@ is guessed. A line it cannot read (a count that is not a whole number above zero
 read, a missing part, a repeated key) fails the command with code 2 and prints no state: it is never
 completed.
 
-`condition` prints one of the four conditions the agent publishes on, each `tenue`, `non tenue` or
-`non vérifiable`. A condition missing from the project (a key absent, a file unreadable or older than an
-hour, a label that does not exist, a `gh` that fails) is never `tenue`:
+`condition` prints one of the three conditions the agent publishes on, each `tenue`, `non tenue` or
+`non vérifiable`. A condition missing from the project (a key absent, a label that does not exist, a
+`gh` that fails) is never `tenue`:
 
-    - `slo`: every objective of `slo-status.json` is `tenu`, computed within the hour;
-    - `budget`: no action of the key `budget-action` is active (`alert` included), same state;
+    - `autonomie`: the key `agent-autonomy` is `on`; absent, the agent publishes nothing and only opens
+      the version pull request;
     - `sev1`: no open ticket carries the `sev1` label, which the repository must hold;
     - `essai`: the end-to-end trial (`e2e_trial.py`, or `--essai`) passes, `RESULTAT: PASS`, on exactly
       the head of the base with an unmodified tree. `--plugin` is the plugin it tries: run this from a
       checkout of the head of the base and name its plugin.
 
+It also prints two states the version pull request cites and that never block a publication (the human's
+choice of 2026-11-21):
+
+    - `slo`: every objective of `slo-status.json` is `tenu`, computed within the hour;
+    - `budget`: no action of the key `budget-action` is active (`alert` included), same state.
+
 `check` gives the decision: `sans objet` (a key absent), `rien` (no version is due), `publier` (due, the
-four conditions `tenue`) or `humain` (due, one or more missing: `MANQUE:` names them). It reads the
-three cheap conditions first and launches the trial, which costs real model calls, only when they all
-hold; otherwise the trial counts as not held and says it was not launched. It never publishes, tags or
-opens anything: the skill `release` does, on the decision. `--json` prints one document.
+three conditions `tenue`) or `humain` (due, one or more missing: `MANQUE:` names them). It reads the
+two cheap conditions first and launches the trial, which costs real model calls, only when they both
+hold; otherwise the trial counts as not held and says it was not launched. It prints the cited states as
+`ETAT:` lines, whatever the decision. It never publishes, tags or opens anything: the skill `release`
+does, on the decision. `--json` prints one document.
 
 `tag` prints the name of the tag of a version, the pattern of the key `release-tag` with `{version}` filled
 in, and refuses (code 2) a version that is not a number, a key with several patterns or none with
@@ -64,6 +71,7 @@ Runner = Callable[[list[str], Path], str]
 
 TRIGGER_KEY = "release-trigger"
 TAG_KEY = "release-tag"
+AUTONOMY_KEY = "agent-autonomy"
 REACHED, NOT_REACHED, ABSENT = "atteint", "non atteint", "sans objet"
 MET, NOT_MET, UNVERIFIABLE = "tenue", "non tenue", "non vérifiable"
 STATE_MAX_AGE = timedelta(hours=1)
@@ -333,18 +341,37 @@ def essai_condition(project: Path, run: Runner, now: datetime, script: Path, plu
     return Condition("essai", MET, f"l'essai passe sur la tête de la base {base_head[:12]}")
 
 
+def autonomie_condition(project: Path, run: Runner, now: datetime) -> Condition:
+    """The key `agent-autonomy` is `on`: the human opened the autonomy of the agents on this project.
+
+    Absent, the agent publishes nothing and only opens the version pull request. Any other value, or the
+    key repeated, does not open it either, and the faulty line is quoted.
+    """
+    values = usine.load(project).get(AUTONOMY_KEY)
+    if not values:
+        return Condition("autonomie", UNVERIFIABLE, f"sans objet (clé `{AUTONOMY_KEY}` absente) : l'agent ne publie pas, il ouvre la PR de version")
+    if values != ["on"]:
+        return Condition("autonomie", NOT_MET, f"clé `{AUTONOMY_KEY}` : {' ; '.join(f'`{v}`' for v in values)}, la seule valeur est `on`")
+    return Condition("autonomie", MET, f"clé `{AUTONOMY_KEY}` à `on`")
+
+
+# The conditions that block a publication, the cheap ones: the trial comes after them.
 CONDITIONS: dict[str, Callable[[Path, Runner, datetime], Condition]] = {
-    "slo": slo_condition,
-    "budget": budget_condition,
+    "autonomie": autonomie_condition,
     "sev1": sev1_condition,
 }
-CONDITION_NAMES = (*CONDITIONS, "essai")
+# The states the version pull request cites and that never block: the objectives and the error budget.
+CITED: dict[str, Callable[[Path, Runner, datetime], Condition]] = {
+    "slo": slo_condition,
+    "budget": budget_condition,
+}
+CONDITION_NAMES = (*CONDITIONS, *CITED, "essai")
 
 
 def conditions_for(args: argparse.Namespace) -> dict[str, Callable[[Path, Runner, datetime], Condition]]:
-    """The four conditions, the trial bound to the script and the plugin of the call."""
+    """Every condition and cited state by name, the trial bound to the script and the plugin of the call."""
     essai = functools.partial(essai_condition, script=args.essai or TRIAL_SCRIPT, plugin=args.plugin)
-    return {**CONDITIONS, "essai": essai}
+    return {**CONDITIONS, **CITED, "essai": essai}
 
 
 def run_tag(args: argparse.Namespace, run: Runner, now: datetime) -> int:
@@ -387,8 +414,10 @@ NOT_RUN = (
 def check(args: argparse.Namespace, run: Runner, now: datetime) -> dict:
     """The decision: `sans objet`, `rien` (nothing is due), `publier` or `humain`, with what it rests on.
 
-    The conditions are read once the trigger is reached, the three cheap ones first; the trial, which
-    costs real model calls, is launched only when they all hold.
+    The conditions are read once the trigger is reached, the cheap ones first (`agent-autonomy`, `sev1`);
+    the trial, which costs real model calls, is launched only when they all hold. The objectives and the
+    error budget are read too and returned as `etats`: the version pull request cites them, and they
+    never block.
     """
     trigger = due(args.projet, run, now)
     document: dict = {
@@ -397,6 +426,7 @@ def check(args: argparse.Namespace, run: Runner, now: datetime) -> dict:
             "plus_ancienne": trigger.oldest.isoformat() if trigger.oldest else None,
         },
         "conditions": [],
+        "etats": [],
         "manque": [],
     }
     if not trigger.reached:
@@ -409,6 +439,8 @@ def check(args: argparse.Namespace, run: Runner, now: datetime) -> dict:
     else:
         results.append(Condition("essai", UNVERIFIABLE, NOT_RUN))
     document["conditions"] = [{"nom": r.name, "statut": r.status, "texte": r.text} for r in results]
+    cited = [available[name](args.projet, run, now) for name in CITED]
+    document["etats"] = [{"nom": r.name, "statut": r.status, "texte": r.text} for r in cited]
     document["manque"] = [r.name for r in results if not r.held]
     document["decision"] = "humain" if document["manque"] else "publier"
     return document
@@ -423,6 +455,8 @@ def run_check(args: argparse.Namespace, run: Runner, now: datetime) -> int:
     print(f"DECLENCHEUR: {document['declencheur']['texte']}")
     for item in document["conditions"]:
         print(Condition(item["nom"], item["statut"], item["texte"]).line())
+    for item in document["etats"]:
+        print(f"ETAT: {item['nom']} | {item['statut']} | {item['texte']}")
     if document["manque"]:
         print("MANQUE: " + ", ".join(document["manque"]))
     return 0
