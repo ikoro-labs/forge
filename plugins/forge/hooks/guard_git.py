@@ -2261,7 +2261,11 @@ def _run(argv: list[str], cwd: str | None) -> subprocess.CompletedProcess[str] |
         return None
 
 
-MAX_BUNDLES = 20  # the newest bundles of the folders that are read: each costs a process
+# The newest bundles of the folders that are read. Each one that `verify` accepts costs at least four
+# git processes (`bundle verify`, `init`, `bundle unbundle`, one `verify-pack` per index), each under
+# TIMEOUT_SECONDS: the cap bounds the count, not the time. Past the hook's 60 s `timeout` in
+# hooks.json, `onFailure: block` refuses the command, so a slow folder refuses and never allows.
+MAX_BUNDLES = 20
 
 
 def _bundles_in(folders: Iterable[str]) -> list[Path]:

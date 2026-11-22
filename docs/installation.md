@@ -436,7 +436,10 @@ Pour couvrir une branche, avant, dans une commande à part : `git bundle create 
 branche, un commit manquant, un fichier illisible, un dossier absent ou relatif, une clé absente (étape
 « sans objet (clé `rescue-bundle-dir` absente) », aucune valeur par défaut) : le refus reste, et son
 message donne la commande à l'humain, prête à lancer. Au plus les 20 bundles les plus récents des
-dossiers sont lus, un processus chacun ; au-delà, le doute refuse.
+dossiers sont lus, et chacun que `git bundle verify` accepte coûte au moins quatre processus git
+(`bundle verify`, `init`, `bundle unbundle`, un `verify-pack` par index), chacun borné à 20 secondes :
+le plafond borne le nombre de bundles, pas le temps. Au-delà du `timeout` de 60 secondes de `guard_git`
+dans `hooks.json`, `onFailure: block` refuse la commande : un dossier lent refuse, il n'autorise jamais.
 
 Le ménage supprime un bundle dont toutes les têtes sont dans `main` ou une branche distante : un
 bundle qui a servi à supprimer une branche non poussée reste donc tant qu'elle n'est pas poussée.
