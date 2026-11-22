@@ -9,6 +9,50 @@ Ce dépôt a été recréé le 2026-10-23 ; l'ancien est `ikoro-labs/forge-archi
 numéros de PR et de ticket nus (`#38`) renvoient à l'ancien dépôt ; un renvoi au nouveau dépôt
 porte son nom (`ikoro-labs/forge#7`).
 
+## [1.19.0] - 2026-11-22
+
+Un projet consommateur apprend qu'une version plus récente existe, la clé `agent-autonomy` ouvre la fusion et la
+publication par l'agent, et cinq agents de jugement passent à Sonnet. Version mineure : une clé nouvelle,
+`pin-bump`, et un hook nouveau.
+
+- Hooks : `pin_notice.py` et `hooks.json` ajoutent un hook SessionStart qui dit à un projet consommateur qu'un tag
+  plus récent existe quand la clé `pin-bump` vaut `auto` (ikoro-labs/forge#283).
+- Hooks : `guard_infra` refuse un texte que bash ne peut pas découper, au lieu de demander
+  (ikoro-labs/forge#277).
+- Agents : le coder lance `docker run --rm`, arrête ses conteneurs et ne lance jamais `docker rm`
+  (ikoro-labs/forge#273).
+- Agents : `qc-conf`, `staff-engineer`, `product-owner`, `review-judge` et `review-recheck` passent d'Opus à
+  Sonnet (ikoro-labs/forge#284).
+- Skills : `qc` et `release` lisent la clé `agent-autonomy` ; sans elle, `qc` ne fusionne pas et `release`
+  n'ouvre que la PR de version. Les SLO et le budget d'erreur sont cités dans la PR de version, ils ne la bloquent
+  plus. Le gabarit `templates/usine.md` et `autonomie.md` décrivent la clé (ikoro-labs/forge#285, partie de
+  ikoro-labs/forge#280).
+- Dépôt, hors plugin : l'épingle déléguée à l'agent (ikoro-labs/forge#282), `release-trigger` déclaré
+  (ikoro-labs/forge#279), `agent-autonomy` à `on` (ikoro-labs/forge#274), l'épingle montée à 1.18.0
+  (ikoro-labs/forge#275) et la doc de l'épingle d'un projet consommateur (ikoro-labs/forge#285).
+- Gestes humains : un projet qui veut le rappel de version déclare `pin-bump` ; sans la clé, le hook reste muet.
+- Resté dehors : le chemin à distance des gestes réservés (ikoro-labs/forge#280, question posée à l'humain) et la
+  clé `agent-autonomy` dans les autres projets de l'usine. Rien n'a été essayé dans une vraie session ni sous
+  Windows ; l'essai de bout en bout est sans objet ici (clé `e2e-repo` absente).
+
+### Objectifs de service
+
+État de chaque objectif au 2026-11-22.
+
+| Objectif | Cible | Fenêtre | Valeur | Budget restant | État |
+|---|---|---|---|---|---|
+| `accept-round-1` | >= 80 % | 30 j | 64.6 % | 0 % sur 20 % | épuisé |
+| `lead-time p90` | <= 24 h | 30 j | 534.3 h | 0 h sur 24 h | épuisé |
+| `release-lag p90` | <= 24 h | 30 j | 493.2 h | 0 h sur 24 h | épuisé |
+| `escaped-defects` | <= 10 % | 30 j | 0.7 % | 9.3 % sur 10 % | tenu |
+| `change-failure` | <= 10 % | 30 j | 0.7 % | 9.3 % sur 10 % | tenu |
+| `human-touch` | <= 10 % | 30 j | 26.03 % | 0 % sur 10 % | épuisé |
+| `main-green` | >= 100 % | 30 j | 96.97 % | 0 % sur 0 % | épuisé |
+| `judge-recall` | >= 95 % | 30 j | sans objet | aucun résultat du jeu de référence (option `--reference` absente) | sans objet |
+| `false-accept` | <= 0 % | 30 j | sans objet | aucun résultat du jeu de référence (option `--reference` absente) | sans objet |
+
+Aucun `escaped-defect` ouvert depuis le 2026-11-20.
+
 ## [1.18.0] - 2026-11-20
 
 Les skills de la chaîne d'une feature peuvent être lancés par l'agent, les gardes jugent ce qui suit un
