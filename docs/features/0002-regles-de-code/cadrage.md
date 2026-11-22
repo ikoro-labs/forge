@@ -73,7 +73,7 @@ Sans objet (clé `entry-gate` absente). L'humain de la clé `accepting-human` en
 |---|---|
 | Quelle métrique prouve que ça marche | Constats du juge qui citent F-8, F-13, F-15, F-17 ou L-n, par PR jugée, sans cible (`qc-conf.md:330`). Base du 2026-11-22 : 3 constats F-13 sur 303 `BLOCKER` et `MINOR`, 121 PR jugées |
 | Quelle alerte si ça casse | `raised-entry` qui s'applique, ou une sonde de `forge:qc-gate` en `FAIL` |
-| Que voit-on dans une trace | À ajouter : la sortie de l'outil relayée à l'agent (règle et ligne), une ligne de journal jsonl par refus (`refusal_journal.py`), et les sondes (`usine.md:80-81`) |
+| Que voit-on dans une trace | À ajouter : la sortie de l'outil relayée à l'agent (règle et ligne), une ligne de journal jsonl par refus (`refusal_journal.py`), et les sondes de `forge:qc-gate` |
 
 ## 5. Risques
 
