@@ -26,7 +26,9 @@ doubt keeps.
    worktree; its work is on its pushed branch.
 2. Local branches `worktree-agent-*` that no worktree holds and whose tip is contained in `main`,
    `origin/main` or a remote-tracking branch: `git branch -D`. The deletion is run here, by
-   subprocess: `guard_git` keeps refusing `git branch -D` to an agent.
+   subprocess: `guard_git` refuses `git branch -D` to an agent unless a verified bundle of the key
+   `rescue-bundle-dir` holds the branch; here the tip is already in `main` or a remote branch, so
+   no bundle is needed.
 3. Agent caches, key `agent-cache-dir` (a folder, `~` expanded). At SubagentStop only: the direct
    subfolders of that folder that the transcript of the stopping agent (`agent_transcript_path`)
    names are deleted. Never at SessionStart: other sessions of the machine may have live agents in
