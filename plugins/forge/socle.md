@@ -59,6 +59,7 @@ Proof: the mechanism that enforces the rule, or `reading` when only a reviewer c
 | F-24 | test | Each commit of a PR, taken alone, passes the commands of the key `ci-replay`: a commit that is red breaks `git bisect` on the base, whatever the head does. | `qc-gate`, `scripts/commit_replay.py` |
 | F-25 | code | No guard, `never-weaken` entry or protected path is evaded, even in part (one command form, one root folder that goes through), even beside the scope of the ticket: what the rule says must stop, stops. | `qc-gate`, `scripts/never_weaken.py`, key `protected-path`; probe replayed by `scripts/probe_replay.py`; reading |
 | F-26 | prose | A sentence of the PR (documentation, docstring, comment, proofs section, description) that a command or a reading proves false is corrected before the merge. | probe replayed by `scripts/probe_replay.py`; reading |
+| F-27 | code | A dependency that the PR adds to a lockfile of the key `lockfile`, or whose version it changes, exists on its public registry and was published at least `dependency-min-age` days ago: a younger or unknown one does not merge. | `qc-gate`, `scripts/lockfile_age.py`, keys `lockfile` and `dependency-min-age` |
 
 ## Validation cases
 

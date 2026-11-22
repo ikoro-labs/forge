@@ -224,6 +224,26 @@ multipliée par le nombre de commits. Elle ne ramène pas le `-n` de pytest-xdis
 par un shell. Éprouvé sous Linux seulement : le côté Windows repose sur `run_bounded`, qui n'a tourné que dans la
 CI de ce dépôt, et cette sonde n'y a pas encore tourné ; macOS n'est pas couvert.
 
+Une sonde de plus, avec deux clés nouvelles, `lockfile` et `dependency-min-age`, mesure l'âge des dépendances
+qu'une PR ajoute. Pour chaque lockfile déclaré (`uv.lock | pypi`, `package-lock.json | npm`),
+`plugins/forge/scripts/lockfile_age.py` lit le fichier à la base et à la tête par `git show`, puis rend une
+ligne par paquet ajouté ou dont la version change, avec la date de première publication du paquet et celle de
+la version. Ces dates viennent des registres publics, `pypi.org` et `registry.npmjs.org`, que le script
+interroge par le réseau, sans identifiant : c'est la seule sonde de `forge:qc-gate` qui le fait. L'âge de la
+version décide, pas celui du paquet : un paquet vieux dont la version date de quelques heures est `YOUNG`,
+c'est le cas d'un compte détourné. Les statuts sont `OLD`, `YOUNG` (la version a moins de jours que
+`dependency-min-age`), `NOT FOUND` (le registre ne connaît pas le paquet ou la version, peut-être un nom qu'un
+agent a inventé), `NOT CHECKED` (le paquet ne vient pas du registre public), `NOT RUN` (un registre n'a pas
+répondu : la ligne porte la requête qui a échoué, et ce n'est jamais un `PASS`) et `INVALID`. `forge:qc-conf`
+fait de `YOUNG` et de `NOT FOUND` un `BLOCKER` (règle `F-27` du socle). Chaque clé absente rend la sonde
+« sans objet », aucune n'a de valeur par défaut, et la popularité d'un paquet n'entre pas dans la règle. Hors
+périmètre : les vulnérabilités connues (CVE). Éprouvé par les tests seulement, sur un dépôt jetable et un
+registre simulé par un serveur local, sous Linux ; la forme des réponses de PyPI (`releases`) et de npm
+(`time`) a été lue une fois sur le réseau, le 2026-11-22. Pas encore dans une vraie passe de `forge:qc-gate`, ni
+sous Windows. La version du lockfile est comparée mot à mot à celle du registre (`1.0` contre `1.0.0` est
+`NOT FOUND`), et un lockfile créé en entier fait une requête par paquet, l'une après l'autre : ce temps n'a
+pas été mesuré, et une sonde qui n'a pas fini est `NOT RUN`.
+
 La gravité d'un constat de `forge:qc-conf` n'est plus tout à fait au choix du juge, et un `BLOCKER`
 qui repose sur une exécution est confirmé par elle. Trois classes ont une gravité fixée dans le prompt
 du juge, parce que les faux `ACCEPT` connus venaient d'une gravité trop basse : une évasion d'un garde,

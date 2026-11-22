@@ -482,6 +482,32 @@ en local, appelée avec `--title "<titre>" --body-file body.md`.
 - `trace-check` : `<trace>`
 - `trace-replay` : `<uv run python -m scripts.trace>`
 
+L'âge des dépendances qu'une PR ajoute à un lockfile, ou dont elle change la version. Un paquet qu'un agent
+cite peut ne pas exister, ou venir d'être publié par un tiers sous ce nom, et aucune autre couche ne le regarde.
+Deux clés, chacune avec son étape « sans objet » et aucune valeur par défaut.
+
+`lockfile` : un lockfile par ligne, `<chemin> | <écosystème>`. Les écosystèmes sont fermés : `pypi` lit un
+`uv.lock` (index `https://pypi.org/simple`), `npm` lit un `package-lock.json` (lockfileVersion 2 ou 3, registre
+`https://registry.npmjs.org/`). Une entrée à qui il manque une partie, ou dont l'écosystème est inconnu, est
+rendue `INVALID`, jamais complétée. Sans la clé, « sans objet (clé `lockfile` absente) ».
+
+`dependency-min-age` : le nombre entier de jours qu'une version doit avoir sur le registre, sur une seule
+ligne. La popularité (les téléchargements) n'entre pas dans la règle. Sans la clé, « sans objet (clé
+`dependency-min-age` absente) » : la sonde ne demande rien au registre.
+
+`forge:qc-gate` lance `scripts/lockfile_age.py` avec les clés lues sur la base : une PR ne baisse pas le seuil
+qui la juge. Le script lit chaque lockfile à la base et à la tête par `git show` et rend une ligne par paquet
+ajouté ou dont la version change, avec la date de première publication du paquet et celle de la version, lues
+sur le registre public par le réseau, sans identifiant (c'est la seule sonde qui l'appelle). Chaque ligne est
+`OLD` (la version a au moins le seuil), `YOUNG` (moins), `NOT FOUND` (le registre ne connaît pas le paquet ou
+la version), `NOT CHECKED` (le paquet ne vient pas du registre public : git, URL, autre index), `NOT RUN` ou
+`INVALID`. Un registre qui ne répond pas est `NOT RUN` avec la requête qui a échoué, jamais `PASS`. Le script
+ne lance aucune commande du projet. `forge:qc-conf` fait de `YOUNG` et de `NOT FOUND` un `BLOCKER`.
+
+- `lockfile` : `<uv.lock | pypi>`
+- `lockfile` : `<package-lock.json | npm>`
+- `dependency-min-age` : `<7>`
+
 ## Essai de bout en bout
 
 L'essai de l'usine avant une version, par `scripts/e2e_trial.py`. Les tests de `tests/` éprouvent chaque
