@@ -213,6 +213,24 @@ class BundleCoverage(Repositories):
         self.addCleanup(os.chdir, here)
         self.assertFalse(self.covered("feat/x", folders=["rescue"]))
 
+    def test_a_bundle_with_prerequisites_is_read_where_text_files_get_crlf(self) -> None:
+        """#280 A5: on Windows `write_text` turns `\\n` into `\\r\\n`, and git reads `<path>\\r` in an alternates file.
+
+        The thin bundle needs the alternates file (its prerequisites live in the real repository):
+        the file must keep its `\\n`, whatever the platform does to text.
+        """
+        real = Path.write_text
+
+        def windows_write_text(self: Path, data: str, encoding: str | None = None,
+                               errors: str | None = None, newline: str | None = None) -> int:
+            if newline is None:
+                data = data.replace("\n", "\r\n")
+            return real(self, data, encoding=encoding, errors=errors, newline="")
+
+        self.git("bundle", "create", str(self.rescue / "x.bundle"), "feat/x", "--not", "--remotes")
+        with mock.patch.object(Path, "write_text", windows_write_text):
+            self.assertTrue(self.covered("feat/x"))
+
     def test_a_pushed_branch_still_needs_a_verified_bundle(self) -> None:
         """#280 A5: nothing is unpushed, and the rule is still a bundle: without one the refusal stays."""
         self.git("push", "-q", "origin", "feat/x")

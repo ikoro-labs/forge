@@ -2311,7 +2311,10 @@ def _bundle_objects(git: str, where: str, objects: str, bundle: Path) -> set[str
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as scratch:
         if _git_lines(git, scratch, "init", "--bare", "--quiet", ".") is None:
             return None
-        (Path(scratch) / "objects" / "info" / "alternates").write_text(objects + "\n", encoding="utf-8")
+        # `newline="\n"`: under Windows text mode writes `\r\n`, and git reads `<path>\r`.
+        (Path(scratch) / "objects" / "info" / "alternates").write_text(
+            objects + "\n", encoding="utf-8", newline="\n"
+        )
         if _git_lines(git, scratch, "bundle", "unbundle", str(bundle)) is None:
             return None
         found: set[str] = set()
