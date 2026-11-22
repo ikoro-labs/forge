@@ -414,6 +414,37 @@ Limite : une variable non quotée dans la valeur d'un champ peut, développée, 
 l'appel (`-f body=$X` avec `X="a -X DELETE"`) ; le garde ne voit pas les guillemets d'origine. Écrire
 la valeur dans un fichier et la passer par `-F body=@fichier` évite le cas.
 
+## Supprimer une branche locale : `git branch -D` et le bundle
+
+`guard_git` refuse `git branch -D` à un agent, sauf quand la perte est déjà couverte (ikoro-labs/forge#280,
+critère A5). Le garde ne sait pas si l'humain est là : la condition est le bundle, pas l'absence.
+
+La suppression passe quand, pour chaque branche nommée, les trois points tiennent :
+
+- c'est une branche locale, et la commande est un `-D` simple (`-D`, `-df`, `--delete --force`, sans
+  `-r`, `-a`, `-m`, `--list` ni `--`) qui tourne seule, après au plus des `cd`, dans un dossier que le
+  garde sait lire ; une commande avant elle pourrait changer la branche après la lecture du bundle ;
+- le dossier de la clé `rescue-bundle-dir` (le même que celui du ménage ci-dessous, un chemin absolu,
+  `~` développé) tient un `*.bundle` que `git bundle verify` accepte ;
+- le pack de ce bundle se lit et contient chaque commit de la branche qu'aucune branche distante ne
+  tient (`git rev-list <branche> --not --remotes`). `git bundle verify` ne lit que l'en-tête et les
+  prérequis : il accepte un pack tronqué et un en-tête qui nomme un commit que le pack n'a pas, donc le
+  garde défait le pack dans un dépôt jetable et en liste les objets. Le dépôt lui-même n'est pas écrit.
+
+Pour couvrir une branche, avant, dans une commande à part : `git bundle create <dossier>/<nom>.bundle
+<branche> --not --remotes` (ou sans `--not --remotes`, un bundle complet). Un bundle plus ancien que la
+branche, un commit manquant, un fichier illisible, un dossier absent ou relatif, une clé absente (étape
+« sans objet (clé `rescue-bundle-dir` absente) », aucune valeur par défaut) : le refus reste, et son
+message donne la commande à l'humain, prête à lancer. Au plus les 20 bundles les plus récents des
+dossiers sont lus, un processus chacun ; au-delà, le doute refuse.
+
+Le ménage supprime un bundle dont toutes les têtes sont dans `main` ou une branche distante : un
+bundle qui a servi à supprimer une branche non poussée reste donc tant qu'elle n'est pas poussée.
+Une branche sans commit hors des branches distantes demande quand même un bundle vérifié du dossier.
+
+Éprouvé par les tests, sous Linux, avec git 2.53 sur des dépôts jetables ; pas dans une vraie session
+Claude Code, ni sous Windows.
+
 ## Les gestes du propriétaire du dépôt
 
 `guard_git` refuse à tout agent les gestes qui reviennent au propriétaire du dépôt, et le refus
@@ -831,8 +862,9 @@ minutes plus tard, ne retrouve plus son worktree. Son travail reste sur sa branc
 devient `finished` quand un agent est réveillé n'a pas été observé : c'est pourquoi la règle demande
 aussi le silence de la transcription.
 
-`guard_git` continue de refuser `git branch -D` à un agent et n'a pas changé : le hook lance
-lui-même cette commande, par `subprocess`, sur le seul motif `worktree-agent-*` et ces conditions.
+`guard_git` refuse `git branch -D` à un agent, sauf si un bundle vérifié couvre la branche (voir
+« Supprimer une branche locale ») ; le hook lance lui-même cette commande, par `subprocess`, sur le
+seul motif `worktree-agent-*` et ces conditions.
 Les deux clés sont des dossiers, `~` développé ; une clé absente rend son étape « sans objet (clé
 `<nom>` absente) », sans valeur par défaut, et un dossier qui contient le home ou le dépôt est ignoré.
 Les caches ne se purgent jamais au `SessionStart` : d'autres sessions du poste peuvent avoir des
