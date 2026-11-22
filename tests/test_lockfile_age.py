@@ -283,5 +283,63 @@ class UvLockAges(LockfileAgeCase):
         self.assertIn("503", lines[0])
 
 
+class PackageLockAges(LockfileAgeCase):
+    USINE = ("`lockfile` : `package-lock.json | npm`", "`dependency-min-age` : `7`")
+
+    def test_npm_packages_are_dated_on_the_registry_scoped_names_included(self) -> None:
+        """Ticket #155: `package-lock.json` is read as npm: `created` and the version's own time."""
+        base = self.commit({"package-lock.json": package_lock()})
+        head = self.commit({"package-lock.json": package_lock(("left-pad", "1.3.0"), ("@acme/utils", "2.0.0"))})
+        self.registry.npm("left-pad", created=4000, versions={"1.3.0": 3000})
+        self.registry.npm("@acme/utils", created=900, versions={"2.0.0": 0.5})
+        code, lines, _ = self.run_probe(self.usine(*self.USINE), base, head)
+        self.assertEqual(code, 1)
+        by_package = {line.split("\t")[2]: line.split("\t") for line in lines}
+        old = by_package["left-pad 1.3.0"]
+        self.assertEqual((old[0], old[1]), ("OLD", "package-lock.json"))
+        self.assertIn("(4000 j)", old[3])
+        self.assertIn("(3000 j)", old[3])
+        young = by_package["@acme/utils 2.0.0"]
+        self.assertEqual(young[0], "YOUNG")
+        self.assertIn("(900 j)", young[3])
+        self.assertIn("(0 j)", young[3])
+
+    def test_an_npm_package_the_registry_does_not_know_is_rendered_not_found(self) -> None:
+        """Ticket #155: the registry answers 404 for the name, whatever the ecosystem."""
+        base = self.commit({"package-lock.json": package_lock()})
+        head = self.commit({"package-lock.json": package_lock(("not-a-real-package", "1.0.0"))})
+        code, lines, _ = self.run_probe(self.usine(*self.USINE), base, head)
+        self.assertEqual(code, 1)
+        self.assertTrue(lines[0].startswith("NOT FOUND\tpackage-lock.json\tnot-a-real-package 1.0.0\t"))
+
+    def test_an_unreachable_npm_registry_is_not_run(self) -> None:
+        """Ticket #155: connection refused on npm is `NOT RUN` with the request, exit code 2."""
+        base = self.commit({"package-lock.json": package_lock()})
+        head = self.commit({"package-lock.json": package_lock(("left-pad", "1.3.0"))})
+        self.registry.close()
+        code, lines, _ = self.run_probe(self.usine(*self.USINE), base, head)
+        self.assertEqual(code, 2)
+        self.assertTrue(lines[0].startswith("NOT RUN\tpackage-lock.json\tleft-pad 1.3.0\t"))
+        self.assertIn(f"GET {self.registry.url}/left-pad", lines[0])
+
+    def test_a_nested_package_is_named_by_its_last_node_modules_segment(self) -> None:
+        """Ticket #155: `node_modules/a/node_modules/b` is the package `b`."""
+        nested = json.dumps({
+            "lockfileVersion": 3,
+            "packages": {
+                "": {"name": "app"},
+                "node_modules/a/node_modules/b": {
+                    "version": "1.0.0", "resolved": "https://registry.npmjs.org/b/-/b-1.0.0.tgz",
+                },
+            },
+        })
+        base = self.commit({"package-lock.json": package_lock()})
+        head = self.commit({"package-lock.json": nested})
+        self.registry.npm("b", created=800, versions={"1.0.0": 800})
+        code, lines, _ = self.run_probe(self.usine(*self.USINE), base, head)
+        self.assertEqual(code, 0)
+        self.assertTrue(lines[0].startswith("OLD\tpackage-lock.json\tb 1.0.0\t"))
+
+
 if __name__ == "__main__":
     unittest.main()

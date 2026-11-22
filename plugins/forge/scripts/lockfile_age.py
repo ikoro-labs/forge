@@ -35,6 +35,7 @@ import subprocess
 import sys
 import urllib.error
 import urllib.request
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -96,6 +97,18 @@ def parse_uv_lock(text: str) -> list[Package]:
         if name is None or version is None:
             continue
         packages.append(Package(re.sub(r"[-_.]+", "-", name).lower(), version))
+    return packages
+
+
+def parse_package_lock(text: str) -> list[Package]:
+    """The `packages` of a `package-lock.json` (lockfileVersion 2 or 3): the ones under `node_modules/`."""
+    entries = json.loads(text)["packages"]
+    packages = []
+    for key, entry in entries.items():
+        if "node_modules/" not in key:  # the root project, or a workspace folder
+            continue
+        name = entry.get("name") or key.rsplit("node_modules/", 1)[1]
+        packages.append(Package(name, entry["version"]))
     return packages
 
 
@@ -172,23 +185,54 @@ def pypi_dates(document: Any, package: Package) -> Dates:
     return Dates(min(time for times in published.values() for time in times), min(published[package.version]))
 
 
+def npm_url(api: str, package: Package) -> str:
+    return f"{api.rstrip('/')}/{package.name.replace('/', '%2F')}"
+
+
+def npm_dates(document: Any, package: Package) -> Dates:
+    """The dates of `package` in an npm document (`time`: `created`, then one time per version)."""
+    try:
+        times = document["time"]
+        created = parse_time(times["created"])
+        published = parse_time(times[package.version]) if package.version in times else None
+    except (KeyError, TypeError, AttributeError, ValueError) as error:
+        raise Unreachable("réponse inattendue du registre") from error
+    if published is None:
+        raise NotFound("version introuvable sur le registre")
+    return Dates(min(created, published), published)
+
+
+@dataclass(frozen=True)
+class Ecosystem:
+    parse: Callable[[str], list[Package]]
+    url: Callable[[str, Package], str]
+    dates: Callable[[Any, Package], Dates]
+
+
+ECOSYSTEMS = {
+    "pypi": Ecosystem(parse_uv_lock, pypi_url, pypi_dates),
+    "npm": Ecosystem(parse_package_lock, npm_url, npm_dates),
+}
+
+
 def evaluate(root: Path, entry: str, base: str, head: str, apis: dict[str, str], threshold: int) -> list[str]:
     parts = usine.split_value(entry, 2)
     assert parts is not None
-    path, _ecosystem = parts
+    path, name = parts
+    ecosystem = ECOSYSTEMS[name]
     before, after = read_at(root, base, path), read_at(root, head, path)
-    changes = added_packages(parse_uv_lock(before or ""), parse_uv_lock(after or ""))
+    changes = added_packages(ecosystem.parse(before) if before else [], ecosystem.parse(after) if after else [])
     now = datetime.now(timezone.utc)
     lines = []
     down: str | None = None
     for package, what in changes:
-        url = pypi_url(apis["pypi"], package)
+        url = ecosystem.url(apis[name], package)
         label = f"{path}\t{package.name} {package.version}"
         if down is not None:
             lines.append(f"NOT RUN\t{label}\t{what} ; registre injoignable : {down} ; commande : GET {url}")
             continue
         try:
-            dates = pypi_dates(fetch_json(url), package)
+            dates = ecosystem.dates(fetch_json(url), package)
         except NotFound as error:
             lines.append(f"NOT FOUND\t{label}\t{what} ; {error} ; commande : GET {url}")
             continue
