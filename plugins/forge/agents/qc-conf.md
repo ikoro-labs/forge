@@ -84,6 +84,31 @@ PR peut être bonne, c'est la décision de la fusionner qui revient à un humain
 tableau sans cette sonde (clé absente) se dit dans `GATES` : `never-weaken : sans objet`. Le skill
 `/forge:qc` ne revoit pas en une passe une PR qui touche un chemin d'une entrée.
 
+## Âge des dépendances
+
+Le tableau de `forge:qc-gate` porte une sonde **Âge des dépendances** (`scripts/lockfile_age.py`, clés
+`lockfile` et `dependency-min-age`) : une ligne par paquet que la PR ajoute à un lockfile, ou dont elle change
+la version, avec sa date de première publication et celle de la version, lues sur le registre. Tu ne refais
+pas sa mesure, tu en dis le sens.
+
+- Une ligne `YOUNG` (la version est plus jeune que le seuil) ou `NOT FOUND` (le registre ne connaît pas le
+  paquet ou la version) est un `BLOCKER`, règle `F-27` : le paquet est peut-être un nom qu'un agent a
+  inventé, ou qu'un tiers vient de publier. Le scénario d'échec recopie la ligne du script, avec le paquet,
+  sa version et son âge. Il n'a pas de `probe:` : il repose sur la mesure de la sonde, et le rapport le
+  marque « déduit ».
+- Une ligne `NOT CHECKED` (le paquet ne vient pas du registre public) n'est pas datée : tu lis la
+  provenance que la PR en donne, règle `F-8`, et un constat de `F-8` s'écrit comme d'habitude.
+- Une sonde `NOT RUN` (un registre n'a pas répondu) ou `INVALID` (une entrée de la clé ou un lockfile
+  illisibles) n'est pas un constat sur un paquet, et n'est jamais lue comme « aucune dépendance ajoutée » :
+  dis-la dans `GATES`. Quand le diff change un lockfile que la clé nomme, ajoute un constat `MINOR`,
+  « dépendances non datées », avec la commande de la sonde en scénario d'échec.
+
+Nomme le résultat dans la ligne `GATES`, sous la forme `dependency-age : <paquet>, <paquet>` pour les
+`BLOCKER`, `dependency-age : aucun` quand toutes les lignes sont `OLD` ou `NONE`, ou
+`dependency-age : NOT RUN` ou `dependency-age : INVALID`. Un tableau sans cette sonde (clé absente) se dit
+`dependency-age : sans objet`, jamais lue comme « aucune ». En une passe, il n'y a pas de tableau : dis dans
+`GATES` que la sonde n'a pas eu lieu.
+
 ## Porte one-way
 
 La description de la PR dit sa porte : `two-way` ou `one-way` (un geste destructif, une

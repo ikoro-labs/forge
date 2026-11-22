@@ -190,6 +190,21 @@ elles-mêmes leurs commandes.
     Un `PASS` sur la tête ne remplace pas ces lignes : chaque commit a la sienne. La sonde peut durer le
     temps de la suite multiplié par le nombre de commits ; un délai atteint est un `NOT RUN`.
 
+15. **Âge des dépendances.** Les dépendances que la PR ajoute à un lockfile de la clé `lockfile`, ou dont
+    elle change la version, avec leur âge sur le registre public. Avec le `usine-base.md` de la sonde 10 (les
+    clés viennent de la base : une PR ne baisse pas le seuil qui la juge), lancée depuis un clone du projet qui
+    porte la base et la tête, jamais depuis une copie de `git archive` (le script lit les lockfiles par
+    `git show`) :
+    `uv run --no-project --quiet python "${CLAUDE_PLUGIN_ROOT}/scripts/lockfile_age.py" --usine usine-base.md --base origin/<base> --head <tête>`.
+    C'est la seule sonde qui passe par le réseau : le script lit lui-même PyPI et npm, et tu n'interroges
+    aucun registre toi-même. Recopie chaque ligne du script, verbatim, et son code de sortie : 0 rien à
+    relever (`OLD`, `NONE`), 1 un paquet est `YOUNG` (sous le seuil), `NOT FOUND` ou `NOT CHECKED`, 2 un
+    registre n'a pas répondu (`NOT RUN`, avec la requête que la ligne porte) ou une entrée est `INVALID`
+    (`FAIL`, jamais `PASS`). Une clé absente se rend comme le script l'écrit : `sans objet (clé lockfile
+    absente)` ou `sans objet (clé dependency-min-age absente)`. Un registre injoignable est `NOT RUN` avec la
+    commande ci-dessus, jamais `PASS` ni « aucune dépendance ajoutée ». Tu ne juges pas un âge : tu rends ce
+    que le script a mesuré.
+
 Aux tours 2 et 3, rejoue toutes les sondes : une correction peut casser ce qui passait.
 
 ## Mode rejeu des sondes
@@ -244,5 +259,5 @@ Un tableau, rien d'autre, au plus trente lignes :
 | ... | ... | ... |
 ```
 
-Puis, sous le tableau, les éléments verbatim des sondes 2, 5, 6, 7, 10, 11, 12, 13 et 14. Une sonde que tu n'as pas
+Puis, sous le tableau, les éléments verbatim des sondes 2, 5, 6, 7, 10, 11, 12, 13, 14 et 15. Une sonde que tu n'as pas
 pu exécuter s'écrit `NOT RUN` avec la commande et sa sortie d'erreur : jamais `PASS`.

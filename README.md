@@ -20,7 +20,8 @@ configuration, ses règles, ses skills de domaine.
    `forge:coder`, qui le code en test-first dans son worktree jusqu'à une PR, en parallèle quand
    les tickets ne dépendent pas les uns des autres.
 3. **Deux agents relisent la PR.** `/forge:qc` lance `forge:qc-gate`, qui rejoue la CI et mesure
-   sans donner d'avis, puis `forge:qc-conf`, qui juge le diff contre le ticket et rend ACCEPT ou
+   sans donner d'avis (dont l'âge des dépendances qu'une PR ajoute à un lockfile, clés `lockfile` et
+   `dependency-min-age`), puis `forge:qc-conf`, qui juge le diff contre le ticket et rend ACCEPT ou
    REJECT. Une PR acceptée est fusionnée, sauf si elle touche un chemin protégé (clé
    `protected-path`) ou retire un droit que le projet déclare (clé `never-weaken` : une ligne
    retirée, un nombre relevé, un rang abaissé) : un humain la fusionne alors. Une PR refusée
