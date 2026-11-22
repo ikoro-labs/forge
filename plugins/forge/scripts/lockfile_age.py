@@ -43,7 +43,7 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "hooks"))
 
-import usine  # noqa: E402
+import usine  # noqa: E402  hooks/ is not importable until the path insertion above
 
 LOCKFILE_KEY = "lockfile"
 AGE_KEY = "dependency-min-age"
