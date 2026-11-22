@@ -8,6 +8,7 @@ import io
 import json
 import os
 import subprocess
+import sys
 import tempfile
 import threading
 import unittest
@@ -339,6 +340,177 @@ class PackageLockAges(LockfileAgeCase):
         code, lines, _ = self.run_probe(self.usine(*self.USINE), base, head)
         self.assertEqual(code, 0)
         self.assertTrue(lines[0].startswith("OLD\tpackage-lock.json\tb 1.0.0\t"))
+
+
+class WhatTheProbeReads(LockfileAgeCase):
+    USINE = ("`lockfile` : `uv.lock | pypi`", "`dependency-min-age` : `7`")
+
+    def test_a_lockfile_that_adds_nothing_is_none_and_the_registry_is_not_asked(self) -> None:
+        """Ticket #155: unchanged and removed packages are not listed."""
+        base = self.commit({"uv.lock": uv_lock(("requests", "2.32.0"), ("idna", "3.7"))})
+        head = self.commit({"uv.lock": uv_lock(("requests", "2.32.0"))})
+        code, lines, _ = self.run_probe(self.usine(*self.USINE), base, head)
+        self.assertEqual(code, 0)
+        self.assertEqual(len(lines), 1)
+        self.assertTrue(lines[0].startswith("NONE\tuv.lock\t"))
+        self.assertEqual(self.registry.requests, [])
+
+    def test_a_lockfile_created_by_the_pr_lists_every_package(self) -> None:
+        """Ticket #155: no lockfile on the base, all the head's packages are added."""
+        base = self.commit({"README.md": "x"})
+        head = self.commit({"uv.lock": uv_lock(("requests", "2.32.0"))})
+        self.registry.pypi("requests", first=4000, releases={"2.32.0": 400})
+        code, lines, _ = self.run_probe(self.usine(*self.USINE), base, head)
+        self.assertEqual(code, 0)
+        self.assertTrue(lines[0].startswith("OLD\tuv.lock\trequests 2.32.0\tajouté"))
+
+    def test_a_package_from_a_git_source_cannot_be_dated_and_is_not_checked(self) -> None:
+        """Ticket #155: a git source is not on the registry, so the line says it was not checked."""
+        git_source = (
+            'version = 1\n\n[[package]]\nname = "tool"\nversion = "0.1.0"\n'
+            'source = { git = "https://example.test/org/tool?rev=abc#abc" }\n'
+        )
+        base = self.commit({"uv.lock": uv_lock()})
+        head = self.commit({"uv.lock": git_source})
+        code, lines, _ = self.run_probe(self.usine(*self.USINE), base, head)
+        self.assertEqual(code, 1)
+        status, _, package, detail = lines[0].split("\t")
+        self.assertEqual((status, package), ("NOT CHECKED", "tool 0.1.0"))
+        self.assertIn("https://example.test/org/tool", detail)
+        self.assertEqual(self.registry.requests, [])
+
+    def test_a_package_that_keeps_its_version_but_changes_its_source_is_a_change(self) -> None:
+        """Ticket #155: the same `tool 1.0.0`, now from a git URL, is not the package already known."""
+        from_git = (
+            'version = 1\n\n[[package]]\nname = "tool"\nversion = "1.0.0"\n'
+            'source = { git = "https://example.test/org/tool?rev=abc#abc" }\n'
+        )
+        base = self.commit({"uv.lock": uv_lock(("tool", "1.0.0"))})
+        head = self.commit({"uv.lock": from_git})
+        code, lines, _ = self.run_probe(self.usine(*self.USINE), base, head)
+        self.assertEqual(code, 1)
+        status, _, package, detail = lines[0].split("\t")
+        self.assertEqual((status, package), ("NOT CHECKED", "tool 1.0.0"))
+        self.assertIn("source changée", detail)
+
+    def test_the_project_itself_in_uv_lock_is_not_a_dependency(self) -> None:
+        """Ticket #155: a `virtual` or `editable` source is the project's own code."""
+        own = 'version = 1\n\n[[package]]\nname = "app"\nversion = "0.2.0"\nsource = { virtual = "." }\n'
+        base = self.commit({"uv.lock": own.replace("0.2.0", "0.1.0")})
+        head = self.commit({"uv.lock": own})
+        code, lines, _ = self.run_probe(self.usine(*self.USINE), base, head)
+        self.assertEqual(code, 0)
+        self.assertTrue(lines[0].startswith("NONE\t"))
+
+    def test_an_npm_package_resolved_outside_the_public_registry_is_not_checked(self) -> None:
+        """Ticket #155: a tarball URL of another host is not the registry's package."""
+        lock = json.dumps({
+            "lockfileVersion": 3,
+            "packages": {
+                "": {"name": "app"},
+                "node_modules/evil": {"version": "1.0.0", "resolved": "https://evil.example/evil-1.0.0.tgz"},
+                "node_modules/local": {"resolved": "../local", "link": True},
+            },
+        })
+        base = self.commit({"package-lock.json": package_lock()})
+        head = self.commit({"package-lock.json": lock})
+        usine = self.usine("`lockfile` : `package-lock.json | npm`", "`dependency-min-age` : `7`")
+        code, lines, _ = self.run_probe(usine, base, head)
+        self.assertEqual(code, 1)
+        self.assertEqual(len(lines), 1)
+        self.assertTrue(lines[0].startswith("NOT CHECKED\tpackage-lock.json\tevil 1.0.0\t"))
+        self.assertIn("https://evil.example/evil-1.0.0.tgz", lines[0])
+
+
+class InvalidInput(LockfileAgeCase):
+    def setUp(self) -> None:
+        super().setUp()
+        self.base = self.commit({"uv.lock": uv_lock()})
+        self.head = self.commit({"uv.lock": uv_lock(("requests", "2.32.0"))})
+
+    def probe(self, *keys: str) -> tuple[int, list[str], str]:
+        return self.run_probe(self.usine(*keys), self.base, self.head)
+
+    def test_an_entry_without_its_ecosystem_is_invalid_and_never_completed(self) -> None:
+        """Ticket #155: `lockfile` is `<path> | <ecosystem>`; a missing part is reported."""
+        code, lines, _ = self.probe("`lockfile` : `uv.lock`", "`dependency-min-age` : `7`")
+        self.assertEqual(code, 2)
+        self.assertTrue(lines[0].startswith("INVALID\t"))
+        self.assertIn("uv.lock", lines[0])
+        self.assertEqual(self.registry.requests, [])
+
+    def test_an_unknown_ecosystem_is_invalid_and_names_the_known_ones(self) -> None:
+        """Ticket #155: the ecosystems are closed, `pypi` and `npm`."""
+        code, lines, _ = self.probe("`lockfile` : `Cargo.lock | cargo`", "`dependency-min-age` : `7`")
+        self.assertEqual(code, 2)
+        self.assertTrue(lines[0].startswith("INVALID\t"))
+        self.assertIn("cargo", lines[0])
+        self.assertIn("pypi", lines[0])
+        self.assertIn("npm", lines[0])
+
+    def test_a_threshold_that_is_not_a_number_of_days_is_invalid(self) -> None:
+        """Ticket #155: no default and no guess for a threshold that does not read."""
+        for value in ("seven", "-1", "7.5", ""):
+            with self.subTest(value=value):
+                code, lines, _ = self.probe("`lockfile` : `uv.lock | pypi`", f"`dependency-min-age` : `{value}`")
+                self.assertEqual(code, 2)
+                self.assertTrue(lines[0].startswith("INVALID\t"))
+                self.assertIn("dependency-min-age", lines[0])
+        self.assertEqual(self.registry.requests, [])
+
+    def test_two_thresholds_are_ambiguous_and_invalid(self) -> None:
+        """Ticket #155: the key is a single line."""
+        code, lines, _ = self.probe(
+            "`lockfile` : `uv.lock | pypi`", "`dependency-min-age` : `7`", "`dependency-min-age` : `1`"
+        )
+        self.assertEqual(code, 2)
+        self.assertTrue(lines[0].startswith("INVALID\t"))
+
+    def test_a_lockfile_that_is_not_the_declared_ecosystem_is_invalid(self) -> None:
+        """Ticket #155: a JSON file declared as `pypi` is not read as a package list."""
+        head = self.commit({"uv.lock": package_lock(("left-pad", "1.3.0"))})
+        code, lines, _ = self.run_probe(
+            self.usine("`lockfile` : `uv.lock | pypi`", "`dependency-min-age` : `7`"), self.base, head
+        )
+        self.assertEqual(code, 2)
+        self.assertTrue(lines[0].startswith("INVALID\tuv.lock\t"))
+
+    def test_a_malformed_package_lock_is_invalid(self) -> None:
+        """Ticket #155: a broken JSON lockfile is reported, not skipped."""
+        head = self.commit({"package-lock.json": "{ not json"})
+        code, lines, _ = self.run_probe(
+            self.usine("`lockfile` : `package-lock.json | npm`", "`dependency-min-age` : `7`"), self.base, head
+        )
+        self.assertEqual(code, 2)
+        self.assertTrue(lines[0].startswith("INVALID\tpackage-lock.json\t"))
+
+    def test_a_ref_that_does_not_exist_fails_the_call(self) -> None:
+        """Ticket #155: a probe that cannot read the base says so on stderr and exits 2."""
+        code, lines, err = self.run_probe(
+            self.usine("`lockfile` : `uv.lock | pypi`", "`dependency-min-age` : `7`"), "no-such-ref", self.head
+        )
+        self.assertEqual(code, 2)
+        self.assertEqual(lines, [])
+        self.assertIn("no-such-ref", err)
+
+
+class AsAProcess(LockfileAgeCase):
+    def test_the_script_runs_as_a_command_and_prints_the_lines_it_returns(self) -> None:
+        """Ticket #155: `lockfile_age.py` is called by `forge:qc-gate` as a command, not imported."""
+        base = self.commit({"uv.lock": uv_lock()})
+        head = self.commit({"uv.lock": uv_lock(("requests", "2.32.0"))})
+        self.registry.pypi("requests", first=4000, releases={"2.32.0": 400})
+        usine = self.usine("`lockfile` : `uv.lock | pypi`", "`dependency-min-age` : `7`")
+        done = subprocess.run(
+            [
+                sys.executable, str(support.PLUGIN / "scripts" / "lockfile_age.py"),
+                "--usine", str(usine), "--root", str(self.repo), "--base", base, "--head", head,
+                "--registry", f"pypi={self.registry.url}/pypi",
+            ],
+            capture_output=True, text=True, encoding="utf-8", env=dict(os.environ),
+        )
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertTrue(done.stdout.startswith("OLD\tuv.lock\trequests 2.32.0\t"))
 
 
 if __name__ == "__main__":

@@ -55,6 +55,7 @@ TIMEOUT_SECONDS = 20
 class Package:
     name: str
     version: str
+    origin: str | None = None  # where it comes from when that is not the public registry
 
 
 @dataclass(frozen=True)
@@ -80,8 +81,15 @@ def _quoted(value: str) -> str | None:
     return match.group(1) if match else None
 
 
+PUBLIC_INDEX = "https://pypi.org/simple"
+PUBLIC_TARBALLS = "https://registry.npmjs.org/"
+LOCAL_SOURCES = ("virtual", "editable", "directory", "path")  # the project's own code, not a download
+
+
 def parse_uv_lock(text: str) -> list[Package]:
-    """The `[[package]]` blocks of a `uv.lock`."""
+    """The `[[package]]` blocks of a `uv.lock` that are downloaded; ValueError when it is not one."""
+    if not re.search(r"(?m)^version\s*=\s*[0-9]+\s*$", text):
+        raise ValueError("pas de ligne `version = <n>` en tête : ce n'est pas un uv.lock")
     blocks: list[dict[str, str]] = []
     current: dict[str, str] | None = None
     for line in text.splitlines():
@@ -93,22 +101,28 @@ def parse_uv_lock(text: str) -> list[Package]:
             current[field.group(1)] = field.group(2)
     packages = []
     for block in blocks:
-        name, version = _quoted(block.get("name", "")), _quoted(block.get("version", ""))
-        if name is None or version is None:
+        name, version, source = _quoted(block.get("name", "")), _quoted(block.get("version", "")), block.get("source")
+        if name is None or version is None or source is None:
+            raise ValueError("un bloc [[package]] sans name, version ou source : ce n'est pas un uv.lock")
+        if re.match(rf"^\{{\s*({'|'.join(LOCAL_SOURCES)})\s*=", source):
             continue
-        packages.append(Package(re.sub(r"[-_.]+", "-", name).lower(), version))
+        registry = re.match(r'^\{\s*registry\s*=\s*"([^"]*)"\s*\}', source)
+        public = registry is not None and registry.group(1).rstrip("/") == PUBLIC_INDEX
+        packages.append(Package(re.sub(r"[-_.]+", "-", name).lower(), version, None if public else source.strip()))
     return packages
 
 
 def parse_package_lock(text: str) -> list[Package]:
-    """The `packages` of a `package-lock.json` (lockfileVersion 2 or 3): the ones under `node_modules/`."""
+    """The `packages` of a `package-lock.json` (lockfileVersion 2 or 3) that are downloaded."""
     entries = json.loads(text)["packages"]
     packages = []
     for key, entry in entries.items():
-        if "node_modules/" not in key:  # the root project, or a workspace folder
-            continue
+        if "node_modules/" not in key or entry.get("link") or entry.get("inBundle"):
+            continue  # the root project, a workspace folder, a link or a package inside another's tarball
         name = entry.get("name") or key.rsplit("node_modules/", 1)[1]
-        packages.append(Package(name, entry["version"]))
+        resolved = entry.get("resolved")
+        public = resolved is None or str(resolved).startswith(PUBLIC_TARBALLS)
+        packages.append(Package(name, entry["version"], None if public else str(resolved)))
     return packages
 
 
@@ -123,19 +137,22 @@ def read_at(root: Path, ref: str, path: str) -> str | None:
 
 def added_packages(before: list[Package], after: list[Package]) -> list[tuple[Package, str]]:
     """The packages `after` adds, or whose version it changes, each with what changed."""
-    known: dict[str, set[str]] = {}
+    known: dict[str, set[Package]] = {}
     for package in before:
-        known.setdefault(package.name, set()).add(package.version)
+        known.setdefault(package.name, set()).add(package)
     seen: set[Package] = set()
     changes = []
     for package in after:
-        if package in seen or package.version in known.get(package.name, set()):
+        if package in seen or package in known.get(package.name, set()):
             continue
         seen.add(package)
-        if package.name in known:
-            changes.append((package, f"version {', '.join(sorted(known[package.name]))} -> {package.version}"))
-        else:
+        old = known.get(package.name, set())
+        if not old:
             changes.append((package, "ajouté"))
+        elif package.version in {previous.version for previous in old}:
+            changes.append((package, f"source changée (version {package.version} déjà dans le lockfile de base)"))
+        else:
+            changes.append((package, f"version {', '.join(sorted(p.version for p in old))} -> {package.version}"))
     return changes
 
 
@@ -215,19 +232,34 @@ ECOSYSTEMS = {
 }
 
 
+def invalid(subject: str, why: str) -> str:
+    return f"INVALID\t{subject}\t-\t{why}"
+
+
 def evaluate(root: Path, entry: str, base: str, head: str, apis: dict[str, str], threshold: int) -> list[str]:
     parts = usine.split_value(entry, 2)
-    assert parts is not None
+    if parts is None:
+        return [invalid(entry, f"il manque une partie à l'entrée de la clé {LOCKFILE_KEY} : `<chemin> | <écosystème>`")]
     path, name = parts
+    if name not in ECOSYSTEMS:
+        return [invalid(path, f"écosystème inconnu `{name}` ({', '.join(ECOSYSTEMS)})")]
     ecosystem = ECOSYSTEMS[name]
-    before, after = read_at(root, base, path), read_at(root, head, path)
-    changes = added_packages(ecosystem.parse(before) if before else [], ecosystem.parse(after) if after else [])
+    try:
+        before, after = read_at(root, base, path), read_at(root, head, path)
+        changes = added_packages(ecosystem.parse(before) if before else [], ecosystem.parse(after) if after else [])
+    except (ValueError, KeyError, TypeError, AttributeError) as error:
+        return [invalid(path, f"illisible comme un lockfile `{name}` ({type(error).__name__} : {error})")]
+    if not changes:
+        return [f"NONE\t{path}\t-\taucun paquet ajouté ni dont la version change"]
     now = datetime.now(timezone.utc)
     lines = []
     down: str | None = None
     for package, what in changes:
         url = ecosystem.url(apis[name], package)
         label = f"{path}\t{package.name} {package.version}"
+        if package.origin is not None:
+            lines.append(f"NOT CHECKED\t{label}\t{what} ; source hors du registre public : {package.origin}")
+            continue
         if down is not None:
             lines.append(f"NOT RUN\t{label}\t{what} ; registre injoignable : {down} ; commande : GET {url}")
             continue
@@ -279,7 +311,18 @@ def main(argv: list[str] | None = None) -> int:
     for override in args.registry:
         ecosystem, _, url = override.partition("=")
         apis[ecosystem] = url
-    threshold = int(config[AGE_KEY][0])
+    values = config[AGE_KEY]
+    if len(values) != 1 or not re.fullmatch(r"[0-9]+", values[0]):
+        print(invalid(AGE_KEY, f"un nombre entier de jours sur une seule ligne, lu : {' ; '.join(values)}"))
+        return 2
+    threshold = int(values[0])
+    for ref in (args.base, args.head):
+        found = subprocess.run(
+            ["git", "-C", args.root, "rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}"], capture_output=True
+        )
+        if found.returncode != 0:
+            print(f"lockfile_age: la référence git `{ref}` est introuvable dans {args.root}", file=sys.stderr)
+            return 2
     lines: list[str] = []
     for entry in config[LOCKFILE_KEY]:
         lines += evaluate(Path(args.root), entry, args.base, args.head, apis, threshold)
