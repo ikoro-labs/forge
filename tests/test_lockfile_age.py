@@ -512,6 +512,24 @@ class AsAProcess(LockfileAgeCase):
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertTrue(done.stdout.startswith("OLD\tuv.lock\trequests 2.32.0\t"))
 
+    def test_the_output_is_utf8_even_when_the_console_is_not(self) -> None:
+        """Ticket #155: on a cp1252 console (Windows), the lines stay UTF-8, as `matrice.py` keeps its own."""
+        base = self.commit({"uv.lock": uv_lock()})
+        head = self.commit({"uv.lock": uv_lock(("requests", "2.32.0"))})
+        self.registry.pypi("requests", first=4000, releases={"2.32.0": 400})
+        usine = self.usine("`lockfile` : `uv.lock | pypi`", "`dependency-min-age` : `7`")
+        env = dict(os.environ, PYTHONIOENCODING="cp1252", PYTHONUTF8="0")
+        done = subprocess.run(
+            [
+                sys.executable, str(support.PLUGIN / "scripts" / "lockfile_age.py"),
+                "--usine", str(usine), "--root", str(self.repo), "--base", base, "--head", head,
+                "--registry", f"pypi={self.registry.url}/pypi",
+            ],
+            capture_output=True, env=env,
+        )
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("ajouté", done.stdout.decode("utf-8"))
+
 
 if __name__ == "__main__":
     unittest.main()

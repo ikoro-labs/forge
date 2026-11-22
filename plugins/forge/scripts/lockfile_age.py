@@ -293,6 +293,9 @@ def main(argv: list[str] | None = None) -> int:
         help="the API root of an ecosystem's registry, for a mirror or a simulated registry",
     )
     args = parser.parse_args(argv)
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
     config_file = Path(args.usine) if args.usine else Path(args.root) / usine.CONFIG_PATH
     try:
         config = usine.parse(config_file.read_text(encoding="utf-8"))
