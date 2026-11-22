@@ -234,6 +234,54 @@ class UvLockAges(LockfileAgeCase):
         self.assertTrue(seven[0].startswith("YOUNG\t"))
         self.assertTrue(three[0].startswith("OLD\t"))
 
+    def test_a_package_the_registry_does_not_know_is_rendered_not_found(self) -> None:
+        """Ticket #155: a name no one published (an agent's invention) is `NOT FOUND`, never `OLD`."""
+        base = self.commit({"uv.lock": uv_lock()})
+        head = self.commit({"uv.lock": uv_lock(("invented-pkg", "1.0.0"))})
+        code, lines, _ = self.run_probe(self.usine(*self.USINE), base, head)
+        self.assertEqual(code, 1)
+        status, lockfile, package, detail = lines[0].split("\t")
+        self.assertEqual((status, lockfile, package), ("NOT FOUND", "uv.lock", "invented-pkg 1.0.0"))
+        self.assertIn("introuvable", detail)
+
+    def test_a_version_the_registry_does_not_know_is_rendered_not_found(self) -> None:
+        """Ticket #155: the package exists but the locked version was never published there."""
+        base = self.commit({"uv.lock": uv_lock()})
+        head = self.commit({"uv.lock": uv_lock(("requests", "9.9.9"))})
+        self.registry.pypi("requests", first=4000, releases={"2.32.0": 400})
+        code, lines, _ = self.run_probe(self.usine(*self.USINE), base, head)
+        self.assertEqual(code, 1)
+        status, _, package, detail = lines[0].split("\t")
+        self.assertEqual((status, package), ("NOT FOUND", "requests 9.9.9"))
+        self.assertIn("version", detail)
+        self.assertIn("introuvable", detail)
+
+    def test_an_unreachable_registry_is_not_run_with_its_command_and_never_a_pass(self) -> None:
+        """Ticket #155: nobody answers, each package is `NOT RUN` with the request, exit code 2."""
+        base = self.commit({"uv.lock": uv_lock()})
+        head = self.commit({"uv.lock": uv_lock(("requests", "2.32.0"), ("idna", "3.7"))})
+        self.registry.pypi("requests", first=4000, releases={"2.32.0": 400})
+        self.registry.close()  # the port is now closed: connection refused
+        code, lines, _ = self.run_probe(self.usine(*self.USINE), base, head)
+        self.assertEqual(code, 2)
+        self.assertEqual(len(lines), 2)
+        for line, name in zip(lines, ("requests 2.32.0", "idna 3.7")):
+            status, lockfile, package, detail = line.split("\t")
+            self.assertEqual((status, lockfile, package), ("NOT RUN", "uv.lock", name))
+            self.assertIn("registre injoignable", detail)
+            self.assertIn(f"GET {self.registry.url}/pypi/{name.split()[0]}/json", detail)
+        self.assertFalse(any(line.startswith(("OLD", "YOUNG")) for line in lines))
+
+    def test_a_registry_that_answers_an_error_is_not_run_not_not_found(self) -> None:
+        """Ticket #155: a 503 says nothing about the package, so it is never read as absent."""
+        base = self.commit({"uv.lock": uv_lock()})
+        head = self.commit({"uv.lock": uv_lock(("requests", "2.32.0"))})
+        self.registry.pages["/pypi/requests/json"] = (503, "<html>down</html>")
+        code, lines, _ = self.run_probe(self.usine(*self.USINE), base, head)
+        self.assertEqual(code, 2)
+        self.assertTrue(lines[0].startswith("NOT RUN\t"))
+        self.assertIn("503", lines[0])
+
 
 if __name__ == "__main__":
     unittest.main()

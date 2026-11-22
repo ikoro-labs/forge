@@ -28,14 +28,17 @@ the threshold it is judged by. The standard library only.
 from __future__ import annotations
 
 import argparse
+import http.client
 import json
 import re
 import subprocess
 import sys
+import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "hooks"))
 
@@ -57,6 +60,18 @@ class Package:
 class Dates:
     package: datetime  # the first publication of the package
     version: datetime  # the publication of the version
+
+
+class NotFound(Exception):
+    """The registry answered, and has no such package or version."""
+
+
+class Unreachable(Exception):
+    """The registry did not give an answer that says anything about the package."""
+
+    def __init__(self, reason: str, connection: bool = False) -> None:
+        super().__init__(reason)
+        self.connection = connection  # nobody answered at all: the other packages are not asked
 
 
 def _quoted(value: str) -> str | None:
@@ -122,18 +137,38 @@ def parse_time(text: str) -> datetime:
     return datetime.fromisoformat(f"{stamp}.{fraction}{zone}")
 
 
-def fetch_json(url: str) -> dict[str, dict[str, list[dict[str, str]]]]:
+def fetch_json(url: str) -> Any:
+    """The JSON document at `url`: NotFound on a 404, Unreachable on anything else that is not JSON."""
     request = urllib.request.Request(url, headers={"Accept": "application/json", "User-Agent": "forge-lockfile-age"})
-    with urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS) as response:
-        document: dict[str, dict[str, list[dict[str, str]]]] = json.loads(response.read().decode("utf-8"))
-        return document
+    try:
+        with urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as error:
+        if error.code == 404:
+            raise NotFound("paquet introuvable sur le registre") from error
+        raise Unreachable(f"le registre répond HTTP {error.code}") from error
+    except (OSError, http.client.HTTPException) as error:
+        reason = getattr(error, "reason", None) or error
+        raise Unreachable(str(reason), connection=True) from error
+    except ValueError as error:  # includes a body that is not UTF-8 or not JSON
+        raise Unreachable("réponse illisible") from error
 
 
-def pypi_dates(api: str, package: Package) -> Dates:
-    releases = fetch_json(f"{api.rstrip('/')}/{package.name}/json")["releases"]
-    published = {
-        version: [parse_time(file["upload_time_iso_8601"]) for file in files] for version, files in releases.items()
-    }
+def pypi_url(api: str, package: Package) -> str:
+    return f"{api.rstrip('/')}/{package.name}/json"
+
+
+def pypi_dates(document: Any, package: Package) -> Dates:
+    """The dates of `package` in a PyPI JSON document (`releases`, each file with its upload time)."""
+    try:
+        published = {
+            version: [parse_time(file["upload_time_iso_8601"]) for file in files]
+            for version, files in document["releases"].items()
+        }
+    except (KeyError, TypeError, AttributeError, ValueError) as error:
+        raise Unreachable("réponse inattendue du registre") from error
+    if not published.get(package.version):
+        raise NotFound("version introuvable sur le registre")
     return Dates(min(time for times in published.values() for time in times), min(published[package.version]))
 
 
@@ -145,15 +180,29 @@ def evaluate(root: Path, entry: str, base: str, head: str, apis: dict[str, str],
     changes = added_packages(parse_uv_lock(before or ""), parse_uv_lock(after or ""))
     now = datetime.now(timezone.utc)
     lines = []
+    down: str | None = None
     for package, what in changes:
-        dates = pypi_dates(apis["pypi"], package)
+        url = pypi_url(apis["pypi"], package)
+        label = f"{path}\t{package.name} {package.version}"
+        if down is not None:
+            lines.append(f"NOT RUN\t{label}\t{what} ; registre injoignable : {down} ; commande : GET {url}")
+            continue
+        try:
+            dates = pypi_dates(fetch_json(url), package)
+        except NotFound as error:
+            lines.append(f"NOT FOUND\t{label}\t{what} ; {error} ; commande : GET {url}")
+            continue
+        except Unreachable as error:
+            down = str(error) if error.connection else None
+            lines.append(f"NOT RUN\t{label}\t{what} ; registre injoignable : {error} ; commande : GET {url}")
+            continue
         detail = (
             f"{what} ; paquet publié le {dates.package:%Y-%m-%d} ({(now - dates.package).days} j)"
             f" ; version publiée le {dates.version:%Y-%m-%d} ({(now - dates.version).days} j)"
             f" ; seuil {threshold} j"
         )
         status = "YOUNG" if now - dates.version < timedelta(days=threshold) else "OLD"
-        lines.append(f"{status}\t{path}\t{package.name} {package.version}\t{detail}")
+        lines.append(f"{status}\t{label}\t{detail}")
     return lines
 
 
@@ -192,7 +241,10 @@ def main(argv: list[str] | None = None) -> int:
         lines += evaluate(Path(args.root), entry, args.base, args.head, apis, threshold)
     for line in lines:
         print(line)
-    return 1 if any(line.startswith("YOUNG\t") for line in lines) else 0
+    statuses = {line.split("\t", 1)[0] for line in lines}
+    if statuses & {"NOT RUN", "INVALID"}:
+        return 2
+    return 1 if statuses & {"YOUNG", "NOT FOUND", "NOT CHECKED"} else 0
 
 
 if __name__ == "__main__":
