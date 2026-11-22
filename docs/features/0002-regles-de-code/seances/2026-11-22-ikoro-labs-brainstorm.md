@@ -10,9 +10,11 @@ sujet: trancher les premières questions de l'idée F-0002 avant le cadrage
 Écrite pendant la séance, tour par tour, jamais réécrite ensuite. Une correction se fait dans une
 séance suivante, qui cite celle-ci.
 
-Les décisions sont celles de `forge:staff-engineer`, rendues en réponse aux cinq premières
-questions de `idee.md` ; il n'a rien écrit lui-même, l'agent de la session les recopie ici. Les
-questions techniques sont passées à l'agent décideur avant tout humain (`autonomie.md`, étape 3).
+Les décisions sont celles de `forge:staff-engineer`, rendues en réponse aux quatre premières
+questions de `idee.md` (Q1 à Q4) et à une question de périmètre que la séance ajoute (Q5) ; la
+cinquième question de `idee.md`, le recoupement avec un projet consommateur, reste ouverte. Il n'a
+rien écrit lui-même, l'agent de la session les recopie ici. Les questions techniques sont passées à
+l'agent décideur avant tout humain (`autonomie.md`, étape 3).
 
 ## Sources apportées
 
