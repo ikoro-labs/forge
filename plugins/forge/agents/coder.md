@@ -55,11 +55,10 @@ avec `--no-track`.
    citent.
 5. Le code que tu vas modifier, et ses tests.
 
-Compte aussi, dès cette lecture, les PR que le ticket a déjà et prévois d'en ouvrir au plus ce que dit la clé
-`ticket-pr-cap` (trois dans la configuration de départ du gabarit) : au plus 3 PR pour ce ticket, les
-tiennes comprises, fusionnées ou ouvertes. Découpe ton travail pour qu'il y tienne ; la section « Taille »
-dit quoi faire à la quatrième. Sans la clé, l'étape est « sans objet (clé `ticket-pr-cap` absente) » : tu ne
-devines aucun plafond.
+Compte aussi, dès cette lecture, les PR que le ticket a déjà et prévois d'en ouvrir au plus la valeur de la
+clé `ticket-pr-cap`, les tiennes comprises, fusionnées ou ouvertes. Découpe ton travail pour qu'il y
+tienne ; la section « Taille » dit quoi faire à celle qui dépasserait. Sans la clé, l'étape est « sans objet
+(clé `ticket-pr-cap` absente) » : tu ne devines aucun plafond.
 
 Si, après cette lecture, une décision reste ouverte et touche un chiffre, un contrat d'API, un
 schéma ou une règle du `CLAUDE.md`, ne la tranche pas : sors en `BLOCKED` avec la question et ta

@@ -229,8 +229,8 @@ Alors :
    une seconde partie les points de la première. Tous partent du même `origin/<base>`. Le coder
    lit d'abord les cas du ticket : s'il en manque un, il rend `RESULT: BLOCKED` avec ce cas, que
    tu ajoutes au corps avant de le relancer, jamais après l'ouverture de sa PR. Écris aussi le
-   plafond dans son brief, quand la clé `ticket-pr-cap` est déclarée : au plus 3 PR pour ce ticket
-   (la valeur de la clé), ses parties déjà ouvertes ou fusionnées comprises, que `guard_pr_cap` tient ;
+   plafond dans son brief, quand la clé `ticket-pr-cap` est déclarée : au plus la valeur de la clé `ticket-pr-cap`
+   de PR pour ce ticket, ses parties déjà ouvertes ou fusionnées comprises, que `guard_pr_cap` tient ;
    sans la clé, « sans objet (clé `ticket-pr-cap` absente) », aucun plafond n'est deviné.
    Modèle du coder : Sonnet aux tours 1 et 2, Opus pour la correction jugée au tour 3 avec la ligne `ESCALATION: #<PR> round 3`, Haiku en mode sync sans conflit avec la ligne `MODE: sync` ; tenu par le hook `guard_coder_model`. Sans `model` ni `effort`, sa
    frontmatter (`sonnet`, `high`) s'applique : ne passe `model` qu'avec la ligne qu'il exige.

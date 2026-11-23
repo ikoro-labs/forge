@@ -45,7 +45,9 @@ class FakeGh:
         viewed: tuple[int, str] | None = None,
         events: list[dict] | None = None,
         issue: dict | None = None,
+        created: Sequence[str | None] | None = None,
     ) -> None:
+        self.created = created  # createdAt of each listed PR, None leaves the field out (None as a whole: no field)
         self.prs = prs  # (state, body) of each PR gh lists; None plays an unreachable gh
         self.viewed = viewed  # (number, body) of the PR `gh pr view` gives, None plays a gh error
         self.events = events  # the events of the ticket; None plays a gh error
@@ -69,6 +71,10 @@ class FakeGh:
                 {"number": 100 + n, "state": state, "body": body}
                 for n, (state, body) in enumerate(self.prs)
             ]
+            if self.created is not None:
+                for item, stamp in zip(listed, self.created):
+                    if stamp is not None:
+                        item["createdAt"] = stamp
             return json.dumps(listed)
         return None
 
@@ -477,13 +483,17 @@ class FailsClosed(unittest.TestCase):
 
     def test_a_crash_of_the_guard_refuses_the_call(self) -> None:
         """Ticket #314, A1: run as the hook runs, an event that is no JSON exits 2 and says why."""
+        home = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, home, True)
+        env = {k: v for k, v in os.environ.items() if not k.startswith("CLAUDE_")}
+        env.update(HOME=str(home), USERPROFILE=str(home))
         done = subprocess.run(
             [sys.executable, str(support.PLUGIN / "hooks" / "guard_pr_cap.py")],
             input="not json",
             capture_output=True,
             text=True,
             timeout=60,
-            env={k: v for k, v in os.environ.items() if not k.startswith("CLAUDE_")},
+            env=env,
         )
         self.assertEqual(done.returncode, 2)
         self.assertIn("guard_pr_cap failed", done.stderr)
@@ -717,7 +727,9 @@ class Briefs(unittest.TestCase):
         text = prose(support.PLUGIN / "agents" / "coder.md")
         reading = text.split("## 1. Lire, avant la première ligne", 1)[1].split("## 2.", 1)[0]
         self.assertIn("`ticket-pr-cap`", reading)
-        self.assertRegex(reading, r"au plus (?:trois|3) PR")
+        counting = reading.split("Compte aussi", 1)[1].split("Si, après cette lecture", 1)[0]
+        self.assertIn("la valeur de la clé `ticket-pr-cap`", counting)
+        self.assertNotRegex(counting, r"\b3\b|(?i:trois)")
         self.assertIn("sans objet (clé `ticket-pr-cap` absente)", text)
 
     def test_the_coder_returns_blocked_at_the_fourth_pr_and_opens_no_ticket(self) -> None:
@@ -730,11 +742,13 @@ class Briefs(unittest.TestCase):
         self.assertRegex(cap, r"(?i)aucun ticket")
 
     def test_feature_build_tells_the_cap_in_the_brief_of_each_coder(self) -> None:
-        """Ticket #314, A5: the launch of a coder carries the cap: plan at most three PRs for the ticket."""
+        """Ticket #314, A5: the launch of a coder carries the cap, as the value of the key and no figure."""
         text = prose(support.PLUGIN / "skills" / "feature-build" / "SKILL.md")
         launch = text.split("3. Lance l'agent `forge:coder`", 1)[1].split("Puis passe à l'étape 3", 1)[0]
         self.assertIn("`ticket-pr-cap`", launch)
-        self.assertRegex(launch, r"au plus (?:trois|3) PR")
+        telling = launch.split("Écris aussi le plafond", 1)[1].split("aucun plafond n'est deviné", 1)[0]
+        self.assertIn("la valeur de la clé `ticket-pr-cap`", telling)
+        self.assertNotRegex(telling, r"\b3\b|(?i:trois)")
 
     def test_feature_build_comments_the_ticket_and_flags_it_when_the_cap_blocks(self) -> None:
         """Ticket #314, A3: a cap `BLOCKED` is commented on the ticket with `needs-your-attention`, no ticket born."""
