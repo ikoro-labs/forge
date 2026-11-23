@@ -14,7 +14,8 @@ date: 2026-11-22
 Un projet qui adopte forge fige au cadrage sa pile et ses règles de code, et l'outil les fait tenir
 pendant que l'agent écrit : une dépendance hors liste est refusée avec la ligne à écrire, une dette
 ne peut pas monter en silence, un constat récurrent du juge devient un commentaire. La feature
-prouve qu'on relève ainsi hors du juge ce qu'il relevait à la lecture, sans bloquer l'agent à tort.
+mesure si l'on relève ainsi hors du juge ce qu'il relevait à la lecture, sans bloquer l'agent à tort ;
+la base est faible (3 constats sur 303, section 4), et la feature ne promet pas un gain avant sa mesure.
 
 ## 1. Problème
 
@@ -26,6 +27,8 @@ imbrication, paramètres, modules, dépendances), 149 PR fusionnées, du 2026-10
 dépendances. Trop peu pour conclure sur les six classes : le problème est recentré sur les
 dépendances et sur le constat récurrent (`_derouler` relevé cinq fois, Shipyard #86 à #94). Les
 verdicts encore en revue ne sont pas comptés, et les findings hors du filtre ne sont pas lus un par un.
+Deux relevés distincts, non rapprochés : 288 findings sur 149 PR fusionnées (ici), et 303 `BLOCKER` et
+`MINOR` sur 121 PR jugées (sections 4 et 6) ; la différence de périmètre n'est pas éclaircie.
 
 **Pourquoi pas plus simple.** Ruff et une étape de CI suffiraient pour un projet Python seul, mais
 pas ici (`forge:staff-engineer`, T4, T7) : `after_write` jette la sortie de l'outil
@@ -48,11 +51,11 @@ Les exigences sont une proposition de `forge:product-owner` (RESERVED, aucune ca
 |---|---|---|
 | EXI-01 | Base de règles livrée en gabarit : complexité cyclomatique 10, paramètres 5, imbrication 5, carte des modules, pile ; sans plafond de lignes | NIST SP 500-235 §2.5 pour le 10 ; 5 est le défaut de ruff ; aucune source ne relie une longueur aux défauts (brainstorm Q1, T7, T4, T3) |
 | EXI-02 | Clé `stack` : fichier de lignes `<écosystème> \| <paquet> \| <ADR accepté ou séance>` ; refus d'un paquet hors liste ou d'une source absente, qui nomme la ligne à écrire | brainstorm Q2 (case non reportée) ; la forme de `stack` est la seule décision irréversible |
-| EXI-03 | Contrôle des dépendances : la liste permise comparée au diff, manifestes lus par la clé `lockfile` | brainstorm Q2 ; dépend de #155 (PR #294) |
+| EXI-03 | Contrôle des dépendances : la liste permise comparée au diff, manifestes lus par la clé `lockfile` | brainstorm Q2 ; s'appuie sur #155 (fermé le 2026-11-22, PR #294 fusionnée) |
 | EXI-04 | Clé `lint-on-write` : lignes `<motif> \| <commande>` lues dans `after_write` ; la commande qui échoue sort en code 2 ; sortie relayée à l'agent | brainstorm Q3 (H1 : pas de nouveau garde) |
 | EXI-05 | Clé `architecture-check` : une commande, lancée par une sonde de `forge:qc-gate` et par la CI | brainstorm Q3 |
 | EXI-06 | Type `never-weaken` `raised-entry` : la liste de référence vit dans `baselines`, une hausse est refusée | brainstorm Q4 (T3) ; `raised-number` ne suffit pas |
-| EXI-07 | Un constat `MINOR` récurrent du juge devient un commentaire, jamais un ticket | brainstorm Q4 ; attend les trois questions de #157 |
+| EXI-07 | Un constat `MINOR` récurrent du juge devient un commentaire, jamais un ticket | brainstorm Q4 ; seuil et fenêtre tranchés (section 7) ; reprend les trois questions de #157 |
 | EXI-08 | Documentation : gabarit `usine.md` pour chaque clé nouvelle, page de `docs/`, `CHANGELOG.md` | `.claude/rules/forge.md` (version et journal) |
 
 Une clé absente rend « sans objet (clé `<nom>` absente) », sans valeur par défaut. Noms de clés
@@ -60,7 +63,8 @@ provisoires jusqu'à la spec.
 
 **Hors périmètre.** Le garde de commande Bash (un hook se contourne, la CI tranche en dernier) ; le
 code de forge lui-même ; un plafond de lignes ; la licence ; un catalogue de règles partagé avec un
-projet consommateur (cinquième question de `idee.md`, non traitée). À reporter en commentaire de
+projet consommateur (cinquième question de `idee.md` : `socle.md` est déjà ce catalogue, selon
+`forge:staff-engineer` et `forge:product-owner`, 2026-11-23). À reporter en commentaire de
 #291. #155 reste suivi à part.
 
 ## 3. Condition d'entrée
@@ -102,10 +106,16 @@ les constats récurrents et les dépendances, pas ces six classes.
 | 2026-11-22 | Problème recentré sur les dépendances et le constat récurrent | `forge:product-owner`, P1 | cadrage |
 | 2026-11-22 | Config et CI seules ne suffisent pas | `forge:staff-engineer`, T4, T7 | cadrage |
 | 2026-11-22 | Métrique, alerte et trace de la section 4 ; risques de la section 5 | `forge:staff-engineer`, T4, T2 | cadrage |
-| à venir | Huit exigences, hors périmètre, taille L sans coupe, dates d'arrêt | ikoro-labs, `/forge:feature-accept` | cadrage |
+| 2026-11-23 | #157, catégories : aucune liste nouvelle, la `Nature` et les `F-n`/`L-n` de `socle.md`, tenus par `guard_cases` ; un constat sans identifiant se compte à part | `forge:staff-engineer`, T3, T4, T2 | cadrage |
+| 2026-11-23 | #157, seuil et fenêtre : 3 PR distinctes sur le même `F-n`/`L-n`, 30 jours glissants ; clé `recurring-finding : 3 \| 30`, absente : « sans objet » | `forge:staff-engineer`, T3, T4, T2 | cadrage |
+| 2026-11-23 | #157, suite : aucun ticket ; un commentaire unique, réécrit, sur le ticket de suivi (clé `slo-issue`) ; sans doublon ; vaut aussi pour les `BLOCKER` | `forge:staff-engineer` ; `forge:product-owner` (P3, après acceptation) | cadrage |
+| 2026-11-23 | Cadrage corrigé : phrase d'ouverture, deux relevés non rapprochés, #155 fermé | `forge:product-owner`, P1 | cadrage |
+| à venir | Huit exigences, hors périmètre (catalogue partagé compris : `socle.md` en tient lieu), taille L sans coupe, dates d'arrêt | ikoro-labs, `/forge:feature-accept` | cadrage |
 
-Restent ouvertes : les trois questions de #157 (catégories de `BLOCKER`, seuil N et fenêtre, ticket
-seul ou proposé), dont dépend EXI-07 ; le recoupement avec un projet consommateur.
+Restent ouvertes : le recoupement des deux relevés de la section 1 (149 PR fusionnées contre 121 PR
+jugées), à éclaircir avant la mesure de la section 4 ; la forme exacte du commentaire est celle de la
+spec. Les seuils chiffrés ci-dessus viennent de la lecture de sources publiques par
+`forge:staff-engineer` (lues le 2026-11-23), dont le dénominateur de l'une n'a pas été retrouvé.
 
 ## 8. Critères d'arrêt
 
