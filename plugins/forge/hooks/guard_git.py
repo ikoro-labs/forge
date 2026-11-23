@@ -136,6 +136,7 @@ from budget import KEY as BUDGET_KEY
 from budget import merge_refusal, state_path
 from refusal_journal import record
 from usine import load, pattern_regex, project_root, split_value
+from usine import parse as parse_usine
 from utf8_stdio import use_utf8
 
 # The project's own owner gestures, one per line: `<command prefix> | <reason>`.
@@ -148,6 +149,9 @@ PROTECTED_KEY = "protected-path"
 # The one way the project merges a PR: `merge`, `squash` or `rebase`.
 METHOD_KEY = "merge-method"
 BUNDLE_KEY = "rescue-bundle-dir"
+# The switch of the agent's merge and tag: read in the file as `origin/main` holds it, not on disk.
+AUTONOMY_KEY = "agent-autonomy"
+AUTONOMY_SOURCE = ("refs/remotes/origin/main", "docs/agents/usine.md")
 MERGE_METHODS = ("merge", "squash", "rebase")
 
 # Every external call has a timeout: a hook that hangs blocks the agent's command.
@@ -2365,6 +2369,37 @@ def bundle_covers(directory: str | None, names: list[str], folders: Iterable[str
         if commits is None or not any(holds(bundle, commits) for bundle in bundles):
             return False
     return True
+
+
+def autonomy_refusal(directory: str | None, gesture: str) -> str | None:
+    """Why `gesture` (`merge` or `tag`) is refused for the key `agent-autonomy`, or None: it is `on`.
+
+    The key is read in `docs/agents/usine.md` as `refs/remotes/origin/main` holds it (`git show`),
+    never in the working tree, which the agent can edit: what counts is what the human merged. A
+    line `on` alone opens the gesture. An absent key, a repeated one, any other value, and a file
+    or a ref that cannot be read (no git, a timeout, no `origin/main`, no repository) refuse it.
+    The ref is the one this clone last fetched: a key the human removed closes the gesture here
+    only from the next `git fetch`.
+    """
+    git = shutil.which("git")
+    where = native_directory(directory)
+    ref, path = AUTONOMY_SOURCE
+    shown = _run([git, "show", f"{ref}:{path}"], where) if git and where else None
+    if shown is None or shown.returncode != 0:
+        why = f"{path} cannot be read on origin/main"
+    elif not (lines := parse_usine(shown.stdout).get(AUTONOMY_KEY, [])):
+        why = f"{path} on origin/main has no `{AUTONOMY_KEY}` line"
+    elif len(lines) > 1:
+        listed = ", ".join(f"- `{AUTONOMY_KEY}` : `{value}`" for value in lines)
+        why = f"the `{AUTONOMY_KEY}` key takes one line, and has {len(lines)}: {listed}"
+    elif lines[0] != "on":
+        why = f"the line - `{AUTONOMY_KEY}` : `{lines[0]}` of {path} on origin/main is not `on`"
+    else:
+        return None
+    return (
+        f"{why}: the `{AUTONOMY_KEY}` key is not `on`, so the guard refuses the {gesture}, and the"
+        f" gesture stays the human's, to list at the end of the report"
+    )
 
 
 def current_branch(cwd: str | None) -> str:
