@@ -937,7 +937,7 @@ class Documentation(unittest.TestCase):
     def test_the_changelog_opens_an_entry_for_the_guard(self) -> None:
         """Ticket #314, A6: an entry above the last published version, in the zones Hooks, Agents, Skills, Tests."""
         changelog = (support.REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-        entry = changelog.split("## [Non publié]", 1)[1].split("\n## [", 1)[0]
+        entry = changelog.split("## [1.20.0]", 1)[1].split("\n## [", 1)[0]
         for phrase in ("- Hooks :", "- Agents :", "- Skills :", "- Tests :", "- Gestes humains :", "- Resté dehors :"):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, entry)
@@ -945,7 +945,7 @@ class Documentation(unittest.TestCase):
         self.assertIn("`pr-cap-raiser`", entry)
         self.assertIn("ikoro-labs/forge#314", entry)
         self.assertIn("`ticket-pr-cap-since`", entry)
-        self.assertLess(changelog.index("## [Non publié]"), changelog.index("## [1.19.0]"))
+        self.assertLess(changelog.index("## [1.20.0]"), changelog.index("## [1.19.0]"))
 
 
 class Binding(unittest.TestCase):
