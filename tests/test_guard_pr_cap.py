@@ -371,6 +371,30 @@ class Gestures(unittest.TestCase):
                 self.assertIsNone(project.bash(other, free))
         self.assertEqual(free.calls, [])
 
+    def test_gh_issue_edit_of_a_pr_number_is_read_as_gh_api_on_the_issues_endpoint(self) -> None:
+        """Ticket #314, A1: `gh issue view` resolves a PR number, so `gh issue edit 7` may edit a PR's body."""
+        project = Project(self)
+        pull = cited(3)
+        pull.issue = {"number": 7, "body": pr_body("No ticket yet."), "pull_request": {"url": "u"}}
+        self.assertIn("#5 already has 3", project.bash("gh issue edit 7 --body 'Closes #5'", pull) or "")
+        self.assertEqual(pull.asked("api")[0][1], "repos/{owner}/{repo}/issues/7")
+        named = cited(3)
+        named.issue = pull.issue
+        edit = "gh issue edit 7 -R o/r --body 'Closes #5'"
+        self.assertIn("#5 already has 3", project.bash(edit, named) or "")
+        self.assertEqual(named.asked("api")[0][1], "repos/o/r/issues/7")
+        self.assertEqual(named.asked("pr", "list")[0][-2:], ["--repo", "o/r"])
+        by_url = cited(3)
+        by_url.issue = pull.issue
+        url = "gh issue edit https://github.com/o/r/issues/7 --body 'Closes #5'"
+        self.assertIn("#5 already has 3", project.bash(url, by_url) or "")
+        self.assertEqual(by_url.asked("api")[0][1], "repos/o/r/issues/7")
+        ticket = cited(3)
+        ticket.issue = {"number": 8, "body": "old", "title": "a ticket"}
+        self.assertIsNone(project.bash("gh issue edit 8 --body 'Closes #5'", ticket))
+        self.assertEqual(ticket.asked("pr", "list"), [])
+        self.assertIn("cannot be read", project.bash("gh issue edit 7 --body 'Refs #5'", cited(0)) or "")
+
     def test_a_github_mcp_tool_that_opens_or_edits_a_pr_is_read(self) -> None:
         """Ticket #314, A1: `create_pull_request` and `update_pull_request` carry the body to count."""
         project = Project(self)

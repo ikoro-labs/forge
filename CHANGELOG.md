@@ -17,7 +17,8 @@ renomme et la complète. Une clé nouvelle, `ticket-pr-cap`, et un hook nouveau.
 - Hooks : `guard_pr_cap.py` et `hooks.json` refusent une PR dont le corps cite `Closes #n` ou `Refs #n` quand le
   ticket a déjà `ticket-pr-cap` PR, ouvertes ou fusionnées ; l'étiquette `pr-cap-raised`, posée par un compte de
   la clé `pr-cap-raiser`, relève le plafond à 6 ; le garde lit les formes de citation de `guard_git`
-  (`Closes: #n`, `owner/repo#n`, `Fixes`, `Resolves`, `Refs #n, #m`) et un PATCH `gh api` sur `issues/<n>` qui est une PR ;
+  (`Closes: #n`, `owner/repo#n`, `Fixes`, `Resolves`, `Refs #n, #m`) et l'édition d'une PR par le point d'entrée `issues/<n>` (PATCH `gh api`, `gh issue edit`, outils d'édition de ticket
+  d'un serveur MCP GitHub, `curl`) ;
   il échoue fermé (ikoro-labs/forge#314).
 - Agents : `coder` prévoit au plus le plafond de PR dès sa première lecture et rend `BLOCKED` à la quatrième
   (ikoro-labs/forge#314).

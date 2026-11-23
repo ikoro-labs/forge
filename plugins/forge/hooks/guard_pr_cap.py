@@ -10,7 +10,10 @@ the body of each of these gestures, behind a wrapper, in `bash -c`, `eval` or a 
   the PR's current body did not: a PR already counted for a ticket is not a new one, so the report
   `forge:qc` writes into a PR's body is never refused;
 - `gh api` on `repos/<o>/<r>/issues/<n>`, a PR being an issue: the hook asks `gh api` whether #n carries
-  `pull_request`; a real ticket is not held, a PR is read as `gh pr edit` (a read it cannot make refuses);
+  `pull_request`; a real ticket is not held, a PR is read as `gh pr edit` (a read it cannot make refuses).
+  The other doors to the same edit are read the same way: `gh issue edit <n>` (gh resolves a PR number
+  there), the issue tools of a GitHub MCP server (`update_issue`, `issue_write` with `method: update`),
+  and a `curl` to `issues/<n>`, whose body the hook cannot read, so a PR there is refused;
 - the pull request tools of a GitHub MCP server (`create_pull_request`, `update_pull_request`).
 
 The PRs of a ticket are those `gh pr list --state all --search "<n> in:body"` finds whose body cites
@@ -331,6 +334,20 @@ def _repo_of_endpoint(endpoint: str) -> str | None:
     return f"{match.group(1)}/{match.group(2)}"
 
 
+def _issue_edit(item: Publication) -> Publication:
+    """`gh issue edit <n>` read as `gh api` on `issues/<n>`: gh resolves a PR number there too."""
+    selector = _selector(item.args)
+    match = ISSUE_SELECTOR.match(selector) if selector else None
+    if match is None:
+        raise Unreadable("`gh issue edit` names no issue number the hook can read")
+    if match.group(1):
+        repo = item.repo or "{owner}/{repo}"
+        number = match.group(1)
+    else:
+        repo, number = f"{match.group(2)}/{match.group(3)}", match.group(4)
+    return Publication("ticket", item.body, item.act, item.args, f"repos/{repo}/issues/{number}", item.repo)
+
+
 def shell_publications(command: str, cwd: str | None) -> list[tuple[Publication, str | None]]:
     """Each PR body `command` publishes, with the directory it runs in; `Unreadable` if it cannot be read."""
     found: list[tuple[Publication, str | None]] = []
@@ -355,12 +372,15 @@ def shell_publications(command: str, cwd: str | None) -> list[tuple[Publication,
         published = [
             item
             for item in publications(words, docs, local)
-            if item.kind == "pr" or (item.kind == "ticket" and item.endpoint and ISSUE.match(item.endpoint))
+            if item.kind == "pr"
+            or (item.kind == "ticket" and (item.act == ("issue", "edit") or (item.endpoint and ISSUE.match(item.endpoint))))
         ]
         act = gh_act(words)
         if act and act[:2] == ("pr", "create") and not published:
             raise Unreadable("`gh pr create` without `--body` or `--body-file`, its tickets unknown")
         for item in published:
+            if item.act == ("issue", "edit"):
+                item = _issue_edit(item)
             if item.endpoint and item.endpoint != "graphql":
                 item = Publication(item.kind, item.body, item.act, item.args, item.endpoint, _repo_of_endpoint(item.endpoint))
             found.append((item, local))

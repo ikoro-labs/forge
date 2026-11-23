@@ -794,7 +794,9 @@ or `Refs #n` when the ticket `#n` already has `N` PRs, open or merged; a PR clos
 leaves its place. It reads these gestures, with the body they carry: `gh pr create`, `gh pr edit`,
 `gh api` POST on `repos/<owner>/<repo>/pulls` and PATCH on `.../pulls/<n>`, `gh api` on
 `.../issues/<n>` when that issue is a PR (the guard asks `gh api` whether it carries `pull_request`; a
-real ticket is not held), and the pull request tools
+real ticket is not held), the same edit by its other doors (`gh issue edit <n>`, the issue tools of a
+GitHub MCP server `update_issue` and `issue_write`, and a `curl` to `issues/<n>`, refused when #n is a
+PR because its body cannot be read), and the pull request tools
 of a GitHub MCP server (`create_pull_request`, `update_pull_request`), also inside `bash -c`, `eval`,
 a nested shell and behind a wrapper (the reader is `hooks/gh_bodies.py`, shared with `guard_cases`).
 
