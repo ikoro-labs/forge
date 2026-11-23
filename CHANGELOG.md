@@ -9,6 +9,25 @@ Ce dépôt a été recréé le 2026-10-23 ; l'ancien est `ikoro-labs/forge-archi
 numéros de PR et de ticket nus (`#38`) renvoient à l'ancien dépôt ; un renvoi au nouveau dépôt
 porte son nom (`ikoro-labs/forge#7`).
 
+## [Non publié]
+
+Entrée ouverte par la PR du plafond de PR par ticket ; la session qui publie la version suivante la
+renomme et la complète. Une clé nouvelle, `ticket-pr-cap`, et un hook nouveau.
+
+- Hooks : `guard_pr_cap.py` et `hooks.json` refusent une PR dont le corps cite `Closes #n` ou `Refs #n` quand le
+  ticket a déjà `ticket-pr-cap` PR, ouvertes ou fusionnées ; l'étiquette `pr-cap-raised`, posée par un humain de
+  la clé `accepting-human`, relève le plafond à 6 ; le garde échoue fermé (ikoro-labs/forge#314).
+- Agents : `coder` prévoit au plus le plafond de PR dès sa première lecture et rend `BLOCKED` à la quatrième
+  (ikoro-labs/forge#314).
+- Skills : `feature-build` écrit le plafond dans le brief de chaque coder, commente le ticket et pose
+  `needs-your-attention` sur un `BLOCKED` du plafond (ikoro-labs/forge#314).
+- Tests : `tests/test_guard_pr_cap.py`, sous Linux et sous Windows, avec `HOME` et `USERPROFILE` isolés
+  (ikoro-labs/forge#314).
+- Gestes humains : un projet qui veut le plafond déclare `ticket-pr-cap` (le gabarit `templates/usine.md` la
+  documente) ; sans la clé, le garde ne lit rien. Seul un humain pose `pr-cap-raised`.
+- Resté dehors : la taille d'une PR (une décision du projet) et les mots de fermeture autres que `Closes` et
+  `Refs`. Rien n'a été essayé dans une vraie session ni sous Windows.
+
 ## [1.19.0] - 2026-11-22
 
 Un projet consommateur apprend qu'une version plus récente existe, la clé `agent-autonomy` ouvre la fusion et la

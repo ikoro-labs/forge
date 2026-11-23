@@ -587,6 +587,54 @@ class Briefs(unittest.TestCase):
                 self.assertNotIn("ikoro-labs", text.replace("ikoro-labs/forge#", ""))
 
 
+class Documentation(unittest.TestCase):
+    """A6: the `docs/` page, the README row, the CHANGELOG entry."""
+
+    def section(self) -> str:
+        text = (support.REPO_ROOT / "docs" / "installation.md").read_text(encoding="utf-8")
+        return " ".join(text.split("## The PRs of a ticket", 1)[1].split("\n## ", 1)[0].split())
+
+    def test_the_docs_page_describes_the_guard_the_key_and_the_label(self) -> None:
+        """Ticket #314, A6: `docs/installation.md` has a section for the cap, its key, its label and its limits."""
+        section = self.section()
+        for phrase in (
+            "`guard_pr_cap`",
+            "`ticket-pr-cap`",
+            "sans objet (clé `ticket-pr-cap` absente)",
+            "`pr-cap-raised`",
+            "`accepting-human`",
+            "BLOCKED",
+            "needs-your-attention",
+            "gh pr list --state all",
+            "fails closed",
+            "Limits",
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, section)
+
+    def test_the_budget_section_no_longer_says_the_hook_does_not_enforce_the_pr_cap(self) -> None:
+        """Ticket #314, A6: the older page said the cap of three PRs was not enforced by a hook."""
+        text = " ".join((support.REPO_ROOT / "docs" / "installation.md").read_text(encoding="utf-8").split())
+        self.assertNotIn("The hook does not enforce it", text)
+        self.assertIn("[The PRs of a ticket](#the-prs-of-a-ticket)", text)
+
+    def test_the_readme_lists_the_guard_and_links_the_page(self) -> None:
+        """Ticket #314, A6: the README summarises and points to the page."""
+        row = next(line for line in (support.REPO_ROOT / "README.md").read_text(encoding="utf-8").splitlines() if "`guard_pr_cap`" in line)
+        self.assertIn("docs/installation.md#the-prs-of-a-ticket", row)
+
+    def test_the_changelog_opens_an_entry_for_the_guard(self) -> None:
+        """Ticket #314, A6: an entry above the last published version, in the zones Hooks, Agents, Skills, Tests."""
+        changelog = (support.REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+        entry = changelog.split("## [Non publié]", 1)[1].split("\n## [", 1)[0]
+        for phrase in ("- Hooks :", "- Agents :", "- Skills :", "- Tests :", "- Gestes humains :", "- Resté dehors :"):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, entry)
+        self.assertIn("`guard_pr_cap.py`", entry)
+        self.assertIn("ikoro-labs/forge#314", entry)
+        self.assertLess(changelog.index("## [Non publié]"), changelog.index("## [1.19.0]"))
+
+
 class Binding(unittest.TestCase):
     def test_hooks_json_binds_the_guard_on_every_gh_gesture_and_fails_closed(self) -> None:
         """Ticket #314, A1: Bash, PowerShell and the GitHub MCP tools reach the guard, a failure refuses."""
