@@ -52,7 +52,7 @@ Aucun port nouveau. Les scripts ont déjà deux bords, et la feature n'en ajoute
 - **git** : `read_at` lit un fichier à une révision par `git cat-file` et `git show`. `stack_check.py` lit la
   base, la tête, le verrou et la liste par cette seule fonction. Aucun accès réseau.
 - **gh** : `recurring_findings.py` lit les commentaires de verdict et réécrit un commentaire par le lanceur `run`
-  (type `Runner`, `factory_slo.py:92`) que `publish` reçoit en argument (`factory_slo.py:951`) : l'appel est
+  (type `Runner`, `factory_slo.py:92`) que `publish` reçoit en argument (`factory_slo.py:953`) : l'appel est
   injecté dans les tests, comme il l'est pour le rapport des SLO.
 
 Le calcul (comparer des noms normalisés, compter des clés, compter des PR distinctes) est en fonctions pures,
