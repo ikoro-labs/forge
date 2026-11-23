@@ -42,8 +42,11 @@ Refused, with the reason on stderr and exit code 2 so Claude Code blocks the cal
   `merge_method` (None) does not ask for the check; `main` always passes the key's lines.
 
 - a merge (`gh pr merge`, the `gh api` merge, the merge tool of a GitHub MCP server, whose events
-  `hooks.json` routes here), a `git tag` that writes and a push of tags (`--tags`, `--follow-tags`, a
-  `refs/tags/` refspec, `<remote> tag <name>`), for every agent, unless the project's `agent-autonomy`
+  `hooks.json` routes here), a `git tag` that writes, a push of tags (`--tags`, `--follow-tags`, a
+  `refs/tags/` refspec, `<remote> tag <name>`, and `git push <remote> <name>` when `<name>` is a tag
+  of the repository the command acts in, which `local_tag_exists` reads: closed when it cannot tell,
+  and a push of a branch is not held) and `gh release create` (it creates a tag), for every agent,
+  unless the project's `agent-autonomy`
   key is one line, `on`, in `docs/agents/usine.md` as `origin/main` holds it (`autonomy_refusal`). The
   file is read by `git show` on the remote-tracking ref, never in the working tree, which an agent can
   edit; a key absent, repeated, not `on`, or a file or ref that cannot be read, refuses, and the
@@ -119,8 +122,8 @@ Known limits:
 - `origin/main` is the ref this clone last fetched, and an agent that rewrites it locally
   (`git update-ref`, a `git fetch` refspec, `git remote set-url`) fakes the key: the server's
   protection of `main` is the net, not this guard. The merge tool of an MCP server is held by the key
-  alone: its checks, files and method are not read. `gh release create` (it creates a tag) and
-  `git push origin :<tag>` are not held;
+  alone: its checks, files and method are not read. `git push origin :<tag>` (a deletion, no
+  source) and a tag made by a `gh api` call that the project's `gh-api-allow` key opens are not held;
 - an unquoted variable in the value of a `gh api` field, once expanded, may add words to the call
   (`-f body=$X` with `X="a -X DELETE"`): the guard no longer sees the quotes it was typed with;
 - `OWNER_ENDPOINT` does not cover the full URL `https://api.github.com/repos/...`, which the
@@ -501,14 +504,51 @@ def _pushes_a_tag(args: list[str]) -> bool:
     return "tag" in refs[1:] or any("refs/tags/" in ref for ref in refs)
 
 
-def autonomy_gesture(args: list[str]) -> str | None:
-    """The gesture of a git command that the key `agent-autonomy` holds (`tag`), or None."""
+# The options of `git push` that take their value as the next word: it is no remote nor refspec.
+PUSH_OPTIONS_WITH_VALUE = frozenset({"-o", "--push-option", "--receive-pack", "--exec", "--repo"})
+
+
+def _push_sources(args: list[str]) -> list[str]:
+    """The source of each refspec a push names after its remote: `v1` for `v1`, `v1:v1` and `+v1`.
+
+    A source that is a tag sends that tag, whatever the destination is spelled. A ref under
+    `refs/` that is not under `refs/tags/` names no tag, and an empty source (`:name`, a deletion)
+    is left alone.
+    """
+    words: list[str] = []
+    skip = operands = False
+    for arg in args:
+        if skip:
+            skip = False
+        elif operands or not arg.startswith("-"):
+            words.append(arg)
+        elif arg == "--":
+            operands = True
+        else:
+            skip = arg in PUSH_OPTIONS_WITH_VALUE
+    sources = [ref.lstrip("+").split(":", 1)[0] for ref in words[1:]]
+    return [name for name in sources if name and not (name.startswith("refs/") and "refs/tags/" not in name)]
+
+
+def autonomy_gesture(
+    args: list[str], tag_exists: Callable[[str], bool | None] | None = None
+) -> str | None:
+    """The gesture of a git command that the key `agent-autonomy` holds (`tag`), or None.
+
+    A push that names a ref with no `refs/tags/` in it (`git push origin v1`) sends a tag when the
+    repository has one called so: `tag_exists` says it (True), says it has none (False), or cannot
+    tell (None). Closed by default: the push is held unless every name is known not to be a tag. A
+    caller that passes no `tag_exists` (None) does not ask for that check.
+    """
     args = _subcommand_and_args(args)
     if not args:
         return None
     sub, rest = args[0], args[1:]
     if (sub == "tag" and _writes_a_tag(rest)) or (sub == "push" and _pushes_a_tag(rest)):
         return "tag"
+    if sub == "push" and tag_exists is not None:
+        if any(tag_exists(name) is not False for name in _push_sources(rest)):
+            return "tag"
     return None
 
 
@@ -2013,6 +2053,7 @@ def refusal(
     gh_api_allow: Iterable[str] | None = None,
     branch_deletion_covered: Callable[[str | None, list[str]], bool] = lambda *_: False,
     autonomy: Callable[[str], str | None] | None = None,
+    tag_exists: Callable[[str | None, str], bool | None] | None = None,
 ) -> str | None:
     """Why the command is refused, or None when it may run.
 
@@ -2030,6 +2071,10 @@ def refusal(
     `autonomy` says why a gesture (`merge` or `tag`) is refused for the key `agent-autonomy`, None
     when the key is `on` (`autonomy_refusal`); it is asked only when the command is such a gesture,
     and a caller that passes none (None) does not ask for the check: `main` always passes it.
+    `tag_exists` says whether a name is a tag of the repository a command acts in (its directory and
+    the name), None when it cannot tell: a push of a bare name is a tag push when it is one, and is
+    held, with `autonomy`, when it cannot be told (`autonomy_gesture`). A caller that passes none
+    (None) does not ask for it: `main` always passes it.
     """
     declared = list(owner_gestures)
     api_allowed = None if gh_api_allow is None else list(gh_api_allow)
@@ -2100,8 +2145,10 @@ def refusal(
 
                 if reason := _git_refusal(args, branch_where(acts_in), switched, covered):
                     return reason, merges
-                if autonomy is not None and (gesture := autonomy_gesture(args)):
-                    if closed := autonomy(gesture):
+                if autonomy is not None:
+                    in_dir = acts_in
+                    named = None if tag_exists is None else (lambda name, d=in_dir: tag_exists(d, name))
+                    if (gesture := autonomy_gesture(args, named)) and (closed := autonomy(gesture)):
                         return closed, merges
             if gesture := owner_gesture(words, here, bodies, read_text):
                 return _owner_refusal(gesture), merges
@@ -2113,6 +2160,9 @@ def refusal(
             act = gh_act(words)
             if subagent and act is not None and act[:2] in ALIAS_GESTURES:
                 return ALIAS_REFUSAL.format(act[1]), merges
+            if autonomy is not None and act is not None and act[:2] == ("release", "create"):
+                if closed := autonomy("release"):  # it creates a tag
+                    return closed, merges
             merges = merges or _merges(words, here, bodies, read_text) or _hidden_gh(words)
         return None, merges or _shell_named_merge(text)
 
@@ -2484,6 +2534,23 @@ def autonomy_refusal(directory: str | None, gesture: str) -> str | None:
     )
 
 
+def local_tag_exists(directory: str | None, name: str) -> bool | None:
+    """Whether `name` is a tag of the repository `directory` is in; None when that cannot be told.
+
+    `git show-ref --verify refs/tags/<name>` answers 0 (it is one) or 1 (it is not, whatever the
+    name: a branch, `HEAD`, a glob). Any other code, no git, a timeout, no repository and a directory
+    the guard does not know (`UNKNOWN`) leave it open.
+    """
+    git = shutil.which("git")
+    where = native_directory(directory)
+    if not git or not where or where == UNKNOWN:
+        return None
+    done = _run([git, "show-ref", "--verify", "--quiet", f"refs/tags/{name}"], where)
+    if done is None or done.returncode not in (0, 1):
+        return None
+    return done.returncode == 0
+
+
 def current_branch(cwd: str | None) -> str:
     """The branch checked out in `cwd`; empty when unknown (no git, a timeout, not a repo)."""
     git = shutil.which("git")
@@ -2762,6 +2829,7 @@ def main() -> int:
             directory or cwd, names, config.get(BUNDLE_KEY, [])
         ),
         autonomy=lambda gesture: autonomy_refusal(str(root), gesture),
+        tag_exists=lambda directory, name: local_tag_exists(directory or cwd, name),
     )
     if reason is None:
         return 0

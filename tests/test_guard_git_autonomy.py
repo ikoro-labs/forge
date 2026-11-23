@@ -12,13 +12,13 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
 import support  # noqa: F401  met les hooks sur le chemin d'import
-from guard_git import RULES, autonomy_refusal, refusal
+from guard_git import RULES, UNKNOWN, autonomy_refusal, local_tag_exists, refusal
 from refusal_journal import rule_of
 from usine import load
 
@@ -325,6 +325,149 @@ class TheTagFollowsTheKey(unittest.TestCase):
         self.assertIn("push to main", str(self.asked("git push origin main", None)[0]))
 
 
+# The bare name of an existing tag: `git push <remote> <name>` sends a tag with no `refs/tags/` in the command.
+BARE_TAG_PUSHES = (
+    "git push origin forge--v1.20.0",
+    "git push origin forge--v1.20.0:forge--v1.20.0",
+    "git push origin feat/x forge--v1.20.0",
+    "git push -o ci.skip origin forge--v1.20.0",
+    "git push --push-option=ci.skip origin forge--v1.20.0",
+    "git -C /work/depot push origin forge--v1.20.0",
+    "cd /work/depot && git push origin forge--v1.20.0",
+)
+
+
+class TagsAre:
+    """A reader of the repository's tags that knows `names`, and records where it was asked to look."""
+
+    def __init__(self, *names: str) -> None:
+        self.names = names
+        self.looked: list[tuple[str | None, str]] = []
+
+    def __call__(self, directory: str | None, name: str) -> bool | None:
+        self.looked.append((directory, name))
+        return name in self.names
+
+
+def cannot_tell(_directory: str | None, _name: str) -> bool | None:
+    return None
+
+
+class TheBareNameOfATagFollowsTheKey(unittest.TestCase):
+    """F-25: `git push <remote> <name>` sends the tag `<name>` when the repository has one."""
+
+    def judged(self, command: str, answer: str | None, tags: Callable[[str | None, str], bool | None]) -> tuple[str | None, list[str]]:
+        asked = Asked(answer)
+        return judged(command, asked, tag_exists=tags), asked.gestures
+
+    def test_pushing_an_existing_tag_by_its_bare_name_is_refused_when_the_key_is_not_on(self) -> None:
+        """#280 F-25 (a): the name is a tag of the repository the command acts in: refused with the key's reason."""
+        for command in BARE_TAG_PUSHES:
+            with self.subTest(command=command):
+                reason, gestures = self.judged(command, CLOSED, TagsAre("forge--v1.20.0"))
+                self.assertEqual(reason, CLOSED)
+                self.assertEqual(gestures[:1], ["tag"])
+
+    def test_pushing_an_existing_tag_by_its_bare_name_passes_when_the_key_is_on(self) -> None:
+        """#280 F-25 (a): with `on`, the push of the tag is not refused for the key."""
+        for command in BARE_TAG_PUSHES:
+            with self.subTest(command=command):
+                self.assertIsNone(self.judged(command, None, TagsAre("forge--v1.20.0"))[0])
+
+    def test_pushing_a_branch_is_not_held_when_the_name_is_no_tag(self) -> None:
+        """#280 F-25 (a): a branch push, whatever its form, never asks for the key."""
+        for command in (*PUSHING_BRANCHES, "git push origin HEAD", "git push", "git push origin", "git push -u origin feat/x"):
+            with self.subTest(command=command):
+                self.assertEqual(self.judged(command, CLOSED, TagsAre("forge--v1.20.0")), (None, []))
+
+    def test_the_tags_are_read_where_git_acts(self) -> None:
+        """#280 F-25 (a): `-C <dir>` and `cd <dir>` move the repository whose tags are read."""
+        tags = TagsAre()
+        self.judged("git -C /work/depot push origin v1", CLOSED, tags)
+        self.judged("cd /elsewhere && git push origin v2", CLOSED, tags)
+        self.assertEqual(tags.looked, [("/work/depot", "v1"), ("/elsewhere", "v2")])
+
+    def test_a_push_whose_tags_cannot_be_read_is_refused_when_the_key_is_not_on(self) -> None:
+        """#280 F-25 (a): closed when the guard cannot tell a tag from a branch."""
+        reason, gestures = self.judged("git push origin feat/x", CLOSED, cannot_tell)
+        self.assertEqual((reason, gestures[:1]), (CLOSED, ["tag"]))
+        self.assertIsNone(self.judged("git push origin feat/x", None, cannot_tell)[0])
+
+    def test_a_ref_outside_the_tags_namespace_is_no_tag_and_is_not_looked_up(self) -> None:
+        """#280 F-25 (a): a `refs/heads/` ref and the options' values are not names of tags."""
+        tags = TagsAre("origin", "ci.skip")
+        for command in ("git push origin refs/heads/feat/x", "git push -o ci.skip origin feat/x"):
+            with self.subTest(command=command):
+                self.assertEqual(self.judged(command, CLOSED, tags), (None, []))
+        self.assertNotIn("refs/heads/feat/x", [name for _directory, name in tags.looked])
+
+    def test_the_other_rules_of_a_push_still_hold_with_the_key_on(self) -> None:
+        """#280 F-25 (a): `on` opens the push of a tag, not a push to main."""
+        reason, _ = self.judged("git push origin main", None, TagsAre("main"))
+        self.assertIn("push to main", str(reason))
+
+    def test_a_caller_that_passes_no_tag_reader_does_not_ask_for_the_check(self) -> None:
+        """#280 F-25 (a): like `autonomy`, `None` is the default of a caller that does not ask."""
+        asked = Asked(CLOSED)
+        self.assertIsNone(judged("git push origin forge--v1.20.0", asked))
+        self.assertEqual(asked.gestures, [])
+
+
+RELEASES_CREATED = (
+    "gh release create forge--v1.20.0",
+    "gh release create forge--v1.20.0 --notes 'x' --target main",
+    "gh release create --generate-notes forge--v1.20.0",
+    "gh -R o/r release create forge--v1.20.0",
+    "gh --repo=o/r release create forge--v1.20.0",
+    "gh release -R o/r create forge--v1.20.0",
+    "cd /work/depot && gh release create forge--v1.20.0",
+    "GH_REPO=o/r gh release create forge--v1.20.0",
+)
+RELEASES_READ_OR_EDITED = (
+    "gh release list",
+    "gh release view forge--v1.20.0",
+    "gh release download forge--v1.20.0",
+    "gh release edit forge--v1.20.0 --notes x",
+    "gh release upload forge--v1.20.0 file.zip",
+    "gh release delete-asset forge--v1.20.0 file.zip",
+    "gh pr create --title x",
+)
+
+
+class TheReleaseFollowsTheKey(unittest.TestCase):
+    """F-25: `gh release create` creates a tag as well, so it is the tag's gesture."""
+
+    def test_creating_a_release_is_refused_when_the_key_is_not_on(self) -> None:
+        """#280 F-25 (b): refused with the key's reason, whatever the form of the call."""
+        for command in RELEASES_CREATED:
+            with self.subTest(command=command):
+                asked = Asked(CLOSED)
+                self.assertEqual(judged(command, asked), CLOSED)
+                self.assertEqual(asked.gestures[:1], ["release"])
+
+    def test_creating_a_release_passes_when_the_key_is_on(self) -> None:
+        """#280 F-25 (b): with `on`, the release is not refused for the key."""
+        for command in RELEASES_CREATED:
+            with self.subTest(command=command):
+                self.assertIsNone(judged(command, Asked(None)))
+
+    def test_reading_or_editing_a_release_never_asks_for_the_key(self) -> None:
+        """#280 F-25 (b): only `create` makes a tag."""
+        for command in RELEASES_READ_OR_EDITED:
+            with self.subTest(command=command):
+                asked = Asked(CLOSED)
+                self.assertIsNone(judged(command, asked))
+                self.assertEqual(asked.gestures, [])
+
+    def test_the_refusal_names_the_release_and_has_its_name_in_the_journal(self) -> None:
+        """#280 F-25 (b): the reason says which gesture it refuses; the journal rule stays `agent-autonomy`."""
+        with project(PROSE) as where:
+            reason = autonomy_refusal(str(where), "release")
+        assert reason is not None
+        self.assertIn("refuses the release", reason)
+        self.assertEqual(rule_of(reason, RULES), "agent-autonomy")
+
+
 GUARD = support.PLUGIN / "hooks" / "guard_git.py"
 USINE_WITH_KEY = PROSE + "- `merge-method` : `merge`\n" + key("on")
 
@@ -394,6 +537,58 @@ class TheHookReadsTheKeyOfOriginMain(unittest.TestCase):
         with project(PROSE) as where:
             done = run_guard(where, "Bash", {"command": "git tag -l"})
         self.assertEqual(done.returncode, 0, done.stderr)
+
+    def test_the_bare_name_of_a_tag_of_the_repository_is_refused_without_the_key(self) -> None:
+        """#280 F-25 (a): the tag exists in the repository the hook runs in, the key is not `on`: exit 2."""
+        with project(PROSE) as where:
+            git(where, where.parent / "home", "tag", "forge--v1.20.0")
+            done = run_guard(where, "Bash", {"command": "git push origin forge--v1.20.0"})
+        self.assertEqual(done.returncode, 2, done.stderr)
+        self.assertIn("`agent-autonomy` key is not `on`", done.stderr)
+        self.assertIn("refuses the tag", done.stderr)
+
+    def test_the_bare_name_of_a_tag_passes_with_the_key_on_in_origin_main(self) -> None:
+        """#280 F-25 (a): `on` in `origin/main`: the same push runs."""
+        with project(USINE_WITH_KEY, in_tree=PROSE) as where:
+            git(where, where.parent / "home", "tag", "forge--v1.20.0")
+            done = run_guard(where, "Bash", {"command": "git push origin forge--v1.20.0"})
+        self.assertEqual(done.returncode, 0, done.stderr)
+
+    def test_the_push_of_a_branch_runs_without_the_key_even_when_a_tag_exists(self) -> None:
+        """#280 F-25 (a): a branch name that is no tag, `HEAD`, a refspec: never held."""
+        with project(PROSE) as where:
+            git(where, where.parent / "home", "tag", "forge--v1.20.0")
+            for command in ("git push origin feat/x", "git push origin HEAD", "git push origin HEAD:feat/x"):
+                with self.subTest(command=command):
+                    done = run_guard(where, "Bash", {"command": command})
+                    self.assertEqual(done.returncode, 0, done.stderr)
+
+    def test_a_push_from_a_directory_that_is_no_repository_is_refused_without_the_key(self) -> None:
+        """#280 F-25 (a): the tags cannot be read there: closed, the reason the key's."""
+        with project(PROSE) as where, tempfile.TemporaryDirectory() as elsewhere:
+            done = run_guard(where, "Bash", {"command": f"git -C {elsewhere} push origin feat/x"})
+        self.assertEqual(done.returncode, 2, done.stderr)
+        self.assertIn("`agent-autonomy` key is not `on`", done.stderr)
+
+    def test_a_directory_the_guard_does_not_know_leaves_the_tags_unread(self) -> None:
+        """#280 F-25 (a): `cd "$VAR"` moves git somewhere unknown: closed, and no crash on the marker."""
+        self.assertIsNone(local_tag_exists(UNKNOWN, "v1"))
+        with project(PROSE) as where:
+            done = run_guard(where, "Bash", {"command": 'cd "$SOMEWHERE" && git push origin feat/x'})
+        self.assertEqual(done.returncode, 2, done.stderr)
+        self.assertIn("`agent-autonomy` key is not `on`", done.stderr)
+
+    def test_a_release_is_refused_without_the_key_and_runs_the_guard_with_it(self) -> None:
+        """#280 F-25 (b): `gh release create` as a process: exit 2 without the key, not refused for it with `on`."""
+        command = {"command": "gh release create forge--v1.20.0 --notes x"}
+        with project(PROSE, in_tree=USINE_WITH_KEY) as where:
+            closed = run_guard(where, "Bash", command)
+        self.assertEqual(closed.returncode, 2, closed.stderr)
+        self.assertIn("`agent-autonomy` key is not `on`", closed.stderr)
+        self.assertIn("refuses the release", closed.stderr)
+        with project(USINE_WITH_KEY, in_tree=PROSE) as where:
+            opened = run_guard(where, "Bash", command)
+        self.assertEqual(opened.returncode, 0, opened.stderr)
 
 
 class TheMcpMergeToolFollowsTheKey(unittest.TestCase):
@@ -487,6 +682,8 @@ class TheTextsSayWhoHoldsTheKey(unittest.TestCase):
             "lue dans `origin/main`, jamais dans l'arbre de travail",
             "`git tag`",
             "`git push --tags`",
+            "`git push <remote> <nom>`",
+            "`gh release create`",
             "l'outil MCP",
             "`docs/agents/usine.md` est un `protected-path`",
             "ne sont pas tenus par le garde",
@@ -496,11 +693,22 @@ class TheTextsSayWhoHoldsTheKey(unittest.TestCase):
             with self.subTest(needle=needle):
                 self.assertIn(needle, text)
 
+    def test_the_installation_page_no_longer_says_the_release_and_the_bare_push_pass(self) -> None:
+        """#280 F-25: the list of what is not held names neither `gh release create` nor the push of a bare tag."""
+        text = prose(support.REPO_ROOT / "docs" / "installation.md")
+        limits = text[text.index("Ce que le garde ne tient pas") : text.index("Éprouvé par les tests de `tests/test_guard_git_autonomy.py`")]
+        self.assertNotIn("`gh release create`", limits)
+        self.assertIn("`git push origin :<tag>`", limits)
+
     def test_the_module_says_the_key_in_its_docstring(self) -> None:
         import guard_git  # noqa: PLC0415
 
-        self.assertIn("`agent-autonomy`", guard_git.__doc__ or "")
-        self.assertIn("origin/main", guard_git.__doc__ or "")
+        doc = " ".join((guard_git.__doc__ or "").split())
+        self.assertIn("`agent-autonomy`", doc)
+        self.assertIn("origin/main", doc)
+        self.assertIn("`gh release create`", doc)
+        self.assertIn("<remote> <name>", doc)
+        self.assertNotIn("`gh release create` (it creates a tag) and `git push origin :<tag>` are not held", doc)
 
 
 if __name__ == "__main__":

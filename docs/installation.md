@@ -448,9 +448,13 @@ seule ligne `agent-autonomy` : `on`, il refuse
   MCP d'un serveur dont le nom contient `github`, comme `guard_cases` ;
 - **le tag** : `git tag` qui écrit (créer, déplacer, supprimer, signer, annoter ; une option que le garde ne
   connaît pas compte comme écrire) et le push d'un tag (`git push --tags`, `--follow-tags`, un refspec
-  `refs/tags/...`, `git push <remote> tag <nom>`). Tout tag est tenu, quel que soit son nom : le plugin ne
-  connaît pas le préfixe de ceux d'un projet. Lister, filtrer par commit ou vérifier (`git tag -l`,
-  `--contains`, `-v`) restent des lectures.
+  `refs/tags/...`, `git push <remote> tag <nom>`, et `git push <remote> <nom>` quand `<nom>` est un tag du
+  dépôt où la commande agit : le garde le lit par `git show-ref`, échoue fermé quand il ne peut pas
+  trancher (pas de dépôt, dossier inconnu après un `cd "$VAR"`, délai dépassé), et ne tient jamais un push
+  de branche). Tout tag est tenu, quel que soit son nom : le plugin ne connaît pas le préfixe de ceux d'un
+  projet. Lister, filtrer par commit ou vérifier (`git tag -l`, `--contains`, `-v`) restent des lectures ;
+- **la release** : `gh release create`, qui crée un tag. `gh release list`, `view`, `download`, `edit` et
+  `upload` n'en créent pas, et passent.
 
 La clé est lue dans `origin/main`, jamais dans l'arbre de travail : le hook lit
 `docs/agents/usine.md` par `git show refs/remotes/origin/main:docs/agents/usine.md` depuis la racine du
@@ -478,9 +482,10 @@ Ce que le garde ne tient pas :
   ne le voit pas : le recours est la protection de `main` côté serveur, que ce hook ne remplace pas ;
 - pour l'outil MCP de fusion, seule la clé retient : les checks verts, le `protected-path`, la méthode et
   le budget ne s'y appliquent pas (le garde ne lit pas la PR qu'un outil MCP nomme) ;
-- `gh release create`, qui crée un tag, `git push origin :<tag>` (la suppression d'un tag sans
-  `refs/tags/`) et une fusion par le site de GitHub ou par un script échappent à ce garde, comme à ses
-  autres règles.
+- `git push origin :<tag>` (la suppression d'un tag sans `refs/tags/`, qui n'a pas de source), un tag
+  créé par un appel `gh api` que la clé `gh-api-allow` du projet ouvrirait (la liste du plugin n'en ouvre
+  aucun) et une fusion par le site de GitHub ou par un script échappent à ce garde, comme à ses autres
+  règles. `git push --mirror` est refusé comme un push vers `main`, clé ou non.
 
 Éprouvé par les tests de `tests/test_guard_git_autonomy.py` (dépôts jetables, `HOME` jeté ; le hook joué
 comme un processus pour le tag, la fusion et l'outil MCP), sous Linux seulement. Pas encore dans une
