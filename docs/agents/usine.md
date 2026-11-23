@@ -6,7 +6,7 @@ La configuration de l'usine qui développe le plugin `forge` dans ce dépôt. Le
 
 ## Personnes et décisions
 
-- `accepting-human` : `ikoro-labs`
+- `accepting-human` : `kevin_simo | ikoro-labs`
 
 La matrice des droits de décision : ce que `forge:staff-engineer` et `forge:product-owner` tranchent
 seuls, et ce que l'humain se réserve (fusion d'un chemin protégé, c'est-à-dire d'un garde des
