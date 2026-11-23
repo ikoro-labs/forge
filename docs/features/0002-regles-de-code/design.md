@@ -20,12 +20,12 @@ Taille L, mais sans écran : pas de `parcours.md`. Aucune clé `feature-catalog-
 
 ## 1. Contextes touchés
 
-Tout vit sous `plugins/forge/`. Aucun contexte nouveau : quatre scripts ou hooks changent, un script est
-ajouté, deux agents et un skill changent de texte.
+Tout vit sous `plugins/forge/`. Aucun contexte nouveau : quatre scripts ou hooks changent, trois scripts
+sont ajoutés (`lockfiles.py`, `stack_check.py`, `recurring_findings.py`), deux agents et un skill changent de texte.
 
 | Contexte | Ce qui change | Couture avec les autres |
 |---|---|---|
-| lecture des verrous (`scripts/lockfiles.py`, nouveau) | reçoit de `lockfile_age.py` `LOCAL_SOURCES`, `parse_uv_lock`, `parse_package_lock`, `read_at` (l.86 à 135), puis `direct_dependencies` | `lockfile_age.py` et `stack_check.py` l'importent ; les tests de `lockfile_age` passent sans changement |
+| lecture des verrous (`scripts/lockfiles.py`, nouveau) | reçoit de `lockfile_age.py` `LOCAL_SOURCES`, `parse_uv_lock`, `parse_package_lock`, `read_at` (l.86 à 135), `Package` (l.55), `_quoted` (l.79), `PUBLIC_INDEX` et `PUBLIC_TARBALLS` (l.84-85), puis `direct_dependencies` | `lockfile_age.py` et `stack_check.py` l'importent ; les tests de `lockfile_age` passent sans changement |
 | contrôle des dépendances (`scripts/stack_check.py`, nouveau) | compare les paquets directs ajoutés à la liste de la clé `stack` (C01) | importe `lockfiles.py` et `usine.py` (`hooks/`) ; son tableau est lu par `forge:qc-gate` (sonde 16) puis `forge:qc-conf` |
 | `never-weaken` (`scripts/never_weaken.py`) | type `raised-entry` dans `check_entry` (l.243), C02 | le message d'un type inconnu (l.264) nomme le nouveau type ; entrée lue par la sonde 10 et `guard_git` déjà en place |
 | écriture d'un fichier (`hooks/after_write.py`) | un exécuteur par clé (`format-on-write`, `lint-on-write`), échéance de 120 s partagée, fin de sortie relayée (C05), une ligne au journal par refus | importe `refusal_journal.record` ; `hooks.json` ne change pas (le hook est déjà branché) |
@@ -51,8 +51,9 @@ Aucun port nouveau. Les scripts ont déjà deux bords, et la feature n'en ajoute
 
 - **git** : `read_at` lit un fichier à une révision par `git cat-file` et `git show`. `stack_check.py` lit la
   base, la tête, le verrou et la liste par cette seule fonction. Aucun accès réseau.
-- **gh** : `recurring_findings.py` lit les commentaires de verdict et réécrit un commentaire par la fonction
-  `gh` de `factory_slo.py` (l'appel est injecté dans les tests, comme il l'est pour le rapport des SLO).
+- **gh** : `recurring_findings.py` lit les commentaires de verdict et réécrit un commentaire par le lanceur `run`
+  (type `Runner`, `factory_slo.py:92`) que `publish` reçoit en argument (`factory_slo.py:951`) : l'appel est
+  injecté dans les tests, comme il l'est pour le rapport des SLO.
 
 Le calcul (comparer des noms normalisés, compter des clés, compter des PR distinctes) est en fonctions pures,
 sans E/S, que les tests appellent sans git ni `gh`.
@@ -102,7 +103,7 @@ registre.
 
 1. **Le script lancé en sous-processus** (comme `tests/test_lockfile_age.py`) : `stack_check.py` sur un dépôt
    `tempfile.TemporaryDirectory()` à deux commits, avec un `uv.lock` produit par `uv lock` et non écrit à la
-   main (voir la section 10). Il prouve A1 à A11.
+   main (voir la section 10). Il prouve A1, A2, A4 à A9 et A11 (A3 et A10 sont des tests de contenu, couture 4).
 2. **Le hook par son entrée** (comme `tests/test_after_write.py`) : un événement JSON sur stdin, `HOME` et
    `USERPROFILE` isolés, la commande de la clé étant un petit script Python qui échoue avec une sortie connue.
    Il prouve A17 à A24.
@@ -110,7 +111,7 @@ registre.
    de `recurring_findings` avec une liste de commentaires donnée (A29 à A33).
 4. **Le contenu** : `qc-gate.md`, `qc-conf.md` et le gabarit lus comme texte (A3, A10, A26, A27, A34, A35), les
    tests de contenu existants étant étendus (`tests/test_lockfile_age_content.py:62` pour la liste verbatim,
-   `:344` pour la même phrase).
+   `tests/test_plugin_content.py:344` pour la même phrase).
 
 Chaque test tourne sous Linux et sous Windows ; un test d'un seul système le dit par `skipUnless`.
 
