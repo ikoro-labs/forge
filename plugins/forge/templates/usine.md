@@ -435,6 +435,20 @@ nombre entier fait échouer le contrôle.
 
 - `ticket-budget` : `<300000>`
 
+Le plafond de PR par ticket, un nombre entier au-dessus de 0 sur une seule ligne. Une PR dont le corps cite
+`Closes #n` ou `Refs #n` est refusée par `guard_pr_cap` quand le ticket `#n` a déjà ce nombre de PR,
+ouvertes ou fusionnées (une PR fermée sans fusion ne compte pas) : c'est le `BLOCKED` de la quatrième PR,
+le ticket est commenté et reçoit `needs-your-attention`, et aucun ticket ne naît du plafond. Le coder
+(`forge:coder`) et l'orchestrateur (`forge:feature-build`) le lisent avant de couper un ticket : ils en
+prévoient au plus ce nombre. Seule l'étiquette `pr-cap-raised`, posée par un humain de la clé
+`accepting-human` (le dernier événement de l'étiquette doit être sa pose, par l'identifiant court de sa
+ligne), relève le plafond à 6 ; sans la clé `accepting-human`, personne ne peut le relever. Sans la clé
+`ticket-pr-cap`, « sans objet (clé `ticket-pr-cap` absente) » : le garde ne lit rien, aucune valeur par
+défaut n'est devinée. Une valeur qui n'est pas un nombre entier au-dessus de 0, ou une clé répétée, fait
+refuser toute PR qui cite un ticket, tant qu'elle n'est pas corrigée.
+
+- `ticket-pr-cap` : `<3>`
+
 Le délai après lequel une question restée sans réponse d'un humain reçoit une décision par défaut, une
 seule ligne : un nombre au-dessus de 0 suivi de `h` ou de `j`, comme dans la clé `sla`. Une question est
 un ticket ou une PR ouverts qui portent `ready-for-human`, `needs-info` ou `needs-your-attention` ;

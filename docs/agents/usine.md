@@ -72,6 +72,15 @@ Les jobs de `.github/workflows/tests.yml`.
 - `required-contexts` : `validate`
 - `required-contexts` : `lint`
 
+## Plafond de PR par ticket
+
+Un ticket tient en trois PR au plus, ouvertes ou fusionnées (ticket #314, demandé par l'humain). Le garde
+`guard_pr_cap` refuse la quatrième, que le coder rend en `BLOCKED` ; seule l'étiquette `pr-cap-raised`,
+posée par l'humain de la clé `accepting-human`, relève le plafond à 6. Le garde agit une fois l'épingle
+montée à la version qui le publie.
+
+- `ticket-pr-cap` : `3`
+
 ## Objectifs de service
 
 Les objectifs de départ de l'usine (ticket #76), lus par `plugins/forge/scripts/factory_slo.py` sur 30
