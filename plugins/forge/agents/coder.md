@@ -55,6 +55,12 @@ avec `--no-track`.
    citent.
 5. Le code que tu vas modifier, et ses tests.
 
+Compte aussi, dès cette lecture, les PR que le ticket a déjà et prévois d'en ouvrir au plus ce que dit la clé
+`ticket-pr-cap` (trois dans la configuration de départ du gabarit) : au plus 3 PR pour ce ticket, les
+tiennes comprises, fusionnées ou ouvertes. Découpe ton travail pour qu'il y tienne ; la section « Taille »
+dit quoi faire à la quatrième. Sans la clé, l'étape est « sans objet (clé `ticket-pr-cap` absente) » : tu ne
+devines aucun plafond.
+
 Si, après cette lecture, une décision reste ouverte et touche un chiffre, un contrat d'API, un
 schéma ou une règle du `CLAUDE.md`, ne la tranche pas : sors en `BLOCKED` avec la question et ta
 recommandation. Une hypothèse silencieuse sur un chiffre engagé est une faute. Un détail
@@ -171,12 +177,16 @@ des points entiers, cite le ticket en `Refs #n` et liste ces points ; la seconde
 passage. N'écris jamais un verbe de fermeture suivi d'un numéro dans une PR `Refs`, même dans une
 phrase : GitHub le lit.
 
-**Trois PR au plus par ticket.** Avant de couper, compte les PR du ticket, fusionnées ou ouvertes :
+**Trois PR au plus par ticket.** Le plafond est la clé `ticket-pr-cap`, que le garde `guard_pr_cap`
+tient : il refuse une PR dont le corps cite `Closes #n` ou `Refs #n` quand le ticket en a déjà
+autant. Avant de couper, compte les PR du ticket, fusionnées ou ouvertes :
 `gh pr list --state all --search "<n> in:body" --json number,state,body`, en ne gardant que celles
 dont le corps porte `Closes #n` ou `Refs #n` pour ce numéro. Si le ticket en a déjà trois, il n'y
 a pas de quatrième partie : rends `RESULT: BLOCKED`, avec la question (le ticket tient-il en
 moins ? faut-il le recouper ?), ta recommandation et l'état de ta branche. Ni PR ni ticket de
-plus : un ticket ne naît pas d'un plafond atteint.
+plus : un ticket ne naît pas d'un plafond atteint, et aucun ticket nouveau ne le contourne. Seule
+l'étiquette `pr-cap-raised`, posée par un humain, relève le plafond à 6 : tu ne la poses jamais, et
+seul le garde, en laissant passer ta PR, dit qu'elle l'est.
 
 ## 5. Livrer
 

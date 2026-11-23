@@ -228,7 +228,10 @@ Alors :
    `isolation: worktree`, `run_in_background: true`) avec : le ticket, la feature, la base, et pour
    une seconde partie les points de la première. Tous partent du même `origin/<base>`. Le coder
    lit d'abord les cas du ticket : s'il en manque un, il rend `RESULT: BLOCKED` avec ce cas, que
-   tu ajoutes au corps avant de le relancer, jamais après l'ouverture de sa PR.
+   tu ajoutes au corps avant de le relancer, jamais après l'ouverture de sa PR. Écris aussi le
+   plafond dans son brief, quand la clé `ticket-pr-cap` est déclarée : au plus 3 PR pour ce ticket
+   (la valeur de la clé), ses parties déjà ouvertes ou fusionnées comprises, que `guard_pr_cap` tient ;
+   sans la clé, « sans objet (clé `ticket-pr-cap` absente) », aucun plafond n'est deviné.
    Modèle du coder : Sonnet aux tours 1 et 2, Opus pour la correction jugée au tour 3 avec la ligne `ESCALATION: #<PR> round 3`, Haiku en mode sync sans conflit avec la ligne `MODE: sync` ; tenu par le hook `guard_coder_model`. Sans `model` ni `effort`, sa
    frontmatter (`sonnet`, `high`) s'applique : ne passe `model` qu'avec la ligne qu'il exige.
 
@@ -258,9 +261,12 @@ phrase que le script a rendue ; un second échec se traite comme `RESULT: FAILED
   `forge:product-owner` si la question est produit ou UX, avec la question, la recommandation du
   coder, le ticket et la feature. Un `TECHNICAL` de `forge:product-owner` part, une fois, vers
   `forge:staff-engineer`. Un `BLOCKED` du plafond de trois PR par ticket (le coder n'ouvre pas de
-  quatrième partie) est une décision de découpage : passe-le à `forge:staff-engineer`, qui dit si le
-  ticket tient dans ce qui est livré ou si la feature se recoupe ; le budget de tickets est fermé, et
-  aucun ticket ne naît du plafond. Selon le verdict :
+  quatrième partie, et `guard_pr_cap` refuse la PR qui la porterait) est une décision de découpage :
+  commente d'abord le ticket (le plafond de la clé `ticket-pr-cap` atteint, les PR comptées) et pose
+  `needs-your-attention`, puis passe-le à `forge:staff-engineer`, qui dit si le ticket tient dans ce qui
+  est livré ou si la feature se recoupe ; le budget de tickets est fermé, et aucun ticket ne naît du
+  plafond. Seule l'étiquette `pr-cap-raised`, posée par un humain de la clé `accepting-human`, relève le
+  plafond à 6 : tu ne la poses jamais. Selon le verdict :
   - `DECIDED` : commente le ticket (`Décision (<agent>, <ligne MATRIX_CELL>)`, la décision, sa
     source ; `needs-your-attention` si `VETO: yes`), puis relance un `forge:coder` sur le ticket
     avec ce bloc ; sa PR écrit la décision là où dit `WRITE_TO`. Pas d'arrêt.

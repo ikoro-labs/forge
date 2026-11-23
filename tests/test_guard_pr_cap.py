@@ -533,6 +533,60 @@ class RaisedCap(unittest.TestCase):
         self.assertIsNone(project.create(pr_body("Closes #5"), run))
 
 
+def prose(path: Path) -> str:
+    """The file on one line, so a sentence wrapped by the editor still matches."""
+    return " ".join(path.read_text(encoding="utf-8").split())
+
+
+class Briefs(unittest.TestCase):
+    """A5: the briefs of `forge:coder` and `forge:feature-build` state the cap."""
+
+    def test_the_coder_plans_at_most_the_cap_from_its_first_reading(self) -> None:
+        """Ticket #314, A5: the coder plans the PRs of its ticket within the key's cap before it codes."""
+        text = prose(support.PLUGIN / "agents" / "coder.md")
+        reading = text.split("## 1. Lire, avant la première ligne", 1)[1].split("## 2.", 1)[0]
+        self.assertIn("`ticket-pr-cap`", reading)
+        self.assertRegex(reading, r"au plus (?:trois|3) PR")
+        self.assertIn("sans objet (clé `ticket-pr-cap` absente)", text)
+
+    def test_the_coder_returns_blocked_at_the_fourth_pr_and_opens_no_ticket(self) -> None:
+        """Ticket #314, A3: `BLOCKED`, the guard names the cap, `pr-cap-raised` is the human's only way out."""
+        text = prose(support.PLUGIN / "agents" / "coder.md")
+        cap = text.split("**Trois PR au plus par ticket.**", 1)[1].split("## 5. Livrer", 1)[0]
+        self.assertIn("`guard_pr_cap`", cap)
+        self.assertIn("`RESULT: BLOCKED`", cap)
+        self.assertIn("`pr-cap-raised`", cap)
+        self.assertRegex(cap, r"(?i)aucun ticket")
+
+    def test_feature_build_tells_the_cap_in_the_brief_of_each_coder(self) -> None:
+        """Ticket #314, A5: the launch of a coder carries the cap: plan at most three PRs for the ticket."""
+        text = prose(support.PLUGIN / "skills" / "feature-build" / "SKILL.md")
+        launch = text.split("3. Lance l'agent `forge:coder`", 1)[1].split("Puis passe à l'étape 3", 1)[0]
+        self.assertIn("`ticket-pr-cap`", launch)
+        self.assertRegex(launch, r"au plus (?:trois|3) PR")
+
+    def test_feature_build_comments_the_ticket_and_flags_it_when_the_cap_blocks(self) -> None:
+        """Ticket #314, A3: a cap `BLOCKED` is commented on the ticket with `needs-your-attention`, no ticket born."""
+        text = prose(support.PLUGIN / "skills" / "feature-build" / "SKILL.md")
+        blocked = text.split("Un `BLOCKED` du plafond de trois PR par ticket", 1)[1].split("Selon le verdict", 1)[0]
+        self.assertIn("`needs-your-attention`", blocked)
+        self.assertIn("`pr-cap-raised`", blocked)
+        self.assertRegex(blocked, r"aucun ticket")
+
+    def test_the_cap_briefs_hold_no_project_name_and_no_em_dash(self) -> None:
+        """Ticket #314, A5: the plugin's content stays generic, in plain prose."""
+        for path in (
+            support.PLUGIN / "agents" / "coder.md",
+            support.PLUGIN / "skills" / "feature-build" / "SKILL.md",
+            support.PLUGIN / "hooks" / "guard_pr_cap.py",
+            support.PLUGIN / "templates" / "usine.md",
+        ):
+            with self.subTest(path=path.name):
+                text = path.read_text(encoding="utf-8")
+                self.assertNotIn(chr(0x2014), text)
+                self.assertNotIn("ikoro-labs", text.replace("ikoro-labs/forge#", ""))
+
+
 class Binding(unittest.TestCase):
     def test_hooks_json_binds_the_guard_on_every_gh_gesture_and_fails_closed(self) -> None:
         """Ticket #314, A1: Bash, PowerShell and the GitHub MCP tools reach the guard, a failure refuses."""
