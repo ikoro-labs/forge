@@ -825,6 +825,13 @@ a nested shell and behind a wrapper (the reader is `hooks/gh_bodies.py`, shared 
 - **Without the key** `ticket-pr-cap` the step is « sans objet (clé `ticket-pr-cap` absente) »: the hook
   reads nothing, and no default cap is guessed. A value that is not one whole number above 0, or a key
   repeated, refuses every PR that cites a ticket until it is fixed.
+- **From a day.** The key `ticket-pr-cap-since` (one day, `AAAA-MM-JJ`, UTC) keeps out of the count the PRs
+  created before it: the guard asks `gh pr list` for `createdAt`, and a PR created that day or after it is
+  counted. It lets a project start the cap at a date when tickets already hold more PRs than the cap. Without
+  the key the date step is « sans objet (clé `ticket-pr-cap-since` absente) »: no date is guessed, and every
+  PR of the ticket counts, whatever its date. Without the key `ticket-pr-cap` the date is not read either. A
+  value that is not a valid day, a repeated key, and a PR whose `createdAt` cannot be read, fail closed like
+  the rest of the count: the PR that cites a ticket is refused until it is fixed.
 
 The guard fails closed: a body it cannot read (a variable, a command substitution other than
 `$(cat <<'EOF' ... EOF)`, an unquoted heredoc whose body holds `$`, a pipe, an editor, a missing file,

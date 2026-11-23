@@ -29,7 +29,10 @@ renomme et la complète. Une clé nouvelle, `ticket-pr-cap`, et un hook nouveau.
 - Gestes humains : un projet qui veut le plafond déclare `ticket-pr-cap` (le gabarit `templates/usine.md` la
   documente) ; sans la clé, le garde ne lit rien. Un projet qui veut pouvoir le relever déclare aussi
   `pr-cap-raiser`, des comptes dont l'agent n'a aucun jeton (clé nouvelle, sans valeur par défaut) ; sans elle,
-  « sans objet (clé `pr-cap-raiser` absente) » et personne ne relève le plafond.
+  « sans objet (clé `pr-cap-raiser` absente) » et personne ne relève le plafond. Un projet qui introduit le
+  plafond alors que des tickets l'ont déjà dépassé déclare `ticket-pr-cap-since` (`AAAA-MM-JJ`, clé nouvelle, sans
+  date par défaut) : seules les PR créées ce jour-là ou après comptent, d'après leur `createdAt` ; sans elle,
+  « sans objet (clé `ticket-pr-cap-since` absente) » et toutes les PR comptent (ikoro-labs/forge#314).
 - Resté dehors : la taille d'une PR (une décision du projet). Rien n'a été essayé dans une vraie session ni sous Windows.
 
 ## [1.19.0] - 2026-11-22

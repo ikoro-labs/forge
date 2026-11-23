@@ -21,6 +21,12 @@ the ticket by `Closes #n` or `Refs #n` (a regex, as `forge:coder` counts them), 
 hook let through in the last `RESERVATION_SECONDS` that GitHub's search may not show yet (the state
 file of `guard_ticket_budget`, kind `pr`). A retry of the same body is the same PR: it counts once.
 
+With the key `ticket-pr-cap-since` (a day, `AAAA-MM-JJ`) only the PRs created on that UTC day or after
+it count (`createdAt` of `gh pr list`); the earlier ones are left out of the count. Without that key
+the date step is not applicable (sans objet) and every PR counts, whatever its date: no date is
+guessed. A value that is not one valid day, a repeated key, or a PR whose `createdAt` cannot be read
+fails closed like the rest of the count.
+
 A refusal is the `BLOCKED` of the fourth PR: no PR, no new ticket; the ticket is commented and takes
 `needs-your-attention`. Only the label `pr-cap-raised` raises the cap to `RAISED_CAP`, and only
 when the last event on that label is a `labeled` by a login of the key `pr-cap-raiser` (the
@@ -43,6 +49,7 @@ import re
 import sys
 import time
 from collections.abc import Callable, Mapping
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 from gh_bodies import (
@@ -61,6 +68,7 @@ from usine import load, project_root
 from utf8_stdio import use_utf8
 
 KEY = "ticket-pr-cap"
+SINCE_KEY = "ticket-pr-cap-since"
 RAISER_KEY = "pr-cap-raiser"
 RAISE_LABEL = "pr-cap-raised"
 RAISED_CAP = 6
@@ -75,6 +83,8 @@ BLOCKED = (
 
 Runner = Callable[[list[str], "str | None"], "str | None"]
 
+# What `gh pr list --json createdAt` gives (`2026-11-23T08:00:00Z`); a fraction is dropped, an offset kept.
+TIMESTAMP = re.compile(r"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.\d+)?(Z|[+-]\d{2}:\d{2})")
 PULLS = re.compile(r"^/?repos/([^/]+)/([^/]+)/pulls(?:/(\d+))?$")
 # A PR is an issue: `gh api` on `issues/<n>` edits a PR's body when #n is one.
 ISSUE = re.compile(r"^/?repos/([^/]+)/([^/]+)/issues/(\d+)$")
@@ -116,6 +126,35 @@ def cap_of(config: Mapping[str, list[str]]) -> tuple[int | None, str | None]:
     return int(values[0].strip()), None
 
 
+def since_of(config: Mapping[str, list[str]]) -> tuple[date | None, str | None]:
+    """`(day, None)`, `(None, None)` when the key is absent, `(None, reason)` when it cannot be read."""
+    values = config.get(SINCE_KEY)
+    if not values:
+        return None, None
+    text = values[0].strip() if len(values) == 1 else ""
+    try:
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", text):
+            raise ValueError(text)
+        return date.fromisoformat(text), None
+    except ValueError:
+        return None, (
+            f"the key `{SINCE_KEY}` of docs/agents/usine.md is not one valid day written AAAA-MM-JJ: the"
+            " PR is refused as a precaution until it is fixed"
+        )
+
+
+def created_on(stamp: object) -> date | None:
+    """The UTC day of a `createdAt` timestamp, None when it is not one."""
+    match = TIMESTAMP.fullmatch(stamp) if isinstance(stamp, str) else None
+    if match is None:
+        return None
+    try:
+        moment = datetime.fromisoformat(match.group(1) + ("+00:00" if match.group(2) == "Z" else match.group(2)))
+    except ValueError:
+        return None
+    return moment.astimezone(timezone.utc).date()
+
+
 def _json(output: str | None) -> object:
     try:
         return json.loads(output) if output is not None else None
@@ -146,11 +185,13 @@ def _events(output: str | None) -> list[dict]:
     return found
 
 
-def count_prs(number: str, own: int | None, repo: str | None, cwd: str | None, run: Runner) -> int | None:
-    """The PRs, open or merged, that cite ticket `number` (`own`, a PR being edited, left out);
-    None when gh cannot say."""
+def count_prs(
+    number: str, own: int | None, repo: str | None, cwd: str | None, run: Runner, since: date | None = None
+) -> int | None:
+    """The PRs, open or merged, that cite ticket `number` (`own`, a PR being edited, left out), created on
+    the day `since` or after it when it is given; None when gh cannot say."""
     argv = ["pr", "list", "--state", "all", "--search", f"{number} in:body"]
-    argv += ["--json", "number,state,body", "--limit", SEARCH_LIMIT]
+    argv += ["--json", "number,state,body,createdAt", "--limit", SEARCH_LIMIT]
     if repo:
         argv += ["--repo", repo]
     listed = _json(run(argv, cwd))
@@ -163,8 +204,15 @@ def count_prs(number: str, own: int | None, repo: str | None, cwd: str | None, r
         pr, state, body = item.get("number"), item.get("state"), item.get("body")
         if not isinstance(pr, int) or not isinstance(state, str) or not isinstance(body, str):
             return None
-        if pr != own and state.upper() in COUNTED_STATES and number in cited(body):
-            count += 1
+        if pr == own or state.upper() not in COUNTED_STATES or number not in cited(body):
+            continue
+        if since is not None:
+            day = created_on(item.get("createdAt"))
+            if day is None:
+                return None
+            if day < since:
+                continue
+        count += 1
     return count
 
 
@@ -200,8 +248,16 @@ def _token(body: str) -> str:
 class Check:
     """What one call needs to rule: the project, its cap, gh, and the state that remembers."""
 
-    def __init__(self, root: Path, cap: int, config: Mapping[str, list[str]], run: Runner, state: State) -> None:
-        self.root, self.cap, self.config, self.run, self.state = root, cap, config, run, state
+    def __init__(
+        self,
+        root: Path,
+        cap: int,
+        config: Mapping[str, list[str]],
+        run: Runner,
+        state: State,
+        since: date | None = None,
+    ) -> None:
+        self.root, self.cap, self.config, self.run, self.state, self.since = root, cap, config, run, state, since
 
     def raisers(self) -> set[str]:
         """The logins of the key `pr-cap-raiser`: the short identifier of each line, else its value."""
@@ -243,7 +299,7 @@ class Check:
 
     def ticket(self, number: str, own: int | None, repo: str | None, cwd: str | None, token: str) -> str | None:
         """Why one more PR may not cite ticket `number`, or None (the PR is then reserved)."""
-        indexed = count_prs(number, own, repo, cwd, self.run)
+        indexed = count_prs(number, own, repo, cwd, self.run, self.since)
         if indexed is None:
             return (
                 f"the PRs of #{number} cannot be counted (gh absent, the network, or a gh error): the"
@@ -256,9 +312,10 @@ class Check:
         if count >= limit < RAISED_CAP and self.raised(number, repo, cwd):
             limit = RAISED_CAP
         if count >= limit:
+            counted = f", created since {self.since.isoformat()} by the key `{SINCE_KEY}`" if self.since else ""
             return (
                 f"#{number} already has {count} PRs for a cap of {limit} (key `{KEY}`, open or merged"
-                f" PRs): {BLOCKED}. {self.how_to_raise()}"
+                f" PRs{counted}): {BLOCKED}. {self.how_to_raise()}"
             )
         self.state.reservations = [
             item
@@ -440,6 +497,9 @@ def refusal(event: Mapping[str, object], run: Runner = run_gh) -> str | None:
     cap, bad = cap_of(config)
     if bad is None and cap is None:
         return None  # sans objet (key `ticket-pr-cap` absent): nothing is read
+    since = None
+    if bad is None:
+        since, bad = since_of(config)  # key `ticket-pr-cap-since` absent: no date step, every PR counts
     where = event.get("cwd")
     cwd = where if isinstance(where, str) else None
     try:
@@ -458,7 +518,7 @@ def refusal(event: Mapping[str, object], run: Runner = run_gh) -> str | None:
         return bad if any(cited(item.body) for item, _ in found) else None
     assert cap is not None
     with state_file() as state:
-        check = Check(root, cap, config, run, state)
+        check = Check(root, cap, config, run, state, since)
         for item, where in found:
             if reason := check.publication(item, where):
                 state.changed = False  # the call is refused: nothing it would open is reserved

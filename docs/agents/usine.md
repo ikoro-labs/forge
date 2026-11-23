@@ -80,7 +80,12 @@ posée par un compte de la clé `pr-cap-raiser`, relève le plafond à 6. Cette 
 « Clés absentes ») : on relève le plafond en changeant `ticket-pr-cap` par une PR. Le garde agit une fois
 l'épingle montée à la version qui le publie.
 
+Le plafond ne compte que les PR créées à partir du 2026-11-23 (demande de l'humain du 2026-11-23) : des
+tickets en cours dans des projets de l'humain avaient déjà dépassé trois PR avant le plafond, et les PR
+d'avant cette date ne comptent pas.
+
 - `ticket-pr-cap` : `3`
+- `ticket-pr-cap-since` : `2026-11-23`
 
 ## Objectifs de service
 

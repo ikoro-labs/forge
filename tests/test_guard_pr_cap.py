@@ -9,7 +9,9 @@ The criteria of the ticket, numbered in the order it lists them:
 - A4: only the label `pr-cap-raised`, set by a human (author checked), raises the cap to 6;
 - A5: the briefs of `forge:coder` and `forge:feature-build` state the cap;
 - A6: the template line, the `docs/` page, the CHANGELOG entry;
-- A7: the tests cite the criteria and run on Linux and Windows (HOME and USERPROFILE isolated).
+- A7: the tests cite the criteria and run on Linux and Windows (HOME and USERPROFILE isolated);
+- A8 (asked by the human on 2026-11-23, the grant of round 4): the key `ticket-pr-cap-since` (`AAAA-MM-JJ`)
+  keeps out of the count the PRs created before that day (`createdAt`); without it every PR counts.
 """
 
 import json
@@ -30,6 +32,7 @@ USINE = (
     "# Usine\n- `ticket-pr-cap` : `3`\n- `accepting-human` : `Kevin Humain | the-human`\n"
     "- `pr-cap-raiser` : `Kevin Humain | the-human`\n"
 )
+SINCE = "- `ticket-pr-cap-since` : `2026-11-23`\n"
 
 
 def pr_body(*lines: str) -> str:
@@ -573,10 +576,127 @@ class TheKey(unittest.TestCase):
         self.assertIn("sans objet (clé `pr-cap-raiser` absente)", text)
         self.assertIn("aucun jeton", text)
 
+    def test_the_template_documents_the_date_key_without_a_default(self) -> None:
+        """Ticket #314, A8: the template names `ticket-pr-cap-since`, its form, the PR date it reads and the absent key."""
+        text = " ".join((support.PLUGIN / "templates" / "usine.md").read_text(encoding="utf-8").split())
+        self.assertIn("- `ticket-pr-cap-since` : `<AAAA-MM-JJ>`", text)
+        before = text.split("- `ticket-pr-cap-since`")[0][-1500:]
+        for phrase in ("createdAt", "avant cette date", "sans objet (clé `ticket-pr-cap-since` absente)", "aucune date par défaut"):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, before)
+
+    def test_this_repository_counts_from_the_day_the_human_asked(self) -> None:
+        """Ticket #314, A8: `docs/agents/usine.md` holds `ticket-pr-cap-since : 2026-11-23`."""
+        text = (support.REPO_ROOT / "docs" / "agents" / "usine.md").read_text(encoding="utf-8")
+        self.assertIn("- `ticket-pr-cap-since` : `2026-11-23`", text)
+
+    def test_the_plugin_names_no_date_of_its_own(self) -> None:
+        """Ticket #314, A8: the plugin's content stays generic: the guard holds no date, no project, no ticket."""
+        text = (support.PLUGIN / "hooks" / "guard_pr_cap.py").read_text(encoding="utf-8")
+        self.assertNotRegex(text, r"\b20\d\d-\d\d-\d\d\b")
+
     def test_this_repository_declares_the_key_at_three(self) -> None:
         """Ticket #314, A2: `docs/agents/usine.md` of this repository holds `ticket-pr-cap : 3`."""
         text = (support.REPO_ROOT / "docs" / "agents" / "usine.md").read_text(encoding="utf-8")
         self.assertIn("- `ticket-pr-cap` : `3`", text)
+
+
+class SinceDate(unittest.TestCase):
+    """A8: the key `ticket-pr-cap-since` counts only the PRs created on that day or after it."""
+
+    def merged(self, *created: str | None, ticket: int = 5) -> FakeGh:
+        return FakeGh([("MERGED", pr_body(f"Closes #{ticket}")) for _ in created], created=list(created))
+
+    def test_a_pr_created_before_the_date_is_not_counted(self) -> None:
+        """Ticket #314, A8: three PRs created before the day leave the cap untouched."""
+        project = Project(self, USINE + SINCE)
+        gh = self.merged("2026-11-22T23:59:59Z", "2026-11-01T08:00:00Z", "2025-01-01T00:00:00Z")
+        self.assertIsNone(project.create(pr_body("Closes #5"), gh))
+
+    def test_a_pr_created_that_day_or_after_is_counted(self) -> None:
+        """Ticket #314, A8: the day itself counts, from its first second, and so does any later day."""
+        project = Project(self, USINE + SINCE)
+        gh = self.merged("2026-11-23T00:00:00Z", "2026-11-23T18:30:00Z", "2026-12-02T09:00:00Z")
+        self.assertIn("#5 already has 3 PRs", project.create(pr_body("Closes #5"), gh) or "")
+
+    def test_old_and_recent_prs_are_counted_apart(self) -> None:
+        """Ticket #314, A8: two old PRs and two recent ones count two: a third is let through, a fifth is not."""
+        project = Project(self, USINE + SINCE)
+        gh = self.merged("2026-11-20T10:00:00Z", "2026-11-21T10:00:00Z", "2026-11-23T10:00:00Z", "2026-11-24T10:00:00Z")
+        self.assertIsNone(project.create(pr_body("Closes #5"), gh))
+        two_more = self.merged("2026-11-20T10:00:00Z", "2026-11-23T10:00:00Z", "2026-11-24T10:00:00Z", "2026-11-25T10:00:00Z")
+        self.assertIn("#5 already has 3 PRs", project.create(pr_body("Closes #5"), two_more) or "")
+
+    def test_the_refusal_names_the_date_it_counts_from(self) -> None:
+        """Ticket #314, A8: the message says the count starts at the date of the key."""
+        project = Project(self, USINE + SINCE)
+        gh = self.merged("2026-11-23T10:00:00Z", "2026-11-24T10:00:00Z", "2026-11-25T10:00:00Z")
+        reason = project.create(pr_body("Closes #5"), gh) or ""
+        self.assertIn("ticket-pr-cap-since", reason)
+        self.assertIn("2026-11-23", reason)
+
+    def test_the_listing_asks_for_the_creation_date(self) -> None:
+        """Ticket #314, A8: `gh pr list --json` carries `createdAt`."""
+        project = Project(self, USINE + SINCE)
+        gh = self.merged("2026-11-23T10:00:00Z")
+        project.create(pr_body("Closes #5"), gh)
+        listing = gh.asked("pr", "list")[0]
+        self.assertIn("createdAt", listing[listing.index("--json") + 1].split(","))
+
+    def test_without_the_key_every_pr_counts_whatever_its_date(self) -> None:
+        """Ticket #314, A8: no key `ticket-pr-cap-since`, no date step: the cap counts all the PRs, as before, with no default date."""
+        project = Project(self, USINE)
+        gh = self.merged("2020-01-01T00:00:00Z", "2021-01-01T00:00:00Z", None)
+        self.assertIn("#5 already has 3 PRs", project.create(pr_body("Closes #5"), gh) or "")
+
+    def test_the_date_alone_without_the_cap_reads_nothing(self) -> None:
+        """Ticket #314, A8: the date filters the count of a cap; with no `ticket-pr-cap` the step is sans objet."""
+        project = Project(self, "# Usine\n" + SINCE)
+        gh = self.merged("2026-11-23T10:00:00Z")
+        self.assertIsNone(project.create(pr_body("Closes #5"), gh))
+        self.assertEqual(gh.calls, [])
+
+    def test_a_date_that_cannot_be_read_refuses_a_pr_that_cites_a_ticket(self) -> None:
+        """Ticket #314, A8: fails closed: a value that is no `AAAA-MM-JJ` day, empty or repeated names the key."""
+        for value in ("`tomorrow`", "`23/11/2026`", "`2026-13-45`", "`2026-02-30`", "`2026-11-23T10:00:00Z`", "``"):
+            with self.subTest(value=value):
+                project = Project(self, USINE + f"- `ticket-pr-cap-since` : {value}\n")
+                refused = project.create(pr_body("Closes #5"), self.merged("2026-11-23T10:00:00Z")) or ""
+                self.assertIn("`ticket-pr-cap-since`", refused)
+        repeated = Project(self, USINE + SINCE + "- `ticket-pr-cap-since` : `2026-11-24`\n")
+        self.assertIn("`ticket-pr-cap-since`", repeated.create(pr_body("Closes #5"), self.merged()) or "")
+
+    def test_an_unreadable_date_holds_back_nothing_that_cites_no_ticket(self) -> None:
+        """Ticket #314, A8: a PR with no `Closes|Refs #n` is not held by a date that cannot be read."""
+        project = Project(self, USINE + "- `ticket-pr-cap-since` : `tomorrow`\n")
+        self.assertIsNone(project.create(pr_body("No ticket."), self.merged()))
+
+    def test_a_pr_with_no_readable_creation_date_cannot_be_counted(self) -> None:
+        """Ticket #314, A8: a missing `createdAt`, or one that is no timestamp, fails closed like a gh error."""
+        project = Project(self, USINE + SINCE)
+        for stamp in (None, "", "yesterday", "23-11-2026", "2026-13-45T10:00:00Z"):
+            with self.subTest(stamp=stamp):
+                refused = project.create(pr_body("Closes #5"), self.merged("2026-11-23T10:00:00Z", stamp))
+                self.assertIn("cannot be counted", refused or "")
+
+    def test_the_day_is_the_utc_day_of_the_timestamp(self) -> None:
+        """Ticket #314, A8: gh gives UTC (`Z`); a numeric offset is brought back to UTC before the day is read."""
+        project = Project(self, USINE + SINCE)
+        before = self.merged("2026-11-23T01:00:00+02:00", "2026-11-22T23:59:59+00:00", "2026-11-22T10:00:00.123Z")
+        self.assertIsNone(project.create(pr_body("Closes #5"), before))
+        after = self.merged("2026-11-22T23:30:00-02:00", "2026-11-23T00:00:00+00:00", "2026-11-23T00:00:00.500Z")
+        self.assertIn("#5 already has 3 PRs", project.create(pr_body("Closes #5"), after) or "")
+
+    def test_a_reservation_still_counts_when_the_search_lags(self) -> None:
+        """Ticket #314, A8: a PR the hook let through today is created today, so it counts at once."""
+        project = Project(self, USINE + SINCE, memory=True)
+        old = self.merged("2026-11-01T10:00:00Z", "2026-11-02T10:00:00Z")
+        recent = self.merged("2026-11-23T10:00:00Z", "2026-11-24T10:00:00Z")
+        self.assertIsNone(project.create(pr_body("Refs #5", "Third part."), recent))
+        self.assertIn("#5 already has 3 PRs", project.create(pr_body("Refs #5", "Fourth part."), recent) or "")
+        other = Project(self, USINE + SINCE, memory=True)
+        self.assertIsNone(other.create(pr_body("Refs #5", "Third."), old))
+        self.assertIsNone(other.create(pr_body("Refs #5", "Fourth."), old))
 
 
 class FourthPr(unittest.TestCase):
@@ -679,7 +799,9 @@ class RaisedCap(unittest.TestCase):
         project = Project(self, text)
         for login in ("ikoro-labs", "sunderland-labs"):
             with self.subTest(login=login):
-                reason = project.create(pr_body("Closes #5"), self.full(3, [raised(login)])) or ""
+                gh = self.full(3, [raised(login)])
+                gh.created = ["2026-11-23T10:00:00Z"] * 3  # this repository counts from a day: its PRs carry one
+                reason = project.create(pr_body("Closes #5"), gh) or ""
                 self.assertIn("#5 already has 3 PRs for a cap of 3", reason)
                 self.assertIn("clé `pr-cap-raiser` absente", reason)
 
@@ -789,6 +911,9 @@ class Documentation(unittest.TestCase):
             "`pr-cap-raised`",
             "`pr-cap-raiser`",
             "sans objet (clé `pr-cap-raiser` absente)",
+            "`ticket-pr-cap-since`",
+            "`createdAt`",
+            "sans objet (clé `ticket-pr-cap-since` absente)",
             "BLOCKED",
             "needs-your-attention",
             "gh pr list --state all",
@@ -819,6 +944,7 @@ class Documentation(unittest.TestCase):
         self.assertIn("`guard_pr_cap.py`", entry)
         self.assertIn("`pr-cap-raiser`", entry)
         self.assertIn("ikoro-labs/forge#314", entry)
+        self.assertIn("`ticket-pr-cap-since`", entry)
         self.assertLess(changelog.index("## [Non publié]"), changelog.index("## [1.19.0]"))
 
 
