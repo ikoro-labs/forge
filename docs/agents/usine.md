@@ -149,10 +149,11 @@ projets consommateurs. Le seul recours contre une épingle qui retire un garde e
 
 ## Essai de bout en bout
 
-L'essai de l'usine avant une version, par `plugins/forge/scripts/e2e_trial.py`, sur un dépôt d'essai privé
+L'essai de l'usine avant une version, par `plugins/forge/scripts/e2e_trial.py`, sur un dépôt d'essai public
 que l'humain a créé le 2026-11-16 et qui n'est pas ce dépôt. Le plafond de 2.50 dollars est la valeur du
-gabarit, reprise le 2026-11-24 sur l'accord de l'humain. La ligne de commande est celle du gabarit : elle n'a
-pas encore tourné sur un vrai poste.
+gabarit, reprise le 2026-11-24 sur l'accord de l'humain. La ligne de commande est celle du gabarit : un premier
+essai l'a lancée le 2026-11-24 et a fini en `FAIL` à l'étape `checks`, le dépôt d'essai n'ayant alors aucun
+workflow ; un workflow y a été fusionné depuis, et aucun essai n'a tourné depuis.
 
 - `e2e-repo` : `ikoro-labs/forge-essai`
 - `e2e-command` : `claude -p --plugin-dir {plugin} --max-budget-usd {budget} "/forge:feature-build {feature} --base {base}"`
