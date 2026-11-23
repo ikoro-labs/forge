@@ -456,7 +456,8 @@ l'étiquette lui-même et relève son propre plafond, ce que la clé existe pour
 `accepting-human`, dont un compte peut être celui de l'agent, et `guard_pr_cap` ne lit pas
 `accepting-human` pour ce contrôle. Sans la clé `pr-cap-raiser`, « sans objet (clé `pr-cap-raiser`
 absente) » pour la relève : personne ne relève le plafond, et la valeur de `ticket-pr-cap` tient ; aucune
-valeur par défaut n'est devinée.
+valeur par défaut n'est devinée. La clé n'a d'effet que si l'humain a un compte GitHub dont l'agent n'a
+aucun jeton ; sinon, ne la déclare pas : on relève le plafond en changeant `ticket-pr-cap` par une PR.
 
 - `pr-cap-raiser` : `<login GitHub d'un humain>`
 

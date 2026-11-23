@@ -814,7 +814,8 @@ a nested shell and behind a wrapper (the reader is `hooks/gh_bodies.py`, shared 
   last event on that label is its being set (`labeled`) by a login of the key `pr-cap-raiser` (the short
   identifier after ` | ` in a line, else the whole value; the case is free). `accepting-human` is not
   read for this: its accounts may include the agent's, and the key `pr-cap-raiser` must name accounts
-  whose token the agent does not hold. The guard reads the events by
+  whose token the agent does not hold. The key has an effect only when the human has a GitHub account the
+  agent holds no token for; otherwise leave it out, and raise the cap by changing `ticket-pr-cap` in a PR. The guard reads the events by
   `gh api repos/<owner>/<repo>/issues/<n>/events --paginate`, and only when the count has reached the cap.
   Unset by the human, or set again by anyone else after, it raises nothing. Without the key
   `pr-cap-raiser` the step is « sans objet (clé `pr-cap-raiser` absente) »: nobody can raise it, the

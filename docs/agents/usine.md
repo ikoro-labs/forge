@@ -76,13 +76,11 @@ Les jobs de `.github/workflows/tests.yml`.
 
 Un ticket tient en trois PR au plus, ouvertes ou fusionnées (ticket #314, demandé par l'humain). Le garde
 `guard_pr_cap` refuse la quatrième, que le coder rend en `BLOCKED` ; seule l'étiquette `pr-cap-raised`,
-posée par un compte de la clé `pr-cap-raiser`, relève le plafond à 6. Le compte de cette clé est un humain
-dont l'agent n'a aucun jeton (`gh auth status` ne montre que `ikoro-labs` et `sunderland-labs`) : la clé
-`accepting-human` contient le compte de l'agent et n'entre pas dans ce contrôle. Le garde agit une fois
+posée par un compte de la clé `pr-cap-raiser`, relève le plafond à 6. Cette clé est absente ici (voir
+« Clés absentes ») : on relève le plafond en changeant `ticket-pr-cap` par une PR. Le garde agit une fois
 l'épingle montée à la version qui le publie.
 
 - `ticket-pr-cap` : `3`
-- `pr-cap-raiser` : `kevin_simo`
 
 ## Objectifs de service
 
@@ -158,6 +156,9 @@ La suite de tests de ce dépôt, dont la sortie se raccourcit quand elle passe.
 - `gh-api-allow` : ce dépôt n'appelle que ce que le plugin appelle par `gh api` ; sa liste suffit.
 - `baselines`, `size-check`, `trace-check`, `trace-replay`, `review-grid` : aucun outil encore.
 - `em-dash-allowances` : aucun fichier n'en tolère.
+- `pr-cap-raiser` : les deux comptes GitHub de l'humain (`ikoro-labs` et `sunderland-labs`) sont aussi ceux dont
+  l'agent détient le jeton, et aucun contrôle d'auteur ne les distingue ; sans la clé, personne ne relève le
+  plafond par l'étiquette.
 - `doc-frontmatter`, `doc-index`, `doc-cap` : ce dépôt n'a décidé ni de `type` de frontmatter, ni
   d'index, ni de plafond pour sa documentation (`README.md`, `docs/`, `CHANGELOG.md`).
 - `readonly-agent`, `readonly-command` : aucun agent du dépôt en plus de ceux du plugin.

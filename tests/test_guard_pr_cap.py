@@ -578,15 +578,17 @@ class RaisedCap(unittest.TestCase):
         self.assertIn("cap of 3", project.create(pr_body("Closes #5"), self.full(3, [raised("agent")])) or "")
         self.assertIsNone(project.create(pr_body("Closes #5"), self.full(3, [raised("kevin")])))
 
-    def test_in_this_repository_the_agent_account_does_not_raise_the_cap_and_the_human_does(self) -> None:
-        """Ticket #314, A4: with the real `docs/agents/usine.md`, `ikoro-labs` setting the label raises nothing, `kevin_simo` does."""
+    def test_in_this_repository_no_account_raises_the_cap(self) -> None:
+        """Ticket #314, A4: with the real `docs/agents/usine.md`, the key is absent: neither account of the agent raises the cap."""
         text = (support.REPO_ROOT / "docs" / "agents" / "usine.md").read_text(encoding="utf-8")
-        self.assertIn("- `pr-cap-raiser` : `kevin_simo`", text)
-        self.assertNotIn("`pr-cap-raiser`", text.split("## Clés absentes", 1)[1])
+        self.assertNotRegex(text, r"(?m)^- `pr-cap-raiser` : `")
+        self.assertIn("`pr-cap-raiser`", text.split("## Clés absentes", 1)[1])
         project = Project(self, text)
-        by_agent = project.create(pr_body("Closes #5"), self.full(3, [raised("ikoro-labs")])) or ""
-        self.assertIn("#5 already has 3 PRs for a cap of 3", by_agent)
-        self.assertIsNone(project.create(pr_body("Closes #5"), self.full(3, [raised("kevin_simo")])))
+        for login in ("ikoro-labs", "sunderland-labs"):
+            with self.subTest(login=login):
+                reason = project.create(pr_body("Closes #5"), self.full(3, [raised(login)])) or ""
+                self.assertIn("#5 already has 3 PRs for a cap of 3", reason)
+                self.assertIn("clé `pr-cap-raiser` absente", reason)
 
     def test_the_events_are_read_only_when_the_count_reaches_the_cap(self) -> None:
         """Ticket #314, A4: below the cap no label is looked up."""
