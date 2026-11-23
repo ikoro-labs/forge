@@ -49,7 +49,7 @@ from gh_bodies import (
     may_publish,
     publications,
 )
-from guard_git import UNKNOWN, _moved, gh_act
+from guard_git import CLOSING, REFS, UNKNOWN, _moved, gh_act
 from guard_ticket_budget import SEARCH_LIMIT, State, run_gh, state_file, with_reservations
 from usine import load, project_root
 from utf8_stdio import use_utf8
@@ -69,7 +69,6 @@ BLOCKED = (
 
 Runner = Callable[[list[str], "str | None"], "str | None"]
 
-CITATION = re.compile(r"\b(?:closes|refs)[ \t]+#(\d+)\b", re.IGNORECASE)
 PULLS = re.compile(r"^/?repos/([^/]+)/([^/]+)/pulls(?:/(\d+))?$")
 API_PULLS = re.compile(r"api\.github\.com/+(?:repos/[^/\s'\"]+/[^/\s'\"]+/pulls\b|graphql\b)")
 # `gh pr edit` options that take the next word as their value (the selector is the first other word).
@@ -81,8 +80,14 @@ EDIT_VALUE_OPTIONS = frozenset(
 
 
 def cited(body: str) -> set[str]:
-    """The tickets a PR body cites by `Closes #n` or `Refs #n`."""
-    return set(CITATION.findall(body))
+    """The tickets a PR body cites the way GitHub links them (`guard_git`'s `CLOSING` and `REFS`).
+
+    `Closes #n`, `Closes: #n`, `Closes owner/repo#n`, `Fixes`, `Resolves`, `Refs #n`, `Refs #n, #m`.
+    """
+    found = set(CLOSING.findall(body))
+    for group in REFS.findall(body):
+        found.update(re.findall(r"\d+", group))
+    return found
 
 
 def cap_of(config: Mapping[str, list[str]]) -> tuple[int | None, str | None]:

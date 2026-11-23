@@ -171,6 +171,23 @@ class CapOfPrs(unittest.TestCase):
         gh = FakeGh([("OPEN", pr_body("closes #5")), ("OPEN", pr_body("REFS #5")), ("OPEN", pr_body("refs #5"))])
         self.assertIn("#5 already has 3", project.create(pr_body("Refs #9", "Closes #5"), gh) or "")
 
+    def test_every_form_that_links_a_ticket_to_a_pr_is_a_citation(self) -> None:
+        """Ticket #314, A1: `Closes: #n`, `Closes owner/repo#n`, `Fixes`, `Resolves`, `Refs: #n`, `Refs #n, #m` count."""
+        project = Project(self)
+        for line in (
+            "Closes: #5",
+            "Closes ikoro-labs/forge#5",
+            "Fixes #5",
+            "resolved: #5",
+            "Refs: #5",
+            "Refs #9, #5",
+        ):
+            with self.subTest(line=line):
+                self.assertIn("#5 already has 3", project.create(pr_body(line), cited(3)) or "")
+                counted = FakeGh([("MERGED", pr_body(line)) for _ in range(3)])
+                self.assertIn("#5 already has 3", project.create(pr_body("Closes #5"), counted) or "")
+        self.assertIsNone(project.create(pr_body("Closes: #50"), cited(3)))
+
     def test_a_pr_that_cites_no_ticket_is_not_looked_up(self) -> None:
         """Ticket #314, A1: a body without `Closes|Refs #n` costs no gh call."""
         project = Project(self)
