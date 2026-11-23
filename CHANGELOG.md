@@ -9,6 +9,49 @@ Ce dépôt a été recréé le 2026-10-23 ; l'ancien est `ikoro-labs/forge-archi
 numéros de PR et de ticket nus (`#38`) renvoient à l'ancien dépôt ; un renvoi au nouveau dépôt
 porte son nom (`ikoro-labs/forge#7`).
 
+## [1.20.0] - 2026-11-23
+
+Le juge sait si un paquet qu'une PR ajoute à un fichier de verrou existe et n'est pas tout neuf, et un agent
+peut supprimer une branche locale couverte par un paquet de sauvetage vérifié. Version mineure : deux clés
+nouvelles, `lockfile` et `dependency-min-age`, et une sonde nouvelle de `forge:qc-gate`.
+
+- Agents : la sonde 15 de `forge:qc-gate` lance `scripts/lockfile_age.py` et liste chaque paquet qu'une PR ajoute
+  à un fichier de verrou de la clé `lockfile`, avec ses dates sur PyPI ou npm. `forge:qc-conf` tient un paquet
+  `YOUNG` (plus jeune que la clé `dependency-min-age`) ou `NOT FOUND` pour un `BLOCKER` (règle F-27 de `socle.md`) ;
+  un registre muet rend `NOT RUN`, jamais `PASS` ; sans les clés, « sans objet » (ikoro-labs/forge#294).
+- Hooks : `guard_git` autorise `git branch -D` sur une branche locale quand un paquet du dossier de la clé
+  `rescue-bundle-dir` passe `git bundle verify`, se déballe et tient chaque commit qu'aucune référence distante ne
+  tient ; le `-D` doit être seul dans sa commande, sinon le refus reste et donne la commande à lancer
+  (ikoro-labs/forge#289). Deux phrases que ce changement rendait fausses sont corrigées (ikoro-labs/forge#290).
+- Tests : la suite passe à 2262 tests sous Linux, 6 ignorés.
+- Dépôt, hors plugin : la feature F-0002 (règles de code figées au cadrage) a son idée, son brainstorm et son
+  cadrage, que l'humain accepte dans une PR à part ; l'épingle de l'usine de ce dépôt est à 1.19.0
+  (ikoro-labs/forge#287) et la doc de la version qui fusionne et publie est nommée (ikoro-labs/forge#288).
+- Gestes humains : un projet qui veut le contrôle de l'âge des dépendances déclare `lockfile` et
+  `dependency-min-age` ; un projet qui veut que ses agents suppriment les branches sauvegardées déclare
+  `rescue-bundle-dir`. Sans ces clés, rien ne change.
+- Resté dehors : les autres exigences de F-0002 (clé `stack`, `lint-on-write`, `architecture-check`, type
+  `raised-entry`), qui attendent la spec. Rien n'a été essayé dans une vraie session ni sous Windows pour la sonde
+  15 ; l'essai de bout en bout n'a pas été lancé (clés `e2e-repo`, `e2e-command` et `e2e-budget-usd` absentes).
+
+### Objectifs de service
+
+État de chaque objectif au 2026-11-23.
+
+| Objectif | Cible | Fenêtre | Valeur | Budget restant | État |
+|---|---|---|---|---|---|
+| `accept-round-1` | >= 80 % | 30 j | 61.26 % | 0 % sur 20 % | épuisé |
+| `lead-time p90` | <= 24 h | 30 j | 542.2 h | 0 h sur 24 h | épuisé |
+| `release-lag p90` | <= 24 h | 30 j | 481.5 h | 0 h sur 24 h | épuisé |
+| `escaped-defects` | <= 10 % | 30 j | 0.71 % | 9.29 % sur 10 % | tenu |
+| `change-failure` | <= 10 % | 30 j | 0.71 % | 9.29 % sur 10 % | tenu |
+| `human-touch` | <= 10 % | 30 j | 24.66 % | 0 % sur 10 % | épuisé |
+| `main-green` | >= 100 % | 30 j | 97.27 % | 0 % sur 0 % | épuisé |
+| `judge-recall` | >= 95 % | 30 j | sans objet | aucun résultat du jeu de référence (option `--reference` absente) | sans objet |
+| `false-accept` | <= 0 % | 30 j | sans objet | aucun résultat du jeu de référence (option `--reference` absente) | sans objet |
+
+Aucun `escaped-defect` ouvert depuis le 2026-11-22.
+
 ## [1.19.0] - 2026-11-22
 
 Un projet consommateur apprend qu'une version plus récente existe, la clé `agent-autonomy` ouvre la fusion et la
