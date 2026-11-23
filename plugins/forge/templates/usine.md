@@ -435,6 +435,43 @@ nombre entier fait échouer le contrôle.
 
 - `ticket-budget` : `<300000>`
 
+Le plafond de PR par ticket, un nombre entier au-dessus de 0 sur une seule ligne. Une PR dont le corps cite
+`Closes #n` ou `Refs #n` est refusée par `guard_pr_cap` quand le ticket `#n` a déjà ce nombre de PR,
+ouvertes ou fusionnées (une PR fermée sans fusion ne compte pas) : c'est le `BLOCKED` de la quatrième PR,
+le ticket est commenté et reçoit `needs-your-attention`, et aucun ticket ne naît du plafond. Le coder
+(`forge:coder`) et l'orchestrateur (`forge:feature-build`) le lisent avant de couper un ticket : ils en
+prévoient au plus ce nombre. Seule l'étiquette `pr-cap-raised`, posée par un compte de la clé
+`pr-cap-raiser` (plus bas ; le dernier événement de l'étiquette doit être sa pose), relève le plafond à 6.
+Sans la clé
+`ticket-pr-cap`, « sans objet (clé `ticket-pr-cap` absente) » : le garde ne lit rien, aucune valeur par
+défaut n'est devinée. Une valeur qui n'est pas un nombre entier au-dessus de 0, ou une clé répétée, fait
+refuser toute PR qui cite un ticket, tant qu'elle n'est pas corrigée.
+
+- `ticket-pr-cap` : `<3>`
+
+Le jour à partir duquel les PR d'un ticket comptent dans ce plafond, une seule ligne au format `AAAA-MM-JJ`
+(jour UTC). `guard_pr_cap` lit la date de création de chaque PR (`createdAt` de `gh pr list`) : une PR créée
+avant cette date n'est pas comptée, une PR créée ce jour-là ou après l'est. Sert à introduire le plafond
+dans un projet dont des tickets en ont déjà dépassé le nombre. Sans la clé `ticket-pr-cap-since`, « sans
+objet (clé `ticket-pr-cap-since` absente) » : aucune date par défaut n'est devinée, le plafond compte toutes
+les PR du ticket, quelle que soit leur date. Sans la clé `ticket-pr-cap`, la date n'est pas lue non plus. Une
+valeur qui n'est pas un jour valide (`2026-13-45`, `demain`), une clé répétée, ou une PR dont `createdAt` est
+illisible fait refuser toute PR qui cite un ticket, tant que ce n'est pas corrigé.
+
+- `ticket-pr-cap-since` : `<AAAA-MM-JJ>`
+
+Les comptes GitHub qui peuvent relever le plafond de PR par ticket à 6, en posant l'étiquette `pr-cap-raised`.
+Une ligne par compte, le login GitHub (ou `<nom> | <login>` : le login après ` | `) ; la casse est libre.
+Mets ici des comptes dont l'agent n'a aucun jeton : si l'agent peut agir sous un de ces comptes, il pose
+l'étiquette lui-même et relève son propre plafond, ce que la clé existe pour empêcher. Elle est distincte de
+`accepting-human`, dont un compte peut être celui de l'agent, et `guard_pr_cap` ne lit pas
+`accepting-human` pour ce contrôle. Sans la clé `pr-cap-raiser`, « sans objet (clé `pr-cap-raiser`
+absente) » pour la relève : personne ne relève le plafond, et la valeur de `ticket-pr-cap` tient ; aucune
+valeur par défaut n'est devinée. La clé n'a d'effet que si l'humain a un compte GitHub dont l'agent n'a
+aucun jeton ; sinon, ne la déclare pas : on relève le plafond en changeant `ticket-pr-cap` par une PR.
+
+- `pr-cap-raiser` : `<login GitHub d'un humain>`
+
 Le délai après lequel une question restée sans réponse d'un humain reçoit une décision par défaut, une
 seule ligne : un nombre au-dessus de 0 suivi de `h` ou de `j`, comme dans la clé `sla`. Une question est
 un ticket ou une PR ouverts qui portent `ready-for-human`, `needs-info` ou `needs-your-attention` ;

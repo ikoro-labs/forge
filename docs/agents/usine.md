@@ -72,6 +72,21 @@ Les jobs de `.github/workflows/tests.yml`.
 - `required-contexts` : `validate`
 - `required-contexts` : `lint`
 
+## Plafond de PR par ticket
+
+Un ticket tient en trois PR au plus, ouvertes ou fusionnées (ticket #314, demandé par l'humain). Le garde
+`guard_pr_cap` refuse la quatrième, que le coder rend en `BLOCKED` ; seule l'étiquette `pr-cap-raised`,
+posée par un compte de la clé `pr-cap-raiser`, relève le plafond à 6. Cette clé est absente ici (voir
+« Clés absentes ») : on relève le plafond en changeant `ticket-pr-cap` par une PR. Le garde agit une fois
+l'épingle montée à la version qui le publie.
+
+Le plafond ne compte que les PR créées à partir du 2026-11-23 (demande de l'humain du 2026-11-23) : des
+tickets en cours dans des projets de l'humain avaient déjà dépassé trois PR avant le plafond, et les PR
+d'avant cette date ne comptent pas.
+
+- `ticket-pr-cap` : `3`
+- `ticket-pr-cap-since` : `2026-11-23`
+
 ## Objectifs de service
 
 Les objectifs de départ de l'usine (ticket #76), lus par `plugins/forge/scripts/factory_slo.py` sur 30
@@ -146,6 +161,9 @@ La suite de tests de ce dépôt, dont la sortie se raccourcit quand elle passe.
 - `gh-api-allow` : ce dépôt n'appelle que ce que le plugin appelle par `gh api` ; sa liste suffit.
 - `baselines`, `size-check`, `trace-check`, `trace-replay`, `review-grid` : aucun outil encore.
 - `em-dash-allowances` : aucun fichier n'en tolère.
+- `pr-cap-raiser` : les deux comptes GitHub de l'humain (`ikoro-labs` et `sunderland-labs`) sont aussi ceux dont
+  l'agent détient le jeton, et aucun contrôle d'auteur ne les distingue ; sans la clé, personne ne relève le
+  plafond par l'étiquette.
 - `doc-frontmatter`, `doc-index`, `doc-cap` : ce dépôt n'a décidé ni de `type` de frontmatter, ni
   d'index, ni de plafond pour sa documentation (`README.md`, `docs/`, `CHANGELOG.md`).
 - `readonly-agent`, `readonly-command` : aucun agent du dépôt en plus de ceux du plugin.

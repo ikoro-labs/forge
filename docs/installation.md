@@ -758,8 +758,8 @@ the plugin and not a key of `usine.md`. `guard_ticket_budget` holds it at four m
 
 The budget counts tickets, not PRs. A ticket is sized for at most three PRs (`feature-design` step 6
 and `forge:product-owner` apply it when they cut), so a feature's PR budget is `feature-tickets` times
-3, shown in the completion table. The hook does not enforce it: `forge:coder` returns `BLOCKED`
-instead of opening a fourth part of one ticket (counted by `gh pr list --state all`).
+3, shown in the completion table. This hook does not hold it: `guard_pr_cap` does, once the key
+`ticket-pr-cap` is declared ([The PRs of a ticket](#the-prs-of-a-ticket)).
 
 The hook refuses what it cannot read: a body passed by a variable (`--body "$BODY"`), a command
 substitution other than `$(cat <<'EOF' ... EOF)`, a heredoc with an unquoted delimiter whose body
@@ -785,6 +785,73 @@ Limits, tried on Linux only, by the tests with a simulated gh, not yet in a real
   renamed into place by `mv` are not read;
 - a GraphQL body variable fed by a JSON `--input` is refused as a precaution, and so is a backtick in
   a double-quoted body under PowerShell, where it is an escape.
+
+## The PRs of a ticket
+
+A ticket holds at most `N` PRs, `N` the key `ticket-pr-cap` of `docs/agents/usine.md` (a whole number
+above 0 on one line; `3` in this repository). `guard_pr_cap` refuses a PR whose body cites `Closes #n`
+or `Refs #n` when the ticket `#n` already has `N` PRs, open or merged; a PR closed without a merge
+leaves its place. It reads these gestures, with the body they carry: `gh pr create`, `gh pr edit`,
+`gh api` POST on `repos/<owner>/<repo>/pulls` and PATCH on `.../pulls/<n>`, `gh api` on
+`.../issues/<n>` when that issue is a PR (the guard asks `gh api` whether it carries `pull_request`; a
+real ticket is not held), the same edit by its other doors (`gh issue edit <n>`, the issue tools of a
+GitHub MCP server `update_issue` and `issue_write`, and a `curl` to `issues/<n>`, refused when #n is a
+PR because its body cannot be read), and the pull request tools
+of a GitHub MCP server (`create_pull_request`, `update_pull_request`), also inside `bash -c`, `eval`,
+a nested shell and behind a wrapper (the reader is `hooks/gh_bodies.py`, shared with `guard_cases`).
+
+- **The count** is `gh pr list --state all --search "<n> in:body"`, the PRs kept being those whose body
+  cites `#n` by `Closes` or `Refs` (a regex, case free), plus those the hook let through in the last 10
+  minutes that GitHub's search may not show yet (the state file `ticket-budget.json` of
+  `guard_ticket_budget`, reservations of kind `pr`). The same body sent twice is one PR: a retry after
+  another guard or gh refused it costs no place. A refused call reserves nothing.
+- **An edit** counts only the tickets its new body cites that the PR's current body did not (read by
+  `gh pr view`): a PR already counted for a ticket is not a new one, so the report `forge:qc` writes into
+  a PR is never refused, and the PR being edited is left out of its own count.
+- **The refusal is the `BLOCKED` of the fourth PR.** `forge:coder` plans at most `N` PRs from its first
+  reading of the ticket and returns `RESULT: BLOCKED` instead of a fourth; `forge:feature-build` comments
+  the ticket, sets `needs-your-attention`, and passes the decision to `forge:staff-engineer`. No ticket is
+  opened because of the cap, and the briefs of `forge:coder` and of `forge:feature-build` say the cap.
+- **Raising it.** Only the label `pr-cap-raised` on the ticket raises the cap to 6, and only when the
+  last event on that label is its being set (`labeled`) by a login of the key `pr-cap-raiser` (the short
+  identifier after ` | ` in a line, else the whole value; the case is free). `accepting-human` is not
+  read for this: its accounts may include the agent's, and the key `pr-cap-raiser` must name accounts
+  whose token the agent does not hold. The key has an effect only when the human has a GitHub account the
+  agent holds no token for; otherwise leave it out, and raise the cap by changing `ticket-pr-cap` in a PR. The guard reads the events by
+  `gh api repos/<owner>/<repo>/issues/<n>/events --paginate`, and only when the count has reached the cap.
+  Unset by the human, or set again by anyone else after, it raises nothing. Without the key
+  `pr-cap-raiser` the step is « sans objet (clé `pr-cap-raiser` absente) »: nobody can raise it, the
+  value of `ticket-pr-cap` holds, and the refusal says so. No default is guessed.
+- **Without the key** `ticket-pr-cap` the step is « sans objet (clé `ticket-pr-cap` absente) »: the hook
+  reads nothing, and no default cap is guessed. A value that is not one whole number above 0, or a key
+  repeated, refuses every PR that cites a ticket until it is fixed.
+- **From a day.** The key `ticket-pr-cap-since` (one day, `AAAA-MM-JJ`, UTC) keeps out of the count the PRs
+  created before it: the guard asks `gh pr list` for `createdAt`, and a PR created that day or after it is
+  counted. It lets a project start the cap at a date when tickets already hold more PRs than the cap. Without
+  the key the date step is « sans objet (clé `ticket-pr-cap-since` absente) »: no date is guessed, and every
+  PR of the ticket counts, whatever its date. Without the key `ticket-pr-cap` the date is not read either. A
+  value that is not a valid day, a repeated key, and a PR whose `createdAt` cannot be read, fail closed like
+  the rest of the count: the PR that cites a ticket is refused until it is fixed.
+
+The guard fails closed: a body it cannot read (a variable, a command substitution other than
+`$(cat <<'EOF' ... EOF)`, an unquoted heredoc whose body holds `$`, a pipe, an editor, a missing file,
+and a `gh pr create` without `--body` or `--body-file`, `--fill` included), a count or a PR gh cannot
+give (absent, network, error, timeout), a `gh pr edit` whose PR cannot be read, a `gh api graphql`
+`createPullRequest` or `updatePullRequest` that cites a ticket, and a `curl` or `wget` to the pulls or
+GraphQL of `api.github.com` are refused. `hooks.json` turns a crash into a refusal.
+
+Limits, tried on Linux only, by the tests with a simulated gh, not yet in a real session nor under
+Windows:
+- the citation forms are those `guard_git` reads (`Closes #n`, `Closes: #n`, `Closes owner/repo#n`,
+  `Fixes`, `Resolves`, `Refs #n, #m`), while `forge:coder` counts `Closes #n` and `Refs #n` only; a PR
+  that cites no ticket is not held;
+- the memory is per machine and needs `CLAUDE_PLUGIN_DATA`: two machines that open the PR at the last
+  place in the same minute can both pass, as can a PR opened outside the hook (the web page, another
+  tool); an older Claude Code without the data directory leaves the index lag open;
+- the label's author is checked by login: a login of `pr-cap-raiser` that the agent also holds a token
+  for lets the agent raise its own cap, so the key must name accounts the agent cannot act as;
+- a PR opened without a body option (`--fill`, an editor) is refused whatever it cites, because its
+  body is the commits' and is not readable before gh runs.
 
 ## Les liens du graphe entre tickets
 

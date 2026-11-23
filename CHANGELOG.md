@@ -9,6 +9,32 @@ Ce dépôt a été recréé le 2026-10-23 ; l'ancien est `ikoro-labs/forge-archi
 numéros de PR et de ticket nus (`#38`) renvoient à l'ancien dépôt ; un renvoi au nouveau dépôt
 porte son nom (`ikoro-labs/forge#7`).
 
+## [Non publié]
+
+Entrée ouverte par la PR du plafond de PR par ticket ; la session qui publie la version suivante la
+renomme et la complète. Une clé nouvelle, `ticket-pr-cap`, et un hook nouveau.
+
+- Hooks : `guard_pr_cap.py` et `hooks.json` refusent une PR dont le corps cite `Closes #n` ou `Refs #n` quand le
+  ticket a déjà `ticket-pr-cap` PR, ouvertes ou fusionnées ; l'étiquette `pr-cap-raised`, posée par un compte de
+  la clé `pr-cap-raiser`, relève le plafond à 6 ; le garde lit les formes de citation de `guard_git`
+  (`Closes: #n`, `owner/repo#n`, `Fixes`, `Resolves`, `Refs #n, #m`) et l'édition d'une PR par le point d'entrée `issues/<n>` (PATCH `gh api`, `gh issue edit`, outils d'édition de ticket
+  d'un serveur MCP GitHub, `curl`) ;
+  il échoue fermé (ikoro-labs/forge#314).
+- Agents : `coder` prévoit au plus le plafond de PR dès sa première lecture et rend `BLOCKED` à la quatrième
+  (ikoro-labs/forge#314).
+- Skills : `feature-build` écrit le plafond dans le brief de chaque coder, commente le ticket et pose
+  `needs-your-attention` sur un `BLOCKED` du plafond (ikoro-labs/forge#314).
+- Tests : `tests/test_guard_pr_cap.py`, sous Linux et sous Windows, avec `HOME` et `USERPROFILE` isolés
+  (ikoro-labs/forge#314).
+- Gestes humains : un projet qui veut le plafond déclare `ticket-pr-cap` (le gabarit `templates/usine.md` la
+  documente) ; sans la clé, le garde ne lit rien. Un projet qui veut pouvoir le relever déclare aussi
+  `pr-cap-raiser`, des comptes dont l'agent n'a aucun jeton (clé nouvelle, sans valeur par défaut) ; sans elle,
+  « sans objet (clé `pr-cap-raiser` absente) » et personne ne relève le plafond. Un projet qui introduit le
+  plafond alors que des tickets l'ont déjà dépassé déclare `ticket-pr-cap-since` (`AAAA-MM-JJ`, clé nouvelle, sans
+  date par défaut) : seules les PR créées ce jour-là ou après comptent, d'après leur `createdAt` ; sans elle,
+  « sans objet (clé `ticket-pr-cap-since` absente) » et toutes les PR comptent (ikoro-labs/forge#314).
+- Resté dehors : la taille d'une PR (une décision du projet). Rien n'a été essayé dans une vraie session ni sous Windows.
+
 ## [1.19.0] - 2026-11-22
 
 Un projet consommateur apprend qu'une version plus récente existe, la clé `agent-autonomy` ouvre la fusion et la
