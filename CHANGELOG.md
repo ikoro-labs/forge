@@ -9,6 +9,27 @@ Ce dépôt a été recréé le 2026-10-23 ; l'ancien est `ikoro-labs/forge-archi
 numéros de PR et de ticket nus (`#38`) renvoient à l'ancien dépôt ; un renvoi au nouveau dépôt
 porte son nom (`ikoro-labs/forge#7`).
 
+## [Non publié]
+
+Un ticket commencé avant le jour de `ticket-pr-cap-since` termine sa PR en vol, puis admet une seule dernière PR,
+en dernier recours. Pas de nouvelle version : la montée de version est celle de la session de publication.
+
+- Hooks : `guard_pr_cap.py` dit, en comptant les PR d'un ticket, si le ticket a au moins une PR (ouverte ou
+  fusionnée) créée avant le jour de `ticket-pr-cap-since` ; pour un tel ticket la limite des PR créées depuis ce
+  jour est de 1 (une constante du garde, aucune clé nouvelle) au lieu de `ticket-pr-cap`, et le refus dit que le
+  ticket était déjà commencé. Les PR d'avant ce jour restent hors du compte, une PR fermée sans fusion ne
+  commence pas un ticket, et l'étiquette `pr-cap-raised` relève toujours la limite à 6 (ikoro-labs/forge#314).
+- Agents : `coder` prévoit, pour un ticket déjà commencé, cette dernière PR et non le plafond, dès sa première
+  lecture (ikoro-labs/forge#314).
+- Tests : `tests/test_guard_pr_cap.py` couvre la dernière PR, sous Linux et sous Windows, avec `HOME` et
+  `USERPROFILE` isolés ; deux tests de la clé de date attendaient le plafond pour un ticket commencé avant le jour
+  et suivent la règle nouvelle (ikoro-labs/forge#314).
+- Gestes humains : aucun pour un projet qui n'a pas la clé `ticket-pr-cap-since`, où « sans objet (clé
+  `ticket-pr-cap-since` absente) » et rien ne change ; un projet qui la déclare voit un ticket commencé avant ce
+  jour limité à une dernière PR au lieu du plafond (ikoro-labs/forge#314).
+- Resté dehors : une clé pour la limite de la dernière PR (une constante, décision de l'humain du 2026-11-23) et la
+  version. Rien n'a été essayé dans une vraie session ni sous Windows.
+
 ## [1.20.0] - 2026-11-23
 
 Le juge sait si un paquet qu'une PR ajoute à un fichier de verrou existe et n'est pas tout neuf, un agent peut

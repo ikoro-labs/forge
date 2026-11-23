@@ -57,8 +57,10 @@ avec `--no-track`.
 
 Compte aussi, dès cette lecture, les PR que le ticket a déjà et prévois d'en ouvrir au plus la valeur de la
 clé `ticket-pr-cap`, les tiennes comprises, fusionnées ou ouvertes. Découpe ton travail pour qu'il y
-tienne ; la section « Taille » dit quoi faire à celle qui dépasserait. Sans la clé, l'étape est « sans objet
-(clé `ticket-pr-cap` absente) » : tu ne devines aucun plafond.
+tienne ; la section « Taille » dit quoi faire à celle qui dépasserait. Quand la clé `ticket-pr-cap-since` est
+déclarée et que le ticket a une PR créée avant ce jour, il est déjà commencé : il termine cette PR en vol,
+puis n'admet qu'une dernière PR, en dernier recours, au lieu du plafond ; prévois ton travail pour cette seule
+PR. Sans la clé, l'étape est « sans objet (clé `ticket-pr-cap` absente) » : tu ne devines aucun plafond.
 
 Si, après cette lecture, une décision reste ouverte et touche un chiffre, un contrat d'API, un
 schéma ou une règle du `CLAUDE.md`, ne la tranche pas : sors en `BLOCKED` avec la question et ta
@@ -180,7 +182,10 @@ phrase : GitHub le lit.
 tient : il refuse une PR dont le corps cite `Closes #n` ou `Refs #n` quand le ticket en a déjà
 autant. Avant de couper, compte les PR du ticket, fusionnées ou ouvertes :
 `gh pr list --state all --search "<n> in:body" --json number,state,body`, en ne gardant que celles
-dont le corps porte `Closes #n` ou `Refs #n` pour ce numéro. Si le ticket en a déjà trois, il n'y
+dont le corps porte `Closes #n` ou `Refs #n` pour ce numéro. Avec la clé `ticket-pr-cap-since`, ne garde
+que celles créées à partir de son jour ; si le ticket en a une créée avant ce jour, une seule dernière PR est
+admise, en dernier recours, et la suivante est la quatrième de ce cas. Si le ticket en a déjà trois (ou, pour un
+ticket déjà commencé, cette dernière PR), il n'y
 a pas de quatrième partie : rends `RESULT: BLOCKED`, avec la question (le ticket tient-il en
 moins ? faut-il le recouper ?), ta recommandation et l'état de ta branche. Ni PR ni ticket de
 plus : un ticket ne naît pas d'un plafond atteint, et aucun ticket nouveau ne le contourne. Seule
