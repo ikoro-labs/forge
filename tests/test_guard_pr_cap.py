@@ -1101,11 +1101,11 @@ class LastPrDocumentation(unittest.TestCase):
                 with self.subTest(phrase=phrase):
                     self.assertIn(phrase, where)
 
-    def test_the_changelog_has_an_unpublished_entry_for_the_last_pr(self) -> None:
-        """Ticket #314, A9: an entry above 1.20.0, without a version bump, with its zones and the reason left out."""
+    def test_the_changelog_has_an_entry_for_the_last_pr(self) -> None:
+        """Ticket #314, A9: an entry above 1.20.0 (opened by the release 1.21.0), with its zones and the reason left out."""
         changelog = (support.REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-        self.assertLess(changelog.index("## [Non publié]"), changelog.index("## [1.20.0]"))
-        entry = changelog.split("## [Non publié]", 1)[1].split("\n## [", 1)[0]
+        self.assertLess(changelog.index("## [1.21.0]"), changelog.index("## [1.20.0]"))
+        entry = changelog.split("## [1.21.0]", 1)[1].split("\n## [", 1)[0]
         for phrase in ("- Hooks :", "- Agents :", "- Tests :", "- Gestes humains :", "- Resté dehors :", "dernière PR"):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, entry)
