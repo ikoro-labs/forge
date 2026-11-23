@@ -1,7 +1,9 @@
 ---
 feature: F-0002
 document: cadrage
-statut: en-revue
+statut: accepte
+accepte_par: ikoro-labs
+accepte_le: 2026-11-23
 taille: L
 destinataires: ikoro-labs (humain de la clé `accepting-human`, décide par `/forge:feature-accept`) ; forge:qc relit
 contexte: forge (plugin) ; touchés : hooks, forge:qc-gate, never-weaken, template `usine.md`
