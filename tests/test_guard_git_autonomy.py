@@ -5,8 +5,11 @@ is a temporary one, under a temporary `HOME`; none of the session's `CLAUDE_` or
 reaches git, and the real `~/.claude` is never read nor written.
 """
 
+import json
 import os
+import re
 import subprocess
+import sys
 import tempfile
 import unittest
 from collections.abc import Iterator
@@ -319,6 +322,124 @@ class TheTagFollowsTheKey(unittest.TestCase):
         """#280: `on` does not open a force push nor a push to main."""
         self.assertIn("force push", str(self.asked("git push --force origin feat/x", None)[0]))
         self.assertIn("push to main", str(self.asked("git push origin main", None)[0]))
+
+
+GUARD = support.PLUGIN / "hooks" / "guard_git.py"
+USINE_WITH_KEY = PROSE + "- `merge-method` : `merge`\n" + key("on")
+
+
+def run_guard(where: Path, tool: str, tool_input: dict[str, Any]) -> subprocess.CompletedProcess[str]:
+    """`guard_git` as Claude Code runs it: a process fed the event, in `where`, under the temporary HOME."""
+    event = {"tool_name": tool, "tool_input": tool_input, "cwd": str(where)}
+    return subprocess.run(  # noqa: S603 - the interpreter running this suite, the plugin's script
+        [sys.executable, str(GUARD)],
+        input=json.dumps(event),
+        env=environment(where.parent / "home"),
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=60,
+    )
+
+
+MCP_MERGE = {"owner": "o", "repo": "r", "pullNumber": 5, "merge_method": "merge"}
+MCP_MERGE_TOOLS = (
+    "mcp__github__merge_pull_request",
+    "mcp__plugin_github_github__merge_pull_request",
+    "mcp__GITHUB__merge_pull_request",
+)
+
+
+class TheHookReadsTheKeyOfOriginMain(unittest.TestCase):
+    """The hook as a process: the key is `origin/main`'s, the working tree's own `usine.md` is not read for it."""
+
+    def test_a_tag_is_refused_without_the_key_in_origin_main_even_when_the_working_tree_has_it(self) -> None:
+        """#280: the tree says `on`, `origin/main` does not: refused, exit 2, the reason on stderr."""
+        with project(PROSE, in_tree=USINE_WITH_KEY) as where:
+            done = run_guard(where, "Bash", {"command": "git tag forge--v1.20.0"})
+        self.assertEqual(done.returncode, 2, done.stderr)
+        self.assertIn("Blocked by the forge plugin (guard_git)", done.stderr)
+        self.assertIn("`agent-autonomy` key is not `on`", done.stderr)
+        self.assertIn("human", done.stderr)
+
+    def test_a_tag_and_its_push_pass_with_the_key_on_in_origin_main(self) -> None:
+        """#280: `on` in `origin/main`: the same commands run."""
+        with project(USINE_WITH_KEY, in_tree=PROSE) as where:
+            for command in ("git tag forge--v1.20.0", "git push origin forge--v1.20.0 --tags"):
+                with self.subTest(command=command):
+                    done = run_guard(where, "Bash", {"command": command})
+                    self.assertEqual(done.returncode, 0, done.stderr)
+
+    def test_a_merge_is_refused_without_the_key_in_origin_main(self) -> None:
+        """#280: `gh pr merge` with the tree's `on` and `origin/main` without it: refused for the key."""
+        with project(PROSE, in_tree=USINE_WITH_KEY) as where:
+            done = run_guard(where, "Bash", {"command": "gh pr merge 5 --merge"})
+        self.assertEqual(done.returncode, 2, done.stderr)
+        self.assertIn("`agent-autonomy` key is not `on`", done.stderr)
+
+    def test_the_refusal_is_journaled_under_its_name(self) -> None:
+        """#280: the refusals journal of the temporary HOME names the rule `agent-autonomy`."""
+        with project(PROSE) as where:
+            run_guard(where, "Bash", {"command": "git tag v1"})
+            folder = where.parent / "home" / ".claude" / "hooks" / "state" / "refusals"
+            lines = [
+                json.loads(line)
+                for path in sorted(folder.glob("*.jsonl"))
+                for line in path.read_text(encoding="utf-8").splitlines()
+            ]
+        self.assertEqual([(line["rule"], line["verb"]) for line in lines], [("agent-autonomy", "git tag")])
+
+    def test_a_reading_of_the_tags_runs_without_the_key(self) -> None:
+        with project(PROSE) as where:
+            done = run_guard(where, "Bash", {"command": "git tag -l"})
+        self.assertEqual(done.returncode, 0, done.stderr)
+
+
+class TheMcpMergeToolFollowsTheKey(unittest.TestCase):
+    def test_the_merge_tool_of_a_github_server_is_refused_without_the_key(self) -> None:
+        """#280: the MCP tool merges a PR without `gh`: refused, whatever the server's name."""
+        with project(PROSE, in_tree=USINE_WITH_KEY) as where:
+            for tool in MCP_MERGE_TOOLS:
+                with self.subTest(tool=tool):
+                    done = run_guard(where, tool, MCP_MERGE)
+                    self.assertEqual(done.returncode, 2, done.stderr)
+                    self.assertIn("`agent-autonomy` key is not `on`", done.stderr)
+
+    def test_the_merge_tool_passes_with_the_key_on_in_origin_main(self) -> None:
+        with project(USINE_WITH_KEY, in_tree=PROSE) as where:
+            for tool in MCP_MERGE_TOOLS:
+                with self.subTest(tool=tool):
+                    self.assertEqual(run_guard(where, tool, MCP_MERGE).returncode, 0)
+
+    def test_the_forms_of_the_tool_that_merge_are_refused_and_the_readings_are_not(self) -> None:
+        """#280: the tool that merges as a method of a write tool, the auto-merge; never a reading."""
+        with project(PROSE) as where:
+            for tool, tool_input, code in (
+                ("mcp__github__pull_request_write", {"method": "merge", "pullNumber": 5}, 2),
+                ("mcp__github__enable_pull_request_auto_merge", {"pullNumber": 5}, 2),
+                ("mcp__github__pull_request_write", {"method": "update_branch", "pullNumber": 5}, 0),
+                ("mcp__github__get_pull_request", {"pullNumber": 5}, 0),
+                ("mcp__github__list_pull_requests", {"owner": "o", "repo": "r"}, 0),
+                ("mcp__github__update_pull_request_branch", {"pullNumber": 5}, 0),
+                ("mcp__github__disable_pull_request_auto_merge", {"pullNumber": 5}, 0),
+                ("mcp__other__merge_pull_request", MCP_MERGE, 0),
+            ):
+                with self.subTest(tool=tool, method=tool_input.get("method")):
+                    self.assertEqual(run_guard(where, tool, tool_input).returncode, code)
+
+    def test_hooks_json_runs_guard_git_on_the_mcp_tools_of_a_github_server(self) -> None:
+        """#280: the matcher of `guard_git` names the MCP tools, or the filter would apply to none of them."""
+        hooks = json.loads((support.PLUGIN / "hooks" / "hooks.json").read_text(encoding="utf-8"))
+        groups = [g for g in hooks["hooks"]["PreToolUse"] if "guard_git.py" in g["hooks"][0]["command"]]
+        self.assertEqual(len(groups), 1)
+        matcher = groups[0]["matcher"]
+        for name in ("Bash", "PowerShell", *MCP_MERGE_TOOLS):
+            with self.subTest(name=name):
+                self.assertIsNotNone(re.fullmatch(matcher, name))
+        for name in ("Edit", "Write", "mcp__other__merge_pull_request", "Agent"):
+            with self.subTest(name=name):
+                self.assertIsNone(re.fullmatch(matcher, name))
+        self.assertEqual(groups[0]["hooks"][0].get("onFailure"), "block")
 
 
 if __name__ == "__main__":

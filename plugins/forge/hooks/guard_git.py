@@ -2696,12 +2696,36 @@ def verb_of(command: str) -> str:
     return next((verb for verb in found if verb.split()[0] in ("git", "gh")), found[0] if found else "other")
 
 
+def mcp_merge(tool: object, tool_input: object) -> bool:
+    """Whether a tool call merges a PR through a GitHub MCP server, which `gh` never sees.
+
+    The tool is one of a server whose name holds `github`, and its action says `merge` (the merge,
+    the auto-merge), or it is a write tool whose `method` is `merge`. A reading (`get_`, `list_`)
+    and the cancelling of an auto-merge (`disable_`) merge nothing. Only the key `agent-autonomy`
+    is asked of it: its checks, its description, its method and its files are not read here.
+    """
+    if not isinstance(tool, str) or not tool.startswith("mcp__") or "github" not in tool.lower():
+        return False
+    action = tool.rsplit("__", 1)[-1].lower()
+    if action.startswith(("get_", "list_", "search_", "disable_")):
+        return False
+    method = tool_input.get("method") if isinstance(tool_input, dict) else None
+    return "merge" in action or (isinstance(method, str) and method.lower() == "merge")
+
+
 def main() -> int:
     event = json.load(sys.stdin)
     command = str(event.get("tool_input", {}).get("command", ""))
     cwd = event.get("cwd")
     root = project_root(event)
     config = load(root)
+    if mcp_merge(event.get("tool_name"), event.get("tool_input")):
+        reason = autonomy_refusal(str(root), "merge")
+        if reason is None:
+            return 0
+        record("guard_git", reason, RULES, event, lambda: "mcp merge")
+        sys.stderr.write(f"Blocked by the forge plugin (guard_git): {reason}.\n")
+        return 2
     reason = refusal(
         command,
         current_branch,
@@ -2721,6 +2745,7 @@ def main() -> int:
         branch_deletion_covered=lambda directory, names: bundle_covers(
             directory or cwd, names, config.get(BUNDLE_KEY, [])
         ),
+        autonomy=lambda gesture: autonomy_refusal(str(root), gesture),
     )
     if reason is None:
         return 0
