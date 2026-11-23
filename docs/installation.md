@@ -891,6 +891,15 @@ a nested shell and behind a wrapper (the reader is `hooks/gh_bodies.py`, shared 
   PR of the ticket counts, whatever its date. Without the key `ticket-pr-cap` the date is not read either. A
   value that is not a valid day, a repeated key, and a PR whose `createdAt` cannot be read, fail closed like
   the rest of the count: the PR that cites a ticket is refused until it is fixed.
+- **A ticket started before that day.** A ticket with at least one open or merged PR that cites it, created
+  before the day of the key, is a started ticket: it finishes the PR in flight (a PR from before the day is
+  never counted, so editing it, the `forge:qc` report included, is not refused), then admits one last PR, as a
+  last resort. For such a ticket the limit on the PRs created since the day is 1 instead of `ticket-pr-cap`:
+  that is a constant of the guard, not a key, and the refusal says the ticket was started before the day. A PR
+  closed without a merge does not start a ticket. The label `pr-cap-raised` set by a login of the key
+  `pr-cap-raiser` still raises the limit to 6. Without the key `ticket-pr-cap-since` no ticket is a started
+  one, since there is no day to start before. No ticket is opened for this last PR: the part of the ticket that
+  does not fit stays on that ticket.
 
 The guard fails closed: a body it cannot read (a variable, a command substitution other than
 `$(cat <<'EOF' ... EOF)`, an unquoted heredoc whose body holds `$`, a pipe, an editor, a missing file,

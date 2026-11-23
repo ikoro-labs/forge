@@ -1062,6 +1062,57 @@ class Documentation(unittest.TestCase):
         self.assertLess(changelog.index("## [1.20.0]"), changelog.index("## [1.19.0]"))
 
 
+class LastPrDocumentation(unittest.TestCase):
+    """A9: the page, the template, the README, the coder's brief and the CHANGELOG say the last PR."""
+
+    PHRASES = ("avant cette date", "dernière PR", "dernier recours")
+
+    def flat(self, path: Path) -> str:
+        return " ".join(path.read_text(encoding="utf-8").split())
+
+    def test_the_docs_page_describes_the_last_pr_of_a_started_ticket(self) -> None:
+        """Ticket #314, A9: the section « From a day » says started ticket, the PR in flight, one last PR, the label."""
+        text = self.flat(support.REPO_ROOT / "docs" / "installation.md")
+        section = text.split("**From a day.**", 1)[1].split("The guard fails closed", 1)[0]
+        for phrase in ("started before", "PR in flight", "one last PR", "last resort", "`pr-cap-raised`", "constant"):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, section)
+
+    def test_the_template_describes_the_last_pr_without_a_new_key(self) -> None:
+        """Ticket #314, A9: the template text of `ticket-pr-cap-since` says the started ticket and its last PR."""
+        text = self.flat(support.PLUGIN / "templates" / "usine.md")
+        block = text.split("- `ticket-pr-cap` : `<3>`", 1)[1].split("- `ticket-pr-cap-since` : `<AAAA-MM-JJ>`", 1)[0]
+        for phrase in self.PHRASES:
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, block)
+
+    def test_the_readme_row_says_the_last_pr(self) -> None:
+        """Ticket #314, A9: the README row of `guard_pr_cap` says what a started ticket admits."""
+        row = next(line for line in (support.REPO_ROOT / "README.md").read_text(encoding="utf-8").splitlines() if "`guard_pr_cap`" in line)
+        self.assertIn("dernière PR", row)
+
+    def test_the_coder_brief_says_the_last_pr_in_both_places(self) -> None:
+        """Ticket #314, A9: the reading step and the cap paragraph of `forge:coder` say the limit of a started ticket."""
+        text = self.flat(support.PLUGIN / "agents" / "coder.md")
+        reading = text.split("Compte aussi, dès cette lecture", 1)[1].split("Si, après cette lecture", 1)[0]
+        paragraph = text.split("**Trois PR au plus par ticket.**", 1)[1].split("## 5. Livrer", 1)[0]
+        for where in (reading, paragraph):
+            for phrase in ("`ticket-pr-cap-since`", "dernière PR", "dernier recours"):
+                with self.subTest(phrase=phrase):
+                    self.assertIn(phrase, where)
+
+    def test_the_changelog_has_an_unpublished_entry_for_the_last_pr(self) -> None:
+        """Ticket #314, A9: an entry above 1.20.0, without a version bump, with its zones and the reason left out."""
+        changelog = (support.REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+        self.assertLess(changelog.index("## [Non publié]"), changelog.index("## [1.20.0]"))
+        entry = changelog.split("## [Non publié]", 1)[1].split("\n## [", 1)[0]
+        for phrase in ("- Hooks :", "- Agents :", "- Tests :", "- Gestes humains :", "- Resté dehors :", "dernière PR"):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, entry)
+        self.assertIn("ikoro-labs/forge#314", entry)
+        self.assertNotIn("`ticket-pr-cap-last`", entry)
+
+
 class Binding(unittest.TestCase):
     def test_hooks_json_binds_the_guard_on_every_gh_gesture_and_fails_closed(self) -> None:
         """Ticket #314, A1: Bash, PowerShell and the GitHub MCP tools reach the guard, a failure refuses."""

@@ -455,7 +455,10 @@ refuser toute PR qui cite un ticket, tant qu'elle n'est pas corrigée.
 Le jour à partir duquel les PR d'un ticket comptent dans ce plafond, une seule ligne au format `AAAA-MM-JJ`
 (jour UTC). `guard_pr_cap` lit la date de création de chaque PR (`createdAt` de `gh pr list`) : une PR créée
 avant cette date n'est pas comptée, une PR créée ce jour-là ou après l'est. Sert à introduire le plafond
-dans un projet dont des tickets en ont déjà dépassé le nombre. Sans la clé `ticket-pr-cap-since`, « sans
+dans un projet dont des tickets en ont déjà dépassé le nombre : un ticket qui a au moins une PR créée avant
+cette date (ouverte ou fusionnée) est un ticket déjà commencé ; il termine la PR en vol, puis admet une seule
+dernière PR, en dernier recours, au lieu du plafond (la limite de 1 est une constante du garde, pas une clé ;
+l'étiquette `pr-cap-raised` relève toujours la limite à 6). Sans la clé `ticket-pr-cap-since`, « sans
 objet (clé `ticket-pr-cap-since` absente) » : aucune date par défaut n'est devinée, le plafond compte toutes
 les PR du ticket, quelle que soit leur date. Sans la clé `ticket-pr-cap`, la date n'est pas lue non plus. Une
 valeur qui n'est pas un jour valide (`2026-13-45`, `demain`), une clé répétée, ou une PR dont `createdAt` est
