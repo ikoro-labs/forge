@@ -86,14 +86,72 @@ dépendance : la ligne à écrire figure dans le premier message de refus ; rela
 et 2000 octets au plus ; constat récurrent : 3 PR distinctes en 30 jours, comme décidé ; temps d'ajout
 d'un contrôle : aucun budget, une exécution de la commande suffit.
 
-Réponses : en attente.
+Réponses : ci-dessous.
+
+#### Réponses du tour 1 (les deux agents ont lu la séance, le cadrage et le code ; recopiées, résumées)
+
+**`forge:staff-engineer`, Q1 à Q8** (sources lues le 2026-11-23 : documentation des hooks de Claude Code,
+documentation de ruff ; `PLR1702` y est encore en aperçu). Aucune case ne porte de veto. Q1 et Q2 sont
+irréversibles (la forme de `stack` est la seule décision que le cadrage dit irréversible) ; les autres se
+reprennent.
+
+- **Q1, corrigée.** On compare les paquets directs de chaque paquet local du verrou, c'est-à-dire ceux dont
+  la source est `virtual`, `editable`, `directory` ou `path`, tous groupes confondus (normal, optionnel,
+  développement). Pour npm, l'entrée `""` et celles des espaces de travail. Le seul manifeste racine ne
+  suffit pas : le verrou de Shipyard (`uv.lock`) a une racine et trois membres locaux, que j'ai relus.
+  `MATRIX_CELL: T4`.
+- **Q2, corrigée.** Seule la clé `stack` (le chemin du fichier) se lit sur la base ; le contenu de la liste
+  se lit sur la tête, puisque la PR propose elle-même la ligne. Chaque ligne que la PR ajoute à la liste
+  sort `ADDED` avec sa source, que le juge lit au titre de F-8 ; une source absente sur la tête donne
+  `NO SOURCE`. `MATRIX_CELL: T2`.
+- **Q3, suivie.** `lint-on-write` partage le code de `format-on-write`. Le message à l'agent garde la forme
+  `<clé>: <commande> failed on <chemin> (<raison>)`, avec la fin de la sortie en dessous ; `format-on-write`
+  la relaie aussi. « Jamais la commande » ne vaut que pour le journal (Q8). `MATRIX_CELL: T4`.
+- **Q4, suivie.** Le fichier de référence est celui que nomme l'entrée `never-weaken` (par exemple
+  `scripts/baselines/types.txt | raised-entry`). Dans chaque fichier du diff, chaque clé des lignes ajoutées
+  se compare à la même clé dans les lignes retirées du même fichier : une clé sans ligne retirée, ou avec un
+  nombre plus grand, est une hausse. Une `<clé>` seule compte 1. `MATRIX_CELL: T4`.
+- **Q5, suivie.** Sonde de `forge:qc-gate`, commande lue sur la base. Le fichier qui décrit la carte des
+  modules (par exemple `.importlinter`) est lu sur la tête et une PR pourrait l'affaiblir : le gabarit
+  conseille une entrée `.importlinter | removed-line`, et la PR qui retire une règle de la carte revient à
+  l'humain. `MATRIX_CELL: T4`.
+- **Q6, corrigée.** Le commentaire est écrit sur le ticket de la clé `slo-issue`, séparé du rapport des SLO,
+  retrouvé par un marqueur caché qui lui est propre (le rapport des SLO a le sien, `factory_slo.py:925`).
+  Il est réécrit après chaque verdict que `forge:qc` poste, non après chaque fusion ; le lecteur de verdicts
+  de `factory_slo.py` (lignes 275 à 302) est réutilisé. `MATRIX_CELL: T2`.
+- **Q7, suivie.** Une section du gabarit `usine.md` et une page de `docs/`, plus un exemple de `stack` ; les
+  lignes de ruff écrivent les seuils 10, 5 et 5 en clair, avec `--preview` pour `PLR1702`. `MATRIX_CELL: T7`.
+- **Q8, suivie.** Les refus de `after_write` entrent dans le même journal, `guard` à `after_write`, sans la
+  commande ni la sortie. L'indicateur `guard-refusals` garde son sens (refus des trois gardes par PR
+  fusionnée) en ne comptant que `guard_git`, `guard_coder` et `guard_readonly`. `MATRIX_CELL: T4`.
+- Non vérifié par l'agent : l'entrée racine de `package-lock.json`, le plafond du stderr en code 2, le
+  lancement d'un script du plugin dans la CI du projet.
+
+**`forge:product-owner`, Q9 et Q10** (aucun veto).
+
+- **Q9, corrigée.** Trois rôles : l'humain du projet, le coder, le juge. Le mainteneur de forge sort de la
+  spec : le code de forge lui-même est hors périmètre (`cadrage.md`, section 2). Sept stories, une par
+  exigence ; EXI-08 devient un critère transverse. Ordre : EXI-02 et EXI-03 ; puis EXI-06, EXI-04, EXI-05 ;
+  puis EXI-07 ; puis EXI-01. Mis en premier, EXI-06 est ce que la coupe du 2026-12-16 garde (`cadrage.md`,
+  section 8) ; l'ordre d'origine (EXI-04, EXI-05, EXI-06) la mettait après. `MATRIX_CELL: P1, P2`.
+- **Q10, corrigée.** Le premier message de refus d'une dépendance donne la ligne exacte à écrire et le chemin
+  de `stack`. Sortie relayée : les 20 dernières lignes et 2000 octets au plus (`trim_output.py`,
+  `KEEP_LINES = 20` ; les hooks de Claude Code gardent un aperçu de 2000 caractères d'une sortie
+  de plus de 10 000, documentation lue le 2026-11-23). Constat récurrent : 3 PR distinctes en 30 jours, déjà
+  décidé. Délai par écriture : 30 s par commande et 120 s au total, les valeurs de `after_write.py:45-46`.
+  Ajouter un contrôle : une ligne dans `usine.md`, sans budget de temps. `MATRIX_CELL: P1, P3`.
 
 ## Décidé
 
-(Rien encore : le tour 1 est posé, les réponses des agents ne sont pas arrivées.)
+- Q1 à Q10 : les réponses ci-dessus, telles que les deux agents les ont rendues. Ce que la spec en tire est
+  dans `spec.md`, qui reste à l'état `en-revue`.
+- Les deux dates d'arrêt du cadrage (2026-12-06, 2026-12-16) et la mesure du 2027-01-15 restent celles de
+  l'humain : la spec ne les change pas.
 
 ## Resté ouvert
 
-- Q1 à Q10 de ce tour, avec leurs réponses.
+- Rien du tour 1 : les dix questions ont une réponse. Les trois points que le staff-engineer n'a pas vérifiés
+  (entrée racine de `package-lock.json`, plafond du stderr en code 2, script du plugin dans la CI) sont
+  repris dans la section « Points ouverts » de la spec.
 - Le recoupement des deux relevés de la section 1 du cadrage (149 PR fusionnées contre 121 PR jugées) :
   hors de la spec, à éclaircir avant la mesure de la section 4 du cadrage.
