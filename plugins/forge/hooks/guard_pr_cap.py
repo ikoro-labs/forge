@@ -268,8 +268,26 @@ class Check:
         self.state.changed = True
         return None
 
+    def issue(self, endpoint: str, cwd: str | None) -> tuple[dict | None, str | None]:
+        """What `gh api` says of the issue at `endpoint` (a PR is one), or why gh cannot say."""
+        doc = _json(self.run(["api", endpoint.lstrip("/")], cwd))
+        if isinstance(doc, dict):
+            return doc, None
+        return None, (
+            f"the issue #{endpoint.rsplit('/', 1)[-1]} cannot be read (gh absent, the network, or a gh error), so"
+            " whether it is a PR whose edit adds a ticket to the count is unknown: refused as a precaution"
+        )
+
     def publication(self, found: Publication, cwd: str | None) -> str | None:
         """Why the PR `found` publishes may not go out, or None."""
+        if found.act == CURL_ACT:
+            doc, reason = self.issue(found.endpoint, cwd)
+            if doc is not None and "pull_request" in doc:
+                return (
+                    f"a call to api.github.com outside gh could edit the PR #{found.endpoint.rsplit('/', 1)[-1]}"
+                    " through `issues/<n>` unread; use gh"
+                )
+            return reason  # a real ticket (None) is not held
         tickets = cited(found.body)
         if not tickets:
             return None
@@ -282,12 +300,9 @@ class Check:
         issue = ISSUE.match(found.endpoint) if found.endpoint and found.kind == "ticket" else None
         own: int | None = None
         if issue is not None:
-            doc = _json(self.run(["api", found.endpoint.lstrip("/")], cwd))
-            if not isinstance(doc, dict):
-                return (
-                    f"the issue #{issue.group(3)} cannot be read (gh absent, the network, or a gh error), so"
-                    " whether it is a PR whose edit adds a ticket to the count is unknown: refused as a precaution"
-                )
+            doc, reason = self.issue(found.endpoint, cwd)
+            if doc is None:
+                return reason
             if "pull_request" not in doc:
                 return None  # a real ticket: its body is not a PR's
             own = int(issue.group(3))
@@ -328,8 +343,15 @@ def shell_publications(command: str, cwd: str | None) -> list[tuple[Publication,
             here = _moved(here, words[1])
             continue
         local = None if here == UNKNOWN else here
-        if curls_github(words) and API_PULLS.search(" ".join(words)):
-            raise Unreadable("a call to api.github.com outside gh could open a PR unread; use gh")
+        if curls_github(words):
+            if API_PULLS.search(" ".join(words)):
+                raise Unreadable("a call to api.github.com outside gh could open a PR unread; use gh")
+            for word in words:
+                if match := CURL_ISSUE.search(word):
+                    owner, name, number = match.groups()
+                    endpoint = f"repos/{owner}/{name}/issues/{number}"
+                    found.append((Publication("ticket", "", act=CURL_ACT, endpoint=endpoint, repo=f"{owner}/{name}"), local))
+            continue
         published = [
             item
             for item in publications(words, docs, local)

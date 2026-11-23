@@ -348,6 +348,29 @@ class Gestures(unittest.TestCase):
         unnamed = {"owner": "o", "repo": "r", "body": "Refs #5"}
         self.assertIn("cannot be read", project.tool("mcp__github__update_issue", unnamed, cited(0)) or "")
 
+    def test_a_curl_to_the_issues_of_the_api_is_read_as_gh_api_on_the_issues_endpoint(self) -> None:
+        """Ticket #314, A1: another HTTP client edits a PR through `issues/<n>` as `gh api` does: a PR is refused, a ticket is free."""
+        project = Project(self)
+        command = "curl -X PATCH -d '{\"body\": \"Closes #5\"}' https://api.github.com/repos/o/r/issues/7"
+        pull = cited(3)
+        pull.issue = {"number": 7, "body": pr_body("No ticket yet."), "pull_request": {"url": "u"}}
+        self.assertIn("api.github.com", project.bash(command, pull) or "")
+        self.assertEqual(pull.asked("api")[0][1], "repos/o/r/issues/7")
+        ticket = cited(3)
+        ticket.issue = {"number": 7, "body": "old", "title": "a ticket"}
+        self.assertIsNone(project.bash(command, ticket))
+        self.assertEqual(ticket.asked("pr", "list"), [])
+        self.assertIn("cannot be read", project.bash(command, cited(0)) or "")
+        # the comments of an issue and the opening of a ticket are not an edit of it
+        free = cited(3)
+        for other in (
+            "curl -X POST -d @b.json https://api.github.com/repos/o/r/issues/7/comments",
+            "curl -X POST -d @b.json https://api.github.com/repos/o/r/issues",
+        ):
+            with self.subTest(command=other):
+                self.assertIsNone(project.bash(other, free))
+        self.assertEqual(free.calls, [])
+
     def test_a_github_mcp_tool_that_opens_or_edits_a_pr_is_read(self) -> None:
         """Ticket #314, A1: `create_pull_request` and `update_pull_request` carry the body to count."""
         project = Project(self)
