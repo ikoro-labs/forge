@@ -9,6 +9,8 @@ the body of each of these gestures, behind a wrapper, in `bash -c`, `eval` or a 
 - `gh pr edit` and `gh api` PATCH on `repos/<o>/<r>/pulls/<n>`, for the tickets the body cites that
   the PR's current body did not: a PR already counted for a ticket is not a new one, so the report
   `forge:qc` writes into a PR's body is never refused;
+- `gh api` on `repos/<o>/<r>/issues/<n>`, a PR being an issue: the hook asks `gh api` whether #n carries
+  `pull_request`; a real ticket is not held, a PR is read as `gh pr edit` (a read it cannot make refuses);
 - the pull request tools of a GitHub MCP server (`create_pull_request`, `update_pull_request`).
 
 The PRs of a ticket are those `gh pr list --state all --search "<n> in:body"` finds whose body cites
@@ -71,6 +73,8 @@ BLOCKED = (
 Runner = Callable[[list[str], "str | None"], "str | None"]
 
 PULLS = re.compile(r"^/?repos/([^/]+)/([^/]+)/pulls(?:/(\d+))?$")
+# A PR is an issue: `gh api` on `issues/<n>` edits a PR's body when #n is one.
+ISSUE = re.compile(r"^/?repos/([^/]+)/([^/]+)/issues/(\d+)$")
 API_PULLS = re.compile(r"api\.github\.com/+(?:repos/[^/\s'\"]+/[^/\s'\"]+/pulls\b|graphql\b)")
 # `gh pr edit` options that take the next word as their value (the selector is the first other word).
 EDIT_VALUE_OPTIONS = frozenset(
@@ -270,8 +274,21 @@ class Check:
                 f" tickets it cites against the cap of `{KEY}`: the mutation is refused"
             )
         pulls = PULLS.match(found.endpoint) if found.endpoint else None
+        issue = ISSUE.match(found.endpoint) if found.endpoint and found.kind == "ticket" else None
         own: int | None = None
-        if found.act == ("pr", "edit") or (pulls is not None and pulls.group(3)):
+        if issue is not None:
+            doc = _json(self.run(["api", found.endpoint.lstrip("/")], cwd))
+            if not isinstance(doc, dict):
+                return (
+                    f"the issue #{issue.group(3)} cannot be read (gh absent, the network, or a gh error), so"
+                    " whether it is a PR whose edit adds a ticket to the count is unknown: refused as a precaution"
+                )
+            if "pull_request" not in doc:
+                return None  # a real ticket: its body is not a PR's
+            own = int(issue.group(3))
+            body = doc.get("body")
+            tickets -= cited(body) if isinstance(body, str) else set()
+        elif found.act == ("pr", "edit") or (pulls is not None and pulls.group(3)):
             selector = _selector(found.args) if pulls is None else pulls.group(3)
             current = current_pr(selector, found.repo, cwd, self.run)
             if current is None:
@@ -288,7 +305,7 @@ class Check:
 
 
 def _repo_of_endpoint(endpoint: str) -> str | None:
-    match = PULLS.match(endpoint)
+    match = PULLS.match(endpoint) or ISSUE.match(endpoint)
     if match is None or "{" in match.group(1) or "{" in match.group(2):
         return None
     return f"{match.group(1)}/{match.group(2)}"
@@ -308,7 +325,11 @@ def shell_publications(command: str, cwd: str | None) -> list[tuple[Publication,
         local = None if here == UNKNOWN else here
         if curls_github(words) and API_PULLS.search(" ".join(words)):
             raise Unreadable("a call to api.github.com outside gh could open a PR unread; use gh")
-        published = [item for item in publications(words, docs, local) if item.kind == "pr"]
+        published = [
+            item
+            for item in publications(words, docs, local)
+            if item.kind == "pr" or (item.kind == "ticket" and item.endpoint and ISSUE.match(item.endpoint))
+        ]
         act = gh_act(words)
         if act and act[:2] == ("pr", "create") and not published:
             raise Unreadable("`gh pr create` without `--body` or `--body-file`, its tickets unknown")

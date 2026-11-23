@@ -44,10 +44,12 @@ class FakeGh:
         prs: Sequence[tuple[str, str]] | None = (),
         viewed: tuple[int, str] | None = None,
         events: list[dict] | None = None,
+        issue: dict | None = None,
     ) -> None:
         self.prs = prs  # (state, body) of each PR gh lists; None plays an unreachable gh
         self.viewed = viewed  # (number, body) of the PR `gh pr view` gives, None plays a gh error
         self.events = events  # the events of the ticket; None plays a gh error
+        self.issue = issue  # what `gh api repos/<o>/<r>/issues/<n>` gives, None plays a gh error
         self.calls: list[list[str]] = []
 
     def __call__(self, argv: list[str], cwd: str | None) -> str | None:
@@ -56,6 +58,8 @@ class FakeGh:
             if self.viewed is None:
                 return None
             return json.dumps({"number": self.viewed[0], "body": self.viewed[1]})
+        if argv[:1] == ["api"] and "/events" not in argv[1]:
+            return None if self.issue is None else json.dumps(self.issue)
         if argv[:1] == ["api"]:
             return None if self.events is None else json.dumps(self.events)
         if argv[:2] == ["pr", "list"]:
@@ -268,6 +272,45 @@ class Gestures(unittest.TestCase):
         patch = f"gh api -X PATCH repos/o/r/pulls/7 -F body=@{path}"
         self.assertIn("#5 already has 3", project.bash(patch, gh) or "")
         self.assertEqual(gh.asked("pr", "list")[0][-2:], ["--repo", "o/r"])
+
+    def test_gh_api_on_the_issues_endpoint_is_read_when_the_issue_is_a_pr(self) -> None:
+        """Ticket #314, A1: a PR is an issue; a PATCH on `issues/<n>` that is a PR adds its tickets to the count."""
+        project = Project(self)
+        path = project.body_file(pr_body("Closes #5"))
+        patch = f"gh api -X PATCH repos/o/r/issues/7 -F body=@{path}"
+        gh = cited(3)
+        gh.issue = {"number": 7, "body": pr_body("No ticket yet."), "pull_request": {"url": "u"}}
+        self.assertIn("#5 already has 3", project.bash(patch, gh) or "")
+        self.assertEqual(gh.asked("pr", "list")[0][-2:], ["--repo", "o/r"])
+        self.assertEqual(gh.asked("api")[0][1], "repos/o/r/issues/7")
+        # a PR that already cites the ticket is not a new one, and is not counted against itself
+        kept = cited(2)
+        kept.issue = {"number": 7, "body": pr_body("Closes #5"), "pull_request": {"url": "u"}}
+        self.assertIsNone(project.bash(patch, kept))
+        self.assertEqual(kept.asked("pr", "list"), [])
+
+    def test_gh_api_on_the_issues_endpoint_lets_a_real_ticket_be_edited(self) -> None:
+        """Ticket #314, A1: a ticket (no `pull_request`) is edited freely, even when its body names a full ticket."""
+        project = Project(self)
+        path = project.body_file(pr_body("Blocked by Closes #5 is the other ticket"))
+        patch = f"gh api -X PATCH repos/o/r/issues/8 -F body=@{path}"
+        gh = cited(3)
+        gh.issue = {"number": 8, "body": "old", "title": "a ticket"}
+        self.assertIsNone(project.bash(patch, gh))
+        self.assertEqual(gh.asked("pr", "list"), [])
+        plain = project.body_file(pr_body("A ticket body that cites no ticket."))
+        untouched = cited(3)
+        self.assertIsNone(project.bash(f"gh api -X PATCH repos/o/r/issues/8 -F body=@{plain}", untouched))
+        self.assertEqual(untouched.calls, [])
+        created = cited(3)
+        self.assertIsNone(project.bash(f"gh api -X POST repos/o/r/issues -F body=@{path}", created))
+        self.assertEqual(created.calls, [])
+
+    def test_an_issue_gh_cannot_read_is_refused_when_its_body_cites_a_ticket(self) -> None:
+        """Ticket #314, A1: fails closed: whether #7 is a PR is unknown, so the edit is refused."""
+        project = Project(self)
+        patch = f"gh api -X PATCH repos/o/r/issues/7 -F body=@{project.body_file(pr_body('Refs #5'))}"
+        self.assertIn("cannot be read", project.bash(patch, cited(0)) or "")
 
     def test_a_github_mcp_tool_that_opens_or_edits_a_pr_is_read(self) -> None:
         """Ticket #314, A1: `create_pull_request` and `update_pull_request` carry the body to count."""
