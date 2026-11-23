@@ -41,6 +41,13 @@ reprend la main sur un projet en retirant la ligne.
 - **Clé absente** : `forge:qc` poste son verdict, pose `needs-your-attention` et ne fusionne jamais ; `release`
   n'ouvre que la PR de version. L'humain fusionne et publie.
 
+Le skill n'est pas seul à tenir cet interrupteur : le hook `guard_git` tient la même clé, pour tout
+agent. Sans une seule ligne `agent-autonomy` : `on`, il refuse la fusion et le tag (`gh pr merge`, la
+fusion par `gh api`, l'outil MCP de fusion d'un serveur GitHub, `git tag` qui écrit, le push d'un tag),
+et le refus dit que le geste reste à l'humain. Il lit la clé dans `origin/main`, jamais dans l'arbre de
+travail, que l'agent peut modifier. L'essai de bout en bout et l'absence de `sev1` restent au skill :
+un hook ne peut pas les vérifier.
+
 ## 3. Les questions, avec la clé
 
 Aucune question ne part vers un humain avant d'être passée à un agent décideur : une question

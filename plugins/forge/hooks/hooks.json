@@ -24,7 +24,7 @@
     ],
     "PreToolUse": [
       {
-        "matcher": "Bash|PowerShell",
+        "matcher": "Bash|PowerShell|mcp__.*([Gg]it[Hh]ub|GITHUB).*",
         "hooks": [
           {
             "type": "command",

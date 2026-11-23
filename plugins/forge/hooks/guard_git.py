@@ -41,6 +41,20 @@ Refused, with the reason on stderr and exit code 2 so Claude Code blocks the cal
   cancels an auto-merge, merges nothing and reads no key. A caller of `refusal` that passes no
   `merge_method` (None) does not ask for the check; `main` always passes the key's lines.
 
+- a merge (`gh pr merge`, the `gh api` merge, the merge tool of a GitHub MCP server, whose events
+  `hooks.json` routes here), a `git tag` that writes, a push of tags (`--tags`, `--follow-tags`, a
+  `refs/tags/` refspec, `<remote> tag <name>`, and `git push <remote> <name>` when `<name>` is a tag
+  of the repository the command acts in, which `local_tag_exists` reads: closed when it cannot tell,
+  and a push of a branch is not held) and `gh release create` (it creates a tag), for every agent,
+  unless the project's `agent-autonomy`
+  key is one line, `on`, in `docs/agents/usine.md` as `origin/main` holds it (`autonomy_refusal`). The
+  file is read by `git show` on the remote-tracking ref, never in the working tree, which an agent can
+  edit; a key absent, repeated, not `on`, or a file or ref that cannot be read, refuses, and the
+  refusal says the gesture stays the human's. A listing of tags is a reading. `--disable-auto` alone
+  merges nothing and reads no key. The end-to-end trial and the absence of `sev1` that `release`
+  requires are not read here. A caller of `refusal` that passes no `autonomy` (None) does not ask for
+  the check; `main` always passes it.
+
 The command is parsed, not grepped: a commit message that says "push --force" is data. Heredoc
 bodies are dropped first, then the command is split on shell operators with `shlex`. A wrapper
 hides no refusal: assignments, `env`, `sudo`, `command`, `timeout`, `nice`, `nohup`, `xargs` and
@@ -105,6 +119,11 @@ runs alone (a literal `cd` aside), and counts as a merge beside anything else; `
 
 Known limits:
 
+- `origin/main` is the ref this clone last fetched, and an agent that rewrites it locally
+  (`git update-ref`, a `git fetch` refspec, `git remote set-url`) fakes the key: the server's
+  protection of `main` is the net, not this guard. The merge tool of an MCP server is held by the key
+  alone: its checks, files and method are not read. `git push origin :<tag>` (a deletion, no
+  source) and a tag made by a `gh api` call that the project's `gh-api-allow` key opens are not held;
 - an unquoted variable in the value of a `gh api` field, once expanded, may add words to the call
   (`-f body=$X` with `X="a -X DELETE"`): the guard no longer sees the quotes it was typed with;
 - `OWNER_ENDPOINT` does not cover the full URL `https://api.github.com/repos/...`, which the
@@ -136,6 +155,7 @@ from budget import KEY as BUDGET_KEY
 from budget import merge_refusal, state_path
 from refusal_journal import record
 from usine import load, pattern_regex, project_root, split_value
+from usine import parse as parse_usine
 from utf8_stdio import use_utf8
 
 # The project's own owner gestures, one per line: `<command prefix> | <reason>`.
@@ -148,6 +168,9 @@ PROTECTED_KEY = "protected-path"
 # The one way the project merges a PR: `merge`, `squash` or `rebase`.
 METHOD_KEY = "merge-method"
 BUNDLE_KEY = "rescue-bundle-dir"
+# The switch of the agent's merge and tag: read in the file as `origin/main` holds it, not on disk.
+AUTONOMY_KEY = "agent-autonomy"
+AUTONOMY_SOURCE = ("refs/remotes/origin/main", "docs/agents/usine.md")
 MERGE_METHODS = ("merge", "squash", "rebase")
 
 # Every external call has a timeout: a hook that hangs blocks the agent's command.
@@ -435,6 +458,97 @@ def _git_refusal(
         return "reset --hard discards work: use `git stash` or a new branch"
     if sub == "clean" and any(arg.startswith("-") and "f" in arg for arg in rest):
         return "clean -f deletes untracked files for good"
+    return None
+
+
+# What `git tag` does without writing: the options that list, filter or verify. A short option is
+# read letter by letter (`-n5l`); any letter or long option not here writes (`-a`, `-d`, `-s`, `-u`,
+# `-f`, `-m`, `-F`, `-e`, `--delete`...), so an option the guard does not know is refused.
+TAG_READING_LETTERS = frozenset("lnvi")
+TAG_LISTING_LETTERS = frozenset("lnv")  # these make a bare word a pattern, not a new tag's name
+TAG_LISTING_OPTIONS = frozenset(
+    {"--list", "--contains", "--no-contains", "--merged", "--no-merged", "--points-at", "--sort"}
+    | {"--format", "--column", "--no-column", "--verify"}
+)
+TAG_READING_OPTIONS = TAG_LISTING_OPTIONS | {"--color", "--no-color", "--ignore-case", "--omit-empty"}
+
+
+def _writes_a_tag(args: list[str]) -> bool:
+    """Whether the arguments of `git tag` create, move or delete a tag: any form but a reading."""
+    listing = False
+    words: list[str] = []
+    for index, arg in enumerate(args):
+        if arg == "--":
+            words += args[index + 1 :]
+            break
+        if arg.startswith("--"):
+            name = arg.split("=", 1)[0]
+            if name not in TAG_READING_OPTIONS:
+                return True
+            listing = listing or name in TAG_LISTING_OPTIONS
+        elif arg.startswith("-") and len(arg) > 1:
+            letters = arg[1:].rstrip("0123456789")  # `-n5`: the digits are `-n`'s number
+            if not set(letters) <= TAG_READING_LETTERS:
+                return True
+            listing = listing or bool(set(letters) & TAG_LISTING_LETTERS)
+        else:
+            words.append(arg)
+    return bool(words) and not listing
+
+
+def _pushes_a_tag(args: list[str]) -> bool:
+    """Whether a push sends tags: `--tags`, `--follow-tags`, `refs/tags/...`, `<remote> tag <name>`."""
+    if any(arg.startswith(("--tag", "--follow")) for arg in args):
+        return True
+    refs = [arg for arg in args if not arg.startswith("-")]
+    return "tag" in refs[1:] or any("refs/tags/" in ref for ref in refs)
+
+
+# The options of `git push` that take their value as the next word: it is no remote nor refspec.
+PUSH_OPTIONS_WITH_VALUE = frozenset({"-o", "--push-option", "--receive-pack", "--exec", "--repo"})
+
+
+def _push_sources(args: list[str]) -> list[str]:
+    """The source of each refspec a push names after its remote: `v1` for `v1`, `v1:v1` and `+v1`.
+
+    A source that is a tag sends that tag, whatever the destination is spelled. A ref under
+    `refs/` that is not under `refs/tags/` names no tag, and an empty source (`:name`, a deletion)
+    is left alone.
+    """
+    words: list[str] = []
+    skip = operands = False
+    for arg in args:
+        if skip:
+            skip = False
+        elif operands or not arg.startswith("-"):
+            words.append(arg)
+        elif arg == "--":
+            operands = True
+        else:
+            skip = arg in PUSH_OPTIONS_WITH_VALUE
+    sources = [ref.lstrip("+").split(":", 1)[0] for ref in words[1:]]
+    return [name for name in sources if name and not (name.startswith("refs/") and "refs/tags/" not in name)]
+
+
+def autonomy_gesture(
+    args: list[str], tag_exists: Callable[[str], bool | None] | None = None
+) -> str | None:
+    """The gesture of a git command that the key `agent-autonomy` holds (`tag`), or None.
+
+    A push that names a ref with no `refs/tags/` in it (`git push origin v1`) sends a tag when the
+    repository has one called so: `tag_exists` says it (True), says it has none (False), or cannot
+    tell (None). Closed by default: the push is held unless every name is known not to be a tag. A
+    caller that passes no `tag_exists` (None) does not ask for that check.
+    """
+    args = _subcommand_and_args(args)
+    if not args:
+        return None
+    sub, rest = args[0], args[1:]
+    if (sub == "tag" and _writes_a_tag(rest)) or (sub == "push" and _pushes_a_tag(rest)):
+        return "tag"
+    if sub == "push" and tag_exists is not None:
+        if any(tag_exists(name) is not False for name in _push_sources(rest)):
+            return "tag"
     return None
 
 
@@ -1938,6 +2052,8 @@ def refusal(
     commit_messages: CommitMessages = lambda *_target: [],
     gh_api_allow: Iterable[str] | None = None,
     branch_deletion_covered: Callable[[str | None, list[str]], bool] = lambda *_: False,
+    autonomy: Callable[[str], str | None] | None = None,
+    tag_exists: Callable[[str | None, str], bool | None] | None = None,
 ) -> str | None:
     """Why the command is refused, or None when it may run.
 
@@ -1952,6 +2068,13 @@ def refusal(
     aliases; `subagent` says whether a subagent runs the command. `gh_api_allow` are the values of
     the project's `gh-api-allow` key, beside the plugin's list of `gh api` calls; a caller that
     passes none (None) does not ask for the allow-list, and `main` always passes the key's lines.
+    `autonomy` says why a gesture (`merge` or `tag`) is refused for the key `agent-autonomy`, None
+    when the key is `on` (`autonomy_refusal`); it is asked only when the command is such a gesture,
+    and a caller that passes none (None) does not ask for the check: `main` always passes it.
+    `tag_exists` says whether a name is a tag of the repository a command acts in (its directory and
+    the name), None when it cannot tell: a push of a bare name is a tag push when it is one, and is
+    held, with `autonomy`, when it cannot be told (`autonomy_gesture`). A caller that passes none
+    (None) does not ask for it: `main` always passes it.
     """
     declared = list(owner_gestures)
     api_allowed = None if gh_api_allow is None else list(gh_api_allow)
@@ -2022,6 +2145,11 @@ def refusal(
 
                 if reason := _git_refusal(args, branch_where(acts_in), switched, covered):
                     return reason, merges
+                if autonomy is not None:
+                    in_dir = acts_in
+                    named = None if tag_exists is None else (lambda name, d=in_dir: tag_exists(d, name))
+                    if (gesture := autonomy_gesture(args, named)) and (closed := autonomy(gesture)):
+                        return closed, merges
             if gesture := owner_gesture(words, here, bodies, read_text):
                 return _owner_refusal(gesture), merges
             if declared_refusal := _declared_gesture(words, declared):
@@ -2032,6 +2160,9 @@ def refusal(
             act = gh_act(words)
             if subagent and act is not None and act[:2] in ALIAS_GESTURES:
                 return ALIAS_REFUSAL.format(act[1]), merges
+            if autonomy is not None and act is not None and act[:2] == ("release", "create"):
+                if closed := autonomy("release"):  # it creates a tag
+                    return closed, merges
             merges = merges or _merges(words, here, bodies, read_text) or _hidden_gh(words)
         return None, merges or _shell_named_merge(text)
 
@@ -2053,6 +2184,7 @@ def refusal(
         gh_aliases,
         merge_method,
         commit_messages,
+        autonomy,
     ) or commands_location_refusal(command)
 
 
@@ -2139,6 +2271,7 @@ def merge_call_refusal(
     gh_aliases: GhAliases,
     merge_method: Sequence[str] | None = None,
     commit_messages: CommitMessages = lambda *_target: [],
+    autonomy: Callable[[str], str | None] | None = None,
 ) -> str | None:
     """Why a command that merges is refused, or None: run alone, its PR read where it runs."""
     call = merge_call(command, cwd)
@@ -2179,6 +2312,9 @@ def merge_call_refusal(
         else:
             repository = call.repository
     target: Target = (number, repository, call.directory)
+    # A call that only cancels an auto-merge merges nothing: the key does not stop it.
+    if autonomy is not None and not (cancels and not methods) and (closed_key := autonomy("merge")):
+        return closed_key
     if wrong := method_refusal(merge_method, methods, cancels):
         return wrong
     cited_in = message + "\n" + description(*target)
@@ -2367,6 +2503,54 @@ def bundle_covers(directory: str | None, names: list[str], folders: Iterable[str
     return True
 
 
+def autonomy_refusal(directory: str | None, gesture: str) -> str | None:
+    """Why `gesture` (`merge` or `tag`) is refused for the key `agent-autonomy`, or None: it is `on`.
+
+    The key is read in `docs/agents/usine.md` as `refs/remotes/origin/main` holds it (`git show`),
+    never in the working tree, which the agent can edit: what counts is what the human merged. A
+    line `on` alone opens the gesture. An absent key, a repeated one, any other value, and a file
+    or a ref that cannot be read (no git, a timeout, no `origin/main`, no repository) refuse it.
+    The ref is the one this clone last fetched: a key the human removed closes the gesture here
+    only from the next `git fetch`.
+    """
+    git = shutil.which("git")
+    where = native_directory(directory)
+    ref, path = AUTONOMY_SOURCE
+    shown = _run([git, "show", f"{ref}:{path}"], where) if git and where else None
+    if shown is None or shown.returncode != 0:
+        why = f"{path} cannot be read on origin/main"
+    elif not (lines := parse_usine(shown.stdout).get(AUTONOMY_KEY, [])):
+        why = f"{path} on origin/main has no `{AUTONOMY_KEY}` line"
+    elif len(lines) > 1:
+        listed = ", ".join(f"- `{AUTONOMY_KEY}` : `{value}`" for value in lines)
+        why = f"the `{AUTONOMY_KEY}` key takes one line, and has {len(lines)}: {listed}"
+    elif lines[0] != "on":
+        why = f"the line - `{AUTONOMY_KEY}` : `{lines[0]}` of {path} on origin/main is not `on`"
+    else:
+        return None
+    return (
+        f"{why}: the `{AUTONOMY_KEY}` key is not `on`, so the guard refuses the {gesture}, and the"
+        f" gesture stays the human's, to list at the end of the report"
+    )
+
+
+def local_tag_exists(directory: str | None, name: str) -> bool | None:
+    """Whether `name` is a tag of the repository `directory` is in; None when that cannot be told.
+
+    `git show-ref --verify refs/tags/<name>` answers 0 (it is one) or 1 (it is not, whatever the
+    name: a branch, `HEAD`, a glob). Any other code, no git, a timeout, no repository and a directory
+    the guard does not know (`UNKNOWN`) leave it open.
+    """
+    git = shutil.which("git")
+    where = native_directory(directory)
+    if not git or not where or where == UNKNOWN:
+        return None
+    done = _run([git, "show-ref", "--verify", "--quiet", f"refs/tags/{name}"], where)
+    if done is None or done.returncode not in (0, 1):
+        return None
+    return done.returncode == 0
+
+
 def current_branch(cwd: str | None) -> str:
     """The branch checked out in `cwd`; empty when unknown (no git, a timeout, not a repo)."""
     git = shutil.which("git")
@@ -2548,6 +2732,7 @@ RULES = (
     ("change the infra guard", "infra-guard"),
     (f"clé `{PROTECTED_KEY}`", "protected-path"),
     ("merge with checks not green", "checks-not-green"),
+    (f"the `{AUTONOMY_KEY}` key is not `on`", "agent-autonomy"),
     ("git finds the repository by it", "git-location"),
 )
 GIT_VERBS = frozenset(
@@ -2594,12 +2779,36 @@ def verb_of(command: str) -> str:
     return next((verb for verb in found if verb.split()[0] in ("git", "gh")), found[0] if found else "other")
 
 
+def mcp_merge(tool: object, tool_input: object) -> bool:
+    """Whether a tool call merges a PR through a GitHub MCP server, which `gh` never sees.
+
+    The tool is one of a server whose name holds `github`, and its action says `merge` (the merge,
+    the auto-merge), or it is a write tool whose `method` is `merge`. A reading (`get_`, `list_`)
+    and the cancelling of an auto-merge (`disable_`) merge nothing. Only the key `agent-autonomy`
+    is asked of it: its checks, its description, its method and its files are not read here.
+    """
+    if not isinstance(tool, str) or not tool.startswith("mcp__") or "github" not in tool.lower():
+        return False
+    action = tool.rsplit("__", 1)[-1].lower()
+    if action.startswith(("get_", "list_", "search_", "disable_")):
+        return False
+    method = tool_input.get("method") if isinstance(tool_input, dict) else None
+    return "merge" in action or (isinstance(method, str) and method.lower() == "merge")
+
+
 def main() -> int:
     event = json.load(sys.stdin)
     command = str(event.get("tool_input", {}).get("command", ""))
     cwd = event.get("cwd")
     root = project_root(event)
     config = load(root)
+    if mcp_merge(event.get("tool_name"), event.get("tool_input")):
+        reason = autonomy_refusal(str(root), "merge")
+        if reason is None:
+            return 0
+        record("guard_git", reason, RULES, event, lambda: "mcp merge")
+        sys.stderr.write(f"Blocked by the forge plugin (guard_git): {reason}.\n")
+        return 2
     reason = refusal(
         command,
         current_branch,
@@ -2619,6 +2828,8 @@ def main() -> int:
         branch_deletion_covered=lambda directory, names: bundle_covers(
             directory or cwd, names, config.get(BUNDLE_KEY, [])
         ),
+        autonomy=lambda gesture: autonomy_refusal(str(root), gesture),
+        tag_exists=lambda directory, name: local_tag_exists(directory or cwd, name),
     )
     if reason is None:
         return 0

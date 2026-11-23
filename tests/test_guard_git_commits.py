@@ -213,6 +213,7 @@ class TheHook(unittest.TestCase):
                 mock.patch("guard_git.checks_green_via_gh", lambda _cwd: always_green),
                 mock.patch("guard_git.description_via_gh", lambda _cwd: lambda *_target: "Refs #206\n"),
                 mock.patch("guard_git.pr_files_via_gh", lambda _cwd: lambda *_args: []),
+                mock.patch("guard_git.autonomy_refusal", lambda _directory, _gesture: None),  # the key is read in origin/main: tests/test_guard_git_autonomy.py
                 mock.patch("guard_git.changed_files_via_gh", lambda _cwd: lambda *_args: []),
                 mock.patch("guard_git.commits_via_gh", lambda _cwd: lambda *_target: commits),
                 mock.patch("guard_git.load", lambda _root: {"merge-method": ["merge"]}),
