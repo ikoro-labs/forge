@@ -792,7 +792,9 @@ A ticket holds at most `N` PRs, `N` the key `ticket-pr-cap` of `docs/agents/usin
 above 0 on one line; `3` in this repository). `guard_pr_cap` refuses a PR whose body cites `Closes #n`
 or `Refs #n` when the ticket `#n` already has `N` PRs, open or merged; a PR closed without a merge
 leaves its place. It reads these gestures, with the body they carry: `gh pr create`, `gh pr edit`,
-`gh api` POST on `repos/<owner>/<repo>/pulls` and PATCH on `.../pulls/<n>`, and the pull request tools
+`gh api` POST on `repos/<owner>/<repo>/pulls` and PATCH on `.../pulls/<n>`, `gh api` on
+`.../issues/<n>` when that issue is a PR (the guard asks `gh api` whether it carries `pull_request`; a
+real ticket is not held), and the pull request tools
 of a GitHub MCP server (`create_pull_request`, `update_pull_request`), also inside `bash -c`, `eval`,
 a nested shell and behind a wrapper (the reader is `hooks/gh_bodies.py`, shared with `guard_cases`).
 
@@ -809,11 +811,14 @@ a nested shell and behind a wrapper (the reader is `hooks/gh_bodies.py`, shared 
   the ticket, sets `needs-your-attention`, and passes the decision to `forge:staff-engineer`. No ticket is
   opened because of the cap, and the briefs of `forge:coder` and of `forge:feature-build` say the cap.
 - **Raising it.** Only the label `pr-cap-raised` on the ticket raises the cap to 6, and only when the
-  last event on that label is its being set (`labeled`) by a login of the key `accepting-human` (the short
-  identifier after ` | ` in a line, else the whole value; the case is free). The guard reads the events by
+  last event on that label is its being set (`labeled`) by a login of the key `pr-cap-raiser` (the short
+  identifier after ` | ` in a line, else the whole value; the case is free). `accepting-human` is not
+  read for this: its accounts may include the agent's, and the key `pr-cap-raiser` must name accounts
+  whose token the agent does not hold. The guard reads the events by
   `gh api repos/<owner>/<repo>/issues/<n>/events --paginate`, and only when the count has reached the cap.
   Unset by the human, or set again by anyone else after, it raises nothing. Without the key
-  `accepting-human`, nobody can raise it, and the refusal says so.
+  `pr-cap-raiser` the step is « sans objet (clé `pr-cap-raiser` absente) »: nobody can raise it, the
+  value of `ticket-pr-cap` holds, and the refusal says so. No default is guessed.
 - **Without the key** `ticket-pr-cap` the step is « sans objet (clé `ticket-pr-cap` absente) »: the hook
   reads nothing, and no default cap is guessed. A value that is not one whole number above 0, or a key
   repeated, refuses every PR that cites a ticket until it is fixed.
@@ -827,15 +832,14 @@ GraphQL of `api.github.com` are refused. `hooks.json` turns a crash into a refus
 
 Limits, tried on Linux only, by the tests with a simulated gh, not yet in a real session nor under
 Windows:
-- only `Closes #n` and `Refs #n` count, as `forge:coder` counts: `Fixes #n`, `Resolves #n` or a PR that
-  cites no ticket are not held;
-- a PR body written by the issues endpoint (`gh api` PATCH on `.../issues/<n>`, a PR being an issue) is
-  read as a ticket body, not as a PR's, and is not held;
+- the citation forms are those `guard_git` reads (`Closes #n`, `Closes: #n`, `Closes owner/repo#n`,
+  `Fixes`, `Resolves`, `Refs #n, #m`), while `forge:coder` counts `Closes #n` and `Refs #n` only; a PR
+  that cites no ticket is not held;
 - the memory is per machine and needs `CLAUDE_PLUGIN_DATA`: two machines that open the PR at the last
   place in the same minute can both pass, as can a PR opened outside the hook (the web page, another
   tool); an older Claude Code without the data directory leaves the index lag open;
-- the label's author is checked by login: where an agent acts under the same login as a human of
-  `accepting-human`, the guard cannot tell their labels apart;
+- the label's author is checked by login: a login of `pr-cap-raiser` that the agent also holds a token
+  for lets the agent raise its own cap, so the key must name accounts the agent cannot act as;
 - a PR opened without a body option (`--fill`, an editor) is refused whatever it cites, because its
   body is the commits' and is not readable before gh runs.
 

@@ -440,14 +440,25 @@ Le plafond de PR par ticket, un nombre entier au-dessus de 0 sur une seule ligne
 ouvertes ou fusionnées (une PR fermée sans fusion ne compte pas) : c'est le `BLOCKED` de la quatrième PR,
 le ticket est commenté et reçoit `needs-your-attention`, et aucun ticket ne naît du plafond. Le coder
 (`forge:coder`) et l'orchestrateur (`forge:feature-build`) le lisent avant de couper un ticket : ils en
-prévoient au plus ce nombre. Seule l'étiquette `pr-cap-raised`, posée par un humain de la clé
-`accepting-human` (le dernier événement de l'étiquette doit être sa pose, par l'identifiant court de sa
-ligne), relève le plafond à 6 ; sans la clé `accepting-human`, personne ne peut le relever. Sans la clé
+prévoient au plus ce nombre. Seule l'étiquette `pr-cap-raised`, posée par un compte de la clé
+`pr-cap-raiser` (plus bas ; le dernier événement de l'étiquette doit être sa pose), relève le plafond à 6.
+Sans la clé
 `ticket-pr-cap`, « sans objet (clé `ticket-pr-cap` absente) » : le garde ne lit rien, aucune valeur par
 défaut n'est devinée. Une valeur qui n'est pas un nombre entier au-dessus de 0, ou une clé répétée, fait
 refuser toute PR qui cite un ticket, tant qu'elle n'est pas corrigée.
 
 - `ticket-pr-cap` : `<3>`
+
+Les comptes GitHub qui peuvent relever le plafond de PR par ticket à 6, en posant l'étiquette `pr-cap-raised`.
+Une ligne par compte, le login GitHub (ou `<nom> | <login>` : le login après ` | `) ; la casse est libre.
+Mets ici des comptes dont l'agent n'a aucun jeton : si l'agent peut agir sous un de ces comptes, il pose
+l'étiquette lui-même et relève son propre plafond, ce que la clé existe pour empêcher. Elle est distincte de
+`accepting-human`, dont un compte peut être celui de l'agent, et `guard_pr_cap` ne lit pas
+`accepting-human` pour ce contrôle. Sans la clé `pr-cap-raiser`, « sans objet (clé `pr-cap-raiser`
+absente) » pour la relève : personne ne relève le plafond, et la valeur de `ticket-pr-cap` tient ; aucune
+valeur par défaut n'est devinée.
+
+- `pr-cap-raiser` : `<login GitHub d'un humain>`
 
 Le délai après lequel une question restée sans réponse d'un humain reçoit une décision par défaut, une
 seule ligne : un nombre au-dessus de 0 suivi de `h` ou de `j`, comme dans la clé `sla`. Une question est

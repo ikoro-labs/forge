@@ -18,8 +18,9 @@ file of `guard_ticket_budget`, kind `pr`). A retry of the same body is the same 
 
 A refusal is the `BLOCKED` of the fourth PR: no PR, no new ticket; the ticket is commented and takes
 `needs-your-attention`. Only the label `pr-cap-raised` raises the cap to `RAISED_CAP`, and only
-when the last event on that label is a `labeled` by a login of the key `accepting-human` (the
-short identifier of its line, else its whole value): the guard reads the events of the ticket by
+when the last event on that label is a `labeled` by a login of the key `pr-cap-raiser` (the
+short identifier of its line, else its whole value; `accepting-human` is not read here: the agent's
+account may sit in it): the guard reads the events of the ticket by
 `gh api` and asks for them only when the count is at the cap.
 
 Fails closed: a body it cannot read (a variable, a substitution, a pipe, an editor, `--fill`), a count
@@ -55,7 +56,7 @@ from usine import load, project_root
 from utf8_stdio import use_utf8
 
 KEY = "ticket-pr-cap"
-HUMAN_KEY = "accepting-human"
+RAISER_KEY = "pr-cap-raiser"
 RAISE_LABEL = "pr-cap-raised"
 RAISED_CAP = 6
 KIND = "pr"
@@ -190,29 +191,30 @@ class Check:
     def __init__(self, root: Path, cap: int, config: Mapping[str, list[str]], run: Runner, state: State) -> None:
         self.root, self.cap, self.config, self.run, self.state = root, cap, config, run, state
 
-    def humans(self) -> set[str]:
-        """The logins of the key `accepting-human`: the short identifier of each line, else its value."""
+    def raisers(self) -> set[str]:
+        """The logins of the key `pr-cap-raiser`: the short identifier of each line, else its value."""
         found = set()
-        for value in self.config.get(HUMAN_KEY, []):
+        for value in self.config.get(RAISER_KEY, []):
             login = value.rpartition(" | ")[2] if " | " in value else value
             if login.strip():
                 found.add(login.strip().lower())
         return found
 
     def how_to_raise(self) -> str:
-        if not self.humans():
+        if not self.raisers():
             return (
-                f"The label `{RAISE_LABEL}` raises the cap to {RAISED_CAP} only when a human of the key"
-                f" `{HUMAN_KEY}` sets it, and that key is absent: nobody can raise it"
+                f"The label `{RAISE_LABEL}` raises the cap to {RAISED_CAP} only when a login of the key"
+                f" `{RAISER_KEY}` sets it, and that key is absent (sans objet, clé `{RAISER_KEY}` absente):"
+                " nobody can raise it"
             )
         return (
-            f"Only the label `{RAISE_LABEL}`, set by a human of the key `{HUMAN_KEY}`, raises the cap"
+            f"Only the label `{RAISE_LABEL}`, set by a login of the key `{RAISER_KEY}`, raises the cap"
             f" to {RAISED_CAP}"
         )
 
     def raised(self, number: str, repo: str | None, cwd: str | None) -> bool:
-        """Whether the last event on the label `pr-cap-raised` of ticket `number` is a `labeled` by a human."""
-        humans = self.humans()
+        """Whether the last event on the label `pr-cap-raised` of ticket `number` is a `labeled` by a raiser."""
+        humans = self.raisers()
         if not humans:
             return False
         events = _events(self.run(["api", f"repos/{repo or '{owner}/{repo}'}/issues/{number}/events?per_page=100", "--paginate"], cwd))

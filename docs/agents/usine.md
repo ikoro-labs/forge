@@ -76,10 +76,13 @@ Les jobs de `.github/workflows/tests.yml`.
 
 Un ticket tient en trois PR au plus, ouvertes ou fusionnées (ticket #314, demandé par l'humain). Le garde
 `guard_pr_cap` refuse la quatrième, que le coder rend en `BLOCKED` ; seule l'étiquette `pr-cap-raised`,
-posée par l'humain de la clé `accepting-human`, relève le plafond à 6. Le garde agit une fois l'épingle
-montée à la version qui le publie.
+posée par un compte de la clé `pr-cap-raiser`, relève le plafond à 6. Le compte de cette clé est un humain
+dont l'agent n'a aucun jeton (`gh auth status` ne montre que `ikoro-labs` et `sunderland-labs`) : la clé
+`accepting-human` contient le compte de l'agent et n'entre pas dans ce contrôle. Le garde agit une fois
+l'épingle montée à la version qui le publie.
 
 - `ticket-pr-cap` : `3`
+- `pr-cap-raiser` : `kevin_simo`
 
 ## Objectifs de service
 

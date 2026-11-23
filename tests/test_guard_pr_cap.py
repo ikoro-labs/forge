@@ -26,7 +26,10 @@ from unittest import mock
 import support
 from guard_pr_cap import Runner, refusal
 
-USINE = "# Usine\n- `ticket-pr-cap` : `3`\n- `accepting-human` : `Kevin Humain | the-human`\n"
+USINE = (
+    "# Usine\n- `ticket-pr-cap` : `3`\n- `accepting-human` : `Kevin Humain | the-human`\n"
+    "- `pr-cap-raiser` : `Kevin Humain | the-human`\n"
+)
 
 
 def pr_body(*lines: str) -> str:
@@ -430,6 +433,9 @@ class TheKey(unittest.TestCase):
         self.assertIn("- `ticket-pr-cap` : `<3>`", text)
         self.assertIn("sans objet (clé `ticket-pr-cap` absente)", text)
         self.assertIn("aucune valeur par défaut", text.split("- `ticket-pr-cap`")[0][-900:])
+        self.assertIn("- `pr-cap-raiser` : `<", text)
+        self.assertIn("sans objet (clé `pr-cap-raiser` absente)", text)
+        self.assertIn("aucun jeton", text)
 
     def test_this_repository_declares_the_key_at_three(self) -> None:
         """Ticket #314, A2: `docs/agents/usine.md` of this repository holds `ticket-pr-cap : 3`."""
@@ -462,7 +468,7 @@ def raised(login: str = "the-human", name: str = "pr-cap-raised", event: str = "
 
 
 class RaisedCap(unittest.TestCase):
-    """A4: only the label `pr-cap-raised`, set by a human, raises the cap to 6."""
+    """A4: only the label `pr-cap-raised`, set by a login of the key `pr-cap-raiser`, raises the cap to 6."""
 
     def full(self, count: int, events: list[dict] | None) -> FakeGh:
         gh = cited(count)
@@ -470,7 +476,7 @@ class RaisedCap(unittest.TestCase):
         return gh
 
     def test_the_label_set_by_the_human_lets_the_fourth_pr_through_up_to_six(self) -> None:
-        """Ticket #314, A4: three PRs and the label by the human of `accepting-human`: a fourth, a fifth, a sixth."""
+        """Ticket #314, A4: three PRs and the label by the login of `pr-cap-raiser`: a fourth, a fifth, a sixth."""
         project = Project(self)
         for count in (3, 4, 5):
             with self.subTest(count=count):
@@ -488,7 +494,7 @@ class RaisedCap(unittest.TestCase):
         named = Project(self)
         self.assertIsNotNone(named.create(pr_body("Closes #5"), self.full(3, [raised("Kevin Humain")])))
         self.assertIsNone(named.create(pr_body("Closes #5"), self.full(3, [raised("The-Human")])))
-        alone = Project(self, "- `ticket-pr-cap` : `3`\n- `accepting-human` : `solo`\n")
+        alone = Project(self, "- `ticket-pr-cap` : `3`\n- `pr-cap-raiser` : `solo`\n")
         self.assertIsNone(alone.create(pr_body("Closes #5"), self.full(3, [raised("solo")])))
 
     def test_the_last_event_on_the_label_decides(self) -> None:
@@ -512,12 +518,32 @@ class RaisedCap(unittest.TestCase):
         project = Project(self)
         self.assertIn("cap of 3", project.create(pr_body("Closes #5"), self.full(3, None)) or "")
 
-    def test_without_the_key_accepting_human_nobody_can_raise_the_cap(self) -> None:
-        """Ticket #314, A4: no human to check the author against: the label raises nothing, and the refusal says so."""
-        project = Project(self, "- `ticket-pr-cap` : `3`\n")
+    def test_without_the_key_pr_cap_raiser_nobody_can_raise_the_cap(self) -> None:
+        """Ticket #314, A4: no `pr-cap-raiser`, no default: the label raises nothing, and the refusal says so."""
+        project = Project(self, "- `ticket-pr-cap` : `3`\n- `accepting-human` : `Kevin | the-human`\n")
         reason = project.create(pr_body("Closes #5"), self.full(3, [raised()])) or ""
         self.assertIn("cap of 3", reason)
-        self.assertIn("accepting-human", reason)
+        self.assertIn("pr-cap-raiser", reason)
+
+    def test_a_login_of_accepting_human_that_is_not_a_raiser_does_not_raise_the_cap(self) -> None:
+        """Ticket #314, A4: the agent's account may sit in `accepting-human`; only `pr-cap-raiser` counts."""
+        project = Project(
+            self,
+            "- `ticket-pr-cap` : `3`\n- `accepting-human` : `Kevin | kevin`\n"
+            "- `accepting-human` : `Agent | agent`\n- `pr-cap-raiser` : `Kevin | kevin`\n",
+        )
+        self.assertIn("cap of 3", project.create(pr_body("Closes #5"), self.full(3, [raised("agent")])) or "")
+        self.assertIsNone(project.create(pr_body("Closes #5"), self.full(3, [raised("kevin")])))
+
+    def test_in_this_repository_the_agent_account_does_not_raise_the_cap_and_the_human_does(self) -> None:
+        """Ticket #314, A4: with the real `docs/agents/usine.md`, `ikoro-labs` setting the label raises nothing, `kevin_simo` does."""
+        text = (support.REPO_ROOT / "docs" / "agents" / "usine.md").read_text(encoding="utf-8")
+        self.assertIn("- `pr-cap-raiser` : `kevin_simo`", text)
+        self.assertNotIn("`pr-cap-raiser`", text.split("## Clés absentes", 1)[1])
+        project = Project(self, text)
+        by_agent = project.create(pr_body("Closes #5"), self.full(3, [raised("ikoro-labs")])) or ""
+        self.assertIn("#5 already has 3 PRs for a cap of 3", by_agent)
+        self.assertIsNone(project.create(pr_body("Closes #5"), self.full(3, [raised("kevin_simo")])))
 
     def test_the_events_are_read_only_when_the_count_reaches_the_cap(self) -> None:
         """Ticket #314, A4: below the cap no label is looked up."""
@@ -619,7 +645,8 @@ class Documentation(unittest.TestCase):
             "`ticket-pr-cap`",
             "sans objet (clé `ticket-pr-cap` absente)",
             "`pr-cap-raised`",
-            "`accepting-human`",
+            "`pr-cap-raiser`",
+            "sans objet (clé `pr-cap-raiser` absente)",
             "BLOCKED",
             "needs-your-attention",
             "gh pr list --state all",
@@ -648,6 +675,7 @@ class Documentation(unittest.TestCase):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, entry)
         self.assertIn("`guard_pr_cap.py`", entry)
+        self.assertIn("`pr-cap-raiser`", entry)
         self.assertIn("ikoro-labs/forge#314", entry)
         self.assertLess(changelog.index("## [Non publié]"), changelog.index("## [1.19.0]"))
 

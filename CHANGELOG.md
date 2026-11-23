@@ -15,8 +15,10 @@ Entrée ouverte par la PR du plafond de PR par ticket ; la session qui publie la
 renomme et la complète. Une clé nouvelle, `ticket-pr-cap`, et un hook nouveau.
 
 - Hooks : `guard_pr_cap.py` et `hooks.json` refusent une PR dont le corps cite `Closes #n` ou `Refs #n` quand le
-  ticket a déjà `ticket-pr-cap` PR, ouvertes ou fusionnées ; l'étiquette `pr-cap-raised`, posée par un humain de
-  la clé `accepting-human`, relève le plafond à 6 ; le garde échoue fermé (ikoro-labs/forge#314).
+  ticket a déjà `ticket-pr-cap` PR, ouvertes ou fusionnées ; l'étiquette `pr-cap-raised`, posée par un compte de
+  la clé `pr-cap-raiser`, relève le plafond à 6 ; le garde lit les formes de citation de `guard_git`
+  (`Closes: #n`, `owner/repo#n`, `Fixes`, `Resolves`, `Refs #n, #m`) et un PATCH `gh api` sur `issues/<n>` qui est une PR ;
+  il échoue fermé (ikoro-labs/forge#314).
 - Agents : `coder` prévoit au plus le plafond de PR dès sa première lecture et rend `BLOCKED` à la quatrième
   (ikoro-labs/forge#314).
 - Skills : `feature-build` écrit le plafond dans le brief de chaque coder, commente le ticket et pose
@@ -24,9 +26,10 @@ renomme et la complète. Une clé nouvelle, `ticket-pr-cap`, et un hook nouveau.
 - Tests : `tests/test_guard_pr_cap.py`, sous Linux et sous Windows, avec `HOME` et `USERPROFILE` isolés
   (ikoro-labs/forge#314).
 - Gestes humains : un projet qui veut le plafond déclare `ticket-pr-cap` (le gabarit `templates/usine.md` la
-  documente) ; sans la clé, le garde ne lit rien. Seul un humain pose `pr-cap-raised`.
-- Resté dehors : la taille d'une PR (une décision du projet) et les mots de fermeture autres que `Closes` et
-  `Refs`. Rien n'a été essayé dans une vraie session ni sous Windows.
+  documente) ; sans la clé, le garde ne lit rien. Un projet qui veut pouvoir le relever déclare aussi
+  `pr-cap-raiser`, des comptes dont l'agent n'a aucun jeton (clé nouvelle, sans valeur par défaut) ; sans elle,
+  « sans objet (clé `pr-cap-raiser` absente) » et personne ne relève le plafond.
+- Resté dehors : la taille d'une PR (une décision du projet). Rien n'a été essayé dans une vraie session ni sous Windows.
 
 ## [1.19.0] - 2026-11-22
 

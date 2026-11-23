@@ -265,7 +265,7 @@ phrase que le script a rendue ; un second échec se traite comme `RESULT: FAILED
   commente d'abord le ticket (le plafond de la clé `ticket-pr-cap` atteint, les PR comptées) et pose
   `needs-your-attention`, puis passe-le à `forge:staff-engineer`, qui dit si le ticket tient dans ce qui
   est livré ou si la feature se recoupe ; le budget de tickets est fermé, et aucun ticket ne naît du
-  plafond. Seule l'étiquette `pr-cap-raised`, posée par un humain de la clé `accepting-human`, relève le
+  plafond. Seule l'étiquette `pr-cap-raised`, posée par un compte de la clé `pr-cap-raiser`, relève le
   plafond à 6 : tu ne la poses jamais. Selon le verdict :
   - `DECIDED` : commente le ticket (`Décision (<agent>, <ligne MATRIX_CELL>)`, la décision, sa
     source ; `needs-your-attention` si `VETO: yes`), puis relance un `forge:coder` sur le ticket
