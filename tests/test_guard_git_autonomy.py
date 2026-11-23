@@ -12,9 +12,11 @@ import unittest
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
+from typing import Any
 
 import support  # noqa: F401  met les hooks sur le chemin d'import
-from guard_git import autonomy_refusal
+from guard_git import RULES, autonomy_refusal, refusal
+from refusal_journal import rule_of
 
 USINE = Path("docs") / "agents" / "usine.md"
 PROSE = "# Usine\n\nDu texte, puis la clé.\n\n"
@@ -135,6 +137,94 @@ class TheKeyIsReadInOriginMain(unittest.TestCase):
         assert merge is not None and tag is not None
         self.assertIn("merge", merge)
         self.assertIn("tag", tag)
+
+
+CLOSED = "the `agent-autonomy` key is not `on` (stub)"
+
+
+def always_green(*_target: str | None) -> bool:
+    return True
+
+
+class Asked:
+    """An `autonomy` reader that says what it is asked, and answers `answer` (None: the key is `on`)."""
+
+    def __init__(self, answer: str | None) -> None:
+        self.answer = answer
+        self.gestures: list[str] = []
+
+    def __call__(self, gesture: str) -> str | None:
+        self.gestures.append(gesture)
+        return self.answer
+
+
+def judged(command: str, autonomy: Asked | None, **keys: Any) -> str | None:
+    return refusal(command, "feat/x", always_green, merge_method=["merge"], autonomy=autonomy, **keys)
+
+
+MERGES = (
+    "gh pr merge 5 --merge",
+    "gh pr merge 5 --merge --delete-branch",
+    "gh pr merge https://github.com/o/r/pull/5 --merge",
+    "cd /work/depot && gh pr merge 5 --merge",
+    "gh api -X PUT repos/o/r/pulls/5/merge -f merge_method=merge",
+)
+
+
+class TheMergeFollowsTheKey(unittest.TestCase):
+    def test_every_form_of_a_merge_is_refused_when_the_key_is_not_on(self) -> None:
+        """#280: `gh pr merge` and the REST merge, alone, behind `cd` or `sh -c`, refused with the key's reason."""
+        for command in MERGES:
+            with self.subTest(command=command):
+                asked = Asked(CLOSED)
+                self.assertEqual(judged(command, asked), CLOSED)
+                self.assertEqual(asked.gestures, ["merge"])
+
+    def test_every_form_of_a_merge_passes_when_the_key_is_on(self) -> None:
+        """#280: with `on`, the guard's other rules apply as before and let this merge through."""
+        for command in MERGES:
+            with self.subTest(command=command):
+                self.assertIsNone(judged(command, Asked(None)))
+
+    def test_the_key_on_does_not_open_what_the_other_rules_refuse(self) -> None:
+        """#280: `on` is not a pass: checks not green, a protected path, a wrong method still refuse."""
+        red = refusal("gh pr merge 5 --merge", "feat/x", lambda *_t: False, merge_method=["merge"], autonomy=Asked(None))
+        self.assertIn("checks not green", str(red))
+        self.assertIn("merge-method", str(judged("gh pr merge 5 --squash", Asked(None))))
+        held = judged("gh pr merge 5 --merge", Asked(None), protected_paths=["a/"], changed_files=lambda *_t: ["a/b"])
+        self.assertIn("protected-path", str(held))
+
+    def test_a_merge_behind_a_shell_or_beside_another_command_stays_refused_either_way(self) -> None:
+        """#280: not run alone, it is refused for that, key `on` or not; the key never opens it."""
+        for command in ("gh pr merge 5 --merge && ls", "sh -c 'gh pr merge 5 --merge'"):
+            for answer in (CLOSED, None):
+                with self.subTest(command=command, answer=answer):
+                    self.assertIsNotNone(judged(command, Asked(answer)))
+
+    def test_cancelling_an_auto_merge_merges_nothing_and_reads_no_key(self) -> None:
+        """#280: `--disable-auto` alone is not a merge."""
+        asked = Asked(CLOSED)
+        self.assertIsNone(judged("gh pr merge 5 --disable-auto", asked))
+        self.assertEqual(asked.gestures, [])
+
+    def test_other_commands_do_not_read_the_key(self) -> None:
+        """#280: a reading, a comment, a push of a branch: the key is not asked."""
+        for command in ("gh pr view 5", "gh pr checks 5", "git status", "git push origin feat/x", "gh pr edit 5 --add-label x"):
+            with self.subTest(command=command):
+                asked = Asked(CLOSED)
+                self.assertIsNone(judged(command, asked))
+                self.assertEqual(asked.gestures, [])
+
+    def test_the_refusal_has_its_name_in_the_journal(self) -> None:
+        """#280: the journal names the rule `agent-autonomy`, never `other`."""
+        with project(PROSE) as where:
+            for gesture in ("merge", "tag"):
+                reason = autonomy_refusal(str(where), gesture)
+                self.assertEqual(rule_of(str(reason), RULES), "agent-autonomy")
+
+    def test_a_caller_that_passes_no_reader_does_not_ask_for_the_check(self) -> None:
+        """#280: like `merge_method`, `None` is `refusal`'s default for a caller that does not ask."""
+        self.assertIsNone(judged("gh pr merge 5 --merge", None))
 
 
 if __name__ == "__main__":

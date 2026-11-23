@@ -1942,6 +1942,7 @@ def refusal(
     commit_messages: CommitMessages = lambda *_target: [],
     gh_api_allow: Iterable[str] | None = None,
     branch_deletion_covered: Callable[[str | None, list[str]], bool] = lambda *_: False,
+    autonomy: Callable[[str], str | None] | None = None,
 ) -> str | None:
     """Why the command is refused, or None when it may run.
 
@@ -1956,6 +1957,9 @@ def refusal(
     aliases; `subagent` says whether a subagent runs the command. `gh_api_allow` are the values of
     the project's `gh-api-allow` key, beside the plugin's list of `gh api` calls; a caller that
     passes none (None) does not ask for the allow-list, and `main` always passes the key's lines.
+    `autonomy` says why a gesture (`merge` or `tag`) is refused for the key `agent-autonomy`, None
+    when the key is `on` (`autonomy_refusal`); it is asked only when the command is such a gesture,
+    and a caller that passes none (None) does not ask for the check: `main` always passes it.
     """
     declared = list(owner_gestures)
     api_allowed = None if gh_api_allow is None else list(gh_api_allow)
@@ -2057,6 +2061,7 @@ def refusal(
         gh_aliases,
         merge_method,
         commit_messages,
+        autonomy,
     ) or commands_location_refusal(command)
 
 
@@ -2143,6 +2148,7 @@ def merge_call_refusal(
     gh_aliases: GhAliases,
     merge_method: Sequence[str] | None = None,
     commit_messages: CommitMessages = lambda *_target: [],
+    autonomy: Callable[[str], str | None] | None = None,
 ) -> str | None:
     """Why a command that merges is refused, or None: run alone, its PR read where it runs."""
     call = merge_call(command, cwd)
@@ -2183,6 +2189,9 @@ def merge_call_refusal(
         else:
             repository = call.repository
     target: Target = (number, repository, call.directory)
+    # A call that only cancels an auto-merge merges nothing: the key does not stop it.
+    if autonomy is not None and not (cancels and not methods) and (closed_key := autonomy("merge")):
+        return closed_key
     if wrong := method_refusal(merge_method, methods, cancels):
         return wrong
     cited_in = message + "\n" + description(*target)
@@ -2583,6 +2592,7 @@ RULES = (
     ("change the infra guard", "infra-guard"),
     (f"clé `{PROTECTED_KEY}`", "protected-path"),
     ("merge with checks not green", "checks-not-green"),
+    (f"the `{AUTONOMY_KEY}` key is not `on`", "agent-autonomy"),
     ("git finds the repository by it", "git-location"),
 )
 GIT_VERBS = frozenset(
