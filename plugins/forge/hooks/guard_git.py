@@ -442,6 +442,60 @@ def _git_refusal(
     return None
 
 
+# What `git tag` does without writing: the options that list, filter or verify. A short option is
+# read letter by letter (`-n5l`); any letter or long option not here writes (`-a`, `-d`, `-s`, `-u`,
+# `-f`, `-m`, `-F`, `-e`, `--delete`...), so an option the guard does not know is refused.
+TAG_READING_LETTERS = frozenset("lnvi")
+TAG_LISTING_LETTERS = frozenset("lnv")  # these make a bare word a pattern, not a new tag's name
+TAG_LISTING_OPTIONS = frozenset(
+    {"--list", "--contains", "--no-contains", "--merged", "--no-merged", "--points-at", "--sort"}
+    | {"--format", "--column", "--no-column", "--verify"}
+)
+TAG_READING_OPTIONS = TAG_LISTING_OPTIONS | {"--color", "--no-color", "--ignore-case", "--omit-empty"}
+
+
+def _writes_a_tag(args: list[str]) -> bool:
+    """Whether the arguments of `git tag` create, move or delete a tag: any form but a reading."""
+    listing = False
+    words: list[str] = []
+    for index, arg in enumerate(args):
+        if arg == "--":
+            words += args[index + 1 :]
+            break
+        if arg.startswith("--"):
+            name = arg.split("=", 1)[0]
+            if name not in TAG_READING_OPTIONS:
+                return True
+            listing = listing or name in TAG_LISTING_OPTIONS
+        elif arg.startswith("-") and len(arg) > 1:
+            letters = arg[1:].rstrip("0123456789")  # `-n5`: the digits are `-n`'s number
+            if not set(letters) <= TAG_READING_LETTERS:
+                return True
+            listing = listing or bool(set(letters) & TAG_LISTING_LETTERS)
+        else:
+            words.append(arg)
+    return bool(words) and not listing
+
+
+def _pushes_a_tag(args: list[str]) -> bool:
+    """Whether a push sends tags: `--tags`, `--follow-tags`, `refs/tags/...`, `<remote> tag <name>`."""
+    if any(arg.startswith(("--tag", "--follow")) for arg in args):
+        return True
+    refs = [arg for arg in args if not arg.startswith("-")]
+    return "tag" in refs[1:] or any("refs/tags/" in ref for ref in refs)
+
+
+def autonomy_gesture(args: list[str]) -> str | None:
+    """The gesture of a git command that the key `agent-autonomy` holds (`tag`), or None."""
+    args = _subcommand_and_args(args)
+    if not args:
+        return None
+    sub, rest = args[0], args[1:]
+    if (sub == "tag" and _writes_a_tag(rest)) or (sub == "push" and _pushes_a_tag(rest)):
+        return "tag"
+    return None
+
+
 def _deletes_by_force(args: list[str]) -> bool:
     """`-D`, `-df`/`-fd`, or `--delete` with `--force`/`-f`."""
     short = "".join(arg[1:] for arg in args if arg.startswith("-") and not arg.startswith("--"))
@@ -2030,6 +2084,9 @@ def refusal(
 
                 if reason := _git_refusal(args, branch_where(acts_in), switched, covered):
                     return reason, merges
+                if autonomy is not None and (gesture := autonomy_gesture(args)):
+                    if closed := autonomy(gesture):
+                        return closed, merges
             if gesture := owner_gesture(words, here, bodies, read_text):
                 return _owner_refusal(gesture), merges
             if declared_refusal := _declared_gesture(words, declared):

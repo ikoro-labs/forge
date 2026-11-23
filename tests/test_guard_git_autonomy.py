@@ -227,5 +227,99 @@ class TheMergeFollowsTheKey(unittest.TestCase):
         self.assertIsNone(judged("gh pr merge 5 --merge", None))
 
 
+CREATING_OR_CHANGING_TAGS = (
+    "git tag forge--v1.20.0",
+    "git tag -a forge--v1.20.0 -m 'forge 1.20.0'",
+    "git tag -am 'forge 1.20.0' forge--v1.20.0",
+    "git tag -s forge--v1.20.0",
+    "git tag -f forge--v1.20.0 HEAD",
+    "git tag -d forge--v1.20.0",
+    "git tag --delete forge--v1.20.0",
+    "git tag --annotate --message=x forge--v1.20.0",
+    "git tag -- forge--v1.20.0",
+    "git -C /work/depot tag forge--v1.20.0",
+    "cd /work/depot && git tag v1",
+    "git tag v1 && git push origin v1",
+)
+READING_TAGS = (
+    "git tag",
+    "git tag -l",
+    "git tag --list 'forge--v*'",
+    "git tag -l 'forge--v*' --sort=-version:refname",
+    "git tag -n",
+    "git tag -n5 -l",
+    "git tag --contains HEAD",
+    "git tag --points-at HEAD",
+    "git tag --merged main",
+    "git tag --sort=-creatordate",
+    "git tag -v forge--v1.20.0",
+    "git -C /work/depot tag -l",
+)
+PUSHING_TAGS = (
+    "git push --tags",
+    "git push origin --tags",
+    "git push --follow-tags origin feat/x",
+    "git push origin forge--v1.20.0 --tags",
+    "git push origin tag forge--v1.20.0",
+    "git push origin refs/tags/forge--v1.20.0",
+    "git push origin HEAD:refs/tags/forge--v1.20.0",
+    "git push origin :refs/tags/forge--v1.20.0",
+    "git push origin refs/tags/*:refs/tags/*",
+    "git -C /work/depot push origin --tags",
+)
+PUSHING_BRANCHES = (
+    "git push origin feat/x",
+    "git push origin HEAD:feat/x",
+    "git push --force-with-lease origin feat/x",
+    "git push origin feat/tags",
+    "git push origin feat/autonomy-tag",
+)
+
+
+class TheTagFollowsTheKey(unittest.TestCase):
+    def asked(self, command: str, answer: str | None) -> tuple[str | None, list[str]]:
+        asked = Asked(answer)
+        return judged(command, asked), asked.gestures
+
+    def test_creating_changing_or_deleting_a_tag_is_refused_when_the_key_is_not_on(self) -> None:
+        """#280: `git tag` that writes, whatever its form, is refused with the key's reason."""
+        for command in CREATING_OR_CHANGING_TAGS:
+            with self.subTest(command=command):
+                reason, gestures = self.asked(command, CLOSED)
+                self.assertEqual(reason, CLOSED)
+                self.assertEqual(gestures[:1], ["tag"])
+
+    def test_pushing_a_tag_is_refused_when_the_key_is_not_on(self) -> None:
+        """#280: `--tags`, `--follow-tags`, `--mirror`, a `refs/tags/` refspec, the `tag <name>` form."""
+        for command in PUSHING_TAGS:
+            with self.subTest(command=command):
+                reason, gestures = self.asked(command, CLOSED)
+                self.assertEqual(reason, CLOSED)
+                self.assertEqual(gestures[:1], ["tag"])
+
+    def test_tag_gestures_pass_when_the_key_is_on(self) -> None:
+        """#280: with `on`, the tag and its push are not refused for the key."""
+        for command in (*CREATING_OR_CHANGING_TAGS, *PUSHING_TAGS):
+            with self.subTest(command=command):
+                self.assertIsNone(self.asked(command, None)[0])
+
+    def test_reading_the_tags_never_asks_for_the_key(self) -> None:
+        """#280: a listing, a verification, a filter by commit are readings."""
+        for command in READING_TAGS:
+            with self.subTest(command=command):
+                self.assertEqual(self.asked(command, CLOSED), (None, []))
+
+    def test_pushing_a_branch_never_asks_for_the_key(self) -> None:
+        """#280: the push of a branch, whatever its name, is not a tag push."""
+        for command in PUSHING_BRANCHES:
+            with self.subTest(command=command):
+                self.assertEqual(self.asked(command, CLOSED), (None, []))
+
+    def test_the_other_rules_of_a_push_still_hold_with_the_key_on(self) -> None:
+        """#280: `on` does not open a force push nor a push to main."""
+        self.assertIn("force push", str(self.asked("git push --force origin feat/x", None)[0]))
+        self.assertIn("push to main", str(self.asked("git push origin main", None)[0]))
+
+
 if __name__ == "__main__":
     unittest.main()
