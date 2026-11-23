@@ -27,8 +27,15 @@ the date step is not applicable (sans objet) and every PR counts, whatever its d
 guessed. A value that is not one valid day, a repeated key, or a PR whose `createdAt` cannot be read
 fails closed like the rest of the count.
 
-A refusal is the `BLOCKED` of the fourth PR: no PR, no new ticket; the ticket is commented and takes
-`needs-your-attention`. Only the label `pr-cap-raised` raises the cap to `RAISED_CAP`, and only
+A ticket already started before that day (at least one open or merged PR that cites it, created before
+the day) finishes the PR in flight, then admits ONE last new PR, as a last resort: for such a ticket the
+limit on the PRs created since the day is `LAST_PR` (1) instead of the cap. The PRs from before the day stay
+out of the count, a PR closed without a merge does not start a ticket, and the limit is a constant, not a
+key. Without the key `ticket-pr-cap-since` no ticket is a started one (there is no day to start before).
+
+A refusal is the `BLOCKED` of the fourth PR (of the last PR for a started ticket): no PR, no new ticket;
+the ticket is commented and takes `needs-your-attention`. Only the label `pr-cap-raised` raises the limit
+(the cap, or the last PR's) to `RAISED_CAP`, and only
 when the last event on that label is a `labeled` by a login of the key `pr-cap-raiser` (the
 short identifier of its line, else its whole value; `accepting-human` is not read here: the agent's
 account may sit in it): the guard reads the events of the ticket by
@@ -72,6 +79,7 @@ SINCE_KEY = "ticket-pr-cap-since"
 RAISER_KEY = "pr-cap-raiser"
 RAISE_LABEL = "pr-cap-raised"
 RAISED_CAP = 6
+LAST_PR = 1  # the new PRs a ticket started before `ticket-pr-cap-since` still admits
 KIND = "pr"
 COUNTED_STATES = frozenset({"OPEN", "MERGED"})
 
@@ -187,9 +195,13 @@ def _events(output: str | None) -> list[dict]:
 
 def count_prs(
     number: str, own: int | None, repo: str | None, cwd: str | None, run: Runner, since: date | None = None
-) -> int | None:
-    """The PRs, open or merged, that cite ticket `number` (`own`, a PR being edited, left out), created on
-    the day `since` or after it when it is given; None when gh cannot say."""
+) -> tuple[int, bool] | None:
+    """`(count, started)` for ticket `number`, None when gh cannot say.
+
+    `count` is the PRs, open or merged, that cite it (`own`, a PR being edited, left out), created on the
+    day `since` or after it when it is given; `started` is whether at least one such PR was created before
+    `since` (always False without `since`).
+    """
     argv = ["pr", "list", "--state", "all", "--search", f"{number} in:body"]
     argv += ["--json", "number,state,body,createdAt", "--limit", SEARCH_LIMIT]
     if repo:
@@ -197,7 +209,7 @@ def count_prs(
     listed = _json(run(argv, cwd))
     if not isinstance(listed, list):
         return None
-    count = 0
+    count, started = 0, False
     for item in listed:
         if not isinstance(item, dict):
             return None
@@ -211,9 +223,10 @@ def count_prs(
             if day is None:
                 return None
             if day < since:
+                started = True
                 continue
         count += 1
-    return count
+    return count, started
 
 
 def current_pr(selector: str | None, repo: str | None, cwd: str | None, run: Runner) -> tuple[int, str] | None:
@@ -299,23 +312,30 @@ class Check:
 
     def ticket(self, number: str, own: int | None, repo: str | None, cwd: str | None, token: str) -> str | None:
         """Why one more PR may not cite ticket `number`, or None (the PR is then reserved)."""
-        indexed = count_prs(number, own, repo, cwd, self.run, self.since)
-        if indexed is None:
+        counted = count_prs(number, own, repo, cwd, self.run, self.since)
+        if counted is None:
             return (
                 f"the PRs of #{number} cannot be counted (gh absent, the network, or a gh error): the"
                 " PR is refused as a precaution"
             )
+        indexed, started = counted
         key = f"{self.root.resolve()}|#{number}"
         others = [item for item in self.state.reserved(key, KIND) if item.get("token") != token]
         count = with_reservations(indexed, others)
-        limit = self.cap
+        limit = LAST_PR if started else self.cap  # a started ticket admits one last new PR
         if count >= limit < RAISED_CAP and self.raised(number, repo, cwd):
             limit = RAISED_CAP
         if count >= limit:
-            counted = f", created since {self.since.isoformat()} by the key `{SINCE_KEY}`" if self.since else ""
+            since = f", created since {self.since.isoformat()} by the key `{SINCE_KEY}`" if self.since else ""
+            last = (
+                f"; #{number} was started before that day, so it admits {LAST_PR} new PR after the one in"
+                " flight, as a last resort"
+                if started and self.since
+                else ""
+            )
             return (
                 f"#{number} already has {count} PRs for a cap of {limit} (key `{KEY}`, open or merged"
-                f" PRs{counted}): {BLOCKED}. {self.how_to_raise()}"
+                f" PRs{since}{last}): {BLOCKED}. {self.how_to_raise()}"
             )
         self.state.reservations = [
             item

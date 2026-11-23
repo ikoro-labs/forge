@@ -11,7 +11,9 @@ The criteria of the ticket, numbered in the order it lists them:
 - A6: the template line, the `docs/` page, the CHANGELOG entry;
 - A7: the tests cite the criteria and run on Linux and Windows (HOME and USERPROFILE isolated);
 - A8 (asked by the human on 2026-11-23, the grant of round 4): the key `ticket-pr-cap-since` (`AAAA-MM-JJ`)
-  keeps out of the count the PRs created before that day (`createdAt`); without it every PR counts.
+  keeps out of the count the PRs created before that day (`createdAt`); without it every PR counts;
+- A9 (decision of the human on 2026-11-23, comment 7114825269): a ticket with a PR created before that
+  day finishes the PR in flight, then admits one last new PR instead of the cap; the label still raises to 6.
 """
 
 import json
@@ -620,12 +622,12 @@ class SinceDate(unittest.TestCase):
         self.assertIn("#5 already has 3 PRs", project.create(pr_body("Closes #5"), gh) or "")
 
     def test_old_and_recent_prs_are_counted_apart(self) -> None:
-        """Ticket #314, A8: two old PRs and two recent ones count two: a third is let through, a fifth is not."""
+        """Ticket #314, A8: two old PRs and one recent one count one (a ticket started before the day, see A9)."""
         project = Project(self, USINE + SINCE)
-        gh = self.merged("2026-11-20T10:00:00Z", "2026-11-21T10:00:00Z", "2026-11-23T10:00:00Z", "2026-11-24T10:00:00Z")
-        self.assertIsNone(project.create(pr_body("Closes #5"), gh))
-        two_more = self.merged("2026-11-20T10:00:00Z", "2026-11-23T10:00:00Z", "2026-11-24T10:00:00Z", "2026-11-25T10:00:00Z")
-        self.assertIn("#5 already has 3 PRs", project.create(pr_body("Closes #5"), two_more) or "")
+        gh = self.merged("2026-11-20T10:00:00Z", "2026-11-21T10:00:00Z", "2026-11-23T10:00:00Z")
+        self.assertIn("#5 already has 1 PRs", project.create(pr_body("Closes #5"), gh) or "")
+        only_recent = self.merged("2026-11-23T10:00:00Z", "2026-11-24T10:00:00Z")
+        self.assertIsNone(project.create(pr_body("Closes #5"), only_recent))
 
     def test_the_refusal_names_the_date_it_counts_from(self) -> None:
         """Ticket #314, A8: the message says the count starts at the date of the key."""
@@ -696,7 +698,119 @@ class SinceDate(unittest.TestCase):
         self.assertIn("#5 already has 3 PRs", project.create(pr_body("Refs #5", "Fourth part."), recent) or "")
         other = Project(self, USINE + SINCE, memory=True)
         self.assertIsNone(other.create(pr_body("Refs #5", "Third."), old))
-        self.assertIsNone(other.create(pr_body("Refs #5", "Fourth."), old))
+        self.assertIn("#5 already has 1 PRs", other.create(pr_body("Refs #5", "Fourth."), old) or "")
+
+
+class LastPr(unittest.TestCase):
+    """A9: a ticket started before `ticket-pr-cap-since` finishes its PR in flight, then admits one last PR."""
+
+    OLD = "2026-11-20T10:00:00Z"
+    NEW = "2026-11-24T10:00:00Z"
+
+    def listed(self, *created: str, state: str = "MERGED", ticket: int = 5, verb: str = "Closes") -> FakeGh:
+        return FakeGh([(state, pr_body(f"{verb} #{ticket}")) for _ in created], created=list(created))
+
+    def test_a_ticket_started_before_the_day_admits_a_first_new_pr(self) -> None:
+        """Ticket #314, A9: the PR in flight, created before the day, is not counted: one new PR goes through."""
+        project = Project(self, USINE + SINCE)
+        gh = self.listed(self.OLD, "2026-11-01T08:00:00Z", state="OPEN")
+        self.assertIsNone(project.create(pr_body("Refs #5", "Last part."), gh))
+
+    def test_a_ticket_started_before_the_day_admits_no_second_new_pr(self) -> None:
+        """Ticket #314, A9: a PR from before the day and one new PR: the ticket takes no other, the cap is 1 new."""
+        project = Project(self, USINE + SINCE)
+        reason = project.create(pr_body("Closes #5"), self.listed(self.OLD, self.NEW)) or ""
+        self.assertIn("#5 already has 1 PRs for a cap of 1", reason)
+        self.assertIn("2026-11-23", reason)
+        self.assertIn("started before", reason)
+        self.assertIn("BLOCKED", reason)
+
+    def test_a_ticket_with_only_new_prs_keeps_the_cap(self) -> None:
+        """Ticket #314, A9: no PR from before the day, so the cap of the key holds: two new PRs, a third goes through."""
+        project = Project(self, USINE + SINCE)
+        self.assertIsNone(project.create(pr_body("Closes #5"), self.listed(self.NEW, "2026-12-01T10:00:00Z")))
+        reason = project.create(pr_body("Closes #5"), self.listed(self.NEW, self.NEW, self.NEW)) or ""
+        self.assertIn("#5 already has 3 PRs for a cap of 3", reason)
+        self.assertNotIn("started before", reason)
+
+    def test_a_pr_from_before_the_day_of_another_ticket_changes_nothing(self) -> None:
+        """Ticket #314, A9: only a PR that cites the ticket makes it a started one: #5 keeps its cap of 3."""
+        project = Project(self, USINE + SINCE)
+        gh = FakeGh(
+            [("MERGED", pr_body("Closes #8")), ("MERGED", pr_body("Closes #5")), ("MERGED", pr_body("Closes #5"))],
+            created=[self.OLD, self.NEW, self.NEW],
+        )
+        self.assertIsNone(project.create(pr_body("Closes #5"), gh))
+
+    def test_a_pr_closed_without_a_merge_does_not_start_the_ticket(self) -> None:
+        """Ticket #314, A9: a closed PR leaves its place in the count, and does not make the ticket a started one."""
+        project = Project(self, USINE + SINCE)
+        gh = FakeGh(
+            [("CLOSED", pr_body("Closes #5")), ("MERGED", pr_body("Closes #5")), ("MERGED", pr_body("Closes #5"))],
+            created=[self.OLD, self.NEW, self.NEW],
+        )
+        self.assertIsNone(project.create(pr_body("Closes #5"), gh))
+
+    def test_without_the_key_a_pr_from_before_counts_and_the_cap_holds(self) -> None:
+        """Ticket #314, A9: no key `ticket-pr-cap-since`, no date step: the old PR counts as any other, cap 3."""
+        project = Project(self, USINE)
+        gh = self.listed(self.OLD, self.NEW)
+        self.assertIsNone(project.create(pr_body("Closes #5"), gh))
+        reason = project.create(pr_body("Closes #5"), self.listed(self.OLD, self.NEW, self.NEW)) or ""
+        self.assertIn("#5 already has 3 PRs for a cap of 3", reason)
+        self.assertNotIn("started before", reason)
+
+    def test_the_last_pr_of_a_started_ticket_is_reserved_when_the_search_lags(self) -> None:
+        """Ticket #314, A9: the last PR the hook let through counts at once: a second one is refused."""
+        project = Project(self, USINE + SINCE, memory=True)
+        gh = self.listed(self.OLD, state="OPEN")
+        self.assertIsNone(project.create(pr_body("Refs #5", "Last."), gh))
+        self.assertIn("#5 already has 1 PRs for a cap of 1", project.create(pr_body("Refs #5", "After last."), gh) or "")
+
+    def test_the_label_raises_the_limit_of_a_started_ticket_to_six(self) -> None:
+        """Ticket #314, A9: `pr-cap-raised` set by a raiser lifts the limit of 1 to 6, as it lifts the cap."""
+        project = Project(self, USINE + SINCE)
+        gh = self.listed(self.OLD, self.NEW)
+        gh.events = [raised()]
+        self.assertIsNone(project.create(pr_body("Closes #5"), gh))
+        full = self.listed(self.OLD, *[self.NEW] * 6)
+        full.events = [raised()]
+        self.assertIn("#5 already has 6 PRs for a cap of 6", project.create(pr_body("Closes #5"), full) or "")
+
+    def test_a_label_set_by_a_stranger_raises_nothing_for_a_started_ticket(self) -> None:
+        """Ticket #314, A9: the author of the label is checked here as for the cap."""
+        project = Project(self, USINE + SINCE)
+        gh = self.listed(self.OLD, self.NEW)
+        gh.events = [raised("the-agent")]
+        self.assertIn("for a cap of 1", project.create(pr_body("Closes #5"), gh) or "")
+
+    def test_the_pr_in_flight_is_edited_without_being_refused(self) -> None:
+        """Ticket #314, A9: the report written into the PR from before the day (an edit) is never a new PR."""
+        project = Project(self, USINE + SINCE)
+        gh = self.listed(self.OLD, self.NEW)
+        gh.viewed = (100, pr_body("Closes #5"))
+        self.assertIsNone(project.edit(pr_body("Closes #5", "Report."), gh, selector="100"))
+
+    def test_a_new_ticket_added_by_an_edit_is_held_by_its_own_history(self) -> None:
+        """Ticket #314, A9: an edit that adds #5 to a PR is a new PR for #5, with the limit of #5's history."""
+        project = Project(self, USINE + SINCE)
+        gh = self.listed(self.OLD, self.NEW)
+        gh.viewed = (150, pr_body("No ticket."))
+        reason = project.edit(pr_body("Closes #5"), gh, selector="150") or ""
+        self.assertIn("#5 already has 1 PRs for a cap of 1", reason)
+
+    def test_the_cap_is_a_cap_of_one_whatever_the_key_says(self) -> None:
+        """Ticket #314, A9: the limit for a started ticket is a constant, not a key: a cap of 5 gives 1 as well."""
+        project = Project(self, "- `ticket-pr-cap` : `5`\n" + SINCE)
+        reason = project.create(pr_body("Closes #5"), self.listed(self.OLD, self.NEW)) or ""
+        self.assertIn("for a cap of 1", reason)
+        self.assertIsNone(project.create(pr_body("Closes #5"), self.listed(self.OLD)))
+
+    def test_the_plugin_adds_no_key_for_the_last_pr(self) -> None:
+        """Ticket #314, A9: no new key: the template names the keys of the cap as before."""
+        text = (support.PLUGIN / "templates" / "usine.md").read_text(encoding="utf-8")
+        keys = {line.split("`")[1] for line in text.splitlines() if line.startswith("- `ticket-pr-cap")}
+        self.assertEqual(keys, {"ticket-pr-cap", "ticket-pr-cap-since"})
 
 
 class FourthPr(unittest.TestCase):
