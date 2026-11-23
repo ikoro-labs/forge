@@ -165,7 +165,8 @@ chaque ACCEPT attend l'humain. Éprouvé par les tests de `tests/test_agent_auto
 `tests/test_agent_autonomy_switch.py` et `tests/test_release.py`, qui lisent le texte des skills et de la
 règle et rejouent `release.py check` sur des dépôts jetables ; la distinction entre une commande tapée (un
 bloc `<command-name>` dans le tour) et un lancement par l'outil Skill, et la fusion par `forge:qc` selon la
-clé, n'ont pas été jouées dans une vraie session de Claude Code.
+clé, n'ont pas été jouées dans une vraie session de Claude Code. Le hook `guard_git` tient la même clé pour la
+fusion et le tag, sans compter sur le skill (voir **La clé `agent-autonomy` tenue par `guard_git`**).
 
 Deux clés, `test-path` (un préfixe de chemin des fichiers de test, une ligne par préfixe) et
 `red-replay` (la commande qui lance un fichier de test, avec `{file}` ou `{name}`), ouvrent la sonde
@@ -433,6 +434,59 @@ citent et vérifie qu'il est accepté.
 Limite : une variable non quotée dans la valeur d'un champ peut, développée, ajouter des mots à
 l'appel (`-f body=$X` avec `X="a -X DELETE"`) ; le garde ne voit pas les guillemets d'origine. Écrire
 la valeur dans un fichier et la passer par `-F body=@fichier` évite le cas.
+
+## La clé `agent-autonomy` tenue par `guard_git`
+
+Seuls les skills lisaient la clé `agent-autonomy` (ikoro-labs/forge#280) : un agent qui n'en tenait pas
+compte fusionnait quand même. `guard_git` la tient aussi, pour tout agent quel que soit son nom : sans une
+seule ligne `agent-autonomy` : `on`, il refuse
+
+- **la fusion** : `gh pr merge` (sauf `--disable-auto` seul, qui ne fusionne rien et ne lit aucune clé), la
+  fusion par `gh api` et l'outil MCP de fusion d'un serveur GitHub (`merge_pull_request`, la fusion
+  automatique, un outil d'écriture dont le champ `method` vaut `merge` ; ni une lecture, ni l'annulation
+  d'une fusion automatique). Pour ces outils, `hooks.json` lance désormais `guard_git` aussi sur les outils
+  MCP d'un serveur dont le nom contient `github`, comme `guard_cases` ;
+- **le tag** : `git tag` qui écrit (créer, déplacer, supprimer, signer, annoter ; une option que le garde ne
+  connaît pas compte comme écrire) et le push d'un tag (`git push --tags`, `--follow-tags`, un refspec
+  `refs/tags/...`, `git push <remote> tag <nom>`). Tout tag est tenu, quel que soit son nom : le plugin ne
+  connaît pas le préfixe de ceux d'un projet. Lister, filtrer par commit ou vérifier (`git tag -l`,
+  `--contains`, `-v`) restent des lectures.
+
+La clé est lue dans `origin/main`, jamais dans l'arbre de travail : le hook lit
+`docs/agents/usine.md` par `git show refs/remotes/origin/main:docs/agents/usine.md` depuis la racine du
+projet. L'agent peut modifier son arbre de travail, pas ce que l'humain a fusionné ; une ligne `on` posée
+seulement dans l'arbre n'ouvre rien, et une ligne retirée seulement dans l'arbre ne ferme rien. Absente,
+répétée, d'une valeur autre que `on`, ou illisible (pas de `origin/main`, pas de fichier, pas de git, délai
+dépassé), la clé refuse. Le refus dit que le garde refuse parce que la clé n'est pas `on`, et que le geste
+reste à l'humain ; le journal des refus le nomme `agent-autonomy`. Un autre nom de branche de base que
+`main` n'est pas lu : un projet dont la base s'appelle autrement voit ses fusions refusées.
+
+`docs/agents/usine.md` est un `protected-path` de ce dépôt, avec sa ligne dans `.github/CODEOWNERS` : une PR
+est la seule façon de changer ce que `origin/main` en dit, et aucun agent ne fusionne celle-là. Un projet qui
+adopte la clé déclare la même ligne ; sans elle, clé `on`, un agent peut fusionner une PR qui change le
+fichier. Aucune protection d'écriture n'a été ajoutée à `guard_coder` ni à `guard_readonly` : ils ne
+protègent aucun fichier par son nom, et refuser l'écriture empêcherait aussi l'agent de proposer un
+changement par PR, que la revue juge.
+
+Ce que le garde ne tient pas :
+
+- l'essai de bout en bout et l'absence de `sev1` ne sont pas tenus par le garde : un hook ne peut pas les
+  vérifier, ils restent à `release` (`release.py check`) ;
+- `origin/main` est la référence telle que ce clone l'a récupérée : une ligne que l'humain retire ne ferme
+  le geste ici qu'au prochain `git fetch`. Un agent qui réécrit cette référence locale (`git update-ref`,
+  `git fetch` avec un refspec vers `refs/remotes/origin/main`, `git remote set-url`) la fausse, et le garde
+  ne le voit pas : le recours est la protection de `main` côté serveur, que ce hook ne remplace pas ;
+- pour l'outil MCP de fusion, seule la clé retient : les checks verts, le `protected-path`, la méthode et
+  le budget ne s'y appliquent pas (le garde ne lit pas la PR qu'un outil MCP nomme) ;
+- `gh release create`, qui crée un tag, `git push origin :<tag>` (la suppression d'un tag sans
+  `refs/tags/`) et une fusion par le site de GitHub ou par un script échappent à ce garde, comme à ses
+  autres règles.
+
+Éprouvé par les tests de `tests/test_guard_git_autonomy.py` (dépôts jetables, `HOME` jeté ; le hook joué
+comme un processus pour le tag, la fusion et l'outil MCP), sous Linux seulement. Pas encore dans une
+vraie session de Claude Code : le hook MCP n'a pas été joué sur un vrai serveur GitHub, et le nom exact
+des outils de fusion des serveurs MCP est supposé (`merge_pull_request`, `pull_request_write`). Sous
+Windows, le chemin du dépôt lu par `git show` n'a pas été essayé.
 
 ## Supprimer une branche locale : `git branch -D` et le bundle
 

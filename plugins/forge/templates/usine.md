@@ -46,7 +46,10 @@ publication. Avec elle, `forge:qc` fusionne un ACCEPT hors `protected-path` (une
 action `human-merge` active l'arrêtent encore), et `release` publie, tag compris, quand l'essai de bout en bout
 passe et qu'aucun `sev1` n'est ouvert ; l'état des SLO est cité dans la PR de version, il ne bloque pas. Sans la
 clé, `forge:qc` poste son verdict, pose `needs-your-attention` et ne fusionne jamais, et `release` n'ouvre que
-la PR de version : l'humain reprend la main sur un projet en retirant la ligne. `feature-accept` reste tapé par
+la PR de version : l'humain reprend la main sur un projet en retirant la ligne. Le hook `guard_git` tient la
+même clé : sans une seule ligne `on`, `guard_git` refuse alors la fusion et le tag, et le refus dit que le geste
+reste à l'humain ; il la lit dans `origin/main`, jamais dans l'arbre de travail, et un projet qui adopte la
+clé déclare `docs/agents/usine.md` en `protected-path`. `feature-accept` reste tapé par
 un humain de la clé `accepting-human`, et `release` reste commandé par la clé `release-trigger` pour savoir
 quand une version est due : la clé n'ouvre pas ces deux skills au modèle. La règle est dans
 `plugins/forge/autonomie.md`.

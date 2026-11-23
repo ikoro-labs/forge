@@ -459,5 +459,49 @@ class TheFileOfTheKeyIsTheHumansToMerge(unittest.TestCase):
         self.assertIn("protected-path", str(reason))
 
 
+def prose(path: Path) -> str:
+    """The file on one line per paragraph, so a sentence wrapped by the editor still matches."""
+    return " ".join(path.read_text(encoding="utf-8").split())
+
+
+class TheTextsSayWhoHoldsTheKey(unittest.TestCase):
+    """What the agent and the human read must say that the hook, not only the skill, holds the key."""
+
+    def test_the_rule_says_guard_git_holds_the_merge_and_the_tag_from_origin_main(self) -> None:
+        """#280: `autonomie.md` no longer leaves the merge switch to the skills alone."""
+        text = prose(support.PLUGIN / "autonomie.md")
+        self.assertIn("`guard_git` tient la même clé", text)
+        self.assertIn("`origin/main`", text)
+        self.assertIn("refuse la fusion et le tag", text)
+
+    def test_the_template_says_the_hook_holds_the_key(self) -> None:
+        """#280: the template of the key tells the project what a missing key now blocks, hook included."""
+        text = prose(support.PLUGIN / "templates" / "usine.md")
+        self.assertRegex(text, r"`guard_git` refuse alors la fusion et le tag.{0,200}`origin/main`")
+
+    def test_the_installation_page_describes_the_guard_its_reading_and_its_limits(self) -> None:
+        """#280: the page that treats the guards says what is refused, where the key is read, what is not held."""
+        text = prose(support.REPO_ROOT / "docs" / "installation.md")
+        for needle in (
+            "## La clé `agent-autonomy` tenue par `guard_git`",
+            "lue dans `origin/main`, jamais dans l'arbre de travail",
+            "`git tag`",
+            "`git push --tags`",
+            "l'outil MCP",
+            "`docs/agents/usine.md` est un `protected-path`",
+            "ne sont pas tenus par le garde",
+            "l'essai de bout en bout",
+            "tests/test_guard_git_autonomy.py",
+        ):
+            with self.subTest(needle=needle):
+                self.assertIn(needle, text)
+
+    def test_the_module_says_the_key_in_its_docstring(self) -> None:
+        import guard_git  # noqa: PLC0415
+
+        self.assertIn("`agent-autonomy`", guard_git.__doc__ or "")
+        self.assertIn("origin/main", guard_git.__doc__ or "")
+
+
 if __name__ == "__main__":
     unittest.main()

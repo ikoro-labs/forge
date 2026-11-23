@@ -41,6 +41,17 @@ Refused, with the reason on stderr and exit code 2 so Claude Code blocks the cal
   cancels an auto-merge, merges nothing and reads no key. A caller of `refusal` that passes no
   `merge_method` (None) does not ask for the check; `main` always passes the key's lines.
 
+- a merge (`gh pr merge`, the `gh api` merge, the merge tool of a GitHub MCP server, whose events
+  `hooks.json` routes here), a `git tag` that writes and a push of tags (`--tags`, `--follow-tags`, a
+  `refs/tags/` refspec, `<remote> tag <name>`), for every agent, unless the project's `agent-autonomy`
+  key is one line, `on`, in `docs/agents/usine.md` as `origin/main` holds it (`autonomy_refusal`). The
+  file is read by `git show` on the remote-tracking ref, never in the working tree, which an agent can
+  edit; a key absent, repeated, not `on`, or a file or ref that cannot be read, refuses, and the
+  refusal says the gesture stays the human's. A listing of tags is a reading. `--disable-auto` alone
+  merges nothing and reads no key. The end-to-end trial and the absence of `sev1` that `release`
+  requires are not read here. A caller of `refusal` that passes no `autonomy` (None) does not ask for
+  the check; `main` always passes it.
+
 The command is parsed, not grepped: a commit message that says "push --force" is data. Heredoc
 bodies are dropped first, then the command is split on shell operators with `shlex`. A wrapper
 hides no refusal: assignments, `env`, `sudo`, `command`, `timeout`, `nice`, `nohup`, `xargs` and
@@ -105,6 +116,11 @@ runs alone (a literal `cd` aside), and counts as a merge beside anything else; `
 
 Known limits:
 
+- `origin/main` is the ref this clone last fetched, and an agent that rewrites it locally
+  (`git update-ref`, a `git fetch` refspec, `git remote set-url`) fakes the key: the server's
+  protection of `main` is the net, not this guard. The merge tool of an MCP server is held by the key
+  alone: its checks, files and method are not read. `gh release create` (it creates a tag) and
+  `git push origin :<tag>` are not held;
 - an unquoted variable in the value of a `gh api` field, once expanded, may add words to the call
   (`-f body=$X` with `X="a -X DELETE"`): the guard no longer sees the quotes it was typed with;
 - `OWNER_ENDPOINT` does not cover the full URL `https://api.github.com/repos/...`, which the
