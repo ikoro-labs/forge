@@ -1,7 +1,9 @@
 ---
 feature: F-0002
 document: spec
-statut: en-revue
+statut: accepte
+accepte_par: ikoro-labs
+accepte_le: 2026-11-23
 destinataires: ikoro-labs (humain de la clé `accepting-human`, relit au titre du métier et décide par `/forge:feature-accept`), puis l'agent qui implémente ; forge:qc relit
 base: 0c32a60
 date: 2026-11-23
