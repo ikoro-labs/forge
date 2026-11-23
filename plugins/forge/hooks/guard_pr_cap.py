@@ -76,6 +76,11 @@ PULLS = re.compile(r"^/?repos/([^/]+)/([^/]+)/pulls(?:/(\d+))?$")
 # A PR is an issue: `gh api` on `issues/<n>` edits a PR's body when #n is one.
 ISSUE = re.compile(r"^/?repos/([^/]+)/([^/]+)/issues/(\d+)$")
 API_PULLS = re.compile(r"api\.github\.com/+(?:repos/[^/\s'\"]+/[^/\s'\"]+/pulls\b|graphql\b)")
+# A `curl` word that names `issues/<n>` (not its comments, not the list of issues): the same door as `gh api`.
+CURL_ISSUE = re.compile(r"api\.github\.com/+repos/([^/\s'\"]+)/([^/\s'\"]+)/issues/(\d+)/*(?:[?#]\S*)?$")
+# `gh issue edit` names its issue by a number, `#number` or the URL of an issue or of a PR.
+ISSUE_SELECTOR = re.compile(r"^#?(\d+)$|^(?:https?://)?[^/\s]+/([^/\s]+)/([^/\s]+)/(?:issues|pull)/(\d+)/*$")
+CURL_ACT = ("curl", "issues")
 # `gh pr edit` options that take the next word as their value (the selector is the first other word).
 EDIT_VALUE_OPTIONS = frozenset(
     {"--title", "-t", "--body", "-b", "--body-file", "-F", "--base", "-B", "--milestone", "-m"}
@@ -340,9 +345,31 @@ def shell_publications(command: str, cwd: str | None) -> list[tuple[Publication,
     return found
 
 
+def _mcp_issue_edit(tool: str, name: str, tool_input: Mapping[str, object]) -> list[Publication]:
+    """The body an issue tool of a GitHub MCP server edits, read as `gh api` on `issues/<n>`: a PR is an issue."""
+    if "comment" in name or not any(word in name for word in ("update", "write")):
+        return []
+    number = next((tool_input[k] for k in ("issue_number", "issueNumber", "number") if k in tool_input), None)
+    editing = "update" in name or tool_input.get("method") == "update" or number is not None
+    if not editing or "body" not in tool_input:
+        return []  # opening a ticket, or an edit with no body: nothing a PR would count
+    body = tool_input["body"]
+    if not isinstance(body, str):
+        raise Unreadable(f"the body of `{tool}` is no text")
+    if isinstance(number, bool) or not isinstance(number, (int, str)) or not str(number).isdigit():
+        raise Unreadable(f"the issue `{tool}` edits is not named")
+    owner, repo = tool_input.get("owner"), tool_input.get("repo")
+    named = f"{owner}/{repo}" if isinstance(owner, str) and isinstance(repo, str) else None
+    endpoint = f"repos/{named or '{owner}/{repo}'}/issues/{number}"
+    return [Publication("ticket", body, endpoint=endpoint, repo=named)]
+
+
 def mcp_publications(tool: str, tool_input: Mapping[str, object]) -> list[Publication]:
-    """The PR body a pull request tool of a GitHub MCP server publishes; none for any other tool."""
+    """The PR body a pull request tool of a GitHub MCP server publishes, or the body of an issue it edits
+    (which may be a PR); none for any other tool."""
     name = tool.rsplit("__", 1)[-1].lower()
+    if "issue" in name and "pull_request" not in name:
+        return _mcp_issue_edit(tool, name, tool_input)
     if "pull_request" not in name or not any(word in name for word in ("create", "update", "write")):
         return []
     if "body" not in tool_input:

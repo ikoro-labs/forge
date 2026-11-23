@@ -312,6 +312,42 @@ class Gestures(unittest.TestCase):
         patch = f"gh api -X PATCH repos/o/r/issues/7 -F body=@{project.body_file(pr_body('Refs #5'))}"
         self.assertIn("cannot be read", project.bash(patch, cited(0)) or "")
 
+    def test_an_mcp_issue_edit_is_read_as_gh_api_on_the_issues_endpoint(self) -> None:
+        """Ticket #314, A1: `update_issue` on a PR number edits the PR; a real ticket is left free."""
+        project = Project(self)
+        pull = {"number": 7, "body": pr_body("No ticket yet."), "pull_request": {"url": "u"}}
+        edited = {"owner": "o", "repo": "r", "issue_number": 7, "body": "Closes #5"}
+        gh = cited(3)
+        gh.issue = pull
+        self.assertIn("#5 already has 3", project.tool("mcp__github__update_issue", edited, gh) or "")
+        self.assertEqual(gh.asked("api")[0][1], "repos/o/r/issues/7")
+        self.assertEqual(gh.asked("pr", "list")[0][-2:], ["--repo", "o/r"])
+        written = {**edited, "method": "update"}
+        self.assertIn("#5 already has 3", project.tool("mcp__github__issue_write", written, gh) or "")
+        # a PR that already cites the ticket is not a new one
+        kept = cited(2)
+        kept.issue = {**pull, "body": pr_body("Closes #5")}
+        self.assertIsNone(project.tool("mcp__github__update_issue", edited, kept))
+        # a real ticket is not a PR: its body is free, whatever it cites
+        ticket = cited(3)
+        ticket.issue = {"number": 8, "body": "old", "title": "a ticket"}
+        self.assertIsNone(project.tool("mcp__github__update_issue", {**edited, "issue_number": 8}, ticket))
+        self.assertEqual(ticket.asked("pr", "list"), [])
+        # opening a ticket, or an edit that carries no body, costs no gh call
+        created = cited(3)
+        opened = {"owner": "o", "repo": "r", "title": "T", "body": "Closes #5"}
+        self.assertIsNone(project.tool("mcp__github__create_issue", opened, created))
+        self.assertIsNone(project.tool("mcp__github__update_issue", {"owner": "o", "repo": "r", "issue_number": 7, "state": "closed"}, created))
+        self.assertEqual(created.calls, [])
+
+    def test_an_mcp_issue_edit_gh_cannot_read_is_refused(self) -> None:
+        """Ticket #314, A1: fails closed: whether #7 is a PR is unknown, and no number names no issue."""
+        project = Project(self)
+        edited = {"owner": "o", "repo": "r", "issue_number": 7, "body": "Refs #5"}
+        self.assertIn("cannot be read", project.tool("mcp__github__update_issue", edited, cited(0)) or "")
+        unnamed = {"owner": "o", "repo": "r", "body": "Refs #5"}
+        self.assertIn("cannot be read", project.tool("mcp__github__update_issue", unnamed, cited(0)) or "")
+
     def test_a_github_mcp_tool_that_opens_or_edits_a_pr_is_read(self) -> None:
         """Ticket #314, A1: `create_pull_request` and `update_pull_request` carry the body to count."""
         project = Project(self)
