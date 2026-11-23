@@ -20,6 +20,7 @@ from typing import Any
 import support  # noqa: F401  met les hooks sur le chemin d'import
 from guard_git import RULES, autonomy_refusal, refusal
 from refusal_journal import rule_of
+from usine import load
 
 USINE = Path("docs") / "agents" / "usine.md"
 PROSE = "# Usine\n\nDu texte, puis la clé.\n\n"
@@ -440,6 +441,22 @@ class TheMcpMergeToolFollowsTheKey(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertIsNone(re.fullmatch(matcher, name))
         self.assertEqual(groups[0]["hooks"][0].get("onFailure"), "block")
+
+
+class TheFileOfTheKeyIsTheHumansToMerge(unittest.TestCase):
+    """The key is read in `origin/main`: a PR is the one way to change what `origin/main` holds."""
+
+    def test_this_repository_protects_usine_md_so_that_no_agent_merges_a_change_of_the_key(self) -> None:
+        """#280: `docs/agents/usine.md` is a `protected-path`, and a merge that touches it is refused."""
+        protected = load(support.REPO_ROOT).get("protected-path", [])
+        self.assertIn("docs/agents/usine.md", protected)
+        reason = judged(
+            "gh pr merge 5 --merge",
+            Asked(None),
+            protected_paths=protected,
+            changed_files=lambda *_target: ["docs/agents/usine.md"],
+        )
+        self.assertIn("protected-path", str(reason))
 
 
 if __name__ == "__main__":
