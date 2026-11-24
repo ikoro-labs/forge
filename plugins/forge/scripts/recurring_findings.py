@@ -124,9 +124,14 @@ def run_recurring(project: Path, run: Runner, now: datetime) -> list[str]:
     since = now - timedelta(days=days)
     counted = tally(factory_slo.Factory(project, since, now, run).prs, since, now)
     path = f"repos/{{owner}}/{{repo}}/issues/{ticket}/comments"
-    if not recurring(counted, threshold):
+    comments = [c for c in factory_slo.parse_stream(run(["gh", "api", "--paginate", path], project)) if isinstance(c, dict)]
+    mine = next((c for c in comments if MARKER in str(c.get("body"))), None)
+    if mine is None and not recurring(counted, threshold):
         return [f"Constat récurrent : aucun identifiant cité par {threshold} PR distinctes en {days} jours, rien n'est écrit."]
     body = comment_body(counted, threshold, since, now)
+    if mine is not None:
+        run(["gh", "api", "-X", "PATCH", f"repos/{{owner}}/{{repo}}/issues/comments/{mine['id']}", "-f", f"body={body}"], project)
+        return [f"constats récurrents réécrits dans le commentaire {mine['id']} du ticket #{ticket}"]
     run(["gh", "api", path, "-f", f"body={body}"], project)
     return [f"constats récurrents postés dans un commentaire du ticket #{ticket}"]
 

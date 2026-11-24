@@ -124,6 +124,30 @@ class Recurring(unittest.TestCase):
         self.assertIn("Constats sans identifiant : 2, sur 1 PR", body)
         self.assertNotIn("A3.1", body)
 
+    def test_a_rerun_rewrites_the_comment_found_by_its_marker_and_opens_no_ticket(self) -> None:
+        """F-0002 A32: the comment is found again by its marker and rewritten: no duplicate, the SLO report left alone, no ticket."""
+        github = FakeGitHub([pr(10, verdict([rule("F-25")])), pr(11, verdict([rule("F-25")])), pr(12, verdict([rule("F-25")]))])
+        slo_report = {"id": 650, "body": "<!-- forge-slo-report -->\nobjectifs"}
+        github.comments = [slo_report, {"id": 651, "body": f"{MARKER}\nold text"}]
+        self.run_main(github)
+        self.assertEqual([c["id"] for c in github.comments], [650, 651])
+        self.assertEqual(slo_report["body"], "<!-- forge-slo-report -->\nobjectifs")
+        self.assertIn("| F-25 | 3 | #10, #11, #12 |", github.comments[1]["body"])
+        github.prs.append(pr(14, verdict([rule("F-25")])))
+        self.run_main(github)
+        self.assertEqual(len(github.comments), 2)
+        self.assertIn("| F-25 | 4 | #10, #11, #12, #14 |", github.comments[1]["body"])
+        self.assertEqual([call[1:3] for call in github.calls if call[1] == "issue"], [])
+
+    def test_a_ticket_gh_cannot_read_writes_nothing_and_says_why(self) -> None:
+        """F-0002 A32: a ticket that cannot be read leaves every comment as it was, exit 1, with the reason on stderr."""
+        github = FakeGitHub([pr(10, verdict([rule("F-25")])), pr(11, verdict([rule("F-25")])), pr(12, verdict([rule("F-25")]))])
+        github.ticket_missing = True
+        code, _, err = self.run_main(github)
+        self.assertEqual(code, 1)
+        self.assertIn("Not Found", err)
+        self.assertEqual(github.writes, [])
+
 
 if __name__ == "__main__":
     unittest.main()
