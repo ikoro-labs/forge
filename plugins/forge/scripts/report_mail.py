@@ -385,8 +385,11 @@ def features_state(
         return state
 
     def run(argv: list[str], cwd: str | None) -> str | None:
+        argv = [a.replace("{owner}/{repo}", repo) for a in argv]
+        if repo and argv[0] == "pr":
+            argv = [*argv, "-R", repo]  # `pr list` has no `{owner}/{repo}`: it reads the cwd without this
         try:
-            return gh([a.replace("{owner}/{repo}", repo) for a in argv])
+            return gh(argv)
         except (OSError, subprocess.SubprocessError):
             return None
 
@@ -409,6 +412,9 @@ def features_state(
             continue
         still_open, closed, _ = completion.tally(found)
         entry["percent"] = completion.percent(closed, len(still_open))
+        merged = completion.merged_prs(feature, {int(issue["number"]) for issue in found}, root, run)
+        if merged is not None:
+            entry["merged"] = completion.pr_cell(merged, completion.feature_budget(root, directory, feature))
         entry["ready"] = [issue["number"] for issue in found if completion.is_ready(issue)]
         entry["blocked"] = [
             issue["number"] for issue in found

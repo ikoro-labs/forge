@@ -241,6 +241,12 @@ def merged_prs(feature: str, tickets: set[int], root: Path, run: Runner) -> dict
     return per_ticket
 
 
+def feature_budget(root: Path, directory: str, feature: str) -> int | None:
+    """The `feature-tickets` of the one `design.md` of `feature`; None without one or with several."""
+    designs = find_design(root, directory, feature)
+    return budget_of(_header(designs[0])) if len(designs) == 1 else None
+
+
 def pr_cell(per_ticket: Mapping[int, int], budget: int | None) -> str:
     """`<merged> / <budget PR>`, the budget `feature-tickets` times three (`?` without one)."""
     total = sum(per_ticket.values())
@@ -253,8 +259,7 @@ def row(
     feature: str, folder: Path, root: Path, directory: str, run: Runner, now: Clock
 ) -> list[str]:
     header = idea(folder)
-    designs = find_design(root, directory, feature)
-    budget = budget_of(_header(designs[0])) if len(designs) == 1 else None
+    budget = feature_budget(root, directory, feature)
     tracking = header.get("issue", "")
     if tracking.isdigit():
         found = sub_issues(tracking, root, run)

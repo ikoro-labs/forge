@@ -45,15 +45,21 @@ class Fake:
     """Stands for `gh`: answers by the shape of the call, records every call."""
 
     def __init__(self, merged=(), main="success", main_sha="abc1234def", runners=RUNNERS,
-                 verdicts=(), attention=(), open_prs=(), subs=None) -> None:
+                 verdicts=(), attention=(), open_prs=(), subs=None, feature_prs=()) -> None:
         self.merged, self.main, self.sha = list(merged), main, main_sha
         self.runners, self.verdicts, self.attention = runners, list(verdicts), list(attention)
         self.open_prs, self.subs = list(open_prs), subs or {}
+        # What `pr list --search "Feature: F-NNNN"` answers: the PR rows, an error to raise, or a text.
+        self.feature_prs = feature_prs
         self.calls: list[list[str]] = []
 
     def __call__(self, args: list[str]) -> str:
         self.calls.append(args)
         line = " ".join(args)
+        if line.startswith("pr list") and "--search" in line:
+            if isinstance(self.feature_prs, Exception):
+                raise self.feature_prs
+            return self.feature_prs if isinstance(self.feature_prs, str) else json.dumps(list(self.feature_prs))
         if line.startswith("pr list") and "--state merged" in line:
             return json.dumps(self.merged)
         if line.startswith("pr list") and "--state open" in line and "--label" not in line:
@@ -501,7 +507,63 @@ class FeaturesBlockTests(unittest.TestCase):
         lines = out.splitlines()
         self.assertEqual(lines[0], "Features:")
         self.assertIn(HEADER_ROW, lines)
-        self.assertIn("| F-0001 demo 1 | 33 % (1 / 3) | - | #77 | #13 | #12 |", lines)
+        self.assertIn("| F-0001 demo 1 | 33 % (1 / 3) | 0 / ? | #77 | #13 | #12 |", lines)
+
+    def cells(self, out: str) -> list[str]:
+        row = next(line for line in out.splitlines() if line.startswith("| F-0001"))
+        return [cell.strip() for cell in row.strip("|").split("|")]
+
+    def test_335_a2_the_merged_prs_cell_counts_the_merged_prs_of_each_ticket(self) -> None:
+        """#335 A2: the cell is `completion.pr_cell`: merged PRs over the budget times three, per ticket."""
+        from completion import pr_cell
+
+        merged = [
+            {"number": 50, "body": "Closes #12\n\nFeature: F-0001"},
+            {"number": 51, "body": "Refs #12\n\nFeature: F-0001"},
+            {"number": 52, "body": "Refs #13\n\nFeature: F-0001"},
+            {"number": 53, "body": "Refs #999\n\nFeature: F-0001"},  # a ticket of another feature
+        ]
+        fake = features_of(BLOCK_SUBS, feature_prs=merged)
+        root, state = with_features(self, FEATURES, {1: 40})
+        (root / "docs" / "features" / "0001-demo" / "design.md").write_text(
+            "---\nfeature: F-0001\nfeature-tickets: 3\n---\n", encoding="utf-8"
+        )
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = main(["--root", str(root), "--state-dir", str(state), "--features"], gh=fake,
+                        probe=lambda c: "mem-free 8 disk-free 50", now=NOW)
+        self.assertEqual(code, 0)
+        cell = self.cells(out.getvalue())[2]
+        self.assertEqual(cell, "3 / 9 (#12: 2, #13: 1)")
+        self.assertEqual(cell, pr_cell({12: 2, 13: 1}, 3))
+        search = next(c for c in fake.calls if "--search" in c)
+        self.assertIn('"Feature: F-0001" in:body', search)
+        self.assertEqual(search[search.index("-R") + 1], "acme/widgets")  # the report repository, not the cwd
+
+    def test_335_a2_without_a_budget_the_cell_says_the_budget_is_unknown(self) -> None:
+        fake = features_of(BLOCK_SUBS, feature_prs=[{"number": 50, "body": "Refs #12"}])
+        _, out, _ = self.block(FEATURES, fake)
+        self.assertEqual(self.cells(out)[2], "1 / ? (#12: 1)")
+
+    def test_335_a2_unreadable_merged_prs_say_a_dash_and_leave_the_rest_of_the_row(self) -> None:
+        """#335 A2: `gh` failing, or answering what is not a list of PR bodies, gives `-`, never a figure."""
+        broken = {
+            "gh fails": subprocess.CalledProcessError(1, "gh"),
+            "not json": "not json",
+            "not a list": '{"number": 50}',
+            "no body": '[{"number": 50}]',
+        }
+        for name, answer in broken.items():
+            with self.subTest(name):
+                code, out, _ = self.block(FEATURES, features_of(BLOCK_SUBS, feature_prs=answer))
+                self.assertEqual(code, 0)
+                self.assertEqual(self.cells(out), ["F-0001 demo 1", "33 % (1 / 3)", "-", "none", "#13", "#12"])
+
+    def test_335_a2_a_feature_whose_tickets_are_not_read_has_a_dash_and_asks_gh_nothing_more(self) -> None:
+        fake = features_of({40: subprocess.CalledProcessError(1, "gh")})
+        _, out, _ = self.block(FEATURES, fake)
+        self.assertEqual(self.cells(out), ["F-0001 demo 1", "tickets not read", "-", "-", "-", "-"])
+        self.assertFalse([c for c in fake.calls if "--search" in c])
 
     def test_a11_the_table_is_followed_by_the_line_of_what_runs_in_parallel(self) -> None:
         subs = {40: [(12, OPENED, READY, 0, 0), (13, OPENED, READY, 0, 0), (14, OPENED, READY, 0, 0)],
