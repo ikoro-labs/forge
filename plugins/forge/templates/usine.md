@@ -880,8 +880,9 @@ ne couvre pas une commande que le projet fait passer par `cmd /c` : `cmd` se ré
 n'est ni `.cmd` ni `.bat`, et le chemin du fichier arrive en argument après `/c`. Un échec ou un
 délai dépassé ne défait pas l'écriture : une ligne sur stderr que l'agent voit, `format-on-write:
 <commande> failed on <chemin> (<raison>)`, la raison étant `exit <n>`, `timed out after <n>s`
-(arrondi au supérieur), `command not found`, `could not start: <cause>` ou `not run: <cause>`. Sans
-la clé, rien n'est formaté.
+(arrondi au supérieur), `command not found`, `could not start: <cause>` ou `not run: <cause>`,
+suivie de la fin de ce que la commande a imprimé : les 20 dernières lignes et 2000 octets au plus.
+Sans la clé, rien n'est formaté.
 
 - `format-on-write` : `<**/*.py | uv run ruff format>`
 - `format-on-write` : `<apps/web/**/*.{ts,tsx} | pnpm --dir apps/web exec prettier --write>`

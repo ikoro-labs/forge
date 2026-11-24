@@ -45,6 +45,9 @@ ALLOWANCES_KEY = "em-dash-allowances"
 FORMAT_KEY = "format-on-write"
 COMMAND_TIMEOUT = 30
 TOTAL_TIMEOUT = 120
+TAIL_LINES = 20
+TAIL_BYTES = 2000
+READ_BYTES = 64 * 1024
 WINDOWS = sys.platform == "win32"
 # CreateProcess runs a `.cmd` or `.bat` through cmd.exe, which reads these as syntax, not as text.
 CMD_METACHARACTERS = frozenset('&|<>^%!"()')
@@ -88,9 +91,17 @@ def _split_command(command: str) -> list[str]:
 
 
 def _tail(sink: IO[bytes]) -> str:
-    """What the tool printed, to relay to the agent."""
-    sink.seek(0)
-    return sink.read().decode("utf-8", errors="replace").strip()
+    """The end of what the tool printed: `TAIL_LINES` lines and `TAIL_BYTES` bytes at most.
+
+    Only the last `READ_BYTES` of the file are read, so a tool that prints a lot costs nothing. The
+    text is decoded before the byte cap, so a byte that is not UTF-8 never grows past it, and a cut
+    that lands inside a character drops that character.
+    """
+    size = sink.seek(0, 2)
+    sink.seek(max(0, size - READ_BYTES))
+    text = sink.read().decode("utf-8", errors="replace").rstrip()
+    kept = "\n".join(text.splitlines()[-TAIL_LINES:]).encode("utf-8")[-TAIL_BYTES:]
+    return kept.decode("utf-8", errors="ignore")
 
 
 def _run_command(

@@ -462,6 +462,44 @@ class OutputTail(_KeyedHook):
         )
         self.assertEqual(self.target.read_text(encoding="utf-8"), "x")
 
+    def relayed(self, body: str) -> list[str]:
+        """The lines that follow the failure line of a formatter running `body`."""
+        self.configure(("format-on-write", f"**/*.txt | {self.failing(body)}"))
+        code, err = run_hook(self.root, self.target)
+        self.assertEqual(code, 2)
+        return err.splitlines()[1:]
+
+    def test_at_most_the_last_20_lines_are_relayed(self) -> None:
+        """F-0002 A18: 100 lines of output, the agent gets the last 20."""
+        lines = self.relayed("for n in range(1, 101): print(f'line {n}')")
+        self.assertEqual(lines, [f"line {n}" for n in range(81, 101)])
+
+    def test_at_most_2000_bytes_are_relayed_the_end_kept(self) -> None:
+        """F-0002 A18: 5 lines of 900 bytes, the agent gets the last 2000 bytes, not the first."""
+        lines = self.relayed("for n in range(5): print(str(n) * 900)")
+        relayed = "\n".join(lines)
+        self.assertEqual(len(relayed.encode("utf-8")), 2000)
+        self.assertTrue(relayed.endswith("4" * 900))
+        self.assertNotIn("0", relayed)
+
+    def test_the_byte_cap_never_cuts_a_character_in_two(self) -> None:
+        """F-0002 A18: 1500 two-byte characters, the cut lands on a whole character."""
+        # The child writes UTF-8 whatever the console code page is (cp1252 on Windows).
+        lines = self.relayed("sys.stdout.reconfigure(encoding='utf-8')\nprint('\\u00e9' * 1500)")
+        relayed = "\n".join(lines)
+        self.assertLessEqual(len(relayed.encode("utf-8")), 2000)
+        self.assertEqual(set(relayed), {"\u00e9"})
+
+
+class RelayedOutputTemplate(unittest.TestCase):
+    """F-0002 A18, A19, T1: the template says what the agent gets of a failing tool's output."""
+
+    def test_the_template_says_the_tool_output_is_relayed_for_format_on_write(self) -> None:
+        """F-0002 A18, A19: the 20 lines and 2000 bytes the agent gets after the failure line."""
+        template = (support.PLUGIN / "templates" / "usine.md").read_text(encoding="utf-8")
+        self.assertIn("20 derni\u00e8res lignes", template)
+        self.assertIn("2000 octets", template)
+
 
 if __name__ == "__main__":
     unittest.main()
