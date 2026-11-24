@@ -272,6 +272,49 @@ class NeverOk(StackCase):
         self.assertIn("lockfile", rows[0][3])
 
 
+class WorkspaceLocks(unittest.TestCase):
+    """C01: `direct_dependencies` on the locks of a workspace, as the tools write them."""
+
+    def test_the_direct_packages_of_a_uv_workspace_are_those_of_every_member_groups_included(self) -> None:
+        """F-0002 C01: the root and each member give their dependencies, extras and groups; a member is not a dependency."""
+        import lockfiles
+
+        files = {
+            "pyproject.toml": _pyproject(
+                "root_app",
+                ("pkg-a", "typing_extensions"),
+                '[dependency-groups]\ndev = ["iniconfig"]\n[tool.uv.sources]\npkg-a = { workspace = true }\n'
+                '[tool.uv.workspace]\nmembers = ["pkg_a"]\n',
+            ),
+            "pkg_a/pyproject.toml": _pyproject("pkg-a", ("idna",), '[project.optional-dependencies]\nextra = ["packaging"]\n'),
+        }
+        lock = _generate(["uv", "lock", "--no-progress"], files, "uv.lock")
+        self.assertEqual(
+            sorted(lockfiles.direct_dependencies(lock, "pypi")),
+            ["idna", "iniconfig", "packaging", "typing-extensions"],
+        )
+
+    def test_the_direct_packages_of_an_npm_workspace_are_those_of_the_root_and_each_folder(self) -> None:
+        """F-0002 C01: the root and each workspace folder give their dependencies; a workspace is not a dependency."""
+        import lockfiles
+
+        npm = shutil.which("npm")
+        if npm is None:
+            self.skipTest("`npm` n'est pas installé")
+        files = {
+            "package.json": json.dumps(
+                {"name": "root", "version": "1.0.0", "private": True, "workspaces": ["packages/*"],
+                 "dependencies": {"left-pad": "1.3.0"}, "devDependencies": {"is-odd": "3.0.1"}}
+            ),
+            "packages/a/package.json": json.dumps({"name": "a", "version": "1.0.0", "dependencies": {"b": "1.0.0", "ms": "2.1.3"}}),
+            "packages/b/package.json": json.dumps({"name": "b", "version": "1.0.0"}),
+        }
+        command = [npm, "install", "--package-lock-only", "--ignore-scripts", "--no-audit", "--no-fund"]
+        lock = _generate(command, files, "package-lock.json")
+        self.assertIn("node_modules/is-number", lock)  # is-odd's own dependency is in the lock, and is indirect
+        self.assertEqual(sorted(lockfiles.direct_dependencies(lock, "npm")), ["is-odd", "left-pad", "ms"])
+
+
 def usine_text(stack_path: str) -> str:
     return f"# usine\n\n- `stack` : `{stack_path}`\n- `lockfile` : `uv.lock | pypi`\n"
 
