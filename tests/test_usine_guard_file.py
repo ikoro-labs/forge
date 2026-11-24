@@ -15,7 +15,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 import support  # noqa: F401  met les hooks sur le chemin d'import
-from usine import GUARD_PATH, SENSITIVE_KEYS, load
+from usine import GUARD_PATH, SENSITIVE_KEYS, load, load_checked
 
 USINE = Path("docs") / "agents" / "usine.md"
 
@@ -74,6 +74,44 @@ def project(on_main: Mapping[Path, str], in_tree: Mapping[Path, str] | None = No
                     os.environ.pop(name, None)
                 else:
                     os.environ[name] = value
+
+
+class ASensitiveKeyInUsineMdIsDroppedAndReported(unittest.TestCase):
+    def test_b2_a_sensitive_key_written_in_usine_md_does_not_count_and_is_reported(self) -> None:
+        """#345 B2: `ticket-pr-cap` only in `usine.md`: the guard file is on `origin/main`, the key is dropped."""
+        on_main = {GUARD_PATH: entry("run-limits", "2000 | 300"), USINE: "# Usine\n"}
+        with project(on_main, in_tree={USINE: entry("ticket-pr-cap", "99") + entry("merge-method", "merge")}) as where:
+            loaded = load_checked(where)
+        self.assertNotIn("ticket-pr-cap", loaded.config)
+        self.assertEqual(loaded.config["merge-method"], ["merge"])
+        self.assertEqual(len(loaded.notices), 1)
+        self.assertIn("`ticket-pr-cap` in docs/agents/usine.md is dropped", loaded.notices[0])
+
+    def test_b2_the_guard_file_wins_over_the_same_key_in_usine_md(self) -> None:
+        """#345 B2: the key is in both files: the guard file's value stays, `usine.md`'s is dropped."""
+        on_main = {GUARD_PATH: entry("ticket-pr-cap", "3"), USINE: "# Usine\n"}
+        with project(on_main, in_tree={USINE: entry("ticket-pr-cap", "99")}) as where:
+            loaded = load_checked(where)
+        self.assertEqual(loaded.config["ticket-pr-cap"], ["3"])
+        self.assertEqual(len(loaded.notices), 1)
+
+    def test_b2_every_sensitive_key_is_dropped_by_the_one_set(self) -> None:
+        """#345 B2: each of `SENSITIVE_KEYS` written in `usine.md` is dropped, none is reported twice."""
+        text = "".join(entry(key, "x") for key in sorted(SENSITIVE_KEYS))
+        with project({GUARD_PATH: "# Gardes\n", USINE: "# Usine\n"}, in_tree={USINE: text}) as where:
+            loaded = load_checked(where)
+        self.assertEqual(loaded.config, {})
+        self.assertEqual(len(loaded.notices), len(SENSITIVE_KEYS))
+
+    def test_b2_a_free_key_in_the_guard_file_is_ignored_and_reported(self) -> None:
+        """#345 B2: the guard file speaks for the sensitive keys only; `merge-method` there is ignored."""
+        on_main = {GUARD_PATH: entry("merge-method", "squash") + entry("run-limits", "2000 | 300")}
+        with project(on_main) as where:
+            loaded = load_checked(where)
+        self.assertNotIn("merge-method", loaded.config)
+        self.assertEqual(loaded.config["run-limits"], ["2000 | 300"])
+        self.assertEqual(len(loaded.notices), 1)
+        self.assertIn("`merge-method` in docs/agents/usine-gardes.md is ignored", loaded.notices[0])
 
 
 class SensitiveKeysAreReadInTheGuardFile(unittest.TestCase):
