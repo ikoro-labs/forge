@@ -81,6 +81,25 @@ class LightReplay(unittest.TestCase):
         self.assertEqual([row[:2] for row in rows], [["PASS", first[:7]], ["FAIL", head[:7]]], done.stdout)
         self.assertIn("AssertionError", rows[1][2])
 
+    def test_without_the_key_every_commit_replays_every_command(self) -> None:
+        """No F-NNNN: ticket #331, A2: sans ci-replay-light, chaque commit rejoue chaque commande de ci-replay."""
+        repo, base = self.fixture()
+        first = repo.commit({"tests/test_value.py": TEST_TWO})
+        head = repo.commit({"code_under_test.py": CODE_V2})
+        done = repo.commits(base, head, light_usine(light=False))
+        self.assertEqual(done.returncode, 1, done.stdout + done.stderr)
+        self.assertEqual(
+            [row[:2] for row in repo.rows(done)], [["FAIL", first[:7]], ["PASS", head[:7]]], done.stdout
+        )
+
+    def test_a_one_commit_pr_replays_every_command_whatever_the_key(self) -> None:
+        """No F-NNNN: ticket #331, A3: l'unique commit d'une PR est la tête : il rejoue chaque commande de ci-replay."""
+        repo, base = self.fixture()
+        only = repo.commit({"tests/test_value.py": TEST_TWO})
+        done = repo.commits(base, only, light_usine())
+        self.assertEqual(done.returncode, 1, done.stdout + done.stderr)
+        self.assertEqual([row[:2] for row in repo.rows(done)], [["FAIL", only[:7]]], done.stdout)
+
 
 class RedIntermediateCommit(unittest.TestCase):
     def test_a_red_commit_beside_a_green_head_is_a_row_of_its_own(self) -> None:
