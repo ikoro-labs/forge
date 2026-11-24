@@ -479,7 +479,7 @@ class FeaturesTests(unittest.TestCase):
 
 
 BLOCK_SUBS = {40: [(11, CLOSED, "", 0, 0), (12, OPENED, READY, 0, 0), (13, OPENED, "", 0, 1)]}
-HEADER_ROW = "| Feature | Closed / total | Open PRs | Blocked | Ready |"
+HEADER_ROW = "| Feature | Closed / total | Merged PRs | Open PRs | Blocked | Ready |"
 
 
 class FeaturesBlockTests(unittest.TestCase):
@@ -501,7 +501,7 @@ class FeaturesBlockTests(unittest.TestCase):
         lines = out.splitlines()
         self.assertEqual(lines[0], "Features:")
         self.assertIn(HEADER_ROW, lines)
-        self.assertIn("| F-0001 demo 1 | 33 % (1 / 3) | #77 | #13 | #12 |", lines)
+        self.assertIn("| F-0001 demo 1 | 33 % (1 / 3) | - | #77 | #13 | #12 |", lines)
 
     def test_a11_the_table_is_followed_by_the_line_of_what_runs_in_parallel(self) -> None:
         subs = {40: [(12, OPENED, READY, 0, 0), (13, OPENED, READY, 0, 0), (14, OPENED, READY, 0, 0)],
@@ -528,12 +528,12 @@ class FeaturesBlockTests(unittest.TestCase):
         subs = {40: [(1, OPENED, READY, 0, 2), (2, CLOSED, "", 0, 1), (3, OPENED, "", 0, 0), (4, OPENED, "", 0, 1)]}
         _, out, _ = self.block(FEATURES, features_of(subs))
         row = next(line for line in out.splitlines() if line.startswith("| F-0001"))
-        self.assertEqual([cell.strip() for cell in row.strip("|").split("|")][3], "#1, #4")
+        self.assertEqual([cell.strip() for cell in row.strip("|").split("|")][4], "#1, #4")
 
     def test_a11_a_feature_without_blocked_or_pr_says_none(self) -> None:
         _, out, _ = self.block(FEATURES, features_of({40: [(1, OPENED, "", 0, 0)]}))
         row = next(line for line in out.splitlines() if line.startswith("| F-0001"))
-        self.assertEqual([c.strip() for c in row.strip("|").split("|")][2:], ["none", "none", "none"])
+        self.assertEqual([c.strip() for c in row.strip("|").split("|")][3:], ["none", "none", "none"])
 
     def test_a11_unreadable_tickets_say_tickets_not_read_never_a_figure(self) -> None:
         fake = features_of({40: subprocess.CalledProcessError(1, "gh")})

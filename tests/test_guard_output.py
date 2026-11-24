@@ -23,8 +23,8 @@ REPLY_WITHOUT_FEATURES = (
 )
 # What `scripts/report_mail.py --features` prints for an open feature (F-0181 A11).
 FEATURES = (
-    "Features:\n\n| Feature | Closed / total | Open PRs | Blocked | Ready |\n|---|---|---|---|---|\n"
-    "| F-0001 demo | 33 % (1 / 3) | #77 | #13 | #12 |\n\n"
+    "Features:\n\n| Feature | Closed / total | Merged PRs | Open PRs | Blocked | Ready |\n|---|---|---|---|---|---|\n"
+    "| F-0001 demo | 33 % (1 / 3) | 4 / 45 (#12: 3, #13: 1) | #77 | #13 | #12 |\n\n"
     "In parallel: free slots 1; tickets #12 (F-0001); or features F-0001.\n"
 )
 REPLY = REPLY_WITHOUT_FEATURES + "\n" + FEATURES
@@ -414,10 +414,10 @@ class Stop(unittest.TestCase):
 
     def test_a11_the_table_does_not_count_against_the_caps_of_the_reply(self) -> None:
         rows = "".join(
-            f"| F-{n:04d} a feature with a title of some length | 33 % (1 / 3) | #77, #78 | #13, #14 | #12, #15 |\n"
+            f"| F-{n:04d} a feature with a title of some length | 33 % (1 / 3) | 4 / 45 (#12: 3, #13: 1) | #77, #78 | #13, #14 | #12, #15 |\n"
             for n in range(1, 8)
         )
-        long = FEATURES.replace("| F-0001 demo | 33 % (1 / 3) | #77 | #13 | #12 |\n", rows).replace(
+        long = FEATURES.replace("| F-0001 demo | 33 % (1 / 3) | 4 / 45 (#12: 3, #13: 1) | #77 | #13 | #12 |\n", rows).replace(
             "free slots 1; tickets #12 (F-0001);", "free slots 3; tickets #12 (F-0001), #15 (F-0001), #16 (F-0002);"
         )
         self.assertEqual(self.stop(REPLY_WITHOUT_FEATURES + "\n" + long), (0, "", ""))

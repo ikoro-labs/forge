@@ -395,7 +395,8 @@ def features_state(
         header = completion.idea(folder)
         entry: dict[str, Any] = {
             "feature": feature, "label": completion.feature_label(feature, header),
-            "percent": None, "prs": [], "blocked": [], "ready": [], "error": None,
+            "percent": None, "merged": features_block.UNREAD, "prs": [], "blocked": [], "ready": [],
+            "error": None,
         }
         state["features"].append(entry)
         tracking = header.get("issue", "")
