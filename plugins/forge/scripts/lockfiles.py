@@ -32,7 +32,8 @@ def _quoted(value: str) -> str | None:
 PUBLIC_INDEX = "https://pypi.org/simple"
 PUBLIC_TARBALLS = "https://registry.npmjs.org/"
 LOCAL_SOURCES = ("virtual", "editable", "directory", "path")  # the project's own code, not a download
-GROUP_SECTIONS = ("[package.optional-dependencies]", "[package.dev-dependencies]")  # a member's extras and groups
+NPM_DEPENDENCY_FIELDS = ("dependencies", "devDependencies", "optionalDependencies", "peerDependencies")
+GROUP_SECTIONS =("[package.optional-dependencies]", "[package.dev-dependencies]")  # a member's extras and groups
 
 
 def normalize_pypi(name: str) -> str:
@@ -125,6 +126,20 @@ def _uv_direct(text: str) -> list[str]:
     return found
 
 
+def _npm_direct(text: str) -> list[str]:
+    """The packages the root and the workspace folders of a `package-lock.json` declare, workspaces left out."""
+    entries = json.loads(text)["packages"]
+    folders = [entry for key, entry in entries.items() if "node_modules/" not in key]  # the root and the workspaces
+    workspaces = {key.rsplit("node_modules/", 1)[1] for key, entry in entries.items() if entry.get("link")}
+    found: list[str] = []
+    for folder in folders:
+        for field in NPM_DEPENDENCY_FIELDS:
+            for name in folder.get(field, {}):
+                if name not in workspaces and name not in found:
+                    found.append(name)
+    return found
+
+
 def direct_dependencies(text: str, ecosystem: str) -> list[str]:
     """The packages the project's own members declare, in the lockfile's order; ValueError when unreadable.
 
@@ -133,4 +148,6 @@ def direct_dependencies(text: str, ecosystem: str) -> list[str]:
     """
     if ecosystem == "pypi":
         return _uv_direct(text)
+    if ecosystem == "npm":
+        return _npm_direct(text)
     raise ValueError(f"écosystème inconnu `{ecosystem}`")

@@ -211,6 +211,19 @@ class Comparison(StackCase):
         self.assertEqual(code, 0)
         self.assertEqual([line.split("\t")[:3] for line in lines if not line.startswith("ADDED")], [["OK", "uv.lock", "pypi typing-extensions"]])
 
+    def test_a4_npm_names_are_not_normalized(self) -> None:
+        """F-0002 A4: an npm name is compared as written: `Left-Pad` of the list is not `left-pad` of the lock."""
+        usine = self.usine("`stack` : `stack.txt`", "`lockfile` : `package-lock.json | npm`")
+        base = self.commit({"package-lock.json": npm_lock(), "stack.txt": ""})
+        lock = npm_lock((("left-pad", "1.3.0"),))
+        shouted = self.commit({"package-lock.json": lock, "stack.txt": "npm | Left-Pad | ADR-0001\n"})
+        _, lines, _ = self.run_check(usine, base, shouted)
+        self.assertEqual([line.split("\t")[:3] for line in lines if not line.startswith("ADDED")], [["UNLISTED", "package-lock.json", "npm left-pad"]])
+        exact = self.commit({"package-lock.json": lock, "stack.txt": "npm | left-pad | ADR-0001\n"})
+        code, lines, _ = self.run_check(usine, base, exact)
+        self.assertEqual(code, 0)
+        self.assertEqual([line.split("\t")[:3] for line in lines if not line.startswith("ADDED")], [["OK", "package-lock.json", "npm left-pad"]])
+
 
 if __name__ == "__main__":
     unittest.main()
