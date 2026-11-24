@@ -12,12 +12,14 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 import unittest.mock
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
+import support
 from stack_check import main
 
 _CACHES = tempfile.TemporaryDirectory()  # the tools' package caches, shared by the tests of this module
@@ -270,6 +272,22 @@ class NeverOk(StackCase):
         self.assertEqual(len(rows), 1)
         self.assertIn("npm", rows[0][1] + rows[0][3])
         self.assertIn("lockfile", rows[0][3])
+
+
+class RunAsAScript(StackCase):
+    def test_without_the_stack_key_the_step_is_sans_objet_and_the_script_runs_as_the_plugin_runs_it(self) -> None:
+        """F-0002 C01: the script launched by a path says `sans objet (clé stack absente)` and exits 0, naming no default."""
+        base = self.commit({"uv.lock": uv_lock()})
+        head = self.commit({"uv.lock": uv_lock("idna")})
+        usine = self.usine("`lockfile` : `uv.lock | pypi`")
+        script = support.PLUGIN / "scripts" / "stack_check.py"
+        # The code page of a pipe under Windows: the script writes UTF-8 itself, and the test reads UTF-8.
+        env = dict(_tool_env(self.tmp / "home"), PYTHONIOENCODING="cp1252", PYTHONUTF8="0")
+        done = subprocess.run(
+            [sys.executable, str(script), "--usine", str(usine), "--root", str(self.repo), "--base", base, "--head", head],
+            capture_output=True, text=True, encoding="utf-8", cwd=self.tmp, env=env,
+        )
+        self.assertEqual((done.returncode, done.stdout.strip()), (0, "sans objet (clé stack absente)"))
 
 
 class WorkspaceLocks(unittest.TestCase):
