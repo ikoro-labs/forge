@@ -208,6 +208,15 @@ Les commandes qui rejouent la CI en local, une par ligne.
 - `ci-replay` : `<uv run pytest>`
 - `ci-replay` : `<pnpm -r test>`
 
+Les commandes que la sonde de rejeu de chaque commit lance sur chaque commit de la PR sauf le dernier, une
+par ligne : la clé est facultative, et chaque ligne reprend une commande de `ci-replay` (en général les
+lints et les types, sans la suite, qui coûte l'essentiel du temps). Le dernier commit, la tête, rejoue
+chaque commande de `ci-replay`, et une PR d'un seul commit aussi. Sans la clé, chaque commit rejoue chaque
+commande de `ci-replay`, comme avant ; elle n'a pas de valeur par défaut.
+
+- `ci-replay-light` : `<ruff check .>`
+- `ci-replay-light` : `<mypy>`
+
 La borne de toute suite et de toute sonde qu'un agent lance, par `scripts/bounded_run.py` : le coder et
 le mesureur lancent chaque commande de `ci-replay`, `install` exceptée, par ce lanceur
 (`bounded_run.py -- <commande>`). Deux clés, chacune avec son étape « sans objet » et aucune valeur par
@@ -237,7 +246,8 @@ Le rejeu de chaque commit d'une PR, par `forge:qc-gate` (`scripts/commit_replay.
 `ci-replay`, précédée de `install`, tourne sur chaque commit propre à la PR, pris seul, dans une copie
 extraite par `git archive` et supprimée ensuite, sous la borne de `run-limits` et après le budget de
 `run-budget`. Un commit rouge fait tomber un `git bisect` sur la base : c'est un `BLOCKER` pour
-`forge:qc-conf`, par la règle `F-24` du socle. Aucune clé de plus : sans `ci-replay`, « sans objet (clé
+`forge:qc-conf`, par la règle `F-24` du socle. Avec la clé facultative `ci-replay-light`, les commits
+d'avant la tête ne rejouent que ses commandes, et la tête rejoue tout `ci-replay`. Sans `ci-replay`, « sans objet (clé
 `ci-replay` absente) » ; sans `run-limits`, « sans objet (clé `run-limits` absente) » ; sans `run-budget`,
 la sonde le dit et ne l'attend pas. Elle dure la suite multipliée par le nombre de commits.
 
