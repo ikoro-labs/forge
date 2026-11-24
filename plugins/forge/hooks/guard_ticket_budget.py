@@ -80,7 +80,7 @@ from guard_readonly import reader_refusal
 from usine import load, parse, project_root
 from utf8_stdio import use_utf8
 
-CEILING = 15
+CEILING = 12
 FEATURE_DIR_KEY = "feature-dir"
 LEVER_PEERS_KEY = "lever-peers"
 TEMPLATE = Path(__file__).resolve().parent.parent / "templates" / "usine.md"

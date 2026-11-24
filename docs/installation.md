@@ -806,11 +806,11 @@ Windows or PowerShell.
 
 ## The ticket budget of a feature
 
-The design of a feature declares `feature-tickets: N` in its header; the ceiling is 15, a constant of
+The design of a feature declares `feature-tickets: N` in its header; the ceiling is 12, a constant of
 the plugin and not a key of `usine.md`. `guard_ticket_budget` holds it at four moments:
 
 - **At each write of a design.** An Edit, Write or MultiEdit of a `design.md` is refused when it
-  leaves `feature-tickets` above 15, below 1 once accepted, below the tickets the feature already
+  leaves `feature-tickets` above 12, below 1 once accepted, below the tickets the feature already
   has, or above a budget the design was once accepted with: taking `statut: accepte` off and back
   on raises nothing, since the hook reads that budget in the file, in its git history (any ref, the
   last 30 commits of the file) and in its state file. A design is accepted only with the key, and an
@@ -826,7 +826,7 @@ the plugin and not a key of `usine.md`. `guard_ticket_budget` holds it at four m
   `feature-new F-NNNN`, the tracking ticket that `/forge:feature-new` opens: one per feature, a
   second one is refused. A ticket opened earlier with a `Feature: F-NNNN` line and no admitted reason
   still counts. A feature ticket is refused when its design (`<feature-dir>/NNNN-*/design.md`) is
-  missing, not accepted, has no budget or one above 15, or when the feature's tickets fill the
+  missing, not accepted, has no budget or one above 12, or when the feature's tickets fill the
   budget: those GitHub's search finds, open or closed (`gh issue list --state all --search`), a
   ticket closed as not planned (`stateReason: NOT_PLANNED`, merged into another) left out, plus
   those the hook let through in the last 10 minutes, which the search index may not show yet. An

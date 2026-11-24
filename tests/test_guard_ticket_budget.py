@@ -110,17 +110,28 @@ def full(count: int) -> FakeGh:
 
 class DesignAcceptance(unittest.TestCase):
     def test_a_design_at_the_ceiling_is_accepted(self) -> None:
+        """Ticket #329, A1.1: `feature-tickets: 12` is admitted."""
         project = Project(self, design())
-        self.assertEqual(CEILING, 15)
-        self.assertIsNone(project.write(design("accepte", 15)))
+        self.assertEqual(CEILING, 12)
+        self.assertIsNone(project.write(design("accepte", 12)))
 
     def test_a_design_above_the_ceiling_is_refused(self) -> None:
+        """Ticket #329, A1.2: `feature-tickets: 13` is refused and the reason names 12."""
         project = Project(self, design())
-        reason = project.write(design("accepte", 16))
+        reason = project.write(design("accepte", 13))
         self.assertIsNotNone(reason)
         self.assertIn(
-            "re-split the feature with the product-owner to at most 15 tickets", reason or ""
+            "re-split the feature with the product-owner to at most 12 tickets", reason or ""
         )
+
+    def test_a_ticket_is_published_at_the_ceiling_and_refused_above_it(self) -> None:
+        """Ticket #329, A1.1 and A1.2 on the ticket publication, not only on the design write."""
+        project = Project(self, design("accepte", 12))
+        self.assertIsNone(project.create(ticket("to-tickets F-0001"), full(11)))
+        project.design.write_text(design("accepte", 13), encoding="utf-8")
+        reason = project.create(ticket("to-tickets F-0001"), full(0))
+        self.assertIn("re-split the feature with the product-owner to at most 12 tickets", reason or "")
+        self.assertIn("above 12", reason or "")
 
     def test_a_design_without_a_budget_is_refused(self) -> None:
         project = Project(self, design())
@@ -133,10 +144,10 @@ class DesignAcceptance(unittest.TestCase):
     def test_a_design_in_review_is_held_to_the_ceiling_too(self) -> None:
         project = Project(self, design())
         self.assertIsNone(project.write(design("en-revue", 12)))
-        self.assertIn("outside 1 to 15", project.write(design("en-revue", 40)) or "")
+        self.assertIn("outside 1 to 12", project.write(design("en-revue", 40)) or "")
 
     def test_an_edit_that_accepts_is_checked_on_the_resulting_header(self) -> None:
-        project = Project(self, design("en-revue", 16))
+        project = Project(self, design("en-revue", 13))
         event = {
             "tool_name": "Edit",
             "tool_input": {
@@ -171,7 +182,7 @@ class DesignAcceptance(unittest.TestCase):
     def test_an_accepted_design_without_a_budget_may_declare_one(self) -> None:
         project = Project(self, design("accepte"))
         self.assertIsNone(project.write(design("accepte", 12)))
-        self.assertIn("outside 1 to 15", project.write(design("accepte", 24)) or "")
+        self.assertIn("outside 1 to 12", project.write(design("accepte", 24)) or "")
 
     def test_another_file_is_not_checked(self) -> None:
         project = Project(self, design())
@@ -257,7 +268,7 @@ class ClosedBudget(unittest.TestCase):
         project = Project(self, design("accepte", 24))
         reason = project.create(ticket("to-tickets F-0001"), full(0))
         self.assertIn(
-            "re-split the feature with the product-owner to at most 15 tickets", reason or ""
+            "re-split the feature with the product-owner to at most 12 tickets", reason or ""
         )
 
     def test_a_design_without_a_budget_refuses_the_ticket(self) -> None:
@@ -700,11 +711,11 @@ class ClosedReason(unittest.TestCase):
         self.assertTrue(all("number,body,state,stateReason" in call for call in gh.calls))
 
     def test_a_feature_recut_by_closing_merged_tickets_keeps_its_budget(self) -> None:
-        tickets = [closed("NOT_PLANNED")] * 45 + [closed("COMPLETED")] * 10 + [ticket("to-tickets F-0001")] * 5
+        tickets = [closed("NOT_PLANNED")] * 45 + [closed("COMPLETED")] * 8 + [ticket("to-tickets F-0001")] * 4
         project = Project(self, design("en-revue"))
-        self.assertIsNone(project.write(design("accepte", 15), FakeGh(tickets)))
-        project.design.write_text(design("accepte", 15), encoding="utf-8")
-        self.assertIn("already has 15 tickets", project.create(ticket("to-tickets F-0001"), FakeGh(tickets)) or "")
+        self.assertIsNone(project.write(design("accepte", 12), FakeGh(tickets)))
+        project.design.write_text(design("accepte", 12), encoding="utf-8")
+        self.assertIn("already has 12 tickets", project.create(ticket("to-tickets F-0001"), FakeGh(tickets)) or "")
 
 
 REOPEN_COMMANDS = (
@@ -727,27 +738,27 @@ class Reopenings(unittest.TestCase):
     """Reopening a ticket closed as not planned brings it back in the count: the budget holds it."""
 
     def reasons(self, counted: int, viewed: object) -> list[str | None]:
-        project = Project(self, design("accepte", 15))
+        project = Project(self, design("accepte", 12))
         gh = FakeGh([ticket("to-tickets F-0001")] * counted, viewed)  # type: ignore[arg-type]
         target = {"owner": "o", "repo": "r", "issue_number": 16}
         found = [project.bash(command, gh) for command in REOPEN_COMMANDS]
         return found + [project.tool(tool, {**target, **extra}, gh) for tool, extra in REOPEN_TOOLS]
 
     def test_a_released_ticket_is_not_reopened_past_the_budget(self) -> None:
-        for form, reason in zip(REOPEN_COMMANDS + tuple(t for t, _ in REOPEN_TOOLS), self.reasons(15, closed("NOT_PLANNED"))):
+        for form, reason in zip(REOPEN_COMMANDS + tuple(t for t, _ in REOPEN_TOOLS), self.reasons(12, closed("NOT_PLANNED"))):
             with self.subTest(form=form):
-                self.assertIn("F-0001 already has 15 tickets for a budget of 15", reason or "")
+                self.assertIn("F-0001 already has 12 tickets for a budget of 12", reason or "")
 
     def test_a_released_ticket_reopens_within_the_budget(self) -> None:
-        self.assertEqual(self.reasons(14, closed("NOT_PLANNED")), [None] * (len(REOPEN_COMMANDS) + len(REOPEN_TOOLS)))
+        self.assertEqual(self.reasons(11, closed("NOT_PLANNED")), [None] * (len(REOPEN_COMMANDS) + len(REOPEN_TOOLS)))
 
     def test_a_ticket_that_already_counts_or_sits_out_of_the_budget_reopens(self) -> None:
         for viewed in (closed("COMPLETED"), (ticket("securite"), {"state": "CLOSED", "stateReason": "NOT_PLANNED"})):
             with self.subTest(viewed=viewed):
-                self.assertEqual(set(self.reasons(15, viewed)), {None})
+                self.assertEqual(set(self.reasons(12, viewed)), {None})
 
     def test_an_unreadable_number_or_state_is_refused(self) -> None:
-        project = Project(self, design("accepte", 15))
+        project = Project(self, design("accepte", 12))
         gh = FakeGh([], closed("NOT_PLANNED"))
         for command in ('gh issue reopen "$N"', "gh issue reopen", 'gh api -X PATCH repos/o/r/issues/16 -f state="$S"'):
             with self.subTest(command=command):
@@ -757,14 +768,14 @@ class Reopenings(unittest.TestCase):
         self.assertIn("cannot be read", project.tool("mcp__github__update_issue", {**target, "state": ["open"]}, gh) or "")
 
     def test_the_reopening_mutations_are_refused(self) -> None:
-        project = Project(self, design("accepte", 15))
+        project = Project(self, design("accepte", 12))
         for mutation in ('reopenIssue(input: {issueId: "I"})', 'updateIssue(input: {id: "I", state: OPEN})'):
             command = f"gh api graphql -f query='mutation {{ {mutation} {{ clientMutationId }} }}'"
             with self.subTest(mutation=mutation):
                 self.assertIn("gh issue reopen", project.bash(command, FakeGh([], "")) or "")
 
     def test_closing_a_ticket_is_no_reopening(self) -> None:
-        project = Project(self, design("accepte", 15))
+        project = Project(self, design("accepte", 12))
         gh = FakeGh(None, None)
         self.assertIsNone(project.bash("gh api -X PATCH repos/o/r/issues/16 -f state=closed", gh))
         self.assertIsNone(project.bash("gh issue close 16", gh))
@@ -784,8 +795,8 @@ class CeilingEverywhere(unittest.TestCase):
         project = Project(self, design("accepte", 10), memory=True)
         self.assertIsNone(project.write(design("en-revue", 10)))
         project.design.write_text(design("en-revue", 10), encoding="utf-8")
-        self.assertIn("never rises", project.write(design("en-revue", 14)) or "")
-        self.assertIn("never rises", project.write(design("accepte", 14)) or "")
+        self.assertIn("never rises", project.write(design("en-revue", 12)) or "")
+        self.assertIn("never rises", project.write(design("accepte", 12)) or "")
         self.assertIsNone(project.write(design("accepte", 9)))
 
     def test_git_history_keeps_the_accepted_budget(self) -> None:
@@ -809,7 +820,7 @@ class CeilingEverywhere(unittest.TestCase):
 
     def test_a_shell_write_of_the_budget_is_refused(self) -> None:
         project = Project(self, design("accepte", 10))
-        command = "sed -i 's/feature-tickets: 10/feature-tickets: 14/' docs/features/0001-runner/design.md"
+        command = "sed -i 's/feature-tickets: 10/feature-tickets: 12/' docs/features/0001-runner/design.md"
         self.assertIn("with Edit or Write", project.bash(command, full(0)) or "")
         self.assertIsNone(
             project.bash("grep feature-tickets docs/features/0001-runner/design.md", full(0))
@@ -948,14 +959,29 @@ class Binding(unittest.TestCase):
         self.assertIn("Blocked by the forge plugin (guard_ticket_budget)", completed.stderr)
 
     def test_the_template_and_the_skill_declare_the_budget(self) -> None:
+        """Ticket #329, A2: the template and the skill say 12, the ceiling of the guard."""
         template = (support.PLUGIN / "templates" / "features" / "design.md").read_text(
             encoding="utf-8"
         )
-        self.assertIn("\nfeature-tickets: <N, at most 15", template.split("\n---\n")[0])
+        self.assertIn(f"\nfeature-tickets: <N, at most {CEILING}", template.split("\n---\n")[0])
         skill = (support.PLUGIN / "skills" / "feature-design" / "SKILL.md").read_text(
             encoding="utf-8"
         )
-        self.assertIn("`forge:product-owner` cuts the feature into at most 15 tickets", skill)
+        self.assertIn(f"`forge:product-owner` cuts the feature into at most {CEILING} tickets", skill)
+        self.assertEqual(CEILING, 12)
+
+    def test_the_pages_that_state_the_ceiling_say_12(self) -> None:
+        """Ticket #329, A3: the page of the guard and the README give the ceiling of the guard, not 15."""
+        page = (support.REPO_ROOT / "docs" / "installation.md").read_text(encoding="utf-8")
+        section = page.split("## The ticket budget of a feature", 1)[1].split("\n## ", 1)[0]
+        self.assertIn(f"the ceiling is {CEILING},", section)
+        self.assertIn(f"above {CEILING}, below 1 once accepted", section)
+        self.assertIn(f"or one above {CEILING}, or when", section)
+        self.assertNotRegex(section, r"\b15\b")
+        readme = (support.REPO_ROOT / "README.md").read_text(encoding="utf-8")
+        row = next(line for line in readme.splitlines() if line.startswith("| `guard_ticket_budget`"))
+        self.assertIn(f"N at most {CEILING},", row)
+        self.assertNotRegex(row, r"\b15\b")
 
 
 if __name__ == "__main__":
