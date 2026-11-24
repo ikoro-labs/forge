@@ -564,5 +564,25 @@ class LintOnWrite(_KeyedHook):
         )
 
 
+class LintOnWriteTemplate(unittest.TestCase):
+    """F-0002 A22, T1: the template documents the key, its example and its absence."""
+
+    def setUp(self) -> None:
+        self.template = (support.PLUGIN / "templates" / "usine.md").read_text(encoding="utf-8")
+
+    def test_the_template_gives_a_ruff_line_for_the_key(self) -> None:
+        """F-0002 T1: one example line, `<pattern> | <command>`, in the form of the other keys."""
+        self.assertIn("- `lint-on-write` : `<**/*.py | uv run ruff check>`", self.template)
+
+    def test_the_template_says_what_an_absent_key_means(self) -> None:
+        """F-0002 A22: without the key nothing runs and the step is `sans objet`."""
+        self.assertIn("sans objet (clé `lint-on-write` absente)", self.template)
+
+    def test_the_template_says_the_tool_output_is_relayed_for_both_keys(self) -> None:
+        """F-0002 A18, A19: the 20 lines and 2000 bytes the agent gets, for `format-on-write` too."""
+        self.assertIn("20 dernières lignes", self.template)
+        self.assertIn("2000 octets", self.template)
+
+
 if __name__ == "__main__":
     unittest.main()
