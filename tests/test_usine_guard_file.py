@@ -136,3 +136,31 @@ class SensitiveKeysAreReadInTheGuardFile(unittest.TestCase):
             config = load(where)
         self.assertEqual(len(SENSITIVE_KEYS), 21)
         self.assertEqual({key: config.get(key) for key in SENSITIVE_KEYS}, {key: [f"guard-{key}"] for key in SENSITIVE_KEYS})
+
+
+class WithoutAGuardFileOnOriginMainTheKeysComeFromUsineMd(unittest.TestCase):
+    def test_b3_the_sensitive_keys_are_read_in_usine_md_with_a_notice(self) -> None:
+        """#345 B3: no `usine-gardes.md` on `origin/main`: `usine.md` holds the keys, and the notice says so."""
+        on_main = {USINE: entry("ticket-pr-cap", "3") + entry("merge-method", "merge")}
+        with project(on_main) as where:
+            loaded = load_checked(where)
+        self.assertEqual(loaded.config["ticket-pr-cap"], ["3"])
+        self.assertEqual(loaded.config["merge-method"], ["merge"])
+        self.assertEqual(len(loaded.notices), 1)
+        self.assertIn("docs/agents/usine-gardes.md is absent on origin/main", loaded.notices[0])
+        self.assertIsNone(loaded.unreadable)
+
+    def test_b3_a_guard_file_only_in_the_working_tree_does_not_count(self) -> None:
+        """#345 B3: the agent writes `usine-gardes.md` on disk; `origin/main` still has none: `usine.md` it is."""
+        on_main = {USINE: entry("ticket-pr-cap", "3")}
+        with project(on_main, in_tree={GUARD_PATH: entry("ticket-pr-cap", "99")}) as where:
+            loaded = load_checked(where)
+        self.assertEqual(loaded.config["ticket-pr-cap"], ["3"])
+        self.assertIsNone(loaded.unreadable)
+
+    def test_b3_a_project_without_either_file_loads_empty(self) -> None:
+        """#345 B3: nothing there, nothing invented."""
+        with project({}) as where:
+            loaded = load_checked(where)
+        self.assertEqual(loaded.config, {})
+        self.assertIsNone(loaded.unreadable)
