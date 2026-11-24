@@ -44,5 +44,25 @@ class GateRunsTheArchitectureProbe(unittest.TestCase):
         self.assertIn("les éléments verbatim des sondes 2, 5, 6, 7, 10, 11, 12, 13, 14, 15, 16 et 17", tail)
 
 
+def judge_section() -> str:
+    judge = read("agents", "qc-conf.md")
+    section = judge[judge.index("## Contrôle d'architecture"):]
+    return section[: section.index(" ## ")] if " ## " in section else section
+
+
+class JudgeReadsTheArchitectureProbe(unittest.TestCase):
+    def test_a_fail_is_a_blocker_under_f_15_that_cites_the_command_output(self) -> None:
+        """F-0002 A27: a `FAIL` of the probe is a `BLOCKER` under rule `F-15`, with the command and its output as the scenario."""
+        section = judge_section()
+        for text in ("`FAIL`", "`BLOCKER`", "`F-15`", "recopie", "pas de `probe:`", "« déduit »"):
+            self.assertIn(text, section)
+
+    def test_not_run_and_an_absent_key_are_rendered_as_they_are(self) -> None:
+        """F-0002 A27: `NOT RUN` goes to `GATES` as it is, never read as `PASS`; an absent key is `sans objet`, not none."""
+        section = judge_section()
+        for text in ("`NOT RUN`", "`GATES`", "architecture : sans objet", "jamais lue comme « aucune »", "jamais `PASS`"):
+            self.assertIn(text, section)
+
+
 if __name__ == "__main__":
     unittest.main()

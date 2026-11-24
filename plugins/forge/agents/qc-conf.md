@@ -132,6 +132,24 @@ Nomme le résultat dans la ligne `GATES`, sous la forme `stack : <paquet>, <paqu
 Un tableau sans cette sonde (clé absente) se dit `stack : sans objet`, jamais lue comme « aucune ». En une passe,
 il n'y a pas de tableau : dis dans `GATES` que la sonde n'a pas eu lieu.
 
+## Contrôle d'architecture
+
+Le tableau de `forge:qc-gate` porte une sonde **Contrôle d'architecture** (clé `architecture-check`) : la
+commande que le projet déclare pour mesurer sa carte des modules, rejouée sur la tête sous le lanceur borné.
+Tu ne refais pas sa mesure, tu en dis le sens.
+
+- Une sonde `FAIL` est un `BLOCKER`, règle `F-15` : le code ne suit pas la carte des modules (un module
+  utilisé hors de son interface, une dépendance qui ne pointe pas vers l'intérieur). Le scénario d'échec
+  recopie la commande et les dernières lignes de sa sortie, qui nomment le module ou l'import fautif : le
+  coder sait quoi corriger, le refus n'est jamais muet. Il n'a pas de `probe:` : il repose sur la mesure de la
+  sonde, et le rapport le marque « déduit ».
+- Une sonde `NOT RUN` (commande introuvable, poste hors budget, mémoire ou délai atteints) n'est pas un constat
+  sur le code : rends-la telle quelle dans `GATES`, jamais `PASS` ni « aucune violation ».
+
+Nomme le résultat dans la ligne `GATES`, sous la forme `architecture : FAIL`, `architecture : PASS` ou
+`architecture : NOT RUN`. Un tableau sans cette sonde (clé absente) se dit `architecture : sans objet`, jamais
+lue comme « aucune ». En une passe, il n'y a pas de tableau : dis dans `GATES` que la sonde n'a pas eu lieu.
+
 ## Porte one-way
 
 La description de la PR dit sa porte : `two-way` ou `one-way` (un geste destructif, une
