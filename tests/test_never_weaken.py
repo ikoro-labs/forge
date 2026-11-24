@@ -305,6 +305,34 @@ class RaisedEntry(unittest.TestCase):
         self.assertIn("raised-entry", results[0].detail)
 
 
+class RaisedEntryOnRealDiffs(unittest.TestCase):
+    """F-0002 A12 to A14 on the diffs `git` prints: a new file, a rename, a directory, a binary file."""
+
+    BASE = b"3 src/a.py\nsrc/b.py\n"
+    DIRECTORY = "scripts/baselines/ | raised-entry"
+
+    def test_f0002_a12_a_new_file_under_a_directory_entry_with_a_key_is_refused(self) -> None:
+        text = real_diff({"README.md": b"x\n"}, {"README.md": b"x\n", f"{BASELINE}": b"src/a.py\n"})
+        self.assertEqual(statuses([self.DIRECTORY, ENTRY], text), [APPLIES, APPLIES])
+
+    def test_f0002_a13_a_renamed_file_with_a_raised_count_is_refused(self) -> None:
+        raised = b"4 src/a.py\nsrc/b.py\n"
+        text = real_diff({BASELINE: self.BASE}, {"scripts/baselines/moved.txt": raised})
+        self.assertEqual(statuses([self.DIRECTORY], text), [APPLIES])
+
+    def test_f0002_a14_a_lower_count_in_a_real_diff_passes(self) -> None:
+        text = real_diff({BASELINE: self.BASE}, {BASELINE: b"2 src/a.py\n"})
+        self.assertEqual(statuses([ENTRY], text), [NONE])
+
+    def test_f0002_a12_a_key_added_outside_the_path_is_not_read(self) -> None:
+        text = real_diff({"notes.txt": b"a\n"}, {"notes.txt": b"a\nnew\n"})
+        self.assertEqual(statuses([ENTRY], text), [NONE])
+
+    def test_f0002_a12_a_modified_binary_file_under_the_path_applies(self) -> None:
+        text = real_diff({BASELINE: b"\x00\x01\x02"}, {BASELINE: b"\x00\x01\x03"})
+        self.assertEqual(statuses([ENTRY], text), [APPLIES])
+
+
 class Command(unittest.TestCase):
     def run_main(self, usine_text: str | None, diff_text: str) -> tuple[int, str, str]:
         with tempfile.TemporaryDirectory() as folder:
