@@ -148,6 +148,40 @@ class Recurring(unittest.TestCase):
         self.assertIn("Not Found", err)
         self.assertEqual(github.writes, [])
 
+    def test_an_absent_key_is_not_applicable_and_nothing_is_written(self) -> None:
+        """F-0002 A33: without `recurring-finding` or without `slo-issue` the step is `sans objet`, no `gh` call, nothing written."""
+        for name, text in (
+            ("recurring-finding", "# Usine\n\n- `slo-issue` : `55`\n"),
+            ("slo-issue", "# Usine\n\n- `recurring-finding` : `3 | 30`\n"),
+        ):
+            with self.subTest(absent=name):
+                self.configure(text)
+                github = FakeGitHub([pr(n, verdict([rule("F-25")])) for n in (10, 11, 12)])
+                code, out, _ = self.run_main(github)
+                self.assertEqual(code, 0)
+                self.assertIn(f"sans objet (clé `{name}` absente)", out)
+                self.assertEqual(github.calls, [])
+                self.assertEqual(github.writes, [])
+
+    def test_both_keys_absent_name_each_of_them(self) -> None:
+        """F-0002 A33: with neither key, each absent key is named, and nothing is guessed or written."""
+        self.configure("# Usine\n")
+        github = FakeGitHub([])
+        code, out, _ = self.run_main(github)
+        self.assertEqual(code, 0)
+        self.assertIn("sans objet (clé `recurring-finding` absente)", out)
+        self.assertIn("sans objet (clé `slo-issue` absente)", out)
+        self.assertEqual(github.calls, [])
+
+    def test_a_badly_formed_key_writes_nothing_and_exits_one(self) -> None:
+        """F-0002 A33: a `recurring-finding` that is not `<threshold> | <days>` is refused, never completed with a default."""
+        self.configure("# Usine\n\n- `recurring-finding` : `3`\n- `slo-issue` : `55`\n")
+        github = FakeGitHub([])
+        code, _, err = self.run_main(github)
+        self.assertEqual(code, 1)
+        self.assertIn("<seuil> | <jours>", err)
+        self.assertEqual(github.writes, [])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -119,6 +119,9 @@ def comment_body(counted: Tally, threshold: int, since: datetime, until: datetim
 def run_recurring(project: Path, run: Runner, now: datetime) -> list[str]:
     """Count, then write the comment of the ticket of the key `slo-issue`; what was done, or why nothing was."""
     config = usine.load(project)
+    absent = [name for name in (KEY, ISSUE_KEY) if not config.get(name)]
+    if absent:
+        return [f"Constat récurrent : sans objet (clé `{name}` absente)." for name in absent]
     threshold, days = parse_setting(config[KEY])
     ticket = factory_slo.issue_number(project)
     since = now - timedelta(days=days)
