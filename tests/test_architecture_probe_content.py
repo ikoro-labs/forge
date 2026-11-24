@@ -1,8 +1,10 @@
 """F-0002 C03: the gate's probe 17 replays the `architecture-check` command; a `FAIL` is a `BLOCKER` of the judge."""
 
+import re
 import unittest
 
 import support  # noqa: F401
+from never_weaken import APPLIES, check
 
 
 def read(*parts: str) -> str:
@@ -62,6 +64,42 @@ class JudgeReadsTheArchitectureProbe(unittest.TestCase):
         section = judge_section()
         for text in ("`NOT RUN`", "`GATES`", "architecture : sans objet", "jamais lue comme « aucune »", "jamais `PASS`"):
             self.assertIn(text, section)
+
+
+def template_paragraph() -> str:
+    template = read("templates", "usine.md")
+    section = template[template.index("`architecture-check` : la commande"):]
+    return section[: section.index(" ## ")]
+
+
+class TemplateDocumentsTheArchitectureKey(unittest.TestCase):
+    def test_the_key_names_one_command_and_has_no_default(self) -> None:
+        """F-0002 T1: `architecture-check` is one command, absent by default, and the step is `sans objet` without it."""
+        section = template_paragraph()
+        self.assertIn("- `architecture-check` : `<", section)
+        for text in (
+            "une seule commande", "sans objet (clé `architecture-check` absente)", "aucune valeur par défaut",
+            "`run-limits`", "`PASS`", "`FAIL`", "`NOT RUN`",
+        ):
+            self.assertIn(text, section)
+
+    def test_the_template_says_which_file_reads_it_and_what_the_judge_does(self) -> None:
+        """F-0002 T1: the gate reads the command on the base, and the judge poses a `BLOCKER` under `F-15` on a `FAIL`."""
+        section = template_paragraph()
+        for text in ("`forge:qc-gate`", "base", "`forge:qc-conf`", "`BLOCKER`", "`F-15`"):
+            self.assertIn(text, section)
+
+    def test_the_module_map_example_entry_of_never_weaken_refuses_a_removed_rule(self) -> None:
+        """F-0002 A28: the `never-weaken` line the template gives for the module map applies when a PR removes a rule from it."""
+        entries = re.findall(r"- `never-weaken` : `<([^>]*)>`", template_paragraph())
+        self.assertEqual(len(entries), 1)
+        path, kind = [part.strip() for part in entries[0].split("|")]
+        self.assertEqual(kind, "removed-line")
+        diff = (
+            f"diff --git a/{path} b/{path}\nindex 111..222 100644\n--- a/{path}\n+++ b/{path}\n"
+            "@@ -1,2 +1,1 @@\n module a\n-module b may import only module a\n"
+        )
+        self.assertEqual([result.status for result in check(entries, diff)], [APPLIES])
 
 
 if __name__ == "__main__":
