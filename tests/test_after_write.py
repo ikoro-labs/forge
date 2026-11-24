@@ -510,6 +510,59 @@ class LintOnWrite(_KeyedHook):
         )
         self.assertEqual(run_hook(self.root, self.target), (0, ""))
 
+    def test_a_malformed_line_is_ignored_and_the_message_says_so(self) -> None:
+        """F-0002 A20: a line that is not `<pattern> | <command>` runs nothing; the next one runs."""
+        command = self.failing("print('boom')")
+        self.configure(
+            ("lint-on-write", "**/*.txt"),
+            ("lint-on-write", 'x | fmt "unclosed'),
+            ("lint-on-write", f"**/*.txt | {command}"),
+        )
+        code, err = run_hook(self.root, self.target)
+        self.assertEqual(code, 2)
+        self.assertEqual(
+            err.splitlines(),
+            [
+                "lint-on-write: `**/*.txt` is not `<pattern> | <command>`, line ignored",
+                "lint-on-write: `x | fmt \"unclosed` is not `<pattern> | <command>`, line ignored",
+                f"lint-on-write: {command} failed on a.txt (exit 1)",
+                "boom",
+            ],
+        )
+
+    def test_a_command_past_its_delay_is_killed_and_the_write_is_kept(self) -> None:
+        """F-0002 A21: the command is killed at the delay, the message names it, the file stays."""
+        slow = self.script(
+            "slow.py", "import sys, time\nprint('working', flush=True)\ntime.sleep(30)\n"
+        )
+        self.configure(("lint-on-write", f"**/*.txt | {slow}"))
+        with mock.patch.object(after_write, "COMMAND_TIMEOUT", 1):
+            code, err = run_hook(self.root, self.target)
+        self.assertEqual(code, 2)
+        self.assertEqual(
+            err, f"lint-on-write: {slow} failed on a.txt (timed out after 1s)\nworking\n"
+        )
+        self.assertEqual(self.target.read_text(encoding="utf-8"), "x")
+
+    def test_the_total_delay_is_spent_across_both_keys(self) -> None:
+        """F-0002 A21: a formatter that uses the write's budget leaves none for the lint."""
+        slow = self.script("slow.py", "import time\ntime.sleep(30)\n")
+        lint = self.failing("print('never reached')")
+        self.configure(("format-on-write", f"**/*.txt | {slow}"), ("lint-on-write", f"**/*.txt | {lint}"))
+        with (
+            mock.patch.object(after_write, "COMMAND_TIMEOUT", 30),
+            mock.patch.object(after_write, "TOTAL_TIMEOUT", 1),
+        ):
+            code, err = run_hook(self.root, self.target)
+        self.assertEqual(code, 2)
+        self.assertEqual(
+            err.splitlines(),
+            [
+                f"format-on-write: {slow} failed on a.txt (timed out after 1s)",
+                f"lint-on-write: {lint} failed on a.txt (timed out after 1s)",
+            ],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
