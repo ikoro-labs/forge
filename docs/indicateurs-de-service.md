@@ -69,6 +69,15 @@ code du garde. Le journal n'enregistre jamais la commande. Il n'est qu'une trace
 et le refus garde son code de sortie et son message. Un refus qui vient d'un garde en panne (« guard_git
 failed ») n'est pas une règle du dépôt et n'est pas journalisé.
 
+`after_write` y écrit aussi, mais ce n'est pas un des trois gardes : quand une commande de `lint-on-write`
+ou de `format-on-write` échoue sur une écriture, le hook ajoute une ligne de mêmes sept champs, avec `guard`
+`after_write`, `rule` le nom de la clé dont la commande a échoué (`lint-on-write` ou `format-on-write`) et
+`verb` le nom de l'outil qui a écrit (`Write`, `Edit`). Une écriture dont les deux clés échouent laisse deux
+lignes, `format-on-write` d'abord. Ni la commande ni la fin de sa sortie n'entrent au journal : l'agent les
+lit dans le message du hook, rien d'autre ne les garde. Un tiret cadratin, une ligne de clé mal formée que le
+hook ignore, un frontmatter ou un plafond de document refusent l'écriture sans y laisser de ligne : ce ne sont
+pas des échecs d'une commande de ces deux clés. Un refus répété se lit au journal, par `rule` et `branch`.
+
 `factory_slo.py` lit ce journal pour `guard-refusals` : les lignes du dépôt du projet, datées dans la
 fenêtre, divisées par les PR fusionnées de la même fenêtre. Une ligne illisible est ignorée. Sans
 journal sur le poste, ou sans PR fusionnée dans la fenêtre, le SLI est « sans objet » avec sa raison,

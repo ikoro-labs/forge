@@ -5,7 +5,10 @@ whose pattern matches the file run on it, in the file's order, then those of the
 key the same way, then an em dash beyond the file's allowance is reported. All report with exit
 code 2, which Claude Code shows to the agent so it fixes the file before going on; the write itself
 stays. A failing command is reported as `<key>: <command> failed on <path> (<reason>)`, followed by
-the end of what it printed: the last `TAIL_LINES` lines and `TAIL_BYTES` bytes at most.
+the end of what it printed: the last `TAIL_LINES` lines and `TAIL_BYTES` bytes at most. Each key
+whose command fails in a write also adds a line to the journal of the guards' refusals
+(`refusal_journal.py`): `guard` `after_write`, `rule` the key, `verb` the writing tool, and neither
+the command nor its output. The journal never changes the exit code nor the message.
 
 A line of either key is `<pattern> | <command>`; a line that is not is ignored, and the message
 says so. The pattern is compared with the whole
@@ -40,6 +43,7 @@ from typing import IO
 
 from doc_rules import doc_problems
 from handoff_header import ProcessGroup, group_options
+from refusal_journal import record
 from usine import load, matches, project_root, split_value
 from utf8_stdio import use_utf8
 
@@ -52,6 +56,8 @@ TOTAL_TIMEOUT = 120
 TAIL_LINES = 20
 TAIL_BYTES = 2000
 READ_BYTES = 64 * 1024
+# The refusals journal (`refusal_journal.py`): the rule of a refusal is the key whose command failed.
+RULES = ((FORMAT_KEY, FORMAT_KEY), (LINT_KEY, LINT_KEY))
 WINDOWS = sys.platform == "win32"
 # CreateProcess runs a `.cmd` or `.bat` through cmd.exe, which reads these as syntax, not as text.
 CMD_METACHARACTERS = frozenset('&|<>^%!"()')
@@ -169,8 +175,13 @@ def _run_key(
     path: Path,
     relative: str,
     deadline: _Deadline,
+    refused: list[str] | None = None,
 ) -> list[str]:
-    """The problems of every `<pattern> | <command>` line of `key` whose pattern matches the file."""
+    """The problems of every `<pattern> | <command>` line of `key` whose pattern matches the file.
+
+    A command that fails adds `key` to `refused` (once): a line the hook ignores is a problem too,
+    but no command refused the write.
+    """
     problems: list[str] = []
     for value in config.get(key, []):
         parts = split_value(value, 2)
@@ -189,7 +200,15 @@ def _run_key(
         if reason:
             problem = f"{key}: {command} failed on {relative} ({reason})"
             problems.append(f"{problem}\n{output}" if output else problem)
+            if refused is not None and key not in refused:
+                refused.append(key)
     return problems
+
+
+def _verb(event: object) -> str:
+    """The name of the tool that wrote (`Write`, `Edit`), never a path nor a command."""
+    tool = event.get("tool_name") if isinstance(event, dict) else None
+    return tool if isinstance(tool, str) and tool else "other"
 
 
 def main() -> int:
@@ -208,8 +227,12 @@ def main() -> int:
     config = load(root)
     deadline = _Deadline()
     problems: list[str] = []
+    refused: list[str] = []
     for key in (FORMAT_KEY, LINT_KEY):
-        problems.extend(_run_key(key, config, root, path.resolve(), relative, deadline))
+        problems.extend(_run_key(key, config, root, path.resolve(), relative, deadline, refused))
+    # The reason is the key's own name, so no text of the command or of its output reaches the journal.
+    for key in refused:
+        record("after_write", key, RULES, event, lambda: _verb(event))
     content = path.read_text(encoding="utf-8", errors="replace")
     if problem := em_dash_problem(relative, content, load_allowances(root)):
         problems.append(problem)
