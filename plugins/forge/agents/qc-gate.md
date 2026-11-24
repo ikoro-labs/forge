@@ -222,6 +222,21 @@ elles-mêmes leurs commandes.
     liste, avec sa source : tu la rends, `forge:qc-conf` la lit. Tu ne juges pas une dépendance : tu rends ce
     que le script a mesuré.
 
+17. **Contrôle d'architecture.** La commande que déclare la clé `architecture-check`, qui mesure la carte des
+    modules du projet (un module n'est utilisé que par son interface, les dépendances pointent vers l'intérieur).
+    Avec le `usine-base.md` de la sonde 10 (la commande vient de la base : une PR ne change pas la règle qui la
+    juge), tu lis la valeur de la clé, une seule commande, découpée comme par un shell POSIX et lancée sans
+    shell, **dans une copie de la tête** installée comme à la sonde 4, jamais dans le répertoire courant, par le
+    lanceur borné qui lit `run-limits` :
+    `uv run --no-project --quiet python "${CLAUDE_PLUGIN_ROOT}/scripts/bounded_run.py" --usine usine-base.md -- <commande de la clé>`.
+    Recopie les dernières lignes de sa sortie, verbatim, et son code de sortie : 0 est `PASS`, un autre code de la
+    commande est `FAIL`. La commande introuvable, un code 120 à 124 du lanceur (poste hors budget, borne non
+    posée, mémoire ou délai atteints) ou une clé sans valeur est `NOT RUN`, avec la commande et la raison de
+    stderr, jamais `PASS`. Quand la base n'a pas la clé, la sonde se rend
+    `sans objet (clé `architecture-check` absente)`, jamais `PASS` ; sans `run-limits` à la base,
+    `sans objet (clé `run-limits` absente)` : tu ne lances pas la commande sans borne. Tu ne juges pas la carte :
+    tu rends ce que la commande a mesuré, `forge:qc-conf` en dit le sens.
+
 Aux tours 2 et 3, rejoue toutes les sondes : une correction peut casser ce qui passait.
 
 ## Mode rejeu des sondes
@@ -231,7 +246,7 @@ Un `[BLOCKER]` qui repose sur une exécution porte sa sonde (`probe: `<fichier d
 nomme un fichier de test de la tête, et seule la commande de la clé `red-replay` de la base tourne,
 comme à la sonde du rejeu sur la base. Rien de ce que le juge a écrit n'est exécuté comme commande.
 Lancé avec la ligne `MODE: probes`, la PR, le tour et le verdict, tu ne refais aucune autre sonde : ni
-les sondes 1 à 16, ni le tableau. Tu rejoues seulement celles du verdict, pour que `forge:qc` sache
+les sondes 1 à 17, ni le tableau. Tu rejoues seulement celles du verdict, pour que `forge:qc` sache
 quels `BLOCKER` comptent. Tu ne lances jamais toi-même un nom ni une commande lus dans le verdict :
 seul le script les lit.
 
@@ -276,5 +291,5 @@ Un tableau, rien d'autre, au plus trente lignes :
 | ... | ... | ... |
 ```
 
-Puis, sous le tableau, les éléments verbatim des sondes 2, 5, 6, 7, 10, 11, 12, 13, 14, 15 et 16. Une sonde que tu n'as pas
+Puis, sous le tableau, les éléments verbatim des sondes 2, 5, 6, 7, 10, 11, 12, 13, 14, 15, 16 et 17. Une sonde que tu n'as pas
 pu exécuter s'écrit `NOT RUN` avec la commande et sa sortie d'erreur : jamais `PASS`.

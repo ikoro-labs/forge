@@ -586,6 +586,22 @@ de chaque ligne `ADDED`.
 
 - `stack` : `<docs/agents/stack.md>`
 
+La mesure de la carte des modules, ce que le design accepté d'une feature déclare : un module ne s'utilise que par
+son interface, et les dépendances pointent vers l'intérieur. Une clé, sans valeur par défaut.
+
+`architecture-check` : la commande qui la mesure, une seule commande sur une seule ligne, découpée comme par un
+shell POSIX et lancée sans shell depuis la racine du projet. Elle sort 0 quand la carte est tenue, et un autre code
+sinon ; elle n'a pas besoin de réseau. `forge:qc-gate` la lit sur la base (une PR ne change pas la règle qui la
+juge) et la rejoue sur une copie de la tête, sous le lanceur borné qui lit `run-limits` : `PASS` (code 0), `FAIL`
+(un autre code) ou `NOT RUN` (commande introuvable, poste hors budget, mémoire ou délai atteints). Sans la clé,
+« sans objet (clé `architecture-check` absente) » : aucune valeur par défaut, aucune commande devinée.
+`forge:qc-conf` fait de `FAIL` un `BLOCKER` de la règle `F-15`, qui cite la commande et la fin de sa sortie. La
+carte elle-même est un fichier du dépôt : pour qu'une PR ne puisse pas en retirer une règle sans l'humain, protège
+ce fichier par une entrée `never-weaken` de type `removed-line`.
+
+- `architecture-check` : `<uv run python scripts/check_modules.py>`
+- `never-weaken` : `<docs/agents/modules.md | removed-line>`
+
 ## Essai de bout en bout
 
 L'essai de l'usine avant une version, par `scripts/e2e_trial.py`. Les tests de `tests/` éprouvent chaque
