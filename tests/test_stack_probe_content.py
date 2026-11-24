@@ -40,14 +40,14 @@ class GateRunsTheStackProbe(unittest.TestCase):
     def test_the_replay_mode_counts_sixteen_probes(self) -> None:
         """F-0002 A3: the sentence that lists the probes a replay does not redo stops at 16, not at 14."""
         gate = read("agents", "qc-gate.md")
-        self.assertIn("les sondes 1 à 16, ni le tableau", gate)
+        self.assertIn("les sondes 1 à 17, ni le tableau", gate)
         self.assertNotIn("les sondes 1 à 14", gate)
 
     def test_the_verbatim_list_of_the_output_names_probe_16(self) -> None:
         """F-0002 A3: the table's verbatim lines include the probe, or `forge:qc-conf` never sees them."""
         gate = read("agents", "qc-gate.md")
         tail = gate[gate.index("## Sortie"):]
-        self.assertIn("les éléments verbatim des sondes 2, 5, 6, 7, 10, 11, 12, 13, 14, 15 et 16", tail)
+        self.assertIn("les éléments verbatim des sondes 2, 5, 6, 7, 10, 11, 12, 13, 14, 15, 16 et 17", tail)
 
 
 def stack_paragraph() -> str:
