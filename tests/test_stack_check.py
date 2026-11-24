@@ -12,6 +12,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 import unittest.mock
@@ -271,6 +272,20 @@ class NeverOk(StackCase):
         self.assertEqual(len(rows), 1)
         self.assertIn("npm", rows[0][1] + rows[0][3])
         self.assertIn("lockfile", rows[0][3])
+
+
+class RunAsAScript(StackCase):
+    def test_without_the_stack_key_the_step_is_sans_objet_and_the_script_runs_as_the_plugin_runs_it(self) -> None:
+        """F-0002 C01: the script launched by a path says `sans objet (clé stack absente)` and exits 0, naming no default."""
+        base = self.commit({"uv.lock": uv_lock()})
+        head = self.commit({"uv.lock": uv_lock("idna")})
+        usine = self.usine("`lockfile` : `uv.lock | pypi`")
+        script = support.PLUGIN / "scripts" / "stack_check.py"
+        done = subprocess.run(
+            [sys.executable, str(script), "--usine", str(usine), "--root", str(self.repo), "--base", base, "--head", head],
+            capture_output=True, text=True, cwd=self.tmp, env=_tool_env(self.tmp / "home"),
+        )
+        self.assertEqual((done.returncode, done.stdout.strip()), (0, "sans objet (clé stack absente)"))
 
 
 class WorkspaceLocks(unittest.TestCase):

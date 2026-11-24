@@ -7,13 +7,23 @@ Run from a clone of the project (`--root`, the current directory by default). Th
 being `pypi` or `npm` and the source the accepted decision (an ADR, a session) that allows the
 package. The script reads the path of that file from `--usine`, which `forge:qc-gate` points at
 `usine.md` on the base (a PR cannot lift the list it is judged by), and the content of the file at
-`--head`: a head without the file is an empty list. Without the `stack` key or the `lockfile` key,
+`--head`: a head without the file is an empty list. Without `--usine`, the keys are those of
+`docs/agents/usine.md` at `--base`, never the head's. Without the `stack` key or the `lockfile` key,
 the step is "sans objet" and the exit code is 0.
 
+Each `lockfile` entry (`<path> | <ecosystem>`, as `lockfile_age.py` reads it) is compared at the
+base and at the head: a package the head declares in a local member (`direct_dependencies`) and the
+base did not is looked up in the list, pypi names normalized (case, `-`, `_`, `.`), npm names as
+written. A package that only another one needs is indirect and not compared.
+
 One line per result, `<status>`, `<subject>`, `<package>` and `<detail>` separated by tabs. The
-status is INVALID (a malformed list line, at its number, or a malformed lockfile or key). The
-script launches no command and opens no network access. Exit code 0 when nothing is refused, 2 when
-a line is INVALID or the call is wrong. The standard library only.
+status is OK (listed, with its source), UNLISTED (absent from the list, the detail gives the line to
+write and the path of the file), NO SOURCE (listed with an empty source), ADDED (a list line the
+head adds, with its source: the judge reads it), NONE (the lockfile adds no direct package), NOT RUN
+(a list ecosystem no `lockfile` entry reads) or INVALID (a malformed list line, at its number, or a
+malformed lockfile or key). Exit code 0 when nothing is refused, 1 when a package is UNLISTED or NO
+SOURCE, 2 when a line is NOT RUN or INVALID, or the call is wrong. The script launches no command
+and opens no network access. The standard library only.
 """
 
 from __future__ import annotations
