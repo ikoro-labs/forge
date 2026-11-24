@@ -165,7 +165,8 @@ def behind_notice(event: dict, run: Callable[..., Any] | None = None) -> str | N
     import pin_state
     import usine
 
-    project = Path(handoff_header.main_checkout(usine.project_root(event)))
+    # The path that keeps its case: the command shown to the session runs on it, and `pin_state` compares it itself.
+    project = Path(handoff_header.main_checkout_path(usine.project_root(event)))
     result = pin_state.check(project, run or pin_state.run_command)
     return behind_notice_text(project, result.detail) if result.status == "BEHIND" else None
 

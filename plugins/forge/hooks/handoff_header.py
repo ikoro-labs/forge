@@ -471,13 +471,19 @@ def live_agents(repo: Path, owners: set[int] | None = None) -> list[tuple[str, s
 
 
 def main_checkout(path: Path) -> str:
-    """The main checkout a path belongs to, normalized for comparison.
+    """The main checkout a path belongs to, normalized for comparison (see `main_checkout_path`)."""
+    return os.path.normcase(main_checkout_path(path))
+
+
+def main_checkout_path(path: Path) -> str:
+    """The main checkout a path belongs to, as a real path that keeps its case.
 
     The first folder up from `path` that holds a `.git`: a directory there is the main checkout;
     a file names the worktree's own git directory, whose `commondir` leads to the main
     checkout's `.git`. A `.git` file without `commondir` (a submodule) is its own checkout.
     Read without running git, and without requiring `path` to exist: a session may outlive
-    its worktree. Outside any repository, the path itself.
+    its worktree. Outside any repository, the path itself. This is the form to show or to run,
+    where `main_checkout` is the form to compare.
     """
     path = Path(os.path.abspath(path))
     found = path
@@ -497,7 +503,7 @@ def main_checkout(path: Path) -> str:
             except OSError:
                 pass
             break
-    return os.path.normcase(os.path.realpath(found))
+    return os.path.realpath(found)
 
 
 def session_alive(pid: int, recorded_start: object) -> bool:

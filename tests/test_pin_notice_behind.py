@@ -83,6 +83,19 @@ class BehindNotice(PinCase):
         assert message is not None
         self.assertIn(f'apply "{project}"', message)
 
+    def test_the_command_carries_the_project_path_as_it_is_not_its_comparison_form(self) -> None:
+        """#333 A3: on a system that folds case in paths (Windows), the path to run must keep its case.
+
+        Linux does not fold: `os.path.normcase` is made to fold here, as it does on Windows, to show
+        that the comparison form of the path never reaches the message.
+        """
+        project = self.project("MyApp", "forge--v1.21.0")
+        with mock.patch("os.path.normcase", side_effect=str.lower):
+            message = self.notice(project, FakeClaude([entry(project, "1.20.0")]))
+        assert message is not None
+        self.assertIn(f'apply "{project}"', message)
+        self.assertNotIn(str(project).lower(), message)
+
     def test_it_asks_nothing_of_the_network(self) -> None:
         project = self.project("app", "forge--v1.21.0")
         claude = FakeClaude([entry(project, "1.20.0")])
