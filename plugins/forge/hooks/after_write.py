@@ -78,7 +78,7 @@ def load_allowances(root: Path) -> dict[str, int]:
         return {}
 
 
-def split_command(command: str) -> list[str]:
+def _split_command(command: str) -> list[str]:
     """The command split like a POSIX shell would; empty when it cannot be (an unclosed quote)."""
     try:
         return shlex.split(command)
@@ -86,9 +86,9 @@ def split_command(command: str) -> list[str]:
         return []
 
 
-def run_formatter(command: str, path: Path, root: Path, timeout: float) -> str | None:
+def _run_command(command: str, path: Path, root: Path, timeout: float) -> str | None:
     """Why the command failed on the file (`exit 3`, `timed out after 30s`...), or None."""
-    argv = split_command(command)
+    argv = _split_command(command)
     executable = shutil.which(argv[0])
     if executable is None:
         return "command not found"
@@ -124,26 +124,42 @@ def run_formatter(command: str, path: Path, root: Path, timeout: float) -> str |
     return None if process.returncode == 0 else f"exit {process.returncode}"
 
 
-def format_problems(
-    config: Mapping[str, list[str]], root: Path, path: Path, relative: str
+class _Deadline:
+    """The `TOTAL_TIMEOUT` seconds of one write, started with the hook and spent by every key."""
+
+    def __init__(self) -> None:
+        self.started = time.monotonic()
+
+    def left_for_a_command(self) -> float:
+        """The seconds the next command may take; zero or less once the write has none left."""
+        return min(COMMAND_TIMEOUT, TOTAL_TIMEOUT - (time.monotonic() - self.started))
+
+
+def _run_key(
+    key: str,
+    config: Mapping[str, list[str]],
+    root: Path,
+    path: Path,
+    relative: str,
+    deadline: _Deadline,
 ) -> list[str]:
+    """The problems of every `<pattern> | <command>` line of `key` whose pattern matches the file."""
     problems: list[str] = []
-    started = time.monotonic()
-    for value in config.get(FORMAT_KEY, []):
+    for value in config.get(key, []):
         parts = split_value(value, 2)
-        if parts is None or not split_command(parts[1]):
-            problems.append(f"{FORMAT_KEY}: `{value}` is not `<pattern> | <command>`, line ignored")
+        if parts is None or not _split_command(parts[1]):
+            problems.append(f"{key}: `{value}` is not `<pattern> | <command>`, line ignored")
             continue
         pattern, command = parts
         if not matches(pattern, relative):
             continue
-        timeout = min(COMMAND_TIMEOUT, TOTAL_TIMEOUT - (time.monotonic() - started))
+        timeout = deadline.left_for_a_command()
         if timeout <= 0:
             reason: str | None = f"timed out after {TOTAL_TIMEOUT}s"
         else:
-            reason = run_formatter(command, path, root, timeout)
+            reason = _run_command(command, path, root, timeout)
         if reason:
-            problems.append(f"{FORMAT_KEY}: {command} failed on {relative} ({reason})")
+            problems.append(f"{key}: {command} failed on {relative} ({reason})")
     return problems
 
 
@@ -161,7 +177,7 @@ def main() -> int:
     if not path.is_file():
         return 0
     config = load(root)
-    problems = format_problems(config, root, path.resolve(), relative)
+    problems = _run_key(FORMAT_KEY, config, root, path.resolve(), relative, _Deadline())
     content = path.read_text(encoding="utf-8", errors="replace")
     if problem := em_dash_problem(relative, content, load_allowances(root)):
         problems.append(problem)

@@ -367,5 +367,60 @@ class FormatOnWrite(unittest.TestCase):
         self.assertIn("a.txt holds 1 em dash", err)
 
 
+class OneRunner(unittest.TestCase):
+    """F-0002 T4: `format-on-write` and `lint-on-write` (ticket 6) share one runner and deadline."""
+
+    def test_the_module_keeps_no_public_runner_beside_main(self) -> None:
+        """F-0002 T4.1: the runner and its helpers are private; `main` is the hook's entry."""
+        kept_for_their_tests = {"em_dash_problem", "load_allowances", "parse_allowances"}
+        public = {
+            name
+            for name, value in vars(after_write).items()
+            if not name.startswith("_")
+            and callable(value)
+            and getattr(value, "__module__", None) == after_write.__name__
+        }
+        self.assertEqual(public - kept_for_their_tests, {"main"})
+
+    def test_two_keys_run_through_one_runner_under_one_deadline(self) -> None:
+        """F-0002 T4.2: the deadline of a write is spent across keys, not once per key."""
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder).resolve()
+            (root / "docs" / "agents").mkdir(parents=True)
+            python = shlex.quote(Path(sys.executable).as_posix())
+            slow = root / "slow.py"
+            slow.write_text("import time\ntime.sleep(30)\n", encoding="utf-8")
+            quick = root / "quick.py"
+            quick.write_text("import sys\nopen(sys.argv[1], 'a').write('!')\n", encoding="utf-8")
+            slow_command = f"{python} {shlex.quote(slow.as_posix())}"
+            quick_command = f"{python} {shlex.quote(quick.as_posix())}"
+            (root / "docs" / "agents" / "usine.md").write_text(
+                f"- `format-on-write` : `**/*.txt | {slow_command}`\n"
+                f"- `lint-on-write` : `**/*.txt | {quick_command}`\n",
+                encoding="utf-8",
+            )
+            target = root / "a.txt"
+            target.write_text("x", encoding="utf-8")
+            config = after_write.load(root)
+            deadline = after_write._Deadline()
+            with (
+                mock.patch.object(after_write, "COMMAND_TIMEOUT", 30),
+                mock.patch.object(after_write, "TOTAL_TIMEOUT", 1),
+            ):
+                first = after_write._run_key(
+                    "format-on-write", config, root, target, "a.txt", deadline
+                )
+                second = after_write._run_key(
+                    "lint-on-write", config, root, target, "a.txt", deadline
+                )
+            self.assertEqual(
+                first, [f"format-on-write: {slow_command} failed on a.txt (timed out after 1s)"]
+            )
+            self.assertEqual(
+                second, [f"lint-on-write: {quick_command} failed on a.txt (timed out after 1s)"]
+            )
+            self.assertEqual(target.read_text(encoding="utf-8"), "x")
+
+
 if __name__ == "__main__":
     unittest.main()
