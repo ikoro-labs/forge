@@ -193,6 +193,16 @@ class Comparison(StackCase):
         self.assertIn("session 2026-11-23", rows[0][3])
         self.assertIn("session 2026-11-23", rows[1][3])
 
+    def test_a8_an_indirect_dependency_is_not_compared(self) -> None:
+        """F-0002 A8: a package only another package needs (here the ones `requests` pulls in) is not compared."""
+        base = self.commit({"uv.lock": uv_lock(), "stack.txt": ""})
+        head = self.commit({"uv.lock": uv_lock("requests"), "stack.txt": "pypi | requests | ADR-0001\n"})
+        lock = uv_lock("requests")
+        self.assertIn('name = "urllib3"', lock)  # the lock does hold indirect packages, or this proves nothing
+        code, lines, _ = self.run_check(self.usine(*STACK_AND_LOCK), base, head)
+        self.assertEqual(code, 0)
+        self.assertEqual([line.split("\t")[:3] for line in lines if not line.startswith("ADDED")], [["OK", "uv.lock", "pypi requests"]])
+
 
 if __name__ == "__main__":
     unittest.main()
