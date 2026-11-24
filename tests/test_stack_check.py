@@ -281,9 +281,11 @@ class RunAsAScript(StackCase):
         head = self.commit({"uv.lock": uv_lock("idna")})
         usine = self.usine("`lockfile` : `uv.lock | pypi`")
         script = support.PLUGIN / "scripts" / "stack_check.py"
+        # The code page of a pipe under Windows: the script writes UTF-8 itself, and the test reads UTF-8.
+        env = dict(_tool_env(self.tmp / "home"), PYTHONIOENCODING="cp1252", PYTHONUTF8="0")
         done = subprocess.run(
             [sys.executable, str(script), "--usine", str(usine), "--root", str(self.repo), "--base", base, "--head", head],
-            capture_output=True, text=True, cwd=self.tmp, env=_tool_env(self.tmp / "home"),
+            capture_output=True, text=True, encoding="utf-8", cwd=self.tmp, env=env,
         )
         self.assertEqual((done.returncode, done.stdout.strip()), (0, "sans objet (clé stack absente)"))
 
