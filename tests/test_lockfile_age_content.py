@@ -63,7 +63,7 @@ class GateRunsTheProbe(unittest.TestCase):
         """Ticket #155: the table's verbatim lines include the probe, or `forge:qc-conf` never sees them."""
         gate = read("agents", "qc-gate.md")
         tail = gate[gate.index("## Sortie"):]
-        self.assertRegex(tail, r"sondes 2, 5, 6, 7, 10, 11, 12, 13, 14 et 15")
+        self.assertRegex(tail, r"sondes 2, 5, 6, 7, 10, 11, 12, 13, 14, 15 et 16")
 
 
 class JudgeReadsTheProbe(unittest.TestCase):
