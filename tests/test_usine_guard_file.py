@@ -1,6 +1,6 @@
 """ikoro-labs/forge#345 : `usine.load` reads the keys that bound the agent in `usine-gardes.md`.
 
-The file is read as `refs/remotes/origin/main` holds it (`git show`), never in the working tree an
+The file is read as `refs/remotes/origin/main` holds it (`git ls-tree` then `git cat-file`), never in the working tree an
 agent can edit. Every repository here is a temporary one, under a temporary `HOME`; none of the
 session's `CLAUDE_` or `GIT_` variables reaches git, and the real `~/.claude` is never read nor
 written.

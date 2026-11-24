@@ -29,7 +29,7 @@ un projet les écrit dans un second fichier, `docs/agents/usine-gardes.md`, prot
 bornes. Les autres clés, dites libres, restent dans `usine.md`.
 
 - Le chemin `docs/agents/usine-gardes.md` est une constante du plugin, jamais une clé.
-- Le hook lit ce fichier tel que `origin/main` le tient (`git show`), jamais dans l'arbre de travail.
+- Le hook lit ce fichier tel que `origin/main` le tient (`git ls-tree` puis `git cat-file`), jamais dans l'arbre de travail.
   Une clé protégée écrite dans `usine.md` alors que ce fichier existe sur `origin/main` est ignorée, et
   le garde le signale sur sa sortie d'erreur ; une clé libre écrite dans `usine-gardes.md` l'est aussi.
 - Tant que ce fichier est absent de `origin/main`, toutes les clés se lisent dans `usine.md`, avec
