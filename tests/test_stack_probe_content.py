@@ -103,5 +103,39 @@ class JudgeReadsTheStackProbe(unittest.TestCase):
         self.assertIn("source", section[section.index("`ADDED`"):])
 
 
+class ProjectPage(unittest.TestCase):
+    """F-0002 A35 (start): the `docs/` page of the feature gives the `stack` format, the refusal and the human gesture."""
+
+    def page(self) -> str:
+        return read_root("docs", "regles-de-code.md")
+
+    def test_the_page_gives_the_format_of_a_line_and_the_closed_ecosystems(self) -> None:
+        """F-0002 A35: the key, the line `<écosystème> | <paquet> | <source>`, `pypi` and `npm`, and the absent key."""
+        page = self.page()
+        for text in (
+            "`stack`", "<écosystème> | <paquet> | <source>", "`pypi`", "`npm`", "`INVALID`",
+            "sans objet (clé `stack` absente)", "stack_check.py", "`lockfile`",
+        ):
+            self.assertIn(text, page)
+
+    def test_the_page_quotes_the_refusal_message_with_the_line_to_write(self) -> None:
+        """F-0002 A35: the first refusal gives the line to write and the path of the file, never a mute refusal."""
+        page = self.page()
+        for text in ("`UNLISTED`", "`NO SOURCE`", "ligne à écrire : `pypi | <paquet> | <ADR ou séance>` dans <chemin de la liste>", "`BLOCKER`"):
+            self.assertIn(text, page)
+
+    def test_the_page_says_what_the_human_does_to_accept_a_dependency(self) -> None:
+        """F-0002 A35: the gesture that accepts a dependency, and why a PR cannot accept its own."""
+        page = self.page()
+        gesture = page[page.index("## Accepter une dépendance"):]
+        for text in ("décision", "ADR", "séance", "`ADDED`", "base", "tête", "ligne"):
+            self.assertIn(text, gesture)
+
+    def test_the_page_says_what_was_tried_and_what_was_not(self) -> None:
+        """F-0002 A35: a sentence says what is proved, and what was not tried."""
+        self.assertRegex(self.page(), r"(?i)éprouvé")
+        self.assertRegex(self.page(), r"(?i)pas encore")
+
+
 if __name__ == "__main__":
     unittest.main()
