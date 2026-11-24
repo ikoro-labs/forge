@@ -1124,7 +1124,9 @@ those keys the line reads `not applicable`.
 
 `Features` is the output of `scripts/report_mail.py --features`, copied as printed, from the same
 calculation as the Features part of the mail: a table with one row per open feature (`Feature`,
-`Closed / total`, `Open PRs`, `Blocked`, `Ready`), then a line `In parallel:` that names the ready
+`Closed / total`, `Merged PRs`, `Open PRs`, `Blocked`, `Ready`; `Merged PRs` is the cell of the
+completion table, the merged PRs that cite the feature's tickets over three times its budget, `-` when `gh` cannot say),
+then a line `In parallel:` that names the ready
 tickets and the features that fit in the free slots, or says `no proposal` and why. Without
 `report-repo`, without `feature-dir` or without an open feature, the script prints one line instead
 (`Features: not applicable (key ... absent).`, `Features: no open feature.`). The `Stop` guard

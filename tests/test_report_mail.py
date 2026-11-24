@@ -648,6 +648,18 @@ class FeaturesBlockTests(unittest.TestCase):
                 self.assertEqual((code, out), (1, ""))
                 self.assertIn("gh failed", err)
 
+    def test_335_a3_the_script_docstring_the_template_and_the_install_page_show_the_new_header(self) -> None:
+        """#335 A3: the places that quote the header quote the one `features_block.HEADER_CELLS` renders."""
+        from features_block import HEADER_CELLS
+
+        piped = " | ".join(HEADER_CELLS)
+        for path in (SCRIPT, support.PLUGIN / "templates" / "session-reply.md"):
+            with self.subTest(path.name):
+                self.assertIn(piped, " ".join(path.read_text(encoding="utf-8").split()))
+        install = (support.REPO_ROOT / "docs" / "installation.md").read_text(encoding="utf-8")
+        listed = r"`,\s+`".join(re.escape(cell) for cell in HEADER_CELLS)
+        self.assertRegex(install, rf"`{listed}`")
+
     def test_a11_the_reply_template_names_the_command_that_prints_the_field(self) -> None:
         text = (support.PLUGIN / "templates" / "session-reply.md").read_text(encoding="utf-8")
         self.assertIn("scripts/report_mail.py --features", text)

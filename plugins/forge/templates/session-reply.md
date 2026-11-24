@@ -10,7 +10,7 @@ CI and runners: <one line from `scripts/report_mail.py --line`; or `not applicab
 Features: <the output of `scripts/report_mail.py --features`, copied as printed, a table or one line>
 
 - Free language: `Fait`, `Mesure` and `Attend ta décision` are the rows of the table headed `| Champ | État |`, then `CI et runners` is the fourth field; `Features` is the same word in both. A row written outside the table is refused.
-- `Features` is the script's table (`Feature | Closed / total | Open PRs | Blocked | Ready`, then the `In parallel:` line) or its single line, never your words: the guard refuses the rest, and leaves the block out of the line and word caps.
+- `Features` is the script's table (`Feature | Closed / total | Merged PRs | Open PRs | Blocked | Ready`, then the `In parallel:` line) or its single line, never your words: the guard refuses the rest, and leaves the block out of the line and word caps.
 - A gesture reserved to the human goes in `Awaiting your decision` as a command ready to run, never as a description of it.
 - More than two elements in a field go in a table, never in a list.
 - At most 150 words of prose (key `output-words-session-reply`); tables and code blocks do not count. No paragraph over 60 words (key `output-words-paragraph`).

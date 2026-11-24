@@ -32,11 +32,13 @@ A feature `gh` cannot read says "tickets not read", never a guessed figure. With
 order) and asks which to launch; with 0 or unknown slots the part says "no proposal" and why. The mail
 launches nothing, and this part is never an event: it does not make a mail due.
 `features_state` returns these as data, for any other rendering: besides the above, per feature its
-blocked tickets (open, with an open blocker) and, with N free slots, up to N features that have a ready
-ticket. `--features` renders that data as the field `Features` of the session's reply
+blocked tickets (open, with an open blocker), its `merged` cell, the one `completion.pr_cell` writes (the
+merged PRs that cite its tickets over three times its `feature-tickets`, `?` without a design, `-` when
+`gh` cannot say; one more `gh pr list` per feature, in that first repository), and, with N free slots, up
+to N features that have a ready ticket. `--features` renders that data as the field `Features` of the session's reply
 (`templates/session-reply.md`, written by `features_block.py`, which the output guard also reads): a
-line `Features:`, a table (`Feature | Closed / total | Open PRs | Blocked | Ready`, one row per open
-feature, a feature `gh` cannot read saying "tickets not read"), then one line, `In parallel:`, that
+line `Features:`, a table (`Feature | Closed / total | Merged PRs | Open PRs | Blocked | Ready`, one row per
+open feature, a feature `gh` cannot read saying "tickets not read"), then one line, `In parallel:`, that
 names the ready tickets and the features that can start in the free slots, or says "no proposal" and
 why. Without `report-repo`, or without `feature-dir`, or without an open feature, one line says so.
 
@@ -363,7 +365,8 @@ def features_state(
     """The open features of the project and what the human can launch, as data.
 
     `note` is the one line that says there is nothing to list; else `features` holds, per feature,
-    `feature`, `label`, `percent` (`completion.percent`), `prs`, `blocked` (the open tickets with an
+    `feature`, `label`, `percent` (`completion.percent`), `merged` (`completion.pr_cell`, `-` when `gh`
+    cannot say), `prs`, `blocked` (the open tickets with an
     open blocker), `ready` (numbers) and `error`, the reason its tickets were not read. `absent` names
     the key whose absence leaves nothing to list. `free` is the free slots (None unknown); `proposal`
     is up to `free` ready tickets as `(feature, number)`, `parallel` up to `free` features with a ready
