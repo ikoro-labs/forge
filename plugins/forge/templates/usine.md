@@ -401,6 +401,23 @@ sa création et le garde unique : il le réécrit. Sans la clé, la publication 
 
 - `slo-issue` : `<55>`
 
+Le constat qui revient de PR en PR. Quand le juge relève le même `F-n` ou `L-n` sur plusieurs PR, c'est la règle
+qui manque ou qui est mal tenue, et personne ne le voit PR par PR. Une clé, sans valeur par défaut.
+
+`recurring-finding` : le seuil et la fenêtre, `<seuil> | <jours>`, sur une seule ligne : deux nombres entiers
+positifs. `forge:qc` lance `scripts/recurring_findings.py` après chaque verdict posé. Le script lit les
+commentaires de verdict des PR jugées dans les derniers `<jours>` jours, extrait la règle de chaque constat
+(le deuxième champ de la ligne `- [BLOCKER] <lieu> | <règle> | ...`) par le motif fermé `F-<n>` ou `L-<n>`, et
+compte les PR distinctes par identifiant : une PR qui le cite à plusieurs tours compte une fois. Un identifiant cité
+par au moins `<seuil>` PR distinctes est listé, avec ses PR, dans un commentaire unique du ticket de la clé
+`slo-issue`, retrouvé par son marqueur caché `<!-- forge-recurring-findings -->` (distinct de celui du rapport des
+SLO) et réécrit à chaque passage. Un constat sans `F-n` ni `L-n` est compté à part, jamais mêlé aux identifiants.
+Le commentaire ne porte que des identifiants, des numéros de PR et des dates ; le constat devient un commentaire,
+jamais un ticket. Sans la clé `recurring-finding`, « sans objet (clé `recurring-finding` absente) » ; sans la clé
+`slo-issue`, « sans objet (clé `slo-issue` absente) » : aucune valeur par défaut, aucune devinée, rien n'est écrit.
+
+- `recurring-finding` : `<3 | 30>`
+
 Ce que l'usine fait quand le budget d'erreur d'un objectif est épuisé. Une ligne par action :
 `<sli> | <action>`, où `<sli>` nomme un objectif de la clé `slo` (`lead-time p90`, ou `lead-time`
 seul) et où l'action est l'une de ces trois :
