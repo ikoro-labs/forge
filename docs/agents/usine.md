@@ -23,11 +23,11 @@ version qui la lit (1.18.0 pour les skills, 1.19.0 pour la fusion et la publicat
 
 - `agent-autonomy` : `on`
 
-Quand l'agent publie une version, choisi par l'humain le 2026-11-21 : cinq fusions en attente d'un tag,
-ou deux jours d'attente pour la plus ancienne. L'agent ne publie seul que si les conditions de
-`.claude/rules/git.md` tiennent ; sinon il ouvre la PR de version et la rend à l'humain.
+Quand l'agent publie une version, choisi par l'humain le 2026-11-21 (délai resserré le 2026-11-24) : une fusion
+en attente d'un tag, ou deux jours d'attente pour la plus ancienne. L'agent ne publie seul que si les
+conditions de `.claude/rules/git.md` tiennent ; sinon il ouvre la PR de version et la rend à l'humain.
 
-- `release-trigger` : `5 | 2 j`
+- `release-trigger` : `1 | 2 j`
 
 ## Domaines et règles du dépôt
 
