@@ -193,6 +193,24 @@ def _raised_number(changes: list[FileChange], scope: str, parameter: str) -> tup
     return NONE, "aucune valeur relevée sous le chemin"
 
 
+def _raised_entry(changes: list[FileChange], scope: str) -> tuple[str, str]:
+    hits: list[str] = []
+    for change in changes:
+        if unreadable := _unreadable(change, scope):
+            hits.append(unreadable)
+            continue
+        path = _scoped(change, scope)
+        if path is None:
+            continue
+        removed = {line.strip() for line in change.removed}
+        for key in dict.fromkeys(line.strip() for line in change.added):
+            if key and key not in removed:
+                hits.append(f"{path}: clé ajoutée `{key}`")
+    if hits:
+        return APPLIES, "; ".join(hits)
+    return NONE, "aucune clé ajoutée ni nombre relevé sous le chemin"
+
+
 def _pattern(parameter: str) -> str | None:
     """Why `parameter` is not a regular expression with exactly one group, or None."""
     try:
@@ -256,12 +274,14 @@ def check_entry(entry: str, changes: list[FileChange]) -> Result:
         if problem := _pattern(parameter):
             return Result(entry, INVALID, problem)
         return Result(entry, *_raised_number(changes, scope, parameter))
+    if kind == "raised-entry":
+        return Result(entry, *_raised_entry(changes, scope))
     if kind == "lowered-rank":
         scale = _scale(parameter) if parameter else "le type `lowered-rank` demande `<champ> | <échelle>`"
         if isinstance(scale, str):
             return Result(entry, INVALID, scale)
         return Result(entry, *_lowered_rank(changes, scope, scale))
-    return Result(entry, INVALID, f"type inconnu `{kind}` (removed-line, raised-number, lowered-rank)")
+    return Result(entry, INVALID, f"type inconnu `{kind}` (removed-line, raised-number, lowered-rank, raised-entry)")
 
 
 def check(entries: list[str], diff_text: str) -> list[Result]:

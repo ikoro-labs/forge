@@ -251,6 +251,19 @@ class LoweredRank(unittest.TestCase):
         self.assertEqual(statuses(entries, text), [INVALID] * len(entries))
 
 
+BASELINE = "scripts/baselines/types.txt"
+ENTRY = f"{BASELINE} | raised-entry"
+
+
+class RaisedEntry(unittest.TestCase):
+    def test_f0002_a12_an_added_key_absent_from_the_removed_lines_is_refused_naming_file_and_key(self) -> None:
+        text = diff(BASELINE, " src/a.py", "-src/old.py", "+src/new.py")
+        results = check([ENTRY], text)
+        self.assertEqual([result.status for result in results], [APPLIES])
+        self.assertIn(BASELINE, results[0].detail)
+        self.assertIn("src/new.py", results[0].detail)
+
+
 class Command(unittest.TestCase):
     def run_main(self, usine_text: str | None, diff_text: str) -> tuple[int, str, str]:
         with tempfile.TemporaryDirectory() as folder:
