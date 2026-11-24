@@ -177,7 +177,7 @@ class FormatOnWrite(unittest.TestCase):
         target.write_text("x", encoding="utf-8")
         code, err = run_hook(self.root, target)
         self.assertEqual(code, 2)
-        self.assertEqual(err, f"format-on-write: {command} failed on a.txt (exit 3)\n")
+        self.assertEqual(err, f"format-on-write: {command} failed on a.txt (exit 3)\nboom\n")
         self.assertEqual(target.read_text(encoding="utf-8"), "x")
 
     def test_a_formatter_past_its_delay_is_reported(self) -> None:
@@ -420,6 +420,174 @@ class OneRunner(unittest.TestCase):
                 second, [f"lint-on-write: {quick_command} failed on a.txt (timed out after 1s)"]
             )
             self.assertEqual(target.read_text(encoding="utf-8"), "x")
+
+
+class _KeyedHook(unittest.TestCase):
+    """A throwaway project whose `usine.md` holds the given keys, and scripts that print known output."""
+
+    def setUp(self) -> None:
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.root = Path(folder.name).resolve()
+        (self.root / "docs" / "agents").mkdir(parents=True)
+        self.python = shlex.quote(Path(sys.executable).as_posix())
+        self.target = self.root / "a.txt"
+        self.target.write_text("x", encoding="utf-8")
+
+    def configure(self, *entries: tuple[str, str]) -> None:
+        text = "".join(f"- `{key}` : `{line}`\n" for key, line in entries)
+        (self.root / "docs" / "agents" / "usine.md").write_text(text, encoding="utf-8")
+
+    def script(self, name: str, body: str) -> str:
+        path = self.root / name
+        path.write_text(body, encoding="utf-8")
+        return f"{self.python} {shlex.quote(path.as_posix())}"
+
+    def failing(self, body: str) -> str:
+        """A command that runs `body`, then exits 1."""
+        return self.script("tool.py", f"import sys\n{body}\nsys.exit(1)\n")
+
+
+class OutputTail(_KeyedHook):
+    """F-0002 A18, A19: the end of a failing tool's output reaches the agent, bounded."""
+
+    def test_a_failing_formatter_relays_the_end_of_its_output(self) -> None:
+        """F-0002 A19: `format-on-write` no longer throws the tool output away."""
+        command = self.failing("print('E501 line too long')")
+        self.configure(("format-on-write", f"**/*.txt | {command}"))
+        code, err = run_hook(self.root, self.target)
+        self.assertEqual(code, 2)
+        self.assertEqual(
+            err, f"format-on-write: {command} failed on a.txt (exit 1)\nE501 line too long\n"
+        )
+        self.assertEqual(self.target.read_text(encoding="utf-8"), "x")
+
+    def relayed(self, body: str) -> list[str]:
+        """The lines that follow the failure line of a formatter running `body`."""
+        self.configure(("format-on-write", f"**/*.txt | {self.failing(body)}"))
+        code, err = run_hook(self.root, self.target)
+        self.assertEqual(code, 2)
+        return err.splitlines()[1:]
+
+    def test_at_most_the_last_20_lines_are_relayed(self) -> None:
+        """F-0002 A18: 100 lines of output, the agent gets the last 20."""
+        lines = self.relayed("for n in range(1, 101): print(f'line {n}')")
+        self.assertEqual(lines, [f"line {n}" for n in range(81, 101)])
+
+    def test_at_most_2000_bytes_are_relayed_the_end_kept(self) -> None:
+        """F-0002 A18: 5 lines of 900 bytes, the agent gets the last 2000 bytes, not the first."""
+        lines = self.relayed("for n in range(5): print(str(n) * 900)")
+        relayed = "\n".join(lines)
+        self.assertEqual(len(relayed.encode("utf-8")), 2000)
+        self.assertTrue(relayed.endswith("4" * 900))
+        self.assertNotIn("0", relayed)
+
+    def test_the_byte_cap_never_cuts_a_character_in_two(self) -> None:
+        """F-0002 A18: 1500 two-byte characters, the cut lands on a whole character."""
+        # The child writes UTF-8 whatever the console code page is (cp1252 on Windows).
+        lines = self.relayed("sys.stdout.reconfigure(encoding='utf-8')\nprint('\\u00e9' * 1500)")
+        relayed = "\n".join(lines)
+        self.assertLessEqual(len(relayed.encode("utf-8")), 2000)
+        self.assertEqual(set(relayed), {"\u00e9"})
+
+
+class LintOnWrite(_KeyedHook):
+    """F-0002 A17, A20, A21, A22: the `lint-on-write` key, on the runner of `format-on-write`."""
+
+    def test_a_failing_lint_refuses_the_write_and_relays_the_output(self) -> None:
+        """F-0002 A17: exit 2, the failure line of the key, then the end of the tool output."""
+        command = self.failing("print('E501 line too long')")
+        self.configure(("lint-on-write", f"**/*.txt | {command}"))
+        code, err = run_hook(self.root, self.target)
+        self.assertEqual(code, 2)
+        self.assertEqual(
+            err, f"lint-on-write: {command} failed on a.txt (exit 1)\nE501 line too long\n"
+        )
+        self.assertEqual(self.target.read_text(encoding="utf-8"), "x")
+        # A passing command, or a pattern that does not match the file, stays silent.
+        passing = self.script("ok.py", "print('fine')\n")
+        self.configure(
+            ("lint-on-write", f"**/*.txt | {passing}"), ("lint-on-write", f"**/*.py | {command}")
+        )
+        self.assertEqual(run_hook(self.root, self.target), (0, ""))
+
+    def test_a_malformed_line_is_ignored_and_the_message_says_so(self) -> None:
+        """F-0002 A20: a line that is not `<pattern> | <command>` runs nothing; the next one runs."""
+        command = self.failing("print('boom')")
+        self.configure(
+            ("lint-on-write", "**/*.txt"),
+            ("lint-on-write", 'x | fmt "unclosed'),
+            ("lint-on-write", f"**/*.txt | {command}"),
+        )
+        code, err = run_hook(self.root, self.target)
+        self.assertEqual(code, 2)
+        self.assertEqual(
+            err.splitlines(),
+            [
+                "lint-on-write: `**/*.txt` is not `<pattern> | <command>`, line ignored",
+                "lint-on-write: `x | fmt \"unclosed` is not `<pattern> | <command>`, line ignored",
+                f"lint-on-write: {command} failed on a.txt (exit 1)",
+                "boom",
+            ],
+        )
+
+    def test_a_command_past_its_delay_is_killed_and_the_write_is_kept(self) -> None:
+        """F-0002 A21: the command is killed at the delay, the message names it, the file stays."""
+        slow = self.script(
+            "slow.py", "import sys, time\nprint('working', flush=True)\ntime.sleep(30)\n"
+        )
+        self.configure(("lint-on-write", f"**/*.txt | {slow}"))
+        with mock.patch.object(after_write, "COMMAND_TIMEOUT", 1):
+            code, err = run_hook(self.root, self.target)
+        self.assertEqual(code, 2)
+        self.assertEqual(
+            err, f"lint-on-write: {slow} failed on a.txt (timed out after 1s)\nworking\n"
+        )
+        self.assertEqual(self.target.read_text(encoding="utf-8"), "x")
+
+    def test_the_total_delay_is_spent_across_both_keys(self) -> None:
+        """F-0002 A21: a formatter that uses the write's budget leaves none for the lint."""
+        slow = self.script("slow.py", "import time\ntime.sleep(30)\n")
+        lint = self.failing("print('never reached')")
+        self.configure(("format-on-write", f"**/*.txt | {slow}"), ("lint-on-write", f"**/*.txt | {lint}"))
+        with (
+            mock.patch.object(after_write, "COMMAND_TIMEOUT", 30),
+            mock.patch.object(after_write, "TOTAL_TIMEOUT", 1),
+        ):
+            code, err = run_hook(self.root, self.target)
+        self.assertEqual(code, 2)
+        self.assertEqual(
+            err.splitlines(),
+            [
+                f"format-on-write: {slow} failed on a.txt (timed out after 1s)",
+                f"lint-on-write: {lint} failed on a.txt (timed out after 1s)",
+            ],
+        )
+
+
+class LintOnWriteTemplate(unittest.TestCase):
+    """F-0002 A22, T1: the template documents the key, its example and its absence."""
+
+    def setUp(self) -> None:
+        self.template = (support.PLUGIN / "templates" / "usine.md").read_text(encoding="utf-8")
+
+    def test_the_template_gives_a_ruff_line_for_the_key(self) -> None:
+        """F-0002 T1: one example line, `<pattern> | <command>`, in the form of the other keys."""
+        self.assertIn("- `lint-on-write` : `<**/*.py | uv run ruff check>`", self.template)
+
+    def test_the_template_says_what_an_absent_key_means(self) -> None:
+        """F-0002 A22: without the key nothing runs and the step is `sans objet`."""
+        self.assertIn("sans objet (clé `lint-on-write` absente)", self.template)
+
+
+class RelayedOutputTemplate(unittest.TestCase):
+    """F-0002 A18, A19, T1: the template says what the agent gets of a failing tool's output."""
+
+    def test_the_template_says_the_tool_output_is_relayed_for_format_on_write(self) -> None:
+        """F-0002 A18, A19: the 20 lines and 2000 bytes the agent gets after the failure line."""
+        template = (support.PLUGIN / "templates" / "usine.md").read_text(encoding="utf-8")
+        self.assertIn("20 derni\u00e8res lignes", template)
+        self.assertIn("2000 octets", template)
 
 
 if __name__ == "__main__":
