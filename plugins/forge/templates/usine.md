@@ -887,6 +887,20 @@ Sans la clé, rien n'est formaté.
 - `format-on-write` : `<**/*.py | uv run ruff format>`
 - `format-on-write` : `<apps/web/**/*.{ts,tsx} | pnpm --dir apps/web exec prettier --write>`
 
+Les contrôles lancés après chaque écriture d'un agent, une fois les formateurs passés : une ligne
+`<motif> | <commande>` par contrôle, du même motif et de la même forme que `format-on-write`
+(commande découpée comme par un shell POSIX, lancée sans shell depuis la racine, chemin absolu du
+fichier en dernier argument, groupe de processus tué au délai, 30 s par commande et 120 s au total,
+partagés avec les formateurs). Un contrôle qui échoue refuse l'écriture : code 2, et une ligne sur
+stderr, `lint-on-write: <commande> failed on <chemin> (<raison>)`, de mêmes raisons que
+`format-on-write`, suivie de la fin de la sortie de l'outil (les 20 dernières lignes et 2000 octets
+au plus), pour que l'agent voie la règle enfreinte. Le fichier reste écrit, la commande trop lente
+est tuée. Une ligne qui n'est pas `<motif> | <commande>` est ignorée, et le message le dit. Sans la
+clé, rien ne tourne et l'étape est « sans objet (clé `lint-on-write` absente) » : aucun outil
+n'est deviné. Le nombre de lignes n'est pas plafonné.
+
+- `lint-on-write` : `<**/*.py | uv run ruff check>`
+
 Les documents que le projet tient par hook plutôt que par une consigne dans un skill. Le hook
 `after_write` les contrôle sur le fichier que l'agent vient d'écrire, avec la même sortie que le
 tiret cadratin : une ligne sur stderr, code 2, l'écriture reste et l'agent corrige. Seul le fichier

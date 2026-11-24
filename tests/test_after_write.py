@@ -491,6 +491,42 @@ class OutputTail(_KeyedHook):
         self.assertEqual(set(relayed), {"\u00e9"})
 
 
+class LintOnWrite(_KeyedHook):
+    """F-0002 A17, A20, A21, A22: the `lint-on-write` key, on the runner of `format-on-write`."""
+
+    def test_a_failing_lint_refuses_the_write_and_relays_the_output(self) -> None:
+        """F-0002 A17: exit 2, the failure line of the key, then the end of the tool output."""
+        command = self.failing("print('E501 line too long')")
+        self.configure(("lint-on-write", f"**/*.txt | {command}"))
+        code, err = run_hook(self.root, self.target)
+        self.assertEqual(code, 2)
+        self.assertEqual(
+            err, f"lint-on-write: {command} failed on a.txt (exit 1)\nE501 line too long\n"
+        )
+        self.assertEqual(self.target.read_text(encoding="utf-8"), "x")
+        # A passing command, or a pattern that does not match the file, stays silent.
+        passing = self.script("ok.py", "print('fine')\n")
+        self.configure(
+            ("lint-on-write", f"**/*.txt | {passing}"), ("lint-on-write", f"**/*.py | {command}")
+        )
+        self.assertEqual(run_hook(self.root, self.target), (0, ""))
+
+
+class LintOnWriteTemplate(unittest.TestCase):
+    """F-0002 A22, T1: the template documents the key, its example and its absence."""
+
+    def setUp(self) -> None:
+        self.template = (support.PLUGIN / "templates" / "usine.md").read_text(encoding="utf-8")
+
+    def test_the_template_gives_a_ruff_line_for_the_key(self) -> None:
+        """F-0002 T1: one example line, `<pattern> | <command>`, in the form of the other keys."""
+        self.assertIn("- `lint-on-write` : `<**/*.py | uv run ruff check>`", self.template)
+
+    def test_the_template_says_what_an_absent_key_means(self) -> None:
+        """F-0002 A22: without the key nothing runs and the step is `sans objet`."""
+        self.assertIn("sans objet (clé `lint-on-write` absente)", self.template)
+
+
 class RelayedOutputTemplate(unittest.TestCase):
     """F-0002 A18, A19, T1: the template says what the agent gets of a failing tool's output."""
 
