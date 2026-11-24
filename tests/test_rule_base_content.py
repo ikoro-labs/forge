@@ -82,5 +82,71 @@ class RuleBaseInTheTemplate(unittest.TestCase):
             self.assertIn(text, section)
 
 
+def read_root(*parts: str) -> str:
+    return " ".join(support.REPO_ROOT.joinpath(*parts).read_text(encoding="utf-8").split())
+
+
+class CompletePage(unittest.TestCase):
+    def page(self) -> str:
+        return read_root("docs", "regles-de-code.md")
+
+    def test_f0002_a35_a_table_names_every_key_with_the_format_of_its_line(self) -> None:
+        """F-0002 A35: one list, every key of the feature, with the format of its line and what an absent key gives."""
+        page = self.page()
+        table = page[page.index("## Les clés, d'un coup d'oeil"):]
+        table = table[:table.index(" ## ", 5)]
+        for text in (
+            "`stack`", "`lockfile`", "`never-weaken`", "`lint-on-write`", "`format-on-write`", "`architecture-check`",
+            "`recurring-finding`", "`slo-issue`", "<écosystème> | <paquet> | <source>", "<chemin> | <écosystème>",
+            "<chemin> | raised-entry", "<motif> | <commande>", "<seuil> | <jours>",
+        ):
+            self.assertIn(text, table)
+
+    def test_f0002_a35_the_page_quotes_the_refusal_of_a_write_and_of_a_failed_architecture_check(self) -> None:
+        """F-0002 A35: the message of a refused write, and the `BLOCKER` of a `FAIL` of the architecture probe."""
+        page = self.page()
+        section = page[page.index("## Les contrôles à l'écriture"):]
+        section = section[:section.index(" ## ", 5)]
+        for text in (
+            "lint-on-write: <commande> failed on <chemin> (<raison>)", "code 2", "20 dernières lignes", "2000 octets",
+            "30 s", "120 s", "ignorée", "`format-on-write`", "journal",
+        ):
+            self.assertIn(text, section)
+        probe = page[page.index("## Le contrôle d'architecture"):]
+        probe = probe[:probe.index(" ## ", 5)]
+        for text in ("`PASS`", "`FAIL`", "`NOT RUN`", "`F-15`", "`BLOCKER`", "`removed-line`", "base"):
+            self.assertIn(text, probe)
+
+    def test_f0002_a35_the_page_says_how_a_recurring_finding_is_counted_and_where_it_goes(self) -> None:
+        """F-0002 A35: distinct PRs per `F-n` or `L-n`, one comment of the `slo-issue` ticket, never a ticket."""
+        page = self.page()
+        section = page[page.index("## Le constat récurrent"):]
+        section = section[:section.index(" ## ", 5)]
+        for text in ("PR distinctes", "`F-n`", "`L-n`", "`slo-issue`", "jamais un ticket", "`recurring-finding`"):
+            self.assertIn(text, section)
+
+    def test_f0002_a35_the_page_gives_the_ruff_line_and_what_trying_it_on_forge_gave(self) -> None:
+        """F-0002 A35: the rule base line, its three thresholds, the `--preview` pin, and the try on the forge repository."""
+        page = self.page()
+        section = page[page.index("## La base de règles"):]
+        section = section[:section.index(" ## ", 5)]
+        for text in (
+            "`lint-on-write`", "ruff==0.17.3", "--preview", "`C901`", "`PLR0913`", "`PLR1702`", "10", "5",
+            "aucun plafond de lignes", "essayés", "`plugins/forge`", "`tests`",
+        ):
+            self.assertIn(text, section)
+
+    def test_f0002_a35_the_page_tells_what_is_proved_and_what_is_not_for_every_key(self) -> None:
+        """F-0002 A35: the closing section names the tests that prove each key, and what was not tried."""
+        page = self.page()
+        section = page[page.index("## Ce qui est éprouvé"):]
+        for text in (
+            "tests/test_stack_check.py", "tests/test_never_weaken.py", "tests/test_after_write.py",
+            "tests/test_recurring_findings.py", "Pas encore",
+        ):
+            self.assertIn(text, section)
+        self.assertNotIn("viennent avec leurs tickets", section)
+
+
 if __name__ == "__main__":
     unittest.main()
