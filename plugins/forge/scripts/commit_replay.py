@@ -14,6 +14,11 @@ sha and a detail separated by tabs:
     NOT RUN  the replay could not run (the detail is why: copy not extracted, install, delay, limit,
              budget of the post)
 
+The key `ci-replay-light`, optional, lists the commands replayed on every commit but the last: the
+last commit, the head, replays every `ci-replay` command, and so does a commit when the key is absent
+(or holds no command) and the sole commit of a one-commit PR. The suite is what costs, and a light list
+of lints keeps the commits before the head cheap.
+
 A line `NONE` says the PR has no commit. A `FAIL` is a measure, not an opinion: the project asks one
 green commit per criterion, and the judge decides what a red one costs. Exit code 0 when every
 commit passes, 1 when one fails, 2 when a replay could not run or the call is wrong. Without the key
@@ -60,8 +65,14 @@ def commits_of(base: str, head: str) -> list[str]:
     return raw.split()
 
 
+def replay_commands(config: dict[str, list[str]], is_head: bool) -> list[str]:
+    """The `ci-replay` commands of a commit: the light list on an earlier one when the key declares it."""
+    light = [command for command in config.get("ci-replay-light", []) if command]
+    return config["ci-replay"] if is_head or not light else light
+
+
 def replay_commit(
-    sha: str, config: dict[str, list[str]], memory_mb: int, timeout: int,
+    sha: str, config: dict[str, list[str]], memory_mb: int, timeout: int, is_head: bool = True,
 ) -> tuple[str, str]:
     """The status and the detail of one commit, replayed alone in a copy that is deleted after."""
     folder = tempfile.mkdtemp(prefix="forge-commit-")
@@ -72,7 +83,7 @@ def replay_commit(
         except (RuntimeError, OSError, tarfile.TarError) as error:
             # One line per commit: git's message can hold several.
             return NOT_RUN, "copie non extraite : " + "\\n".join(str(error).splitlines())
-        for command in config.get("install", []) + config["ci-replay"]:
+        for command in config.get("install", []) + replay_commands(config, is_head):
             code, tail, why = run(command, root, timeout, memory_mb)
             if code is None:
                 return NOT_RUN, f"{command} : {why}"
@@ -97,7 +108,7 @@ def replay(
             reason = f"budget du poste non tenu : {'; '.join(reasons)}"
             rows.extend((NOT_RUN, git("rev-parse", "--short", rest).decode().strip(), reason) for rest in shas[index:])
             return rows
-        status, detail = replay_commit(sha, config, memory_mb, timeout)
+        status, detail = replay_commit(sha, config, memory_mb, timeout, index == len(shas) - 1)
         rows.append((status, short, detail))
     return rows
 

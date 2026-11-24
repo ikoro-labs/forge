@@ -252,14 +252,17 @@ pas. Il n'a été éprouvé que par les tests du dépôt (`tests/test_guard_code
 `tests/test_guard_coder_option_value.py`), qui lui donnent des commandes écrites ; ce garde n'a jamais
 été essayé dans une vraie session de coder, et le refus tel que l'agent le reçoit n'a pas été vu.
 
-Une sonde de plus, sans clé nouvelle, rejoue la suite sur chaque commit de la PR : à partir des clés
-`ci-replay`, `install`, `run-limits` et `run-budget`, `plugins/forge/scripts/commit_replay.py` extrait
+Une sonde de plus rejoue la suite sur chaque commit de la PR, avec une clé facultative, `ci-replay-light` :
+à partir des clés `ci-replay`, `install`, `run-limits` et `run-budget`, `plugins/forge/scripts/commit_replay.py` extrait
 chaque commit propre à la PR par `git archive` (comme `base_replay.py`, sans rien écrire dans le dépôt,
 sa configuration comprise), y lance les commandes sous la même borne (`run_bounded`) après avoir lu le
 budget du poste, et rend une ligne `PASS`, `FAIL` ou `NOT RUN` par commit. La règle d'un commit vert
 par critère n'était vérifiée par personne : un commit intermédiaire rouge fait tomber un `git bisect`
 sur la base, et `forge:qc-conf` en fait un `BLOCKER` (règle `F-24` du socle). La sonde coûte la suite
-multipliée par le nombre de commits. Elle ne ramène pas le `-n` de pytest-xdist : les commandes passent
+multipliée par le nombre de commits, sauf avec `ci-replay-light` : cette clé liste les commandes (les lints
+et les types, par exemple) rejouées sur chaque commit sauf le dernier, et la tête, ou l'unique commit d'une
+PR, rejoue chaque commande de `ci-replay`. Sans la clé, chaque commit rejoue tout, comme avant ; sur ce
+dépôt, la sonde passait 21 min pour 6 commits et 46 min pour 13 (le jour de la demande, 2026-11-24). Elle ne ramène pas le `-n` de pytest-xdist : les commandes passent
 par un shell. Éprouvé sous Linux seulement : le côté Windows repose sur `run_bounded`, qui n'a tourné que dans la
 CI de ce dépôt, et cette sonde n'y a pas encore tourné ; macOS n'est pas couvert.
 

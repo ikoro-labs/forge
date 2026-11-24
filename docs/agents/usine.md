@@ -48,6 +48,13 @@ conditions de `.claude/rules/git.md` tiennent ; sinon il ouvre la PR de version 
 - `ci-replay` : `claude plugin validate .`
 - `ci-replay` : `claude plugin validate plugins/forge`
 
+La sonde de rejeu de chaque commit (`commit_replay.py`) ne lance que ces deux commandes, ruff et mypy, sur
+chaque commit avant la tête : la suite y passait 21 min pour 6 commits et 46 min pour 13 (ticket #331, demande
+de l'humain du 2026-11-24). La tête rejoue chaque ligne de `ci-replay`.
+
+- `ci-replay-light` : `uv run --no-project --quiet --with ruff==0.17.3 ruff check plugins/forge tests`
+- `ci-replay-light` : `uv run --no-project --quiet --with mypy==2.4.1 mypy`
+
 La borne de toute suite et de toute sonde, lue par `plugins/forge/scripts/bounded_run.py` : la
 mémoire (2000 Mo) et le délai (300 s) de chaque commande, puis le budget du poste entier, que
 partagent les sessions, les sous-agents et les workers : 4096 Mo disponibles au moins, une charge à

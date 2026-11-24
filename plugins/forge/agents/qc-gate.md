@@ -180,7 +180,9 @@ elles-mêmes leurs commandes.
     lancé depuis un clone du projet (le script liste les commits propres à la PR, du plus ancien au plus
     récent, en extrait chacun par `git archive` dans sa propre copie, supprimée ensuite, rejoue `install`
     puis chaque commande de `ci-replay` sous la borne, et n'écrit rien dans le dépôt, configuration
-    comprise). Recopie chaque ligne du script, verbatim, et son code de sortie : 0 chaque commit passe
+    comprise). Avec la clé facultative `ci-replay-light`, les commits d'avant la tête ne rejouent que les
+    commandes de cette clé, et la tête, dernier commit de la liste, rejoue chaque commande de `ci-replay`,
+    comme une PR d'un seul commit ; sans la clé, chaque commit rejoue tout `ci-replay`. Recopie chaque ligne du script, verbatim, et son code de sortie : 0 chaque commit passe
     (`PASS`), 1 un commit échoue (rends chaque ligne `FAIL` avec son sha court et la fin de sa sortie,
     tu ne la juges pas : `forge:qc-conf` le fait), 2 un rejeu n'a pas pu tourner ou
     l'appel a échoué (`NOT RUN` avec sa commande, jamais `PASS`). Le script borne lui-même mémoire et
