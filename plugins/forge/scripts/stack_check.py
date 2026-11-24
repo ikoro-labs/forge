@@ -79,6 +79,9 @@ def judge(ecosystem: str, name: str, lock_path: str, stack_path: str, entries: l
     if not listed:
         wanted = f"{ecosystem} | {name} | <ADR ou séance>"
         return f"UNLISTED\t{lock_path}\t{ecosystem} {name}\tligne à écrire : `{wanted}` dans {stack_path}"
+    if not any(entry.source for entry in listed):
+        lines = ", ".join(str(entry.number) for entry in listed)
+        return f"NO SOURCE\t{lock_path}\t{ecosystem} {name}\tligne {lines} de {stack_path} sans source : écrire l'ADR ou la séance qui l'autorise"
     return ""
 
 

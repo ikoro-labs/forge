@@ -170,6 +170,14 @@ class Comparison(StackCase):
         self.assertIn("pypi | idna | <ADR ou séance>", detail)
         self.assertIn("stack.txt", detail)
 
+    def test_a6_a_listed_dependency_with_an_empty_source_is_no_source(self) -> None:
+        """F-0002 A6: an added direct dependency whose list line has an empty source is `NO SOURCE`."""
+        base = self.commit({"uv.lock": uv_lock(), "stack.txt": ""})
+        head = self.commit({"uv.lock": uv_lock("idna"), "stack.txt": "pypi | idna |\n"})
+        code, lines, _ = self.run_check(self.usine(*STACK_AND_LOCK), base, head)
+        self.assertEqual(code, 1)
+        self.assertEqual([line.split("\t")[:3] for line in lines if not line.startswith("ADDED")], [["NO SOURCE", "uv.lock", "pypi idna"]])
+
 
 if __name__ == "__main__":
     unittest.main()
