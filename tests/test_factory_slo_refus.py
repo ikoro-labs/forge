@@ -67,6 +67,26 @@ class GuardRefusals(unittest.TestCase):
         self.assertEqual(result["par_garde"], {"guard_git": 2, "guard_coder": 1, "guard_readonly": 1})
         self.assertEqual(result["par_agent"], {"main": 2, "forge:coder": 1, "forge:qc-conf": 1})
 
+    def test_the_refusals_of_after_write_are_not_counted(self) -> None:
+        """F-0002 A24: lines of `after_write` stay in the journal; the indicator counts the three guards."""
+        self.write("2026-10-04", entry("2026-10-04T08:00:00+00:00", "guard_git", "main"),
+                   entry("2026-10-04T09:00:00+00:00", "after_write", "forge:coder"),
+                   entry("2026-10-04T10:00:00+00:00", "after_write", "main"))
+        self.write("2026-10-10", entry("2026-10-10T08:00:00+00:00", "guard_coder", "forge:coder"),
+                   entry("2026-10-10T09:00:00+00:00", "guard_readonly", "forge:qc-conf"),
+                   entry("2026-10-10T10:00:00+00:00", "after_write", "forge:coder"))
+        result = self.sli()
+        self.assertEqual((result["numerateur"], result["denominateur"], result["valeur"]), (3, 2, 1.5))
+        self.assertEqual(result["par_garde"], {"guard_git": 1, "guard_coder": 1, "guard_readonly": 1})
+        self.assertEqual(result["par_agent"], {"main": 1, "forge:coder": 1, "forge:qc-conf": 1})
+
+    def test_a_journal_of_after_write_lines_alone_counts_zero_not_sans_objet(self) -> None:
+        """F-0002 A24: the journal exists and holds no refusal of a guard: 0, never "sans objet"."""
+        self.write("2026-10-04", entry("2026-10-04T08:00:00+00:00", "after_write", "main"))
+        result = self.sli()
+        self.assertEqual(result["statut"], "calculé")
+        self.assertEqual((result["numerateur"], result["valeur"]), (0, 0.0))
+
     def test_without_a_journal_the_indicator_is_sans_objet_and_says_why(self) -> None:
         """#156 A3.1: no journal on this host: "sans objet", never 0."""
         result = self.sli()

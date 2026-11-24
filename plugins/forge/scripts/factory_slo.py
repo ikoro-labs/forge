@@ -431,11 +431,15 @@ def tokens_per_merge(f: Factory) -> Sli:
     )
 
 
+GUARDS = ("guard_git", "guard_coder", "guard_readonly")
+
+
 def guard_refusals(f: Factory) -> Sli:
     """Refusals of the three guards per merged PR, from the journal of this host (`refusal_journal.py`).
 
-    Only the lines of this project's repository count. The journal is local: two hosts give two
-    journals, which the indicator's text says.
+    Only the lines of this project's repository count, and only those of `GUARDS`: the journal also
+    holds the refusals of `after_write`, which this indicator leaves out. The journal is local: two
+    hosts give two journals, which the indicator's text says.
     """
     merged = len(f.merged)
     if not merged:
@@ -444,7 +448,7 @@ def guard_refusals(f: Factory) -> Sli:
     if lines is None:
         return Sli("guard-refusals", reason=f"pas de journal des refus : `{refusal_journal.journal_dir()}` n'existe pas sur ce poste")
     repo = refusal_journal.repo_of(str(f.project))
-    ours = [line for line in lines if line.get("repo") == repo]
+    ours = [line for line in lines if line.get("repo") == repo and line.get("guard") in GUARDS]
     def count(key: str) -> dict[str, int]:
         return dict(Counter(str(line.get(key, "")) for line in ours).most_common())
 

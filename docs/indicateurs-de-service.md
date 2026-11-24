@@ -79,7 +79,9 @@ hook ignore, un frontmatter ou un plafond de document refusent l'écriture sans 
 pas des échecs d'une commande de ces deux clés. Un refus répété se lit au journal, par `rule` et `branch`.
 
 `factory_slo.py` lit ce journal pour `guard-refusals` : les lignes du dépôt du projet, datées dans la
-fenêtre, divisées par les PR fusionnées de la même fenêtre. Une ligne illisible est ignorée. Sans
+fenêtre, de `guard_git`, `guard_coder` et `guard_readonly` seulement (les lignes d'`after_write` n'y sont
+pas comptées, ni dans `par_garde`), divisées par les PR fusionnées de la même fenêtre. Une ligne illisible
+est ignorée. Sans
 journal sur le poste, ou sans PR fusionnée dans la fenêtre, le SLI est « sans objet » avec sa raison,
 jamais 0 ; un journal sans refus dans la fenêtre donne 0.
 

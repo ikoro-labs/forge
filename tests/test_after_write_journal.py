@@ -197,6 +197,17 @@ class Documentation(unittest.TestCase):
             with self.subTest(needle=needle):
                 self.assertIn(needle, page)
 
+    def test_the_indicators_page_says_guard_refusals_leaves_after_write_out(self) -> None:
+        """F-0002 A24: the indicator counts the three guards; the lines of `after_write` are not counted."""
+        text = (support.REPO_ROOT / "docs" / "indicateurs-de-service.md").read_text(encoding="utf-8")
+        page = " ".join(text.split())  # the page wraps its lines
+        for needle in (
+            "de `guard_git`, `guard_coder` et `guard_readonly` seulement",
+            "les lignes d'`after_write` n'y sont pas comptées",
+        ):
+            with self.subTest(needle=needle):
+                self.assertIn(needle, page)
+
 
 if __name__ == "__main__":
     unittest.main()
