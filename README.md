@@ -84,7 +84,7 @@ ne fusionne une PR rouge, ou ne sort de son rôle.
 | `after_write` | formate chaque fichier écrit avec les formateurs que le projet déclare (clé `format-on-write`), le contrôle avec ses linters (clé `lint-on-write`, qui refuse une mauvaise écriture et relaie la fin de la sortie de l'outil, 20 lignes et 2000 octets au plus), puis refuse le tiret cadratin au-delà de ce que le projet admet ; tient aussi le frontmatter `type` des documents, leur index généré et leurs plafonds de mots ou de lignes (clés `doc-frontmatter`, `doc-index`, `doc-cap`, [détail](docs/installation.md#les-documents-que-lagent-écrit)) |
 | `trim_output` | la longue sortie d'une commande de tests qui réussit est raccourcie, la sortie complète gardée dans un journal |
 | `agent_cleanup` | le ménage après un agent fini, sans geste à la main : son worktree propre est retiré (sale, il est laissé et signalé), sa branche `worktree-agent-*` orpheline et contenue dans `main` ou une branche distante est supprimée, et, si le projet déclare les clés `agent-cache-dir` et `rescue-bundle-dir`, ses caches et les bundles de sauvetage contenus ; il n'est pas un garde : il échoue ouvert et ne bloque jamais ([détail](docs/installation.md#le-ménage-après-un-agent)) |
-| `pin_notice` | avec la clé `pin-bump` (`auto`), la session apprend qu'un tag de forge plus récent que le `ref` épinglé existe et ouvre la PR de montée ; il se tait sans la clé, tant qu'une PR de montée est ouverte et à la moindre erreur, ne bloque jamais, et ne change pas qui fusionne (`protected-path` et `human-merge` arrêtent toujours la fusion) ([détail](docs/installation.md#laisser-la-session-ouvrir-la-pr-de-montée--la-clé-pin-bump)) |
+| `pin_notice` | avec la clé `pin-bump` (`auto`), la session apprend qu'un tag de forge plus récent que le `ref` épinglé existe et ouvre la PR de montée ; il se tait sans la clé, tant qu'une PR de montée est ouverte et à la moindre erreur, ne bloque jamais, et ne change pas qui fusionne (`protected-path` et `human-merge` arrêtent toujours la fusion) ; sans clé, il dit aussi quand la version installée diffère de l'épingle de `origin/main` (`BEHIND`) et donne la commande `pin_sync.py apply`, jamais lancée par lui ([détail](docs/installation.md#laisser-la-session-ouvrir-la-pr-de-montée--la-clé-pin-bump)) |
 | `sessions_notice`, `handoff_*` | une seule session par dépôt, et la passation à une nouvelle session quand le contexte atteint 150 000 jetons, 200 relais par jour et par projet au plus |
 
 ## The infrastructure guard
@@ -139,7 +139,9 @@ passes, what is out of reach and what was tried:
    [Configurer](#configurer)).
 
 Pour **monter de version** : une PR du projet change le `ref`, puis chaque poste lance, depuis la
-racine du projet, jamais pendant un `/forge:feature-build` en cours :
+racine du projet, entre deux tickets et jamais entre un coder et le verdict de la revue (le script
+`plugins/forge/scripts/pin_sync.py` compare l'installé à l'épingle, `check --all`, et lance ces deux
+commandes, `apply <projet>`) :
 
 ```sh
 claude plugin marketplace add ikoro-labs/forge@<nouveau tag> --scope project

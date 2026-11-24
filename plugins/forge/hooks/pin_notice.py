@@ -109,8 +109,8 @@ def notice_text(prefix: str, current: tuple[int, ...], latest: tuple[int, ...]) 
         "n'ouvre aucune fusion de plus : un chemin de `protected-path` dans le diff ou une action "
         "`human-merge` active arrête la fusion, et l'humain fusionne. Pas pendant un `/forge:feature-build` "
         "actif. Une fois la PR fusionnée, le geste sur chaque poste (`claude plugin marketplace add`, puis "
-        "`claude plugin update`, voir « Monter de version » de la page d'installation du plugin) reste à "
-        "l'humain."
+        "`claude plugin update`, voir « Monter de version » de la page d'installation du plugin) est celui de "
+        "la session, par `pin_sync.py apply`, entre deux tickets."
     )
 
 
