@@ -82,7 +82,22 @@ def judge(ecosystem: str, name: str, lock_path: str, stack_path: str, entries: l
     if not any(entry.source for entry in listed):
         lines = ", ".join(str(entry.number) for entry in listed)
         return f"NO SOURCE\t{lock_path}\t{ecosystem} {name}\tligne {lines} de {stack_path} sans source : écrire l'ADR ou la séance qui l'autorise"
-    return ""
+    source = next(entry.source for entry in listed if entry.source)
+    return f"OK\t{lock_path}\t{ecosystem} {name}\tdans {stack_path}, source : {source}"
+
+
+def added_entries(root: Path, base: str, stack_path: str, entries: list[Entry]) -> list[str]:
+    """An ADDED line per entry the head's list has and the base's list did not, with its source."""
+    try:
+        before = parse_stack(read_at(root, base, stack_path) or "", stack_path)[0]
+    except UnicodeDecodeError:
+        before = []  # an unreadable base list holds nothing the head can be compared to
+    known = {(entry.ecosystem, entry.package, entry.source) for entry in before}
+    return [
+        f"ADDED\t{stack_path}:{entry.number}\t{entry.ecosystem} {entry.package}\t{entry.source or 'sans source'}"
+        for entry in entries
+        if (entry.ecosystem, entry.package, entry.source) not in known
+    ]
 
 
 def evaluate(root: Path, lock_entry: str, base: str, head: str, stack_path: str, entries: list[Entry]) -> list[str]:
@@ -141,7 +156,7 @@ def main(argv: list[str] | None = None) -> int:
         print(invalid(stack_path, f"fichier illisible en UTF-8 : {error}"))
         return 2
     entries, problems = parse_stack(text, stack_path)
-    lines = list(problems)
+    lines = problems + added_entries(Path(args.root), args.base, stack_path, entries)
     for lock_entry in config[LOCKFILE_KEY]:
         lines += evaluate(Path(args.root), lock_entry, args.base, args.head, stack_path, entries)
     for line in lines:
