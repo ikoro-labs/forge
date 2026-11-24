@@ -262,7 +262,8 @@ class Declaration(unittest.TestCase):
         command = str(found[0]["command"])
         self.assertEqual(command, 'uv run --no-project --quiet python "${CLAUDE_PLUGIN_ROOT}/hooks/pin_notice.py"; exit 0')
         self.assertNotIn("onFailure", found[0])
-        self.assertTrue(0 < int(str(found[0]["timeout"])) <= 20)
+        # Two `gh` calls and the two commands of the BEHIND notice (#333), each bounded: see test_pin_notice_behind.py.
+        self.assertTrue(0 < int(str(found[0]["timeout"])) <= 30)
 
     def test_the_hook_is_bound_nowhere_else(self) -> None:
         hooks = json.loads((support.PLUGIN / "hooks" / "hooks.json").read_text(encoding="utf-8"))["hooks"]

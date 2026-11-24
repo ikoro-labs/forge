@@ -29,7 +29,7 @@ BASE = "origin/main"
 PIN = re.compile(r"(?P<prefix>.+--v)(?P<version>\d+\.\d+\.\d+)")
 VERSION = re.compile(r"\d+\.\d+\.\d+")
 # One external command at most this long; the hook's `timeout` in `hooks.json` bounds the whole.
-SECONDS = 8
+SECONDS = 4
 
 REFUSED_ADD = "l'entrée de marketplace de niveau utilisateur diffère de l'épingle"
 
