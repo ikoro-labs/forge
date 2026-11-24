@@ -39,6 +39,49 @@ class Replay(Repo):
         return [line.split("\t") for line in done.stdout.splitlines() if line.strip()]
 
 
+# The lint of the throwaway project: it fails when `style.txt` holds ERROR.
+LINT = f'"{sys.executable}" -c "import pathlib, sys; sys.exit(1 if \'ERROR\' in pathlib.Path(\'style.txt\').read_text() else 0)"'
+
+
+def light_usine(light: bool = True) -> str:
+    """The lint and the suite as `ci-replay`, the lint alone as `ci-replay-light` when `light`."""
+    key = f"- `ci-replay-light` : `{LINT}`\n" if light else ""
+    return f"{LIMITS}- `ci-replay` : `{LINT}`\n- `ci-replay` : `{SUITE}`\n{key}"
+
+
+class LightReplay(unittest.TestCase):
+    def fixture(self) -> tuple[Replay, str]:
+        repo = Replay(self)
+        base = repo.commit({"code_under_test.py": CODE_V1, "tests/__init__.py": "", "style.txt": "ok"})
+        return repo, base
+
+    def test_an_earlier_commit_replays_the_light_list_and_the_head_the_full_list(self) -> None:
+        """No F-NNNN: ticket #331, A1 et A1.1: 3 commits, light = lint, une erreur de lint au commit 2 : FAIL au commit 2 seul."""
+        repo, base = self.fixture()
+        # The suite is red from commit 1 on: the light list skips it, so commit 1 passes.
+        first = repo.commit({"tests/test_value.py": TEST_TWO})
+        linted = repo.commit({"style.txt": "ERROR"})
+        head = repo.commit({"code_under_test.py": CODE_V2, "style.txt": "ok"})
+        done = repo.commits(base, head, light_usine())
+        rows = repo.rows(done)
+        self.assertEqual(done.returncode, 1, done.stdout + done.stderr)
+        self.assertEqual(
+            [row[:2] for row in rows], [["PASS", first[:7]], ["FAIL", linted[:7]], ["PASS", head[:7]]], done.stdout
+        )
+        self.assertIn("style.txt", rows[1][2])
+
+    def test_the_head_replays_every_ci_replay_command(self) -> None:
+        """No F-NNNN: ticket #331, A1: la dernière ligne rejoue chaque commande de ci-replay, la suite comprise."""
+        repo, base = self.fixture()
+        first = repo.commit({"tests/test_value.py": TEST_TWO})
+        head = repo.commit({"style.txt": "still ok"})
+        done = repo.commits(base, head, light_usine())
+        rows = repo.rows(done)
+        self.assertEqual(done.returncode, 1, done.stdout + done.stderr)
+        self.assertEqual([row[:2] for row in rows], [["PASS", first[:7]], ["FAIL", head[:7]]], done.stdout)
+        self.assertIn("AssertionError", rows[1][2])
+
+
 class RedIntermediateCommit(unittest.TestCase):
     def test_a_red_commit_beside_a_green_head_is_a_row_of_its_own(self) -> None:
         """No F-NNNN: ticket #69, critère 1 et 2: un commit rouge pris seul est une ligne FAIL, la tête verte reste PASS."""
