@@ -22,8 +22,9 @@ write and the path of the file), NO SOURCE (listed with an empty source), ADDED 
 head adds, with its source: the judge reads it), NONE (the lockfile adds no direct package), NOT RUN
 (a list ecosystem no `lockfile` entry reads) or INVALID (a malformed list line, at its number, or a
 malformed lockfile or key). Exit code 0 when nothing is refused, 1 when a package is UNLISTED or NO
-SOURCE, 2 when a line is NOT RUN or INVALID, or the call is wrong. The script launches no command
-and opens no network access. The standard library only.
+SOURCE, 2 when a line is NOT RUN or INVALID, or the call is wrong. The script runs `git` only (to
+check a ref and to read a file at a ref), launches no command the project declares and opens no
+network access. The standard library only.
 """
 
 from __future__ import annotations
