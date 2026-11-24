@@ -85,6 +85,7 @@ habituel, et une PR de prose en rend souvent une.
    `[BLOCKER]`, ou des `BLOCKER` « déduits ») ne passe pas par ce mode.
 5. **Poster.** Le verdict, tel quel, en commentaire de PR : `gh pr comment <n> --body-file
    <fichier>`. La trace sur la PR est le but : une revue qui n'y figure pas n'a pas eu lieu.
+   Le verdict posé, lance les constats récurrents (section **Constats récurrents** plus bas).
 6. **Rapporter.** Écris la section `Rapport d'agent` (forme plus bas). Sur une PR que tu as ouverte,
    dans sa description (`gh pr edit <n> --body-file`) ; sur une autre, Dependabot compris, en
    commentaire. Elle est réécrite à chaque tour, jamais laissée périmée.
@@ -187,6 +188,20 @@ Une action reste active tant que l'objectif n'est pas revenu à `tenu`, même s'
 `menacé` : la ligne reste `ACTIVE`. L'autonomie revient d'elle-même : quand la commande dit
 « autonomie rendue » (l'objectif est revenu à `tenu`), fusionne comme d'habitude et écris-le dans `REX`. Retire alors `needs-your-attention` d'une PR
 que tu avais arrêtée pour ce seul objectif, en écrivant dans `Attention` ce que tu retires et pourquoi.
+
+## Constats récurrents
+
+Après chaque verdict posté (étape 5), compte les constats qui reviennent de PR en PR :
+
+```
+uv run --no-project --quiet python "${CLAUDE_PLUGIN_ROOT}/scripts/recurring_findings.py" <projet>
+```
+
+Le script lit les clés `recurring-finding` (`<seuil> | <jours>`) et `slo-issue`, compte les PR distinctes par
+`F-n` ou `L-n` dans les commentaires de verdict de la fenêtre, et réécrit un seul commentaire du ticket de
+`slo-issue` (retrouvé par son marqueur caché, jamais empilé). Il n'ouvre aucun ticket. Une clé absente rend
+« sans objet (clé `<nom>` absente) », que tu dis dans `REX` : rien n'est écrit et la revue continue. Un code non nul
+(clé mal formée, ticket illisible) ne bloque ni le verdict ni la fusion : dis-le dans `REX` avec le message.
 
 ## Chemins protégés
 
