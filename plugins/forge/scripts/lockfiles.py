@@ -33,7 +33,7 @@ PUBLIC_INDEX = "https://pypi.org/simple"
 PUBLIC_TARBALLS = "https://registry.npmjs.org/"
 LOCAL_SOURCES = ("virtual", "editable", "directory", "path")  # the project's own code, not a download
 NPM_DEPENDENCY_FIELDS = ("dependencies", "devDependencies", "optionalDependencies", "peerDependencies")
-GROUP_SECTIONS =("[package.optional-dependencies]", "[package.dev-dependencies]")  # a member's extras and groups
+GROUP_SECTIONS = ("[package.optional-dependencies]", "[package.dev-dependencies]")  # a member's extras and groups
 
 
 def normalize_pypi(name: str) -> str:
