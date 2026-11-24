@@ -251,6 +251,88 @@ class LoweredRank(unittest.TestCase):
         self.assertEqual(statuses(entries, text), [INVALID] * len(entries))
 
 
+BASELINE = "scripts/baselines/types.txt"
+ENTRY = f"{BASELINE} | raised-entry"
+
+
+class RaisedEntry(unittest.TestCase):
+    def test_f0002_a12_an_added_key_absent_from_the_removed_lines_is_refused_naming_file_and_key(self) -> None:
+        text = diff(BASELINE, " src/a.py", "-src/old.py", "+src/new.py")
+        results = check([ENTRY], text)
+        self.assertEqual([result.status for result in results], [APPLIES])
+        self.assertIn(BASELINE, results[0].detail)
+        self.assertIn("src/new.py", results[0].detail)
+
+    def test_f0002_a13_a_count_raised_from_3_to_4_is_refused_naming_the_key_and_both_counts(self) -> None:
+        text = diff(BASELINE, "-3 src/a.py", "+4 src/a.py")
+        results = check([ENTRY], text)
+        self.assertEqual([result.status for result in results], [APPLIES])
+        self.assertIn("src/a.py", results[0].detail)
+        self.assertIn("3", results[0].detail)
+        self.assertIn("4", results[0].detail)
+
+    def test_f0002_a14_a_removed_key_or_a_lower_count_passes(self) -> None:
+        removed = diff(BASELINE, "-3 src/a.py", " 2 src/b.py")
+        lowered = diff(BASELINE, "-3 src/a.py", "+2 src/a.py")
+        self.assertEqual(statuses([ENTRY], removed), [NONE])
+        self.assertEqual(statuses([ENTRY], lowered), [NONE])
+
+    def test_f0002_a14_a_reordered_file_with_the_same_counts_passes(self) -> None:
+        text = diff(BASELINE, "-2 src/a.py", "-src/b.py", "+src/b.py", "+2 src/a.py")
+        self.assertEqual(statuses([ENTRY], text), [NONE])
+
+    def test_f0002_a15_a_lone_key_counts_1_so_an_added_lone_key_is_a_raise(self) -> None:
+        added = diff(BASELINE, "+src/new.py")
+        raised = diff(BASELINE, "-src/a.py", "+2 src/a.py")
+        lowered = diff(BASELINE, "-2 src/a.py", "+src/a.py")
+        self.assertEqual(statuses([ENTRY], added), [APPLIES])
+        results = check([ENTRY], raised)
+        self.assertEqual([result.status for result in results], [APPLIES])
+        self.assertIn("1 à 2", results[0].detail)
+        self.assertEqual(statuses([ENTRY], lowered), [NONE])
+
+
+    def test_f0002_a16_a_parameter_makes_the_entry_invalid_whatever_the_diff(self) -> None:
+        text = diff(BASELINE, "+src/new.py")
+        results = check([f"{ENTRY} | ^(\\S+)$"], text)
+        self.assertEqual([result.status for result in results], [INVALID])
+        self.assertIn("raised-entry", results[0].detail)
+        self.assertIn("paramètre", results[0].detail)
+
+    def test_f0002_a16_an_unknown_type_names_raised_entry_among_the_types(self) -> None:
+        results = check([f"{BASELINE} | raised-entries"], "")
+        self.assertEqual([result.status for result in results], [INVALID])
+        self.assertIn("raised-entry", results[0].detail)
+
+
+class RaisedEntryOnRealDiffs(unittest.TestCase):
+    """F-0002 A12 to A14 on the diffs `git` prints: a new file, a rename, a directory, a binary file."""
+
+    BASE = b"3 src/a.py\nsrc/b.py\n"
+    DIRECTORY = "scripts/baselines/ | raised-entry"
+
+    def test_f0002_a12_a_new_file_under_a_directory_entry_with_a_key_is_refused(self) -> None:
+        text = real_diff({"README.md": b"x\n"}, {"README.md": b"x\n", f"{BASELINE}": b"src/a.py\n"})
+        self.assertEqual(statuses([self.DIRECTORY, ENTRY], text), [APPLIES, APPLIES])
+
+    def test_f0002_a13_a_renamed_file_with_a_raised_count_is_refused(self) -> None:
+        raised = b"4 src/a.py\nsrc/b.py\n"
+        text = real_diff({BASELINE: self.BASE}, {"scripts/baselines/moved.txt": raised})
+        self.assertEqual(statuses([self.DIRECTORY], text), [APPLIES])
+
+    def test_f0002_a14_a_lower_count_in_a_real_diff_passes(self) -> None:
+        text = real_diff({BASELINE: self.BASE}, {BASELINE: b"2 src/a.py\n"})
+        self.assertEqual(statuses([ENTRY], text), [NONE])
+
+    def test_f0002_a12_a_key_added_outside_the_path_is_not_read(self) -> None:
+        text = real_diff({"notes.txt": b"a\n"}, {"notes.txt": b"a\nnew\n"})
+        self.assertEqual(statuses([ENTRY], text), [NONE])
+
+    def test_f0002_a12_a_modified_binary_file_under_the_path_applies(self) -> None:
+        text = real_diff({BASELINE: b"\x00\x01\x02"}, {BASELINE: b"\x00\x01\x03"})
+        self.assertEqual(statuses([ENTRY], text), [APPLIES])
+
+
 class Command(unittest.TestCase):
     def run_main(self, usine_text: str | None, diff_text: str) -> tuple[int, str, str]:
         with tempfile.TemporaryDirectory() as folder:

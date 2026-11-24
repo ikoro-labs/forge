@@ -2,7 +2,8 @@
 
 Cette page décrit les clés que le projet écrit dans `docs/agents/usine.md` pour que l'usine tienne ses règles
 de code, une par une. Elle commence par la clé `stack` : une PR qui ajoute une dépendance que personne n'a
-décidée n'est plus relue, elle est refusée. Les autres clés de la feature s'ajoutent ici quand leur ticket
+décidée n'est plus relue, elle est refusée. Elle dit ensuite le type `raised-entry` de la clé `never-weaken`,
+qui refuse qu'une liste de référence grandisse. Les autres clés de la feature s'ajoutent ici quand leur ticket
 est fusionné ; le gabarit `plugins/forge/templates/usine.md` documente chacune.
 
 ## La clé `stack`
@@ -83,10 +84,37 @@ Une PR ne s'autorise pas elle-même par un changement du chemin : le chemin de l
 base, pas sur la tête. Le contenu de la liste, lui, se lit sur la tête : un fichier absent à la tête est une
 liste vide, donc tout paquet ajouté est `UNLISTED`.
 
+## La liste de référence, `raised-entry`
+
+Une liste de référence est un fichier de dettes tolérées (la clé `baselines` dit à quels fichiers le juge
+applique `F-13`). Le type `raised-entry` de la clé `never-weaken` la garde contre une hausse : `raised-number`
+laisse passer une dette ajoutée seule, `raised-entry` non. L'entrée s'écrit sans paramètre :
+
+```
+- `never-weaken` : `<chemin> | raised-entry`
+```
+
+Le chemin est un fichier, ou un dossier quand il finit par `/`. Chaque ligne du fichier est `<nombre> <clé>`, ou
+`<clé>` seule, qui compte 1. `forge:qc-gate` lance `plugins/forge/scripts/never_weaken.py` sur le diff de la PR,
+avec les entrées lues sur la base, et compare, fichier du diff par fichier du diff, chaque clé des lignes
+ajoutées à la même clé des lignes retirées du même fichier :
+
+| Le diff | Le script |
+|---|---|
+| une clé nouvelle, absente des lignes retirées | `APPLIES`, avec le fichier et la clé |
+| un nombre plus grand (de 3 à 4) | `APPLIES`, avec la clé et les deux nombres |
+| une clé retirée, ou une baisse du nombre | rien : la PR passe |
+| une ligne `<clé>` seule ajoutée | `APPLIES` : elle compte 1, donc c'est une clé nouvelle |
+
+Un renommage de clé est une clé nouvelle : l'humain tranche. Une entrée `<chemin> | raised-entry | <paramètre>`
+est `INVALID` : le type ne prend pas de paramètre, et le script ne la complète pas. Une PR qui retire ou modifie
+l'entrée dans `usine.md` s'applique elle-même, comme pour les autres types.
+
 ## Ce qui est éprouvé
 
 Éprouvé par les tests de `tests/test_stack_check.py` seulement, sur un dépôt jetable avec un `uv.lock` produit
 par `uv lock` et un `package-lock.json` produit par `npm install --package-lock-only` (le cas npm est sauté
-quand `npm` manque), sous Linux. Pas encore dans une vraie passe de `forge:qc-gate`, ni sur un projet
+quand `npm` manque), sous Linux. `raised-entry` l'est par `tests/test_never_weaken.py`, sur des diffs écrits
+à la main, sous Linux. Pas encore dans une vraie passe de `forge:qc-gate`, ni sur un projet
 consommateur. Le détail des autres clés de la feature, et la lecture finale de cette page, viennent avec leurs
 tickets.

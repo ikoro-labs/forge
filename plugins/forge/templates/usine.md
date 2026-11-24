@@ -742,6 +742,12 @@ ou un dossier quand il finit par `/`. Les types sont fermés, et se décident su
   l'ordre. Une valeur qui n'est pas un nombre et qui change s'applique aussi.
 - `lowered-rank` : un rang baisse. Le paramètre est `<champ> | <rang> > <rang> [> ...]`, le meilleur
   rang d'abord ; une valeur hors de l'échelle qui change s'applique aussi.
+- `raised-entry` : un fichier de référence gagne une clé ou en relève le nombre. Sans paramètre : une
+  entrée qui en porte un est `INVALID`. Le fichier est de lignes `<nombre> <clé>`, ou `<clé>` seule, qui
+  compte 1. Pour chaque fichier du diff sous le chemin, chaque clé des lignes ajoutées se compare à la même
+  clé des lignes retirées du même fichier : une clé sans ligne retirée, ou un nombre plus grand, s'applique
+  et nomme le fichier et la clé (avec les deux nombres pour un relèvement) ; une clé retirée ou un nombre
+  plus bas passe.
 
 `forge:qc-gate` lance `scripts/never_weaken.py` sur le diff de la PR, avec les entrées lues sur la
 base : une PR ne peut pas lever la règle qui la juge, et retirer ou modifier une entrée dans
@@ -752,6 +758,7 @@ complétée. Sans la clé, la règle est sans objet.
 - `never-weaken` : `<.github/workflows/ | removed-line>`
 - `never-weaken` : `<config/tolerances.toml | raised-number | ^rel_tol = (\S+)>`
 - `never-weaken` : `<docs/fonctions/ | lowered-rank | statut | certifie > valide > brouillon>`
+- `never-weaken` : `<scripts/baselines/types.txt | raised-entry>`
 
 ## Rapport
 

@@ -9,11 +9,15 @@ script launches no command the project declares. Each `never-weaken` entry is
     .github/workflows/ | removed-line
     config/tolerances.toml | raised-number | ^rel_tol = (\\S+)
     docs/fonctions/ | lowered-rank | statut | certifie > valide > brouillon
+    scripts/baselines/types.txt | raised-entry
+
+`raised-entry` takes no parameter: the reference file has lines `<count> <key>`, or `<key>` alone
+for 1, and a key added or a count raised, against the removed lines of the same file, applies.
 
 `<path>` is a file, or a directory when it ends with `/`. One line per entry is printed, `<status>`,
 `<entry>` and `<detail>` separated by tabs, the status being APPLIES (the diff weakens what the
 entry guards), NONE, or INVALID (the entry is malformed). A diff that cannot be read (a binary
-patch) is read as a change for `raised-number` and `lowered-rank`; `removed-line` sees a binary
+patch) is read as a change for `raised-number`, `lowered-rank` and `raised-entry`; `removed-line` sees a binary
 file only when it is deleted or modified, not when it is created under the path. A last line,
 `docs/agents/usine.md : never-weaken`, says whether the diff removes or edits an entry (APPLIES) :
 a PR cannot lift the guard it is judged by. Exit code 0 when no entry applies, 1 when one does
@@ -193,6 +197,42 @@ def _raised_number(changes: list[FileChange], scope: str, parameter: str) -> tup
     return NONE, "aucune valeur relevée sous le chemin"
 
 
+_COUNTED = re.compile(r"^(\d+)\s+(\S.*)$")
+
+
+def _counts(lines: list[str]) -> dict[str, int]:
+    """The keys of a reference file's lines and their counts: `<count> <key>`, or `<key>` alone for 1."""
+    counts: dict[str, int] = {}
+    for line in lines:
+        text = line.strip()
+        if not text:
+            continue
+        counted = _COUNTED.match(text)
+        key, number = (counted.group(2).strip(), int(counted.group(1))) if counted else (text, 1)
+        counts[key] = counts.get(key, 0) + number
+    return counts
+
+
+def _raised_entry(changes: list[FileChange], scope: str) -> tuple[str, str]:
+    hits: list[str] = []
+    for change in changes:
+        if unreadable := _unreadable(change, scope):
+            hits.append(unreadable)
+            continue
+        path = _scoped(change, scope)
+        if path is None:
+            continue
+        before, after = _counts(change.removed), _counts(change.added)
+        for key, count in after.items():
+            if key not in before:
+                hits.append(f"{path}: clé ajoutée `{key}` ({count})")
+            elif count > before[key]:
+                hits.append(f"{path}: `{key}` relevé de {before[key]} à {count}")
+    if hits:
+        return APPLIES, "; ".join(hits)
+    return NONE, "aucune clé ajoutée ni nombre relevé sous le chemin"
+
+
 def _pattern(parameter: str) -> str | None:
     """Why `parameter` is not a regular expression with exactly one group, or None."""
     try:
@@ -256,12 +296,16 @@ def check_entry(entry: str, changes: list[FileChange]) -> Result:
         if problem := _pattern(parameter):
             return Result(entry, INVALID, problem)
         return Result(entry, *_raised_number(changes, scope, parameter))
+    if kind == "raised-entry":
+        if parameter is not None:
+            return Result(entry, INVALID, "le type `raised-entry` ne prend pas de paramètre")
+        return Result(entry, *_raised_entry(changes, scope))
     if kind == "lowered-rank":
         scale = _scale(parameter) if parameter else "le type `lowered-rank` demande `<champ> | <échelle>`"
         if isinstance(scale, str):
             return Result(entry, INVALID, scale)
         return Result(entry, *_lowered_rank(changes, scope, scale))
-    return Result(entry, INVALID, f"type inconnu `{kind}` (removed-line, raised-number, lowered-rank)")
+    return Result(entry, INVALID, f"type inconnu `{kind}` (removed-line, raised-number, lowered-rank, raised-entry)")
 
 
 def check(entries: list[str], diff_text: str) -> list[Result]:
