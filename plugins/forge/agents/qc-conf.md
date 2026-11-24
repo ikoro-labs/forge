@@ -109,6 +109,29 @@ Nomme le résultat dans la ligne `GATES`, sous la forme `dependency-age : <paque
 `dependency-age : sans objet`, jamais lue comme « aucune ». En une passe, il n'y a pas de tableau : dis dans
 `GATES` que la sonde n'a pas eu lieu.
 
+## Dépendances permises
+
+Le tableau de `forge:qc-gate` porte une sonde **Dépendances permises** (`scripts/stack_check.py`, clés `stack`
+et `lockfile`) : une ligne par paquet direct que la PR ajoute au lockfile d'un membre local, comparé à la liste
+que désigne la clé `stack`. Tu ne refais pas sa mesure, tu en dis le sens.
+
+- Une ligne `UNLISTED` (le paquet n'est pas dans la liste) ou `NO SOURCE` (il y est, sans source) est un
+  `BLOCKER`, règle `F-8` : une dépendance sans décision acceptée n'entre pas. Le scénario d'échec recopie la
+  ligne du script avec le paquet, et cite la ligne à écrire (`<écosystème> | <paquet> | <ADR ou séance>`) et le
+  chemin du fichier de la liste, que la ligne donne : le coder sait quoi écrire, le refus n'est jamais muet.
+  Il n'a pas de `probe:` : il repose sur la mesure de la sonde, et le rapport le marque « déduit ».
+- Une ligne `ADDED` est une ligne que la PR ajoute à la liste, avec sa source. Elle n'est pas un constat par
+  elle-même : lis la source au titre de `F-8` (la décision citée existe-t-elle, et autorise-t-elle ce paquet ?),
+  parce qu'une PR qui s'ajoute elle-même la ligne du paquet qu'elle ajoute se juge là.
+- Une ligne `NOT RUN` (un écosystème de la liste qu'aucune entrée de `lockfile` ne lit) ou `INVALID` (une ligne
+  de la liste ou une entrée de clé mal formée, un lockfile illisible) n'est pas un constat sur un paquet : rends-la
+  telle quelle dans `GATES`, jamais `OK` ni « aucune dépendance ajoutée ».
+
+Nomme le résultat dans la ligne `GATES`, sous la forme `stack : <paquet>, <paquet>` pour les `BLOCKER`,
+`stack : aucun` quand toutes les lignes sont `OK`, `ADDED` ou `NONE`, ou `stack : NOT RUN` ou `stack : INVALID`.
+Un tableau sans cette sonde (clé absente) se dit `stack : sans objet`, jamais lue comme « aucune ». En une passe,
+il n'y a pas de tableau : dis dans `GATES` que la sonde n'a pas eu lieu.
+
 ## Porte one-way
 
 La description de la PR dit sa porte : `two-way` ou `one-way` (un geste destructif, une

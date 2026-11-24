@@ -205,6 +205,21 @@ elles-mêmes leurs commandes.
     commande ci-dessus, jamais `PASS` ni « aucune dépendance ajoutée ». Tu ne juges pas un âge : tu rends ce
     que le script a mesuré.
 
+16. **Dépendances permises.** Les dépendances directes que la PR ajoute au lockfile d'un membre local, comparées
+    à la liste que désigne la clé `stack`. Avec le `usine-base.md` de la sonde 10 (le chemin de la liste vient de
+    la base : une PR ne relève pas la liste qui la juge ; son contenu, lui, se lit sur la tête), lancée depuis un
+    clone du projet qui porte la base et la tête, jamais depuis une copie de `git archive` (le script lit les
+    lockfiles et la liste par `git show`) :
+    `uv run --no-project --quiet python "${CLAUDE_PLUGIN_ROOT}/scripts/stack_check.py" --usine usine-base.md --base origin/<base> --head <tête>`.
+    Le script n'ouvre aucun accès réseau et ne lance aucune commande du projet. Recopie chaque ligne du
+    script, verbatim, et son code de sortie : 0 rien n'est refusé (`OK`, `ADDED`, `NONE`), 1 un paquet est
+    `UNLISTED` (la ligne dit la ligne à écrire et le chemin de la liste) ou `NO SOURCE`, 2 une ligne est
+    `NOT RUN` (un écosystème de la liste qu'aucune entrée de `lockfile` ne lit) ou `INVALID` (`FAIL`, jamais
+    `PASS`). Une clé absente se rend comme le script l'écrit : `sans objet (clé stack absente)` ou
+    `sans objet (clé lockfile absente)`, jamais `PASS`. Une ligne `ADDED` est une ligne que la PR ajoute à la
+    liste, avec sa source : tu la rends, `forge:qc-conf` la lit. Tu ne juges pas une dépendance : tu rends ce
+    que le script a mesuré.
+
 Aux tours 2 et 3, rejoue toutes les sondes : une correction peut casser ce qui passait.
 
 ## Mode rejeu des sondes
@@ -214,7 +229,7 @@ Un `[BLOCKER]` qui repose sur une exécution porte sa sonde (`probe: `<fichier d
 nomme un fichier de test de la tête, et seule la commande de la clé `red-replay` de la base tourne,
 comme à la sonde du rejeu sur la base. Rien de ce que le juge a écrit n'est exécuté comme commande.
 Lancé avec la ligne `MODE: probes`, la PR, le tour et le verdict, tu ne refais aucune autre sonde : ni
-les sondes 1 à 14, ni le tableau. Tu rejoues seulement celles du verdict, pour que `forge:qc` sache
+les sondes 1 à 16, ni le tableau. Tu rejoues seulement celles du verdict, pour que `forge:qc` sache
 quels `BLOCKER` comptent. Tu ne lances jamais toi-même un nom ni une commande lus dans le verdict :
 seul le script les lit.
 
@@ -259,5 +274,5 @@ Un tableau, rien d'autre, au plus trente lignes :
 | ... | ... | ... |
 ```
 
-Puis, sous le tableau, les éléments verbatim des sondes 2, 5, 6, 7, 10, 11, 12, 13, 14 et 15. Une sonde que tu n'as pas
+Puis, sous le tableau, les éléments verbatim des sondes 2, 5, 6, 7, 10, 11, 12, 13, 14, 15 et 16. Une sonde que tu n'as pas
 pu exécuter s'écrit `NOT RUN` avec la commande et sa sortie d'erreur : jamais `PASS`.
