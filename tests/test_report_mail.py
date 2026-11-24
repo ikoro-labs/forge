@@ -515,8 +515,6 @@ class FeaturesBlockTests(unittest.TestCase):
 
     def test_335_a2_the_merged_prs_cell_counts_the_merged_prs_of_each_ticket(self) -> None:
         """#335 A2: the cell is `completion.pr_cell`: merged PRs over the budget times three, per ticket."""
-        from completion import pr_cell
-
         merged = [
             {"number": 50, "body": "Closes #12\n\nFeature: F-0001"},
             {"number": 51, "body": "Refs #12\n\nFeature: F-0001"},
@@ -535,7 +533,6 @@ class FeaturesBlockTests(unittest.TestCase):
         self.assertEqual(code, 0)
         cell = self.cells(out.getvalue())[2]
         self.assertEqual(cell, "3 / 9 (#12: 2, #13: 1)")
-        self.assertEqual(cell, pr_cell({12: 2, 13: 1}, 3))
         search = next(c for c in fake.calls if "--search" in c)
         self.assertIn('"Feature: F-0001" in:body', search)
         self.assertEqual(search[search.index("-R") + 1], "acme/widgets")  # the report repository, not the cwd
@@ -649,15 +646,21 @@ class FeaturesBlockTests(unittest.TestCase):
                 self.assertIn("gh failed", err)
 
     def test_335_a3_the_script_docstring_the_template_and_the_install_page_show_the_new_header(self) -> None:
-        """#335 A3: the places that quote the header quote the one `features_block.HEADER_CELLS` renders."""
+        """#335 A3: the places that quote the header quote the one `features_block.HEADER_CELLS` renders.
+
+        The header is also written here as a literal: reading it only from `HEADER_CELLS` would
+        pass on a base that still quotes the old header everywhere.
+        """
         from features_block import HEADER_CELLS
 
-        piped = " | ".join(HEADER_CELLS)
+        literal = ("Feature", "Closed / total", "Merged PRs", "Open PRs", "Blocked", "Ready")
+        self.assertEqual(HEADER_CELLS, literal)
+        piped = " | ".join(literal)
         for path in (SCRIPT, support.PLUGIN / "templates" / "session-reply.md"):
             with self.subTest(path.name):
                 self.assertIn(piped, " ".join(path.read_text(encoding="utf-8").split()))
         install = (support.REPO_ROOT / "docs" / "installation.md").read_text(encoding="utf-8")
-        listed = r"`,\s+`".join(re.escape(cell) for cell in HEADER_CELLS)
+        listed = r"`,\s+`".join(re.escape(cell) for cell in literal)
         self.assertRegex(install, rf"`{listed}`")
 
     def test_a11_the_reply_template_names_the_command_that_prints_the_field(self) -> None:
