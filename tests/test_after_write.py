@@ -462,6 +462,33 @@ class OutputTail(_KeyedHook):
         )
         self.assertEqual(self.target.read_text(encoding="utf-8"), "x")
 
+    def relayed(self, body: str) -> list[str]:
+        """The lines that follow the failure line of a formatter running `body`."""
+        self.configure(("format-on-write", f"**/*.txt | {self.failing(body)}"))
+        code, err = run_hook(self.root, self.target)
+        self.assertEqual(code, 2)
+        return err.splitlines()[1:]
+
+    def test_at_most_the_last_20_lines_are_relayed(self) -> None:
+        """F-0002 A18: 100 lines of output, the agent gets the last 20."""
+        lines = self.relayed("for n in range(1, 101): print(f'line {n}')")
+        self.assertEqual(lines, [f"line {n}" for n in range(81, 101)])
+
+    def test_at_most_2000_bytes_are_relayed_the_end_kept(self) -> None:
+        """F-0002 A18: 5 lines of 900 bytes, the agent gets the last 2000 bytes, not the first."""
+        lines = self.relayed("for n in range(5): print(str(n) * 900)")
+        relayed = "\n".join(lines)
+        self.assertEqual(len(relayed.encode("utf-8")), 2000)
+        self.assertTrue(relayed.endswith("4" * 900))
+        self.assertNotIn("0", relayed)
+
+    def test_the_byte_cap_never_cuts_a_character_in_two(self) -> None:
+        """F-0002 A18: 1500 two-byte characters, the cut lands on a whole character."""
+        lines = self.relayed("print('\\u00e9' * 1500)")
+        relayed = "\n".join(lines)
+        self.assertLessEqual(len(relayed.encode("utf-8")), 2000)
+        self.assertEqual(set(relayed), {"\u00e9"})
+
 
 if __name__ == "__main__":
     unittest.main()
