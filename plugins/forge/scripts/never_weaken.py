@@ -9,11 +9,15 @@ script launches no command the project declares. Each `never-weaken` entry is
     .github/workflows/ | removed-line
     config/tolerances.toml | raised-number | ^rel_tol = (\\S+)
     docs/fonctions/ | lowered-rank | statut | certifie > valide > brouillon
+    scripts/baselines/types.txt | raised-entry
+
+`raised-entry` takes no parameter: the reference file has lines `<count> <key>`, or `<key>` alone
+for 1, and a key added or a count raised, against the removed lines of the same file, applies.
 
 `<path>` is a file, or a directory when it ends with `/`. One line per entry is printed, `<status>`,
 `<entry>` and `<detail>` separated by tabs, the status being APPLIES (the diff weakens what the
 entry guards), NONE, or INVALID (the entry is malformed). A diff that cannot be read (a binary
-patch) is read as a change for `raised-number` and `lowered-rank`; `removed-line` sees a binary
+patch) is read as a change for `raised-number`, `lowered-rank` and `raised-entry`; `removed-line` sees a binary
 file only when it is deleted or modified, not when it is created under the path. A last line,
 `docs/agents/usine.md : never-weaken`, says whether the diff removes or edits an entry (APPLIES) :
 a PR cannot lift the guard it is judged by. Exit code 0 when no entry applies, 1 when one does
