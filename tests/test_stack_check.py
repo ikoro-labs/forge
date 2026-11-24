@@ -158,5 +158,19 @@ class StackFile(StackCase):
         self.assertFalse([line for line in lines if "left-pad" in line and not line.startswith("INVALID")])
 
 
+class Comparison(StackCase):
+    def test_a5_a_direct_dependency_missing_from_the_list_is_unlisted_with_the_line_to_write(self) -> None:
+        """F-0002 A5: an added direct dependency absent from the list is `UNLISTED`, the line to write and the file named."""
+        base = self.commit({"uv.lock": uv_lock(), "stack.txt": ""})
+        head = self.commit({"uv.lock": uv_lock("idna"), "stack.txt": ""})
+        code, lines, _ = self.run_check(self.usine(*STACK_AND_LOCK), base, head)
+        self.assertEqual(code, 1)
+        self.assertEqual(len(lines), 1)
+        status, lockfile, package, detail = lines[0].split("\t")
+        self.assertEqual((status, lockfile, package), ("UNLISTED", "uv.lock", "pypi idna"))
+        self.assertIn("pypi | idna | <ADR ou séance>", detail)
+        self.assertIn("stack.txt", detail)
+
+
 if __name__ == "__main__":
     unittest.main()

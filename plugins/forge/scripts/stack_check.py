@@ -73,7 +73,16 @@ def added_dependencies(root: Path, path: str, ecosystem: str, base: str, head: s
     return [name for name in (direct_dependencies(after, ecosystem) if after else []) if name not in known]
 
 
-def evaluate(root: Path, lock_entry: str, base: str, head: str) -> list[str]:
+def judge(ecosystem: str, name: str, lock_path: str, stack_path: str, entries: list[Entry]) -> str:
+    """The line for one added direct dependency, against the entries of the head's list."""
+    listed = [entry for entry in entries if entry.ecosystem == ecosystem and entry.package == name]
+    if not listed:
+        wanted = f"{ecosystem} | {name} | <ADR ou séance>"
+        return f"UNLISTED\t{lock_path}\t{ecosystem} {name}\tligne à écrire : `{wanted}` dans {stack_path}"
+    return ""
+
+
+def evaluate(root: Path, lock_entry: str, base: str, head: str, stack_path: str, entries: list[Entry]) -> list[str]:
     parts = usine.split_value(lock_entry, 2)
     if parts is None:
         return [invalid(lock_entry, f"il manque une partie à l'entrée de la clé {LOCKFILE_KEY} : `<chemin> | <écosystème>`")]
@@ -84,7 +93,9 @@ def evaluate(root: Path, lock_entry: str, base: str, head: str) -> list[str]:
         added = added_dependencies(root, path, ecosystem, base, head)
     except (ValueError, KeyError, TypeError, AttributeError) as error:
         return [invalid(path, f"illisible comme un lockfile `{ecosystem}` ({type(error).__name__} : {error})")]
-    return [] if added else [f"NONE\t{path}\t-\taucun paquet direct ajouté"]
+    if not added:
+        return [f"NONE\t{path}\t-\taucun paquet direct ajouté"]
+    return [line for name in added if (line := judge(ecosystem, name, path, stack_path, entries))]
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -126,14 +137,16 @@ def main(argv: list[str] | None = None) -> int:
     except UnicodeDecodeError as error:
         print(invalid(stack_path, f"fichier illisible en UTF-8 : {error}"))
         return 2
-    _, problems = parse_stack(text, stack_path)
+    entries, problems = parse_stack(text, stack_path)
     lines = list(problems)
     for lock_entry in config[LOCKFILE_KEY]:
-        lines += evaluate(Path(args.root), lock_entry, args.base, args.head)
+        lines += evaluate(Path(args.root), lock_entry, args.base, args.head, stack_path, entries)
     for line in lines:
         print(line)
     statuses = {line.split("\t", 1)[0] for line in lines}
-    return 2 if statuses & {"INVALID"} else 0
+    if statuses & {"NOT RUN", "INVALID"}:
+        return 2
+    return 1 if statuses & {"UNLISTED", "NO SOURCE"} else 0
 
 
 if __name__ == "__main__":
