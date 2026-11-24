@@ -27,7 +27,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "hooks"))
 
 import usine  # noqa: E402  hooks/ is not importable until the path insertion above
-from lockfiles import read_at  # noqa: E402  shared with `lockfile_age.py`
+from lockfiles import direct_dependencies, read_at  # noqa: E402  shared with `lockfile_age.py`
 
 STACK_KEY = "stack"
 LOCKFILE_KEY = "lockfile"
@@ -64,6 +64,27 @@ def parse_stack(text: str, path: str) -> tuple[list[Entry], list[str]]:
         else:
             entries.append(Entry(number, fields[0], fields[1], fields[2]))
     return entries, problems
+
+
+def added_dependencies(root: Path, path: str, ecosystem: str, base: str, head: str) -> list[str]:
+    """The direct dependencies the lock at `head` declares and the one at `base` did not."""
+    before, after = read_at(root, base, path), read_at(root, head, path)
+    known = set(direct_dependencies(before, ecosystem)) if before else set()
+    return [name for name in (direct_dependencies(after, ecosystem) if after else []) if name not in known]
+
+
+def evaluate(root: Path, lock_entry: str, base: str, head: str) -> list[str]:
+    parts = usine.split_value(lock_entry, 2)
+    if parts is None:
+        return [invalid(lock_entry, f"il manque une partie à l'entrée de la clé {LOCKFILE_KEY} : `<chemin> | <écosystème>`")]
+    path, ecosystem = parts
+    if ecosystem not in ECOSYSTEMS:
+        return [invalid(path, f"écosystème inconnu `{ecosystem}` ({', '.join(ECOSYSTEMS)})")]
+    try:
+        added = added_dependencies(root, path, ecosystem, base, head)
+    except (ValueError, KeyError, TypeError, AttributeError) as error:
+        return [invalid(path, f"illisible comme un lockfile `{ecosystem}` ({type(error).__name__} : {error})")]
+    return [] if added else [f"NONE\t{path}\t-\taucun paquet direct ajouté"]
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -106,9 +127,13 @@ def main(argv: list[str] | None = None) -> int:
         print(invalid(stack_path, f"fichier illisible en UTF-8 : {error}"))
         return 2
     _, problems = parse_stack(text, stack_path)
-    for line in problems:
+    lines = list(problems)
+    for lock_entry in config[LOCKFILE_KEY]:
+        lines += evaluate(Path(args.root), lock_entry, args.base, args.head)
+    for line in lines:
         print(line)
-    return 2 if problems else 0
+    statuses = {line.split("\t", 1)[0] for line in lines}
+    return 2 if statuses & {"INVALID"} else 0
 
 
 if __name__ == "__main__":

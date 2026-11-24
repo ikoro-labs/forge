@@ -134,6 +134,15 @@ STACK_AND_LOCK = ("`stack` : `stack.txt`", "`lockfile` : `uv.lock | pypi`")
 
 
 class StackFile(StackCase):
+    def test_a1_well_formed_lines_give_no_invalid_and_a_lock_without_additions_says_none(self) -> None:
+        """F-0002 A1: lines `<ecosystem> | <package> | <source>` of `pypi` and `npm` are not INVALID; nothing added is NONE."""
+        stack = "pypi | requests | ADR-0001\nnpm | left-pad | session 2026-11-23 | with a bar\n"
+        base = self.commit({"uv.lock": uv_lock(), "stack.txt": ""})
+        head = self.commit({"uv.lock": uv_lock(), "stack.txt": stack})
+        code, lines, _ = self.run_check(self.usine(*STACK_AND_LOCK), base, head)
+        self.assertEqual(code, 0)
+        self.assertEqual([line.split("\t")[:2] for line in lines], [["NONE", "uv.lock"]])
+
     def test_a2_a_malformed_line_is_invalid_with_its_number_and_never_completed(self) -> None:
         """F-0002 A2: an unknown ecosystem, a missing field or an empty name is `INVALID` at its line number."""
         stack = "pypi | requests | ADR-0001\nnpm | left-pad\ncargo | serde | ADR-0002\n\npypi |  | ADR-0003\n"

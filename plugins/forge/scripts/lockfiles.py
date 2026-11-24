@@ -1,9 +1,10 @@
 """Read the packages a lockfile lists, at a git ref, without judging them.
 
 The reading `lockfile_age.py` and `stack_check.py` share: `parse_uv_lock` (a `uv.lock`),
-`parse_package_lock` (a `package-lock.json`, lockfileVersion 2 or 3) and `read_at` (a file at a
-ref, by `git show`). A package that does not come from the public registry keeps its `origin`.
-The standard library only.
+`parse_package_lock` (a `package-lock.json`, lockfileVersion 2 or 3), `read_at` (a file at a
+ref, by `git show`) and `direct_dependencies` (the packages the project's own members declare,
+the others being indirect). A package that does not come from the public registry keeps its
+`origin`. The standard library only.
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ import re
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -30,6 +32,12 @@ def _quoted(value: str) -> str | None:
 PUBLIC_INDEX = "https://pypi.org/simple"
 PUBLIC_TARBALLS = "https://registry.npmjs.org/"
 LOCAL_SOURCES = ("virtual", "editable", "directory", "path")  # the project's own code, not a download
+GROUP_SECTIONS = ("[package.optional-dependencies]", "[package.dev-dependencies]")  # a member's extras and groups
+
+
+def normalize_pypi(name: str) -> str:
+    """The name PyPI treats as one: lower case, each run of `-`, `_` and `.` made one `-`."""
+    return re.sub(r"[-_.]+", "-", name).lower()
 
 
 def parse_uv_lock(text: str) -> list[Package]:
@@ -54,7 +62,7 @@ def parse_uv_lock(text: str) -> list[Package]:
             continue
         registry = re.match(r'^\{\s*registry\s*=\s*"([^"]*)"\s*\}', source)
         public = registry is not None and registry.group(1).rstrip("/") == PUBLIC_INDEX
-        packages.append(Package(re.sub(r"[-_.]+", "-", name).lower(), version, None if public else source.strip()))
+        packages.append(Package(normalize_pypi(name), version, None if public else source.strip()))
     return packages
 
 
@@ -79,3 +87,50 @@ def read_at(root: Path, ref: str, path: str) -> str | None:
         return None
     done = subprocess.run(["git", "-C", str(root), "show", f"{ref}:{path}"], capture_output=True, check=True)
     return done.stdout.decode("utf-8")
+
+
+def _uv_direct(text: str) -> list[str]:
+    """The packages the local members of a `uv.lock` declare, in the file's order, members left out."""
+    parse_uv_lock(text)  # a ValueError when this is not a uv.lock
+    blocks: list[dict[str, Any]] = []
+    section = ""
+    collecting = False
+    for line in text.splitlines():
+        if line.startswith("["):
+            section, collecting = line.strip(), False
+            if section == "[[package]]":
+                blocks.append({"name": "", "source": "", "deps": []})
+            continue
+        if not blocks:
+            continue
+        block = blocks[-1]
+        if section == "[[package]]" and (field := re.match(r"^(name|source)\s*=\s*(.*)$", line)):
+            block[field.group(1)] = field.group(2)
+        starts = (
+            re.match(r"^dependencies\s*=\s*\[", line)
+            if section == "[[package]]"
+            else re.match(r"^[A-Za-z0-9_.-]+\s*=\s*\[", line) if section in GROUP_SECTIONS else None
+        )
+        if starts or collecting:
+            block["deps"] += re.findall(r'\{\s*name\s*=\s*"([^"]*)"', line)
+            collecting = not line.rstrip().endswith("]") if starts else line.strip() != "]"
+    local = [block for block in blocks if re.match(rf"^\{{\s*({'|'.join(LOCAL_SOURCES)})\s*=", block["source"])]
+    members = {normalize_pypi(_quoted(block["name"]) or "") for block in local}
+    found: list[str] = []
+    for block in local:
+        for dependency in block["deps"]:
+            name = normalize_pypi(dependency)
+            if name not in members and name not in found:
+                found.append(name)
+    return found
+
+
+def direct_dependencies(text: str, ecosystem: str) -> list[str]:
+    """The packages the project's own members declare, in the lockfile's order; ValueError when unreadable.
+
+    `ecosystem` is `pypi` (a `uv.lock`: the `dependencies` of each local member) or `npm`. A package
+    only another package needs is indirect and is not listed.
+    """
+    if ecosystem == "pypi":
+        return _uv_direct(text)
+    raise ValueError(f"écosystème inconnu `{ecosystem}`")
