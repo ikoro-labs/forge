@@ -27,7 +27,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "hooks"))
 
 import usine  # noqa: E402  hooks/ is not importable until the path insertion above
-from lockfiles import direct_dependencies, read_at  # noqa: E402  shared with `lockfile_age.py`
+from lockfiles import direct_dependencies, normalize_pypi, read_at  # noqa: E402  shared with `lockfile_age.py`
 
 STACK_KEY = "stack"
 LOCKFILE_KEY = "lockfile"
@@ -73,9 +73,15 @@ def added_dependencies(root: Path, path: str, ecosystem: str, base: str, head: s
     return [name for name in (direct_dependencies(after, ecosystem) if after else []) if name not in known]
 
 
+def canonical(ecosystem: str, name: str) -> str:
+    """The name that makes two spellings one package: normalized for pypi, left as written for npm."""
+    return normalize_pypi(name) if ecosystem == "pypi" else name
+
+
 def judge(ecosystem: str, name: str, lock_path: str, stack_path: str, entries: list[Entry]) -> str:
     """The line for one added direct dependency, against the entries of the head's list."""
-    listed = [entry for entry in entries if entry.ecosystem == ecosystem and entry.package == name]
+    wanted_name = canonical(ecosystem, name)
+    listed = [entry for entry in entries if entry.ecosystem == ecosystem and canonical(ecosystem, entry.package) == wanted_name]
     if not listed:
         wanted = f"{ecosystem} | {name} | <ADR ou séance>"
         return f"UNLISTED\t{lock_path}\t{ecosystem} {name}\tligne à écrire : `{wanted}` dans {stack_path}"

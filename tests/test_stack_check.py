@@ -202,6 +202,14 @@ class Comparison(StackCase):
         self.assertEqual(code, 0)
         self.assertEqual([line.split("\t")[:3] for line in lines if not line.startswith("ADDED")], [["OK", "uv.lock", "pypi requests"]])
 
+    def test_a4_pypi_names_are_the_same_whatever_the_case_dash_underscore_or_dot(self) -> None:
+        """F-0002 A4: `Foo_Bar` of a lock and `foo-bar` of the list are one pypi package."""
+        base = self.commit({"uv.lock": uv_lock(), "stack.txt": ""})
+        head = self.commit({"uv.lock": uv_lock("typing_extensions"), "stack.txt": "pypi | Typing.Extensions | ADR-0001\n"})
+        code, lines, _ = self.run_check(self.usine(*STACK_AND_LOCK), base, head)
+        self.assertEqual(code, 0)
+        self.assertEqual([line.split("\t")[:3] for line in lines if not line.startswith("ADDED")], [["OK", "uv.lock", "pypi typing-extensions"]])
+
 
 if __name__ == "__main__":
     unittest.main()
