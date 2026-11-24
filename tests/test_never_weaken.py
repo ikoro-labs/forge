@@ -292,6 +292,19 @@ class RaisedEntry(unittest.TestCase):
         self.assertEqual(statuses([ENTRY], lowered), [NONE])
 
 
+    def test_f0002_a16_a_parameter_makes_the_entry_invalid_whatever_the_diff(self) -> None:
+        text = diff(BASELINE, "+src/new.py")
+        results = check([f"{ENTRY} | ^(\\S+)$"], text)
+        self.assertEqual([result.status for result in results], [INVALID])
+        self.assertIn("raised-entry", results[0].detail)
+        self.assertIn("paramètre", results[0].detail)
+
+    def test_f0002_a16_an_unknown_type_names_raised_entry_among_the_types(self) -> None:
+        results = check([f"{BASELINE} | raised-entries"], "")
+        self.assertEqual([result.status for result in results], [INVALID])
+        self.assertIn("raised-entry", results[0].detail)
+
+
 class Command(unittest.TestCase):
     def run_main(self, usine_text: str | None, diff_text: str) -> tuple[int, str, str]:
         with tempfile.TemporaryDirectory() as folder:

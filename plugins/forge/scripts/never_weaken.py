@@ -293,6 +293,8 @@ def check_entry(entry: str, changes: list[FileChange]) -> Result:
             return Result(entry, INVALID, problem)
         return Result(entry, *_raised_number(changes, scope, parameter))
     if kind == "raised-entry":
+        if parameter is not None:
+            return Result(entry, INVALID, "le type `raised-entry` ne prend pas de paramètre")
         return Result(entry, *_raised_entry(changes, scope))
     if kind == "lowered-rank":
         scale = _scale(parameter) if parameter else "le type `lowered-rank` demande `<champ> | <échelle>`"
