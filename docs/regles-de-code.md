@@ -209,8 +209,8 @@ liste de référence (`raised-entry`).
 produit par `uv lock` et un `package-lock.json` produit par `npm install --package-lock-only` (le cas npm est sauté
 quand `npm` manque) ; `raised-entry` par `tests/test_never_weaken.py`, sur des diffs écrits à la main ;
 `lint-on-write` et la fin de sortie relayée par `tests/test_after_write.py` et `tests/test_after_write_journal.py` ;
-`recurring-finding` par `tests/test_recurring_findings.py`, où `gh` est simulé ; le contenu du gabarit et de cette
-page par `tests/test_rule_base_content.py`. La commande de ruff a été lancée sur ce dépôt, pas
+`recurring-finding` par `tests/test_recurring_findings.py`, où `gh` est simulé ; le contenu du gabarit, de cette
+page et du `README.md` par `tests/test_rule_base_content.py`. La commande de ruff a été lancée sur ce dépôt, pas
 sur un projet consommateur.
 
 Pas encore éprouvé : une vraie passe de `forge:qc-gate` pour les sondes 16 et 17, la sonde 17 sur un projet réel,

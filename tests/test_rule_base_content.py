@@ -148,5 +148,28 @@ class CompletePage(unittest.TestCase):
         self.assertNotIn("viennent avec leurs tickets", section)
 
 
+class ReadmeSummary(unittest.TestCase):
+    def row(self) -> str:
+        readme = support.REPO_ROOT.joinpath("README.md").read_text(encoding="utf-8")
+        rows = [line for line in readme.splitlines() if line.startswith("| [`docs/regles-de-code.md`]")]
+        self.assertEqual(len(rows), 1, rows)
+        return rows[0]
+
+    def test_f0002_t2_the_readme_links_the_page_in_its_table_of_pages(self) -> None:
+        """F-0002 T2: one row of "Aller plus loin" links `docs/regles-de-code.md`, and the file exists."""
+        self.assertIn("](docs/regles-de-code.md)", self.row())
+        self.assertTrue(support.REPO_ROOT.joinpath("docs", "regles-de-code.md").is_file())
+
+    def test_f0002_t2_the_readme_summarises_the_keys_the_page_treats(self) -> None:
+        """F-0002 T2: the row names every key of the page and the human gesture, in one line."""
+        row = self.row()
+        for key in (
+            "stack", "lockfile", "never-weaken", "lint-on-write", "format-on-write", "architecture-check",
+            "recurring-finding", "slo-issue",
+        ):
+            self.assertIn(f"`{key}`", row)
+        self.assertIn("dépendance", row)
+
+
 if __name__ == "__main__":
     unittest.main()
