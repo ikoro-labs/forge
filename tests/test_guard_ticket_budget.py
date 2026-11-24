@@ -970,6 +970,19 @@ class Binding(unittest.TestCase):
         self.assertIn(f"`forge:product-owner` cuts the feature into at most {CEILING} tickets", skill)
         self.assertEqual(CEILING, 12)
 
+    def test_the_pages_that_state_the_ceiling_say_12(self) -> None:
+        """Ticket #329, A3: the page of the guard and the README give the ceiling of the guard, not 15."""
+        page = (support.REPO_ROOT / "docs" / "installation.md").read_text(encoding="utf-8")
+        section = page.split("## The ticket budget of a feature", 1)[1].split("\n## ", 1)[0]
+        self.assertIn(f"the ceiling is {CEILING},", section)
+        self.assertIn(f"above {CEILING}, below 1 once accepted", section)
+        self.assertIn(f"or one above {CEILING}, or when", section)
+        self.assertNotRegex(section, r"\b15\b")
+        readme = (support.REPO_ROOT / "README.md").read_text(encoding="utf-8")
+        row = next(line for line in readme.splitlines() if line.startswith("| `guard_ticket_budget`"))
+        self.assertIn(f"N at most {CEILING},", row)
+        self.assertNotRegex(row, r"\b15\b")
+
 
 if __name__ == "__main__":
     unittest.main()
