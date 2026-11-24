@@ -33,6 +33,7 @@ import tempfile
 import time
 from collections.abc import Mapping
 from pathlib import Path
+from typing import IO
 
 from doc_rules import doc_problems
 from handoff_header import ProcessGroup, group_options
@@ -86,18 +87,27 @@ def _split_command(command: str) -> list[str]:
         return []
 
 
-def _run_command(command: str, path: Path, root: Path, timeout: float) -> str | None:
-    """Why the command failed on the file (`exit 3`, `timed out after 30s`...), or None."""
+def _tail(sink: IO[bytes]) -> str:
+    """What the tool printed, to relay to the agent."""
+    sink.seek(0)
+    return sink.read().decode("utf-8", errors="replace").strip()
+
+
+def _run_command(
+    command: str, path: Path, root: Path, timeout: float
+) -> tuple[str | None, str]:
+    """Why the command failed on the file (`exit 3`, `timed out after 30s`...) or None, and the end
+    of its output."""
     argv = _split_command(command)
     executable = shutil.which(argv[0])
     if executable is None:
-        return "command not found"
+        return "command not found", ""
     if (
         WINDOWS
         and executable.lower().endswith(CMD_SCRIPTS)
         and CMD_METACHARACTERS & set(str(path))
     ):
-        return "not run: the path holds a cmd.exe metacharacter"
+        return "not run: the path holds a cmd.exe metacharacter", ""
     try:
         # The output goes to a file, not a pipe: a grandchild of `uv run` would hold a pipe open.
         with tempfile.TemporaryFile() as sink:
@@ -114,14 +124,16 @@ def _run_command(command: str, path: Path, root: Path, timeout: float) -> str | 
                 process.wait(timeout=timeout)
             except subprocess.TimeoutExpired:
                 group.kill()
-                return f"timed out after {max(1, math.ceil(timeout))}s"
+                return f"timed out after {max(1, math.ceil(timeout))}s", _tail(sink)
             finally:
                 group.close()
+            if process.returncode == 0:
+                return None, ""
+            return f"exit {process.returncode}", _tail(sink)
     except FileNotFoundError:
-        return "command not found"
+        return "command not found", ""
     except OSError as error:
-        return f"could not start: {error.strerror or type(error).__name__}"
-    return None if process.returncode == 0 else f"exit {process.returncode}"
+        return f"could not start: {error.strerror or type(error).__name__}", ""
 
 
 class _Deadline:
@@ -156,10 +168,12 @@ def _run_key(
         timeout = deadline.left_for_a_command()
         if timeout <= 0:
             reason: str | None = f"timed out after {TOTAL_TIMEOUT}s"
+            output = ""
         else:
-            reason = _run_command(command, path, root, timeout)
+            reason, output = _run_command(command, path, root, timeout)
         if reason:
-            problems.append(f"{key}: {command} failed on {relative} ({reason})")
+            problem = f"{key}: {command} failed on {relative} ({reason})"
+            problems.append(f"{problem}\n{output}" if output else problem)
     return problems
 
 

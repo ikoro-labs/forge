@@ -177,7 +177,7 @@ class FormatOnWrite(unittest.TestCase):
         target.write_text("x", encoding="utf-8")
         code, err = run_hook(self.root, target)
         self.assertEqual(code, 2)
-        self.assertEqual(err, f"format-on-write: {command} failed on a.txt (exit 3)\n")
+        self.assertEqual(err, f"format-on-write: {command} failed on a.txt (exit 3)\nboom\n")
         self.assertEqual(target.read_text(encoding="utf-8"), "x")
 
     def test_a_formatter_past_its_delay_is_reported(self) -> None:
@@ -420,6 +420,47 @@ class OneRunner(unittest.TestCase):
                 second, [f"lint-on-write: {quick_command} failed on a.txt (timed out after 1s)"]
             )
             self.assertEqual(target.read_text(encoding="utf-8"), "x")
+
+
+class _KeyedHook(unittest.TestCase):
+    """A throwaway project whose `usine.md` holds the given keys, and scripts that print known output."""
+
+    def setUp(self) -> None:
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.root = Path(folder.name).resolve()
+        (self.root / "docs" / "agents").mkdir(parents=True)
+        self.python = shlex.quote(Path(sys.executable).as_posix())
+        self.target = self.root / "a.txt"
+        self.target.write_text("x", encoding="utf-8")
+
+    def configure(self, *entries: tuple[str, str]) -> None:
+        text = "".join(f"- `{key}` : `{line}`\n" for key, line in entries)
+        (self.root / "docs" / "agents" / "usine.md").write_text(text, encoding="utf-8")
+
+    def script(self, name: str, body: str) -> str:
+        path = self.root / name
+        path.write_text(body, encoding="utf-8")
+        return f"{self.python} {shlex.quote(path.as_posix())}"
+
+    def failing(self, body: str) -> str:
+        """A command that runs `body`, then exits 1."""
+        return self.script("tool.py", f"import sys\n{body}\nsys.exit(1)\n")
+
+
+class OutputTail(_KeyedHook):
+    """F-0002 A18, A19: the end of a failing tool's output reaches the agent, bounded."""
+
+    def test_a_failing_formatter_relays_the_end_of_its_output(self) -> None:
+        """F-0002 A19: `format-on-write` no longer throws the tool output away."""
+        command = self.failing("print('E501 line too long')")
+        self.configure(("format-on-write", f"**/*.txt | {command}"))
+        code, err = run_hook(self.root, self.target)
+        self.assertEqual(code, 2)
+        self.assertEqual(
+            err, f"format-on-write: {command} failed on a.txt (exit 1)\nE501 line too long\n"
+        )
+        self.assertEqual(self.target.read_text(encoding="utf-8"), "x")
 
 
 if __name__ == "__main__":
