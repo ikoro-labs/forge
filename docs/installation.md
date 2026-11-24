@@ -498,8 +498,9 @@ seule ligne `agent-autonomy` : `on`, il refuse
   `upload` n'en créent pas, et passent.
 
 La clé est lue dans `origin/main`, jamais dans l'arbre de travail : le hook lit
-`docs/agents/usine.md` par `git show refs/remotes/origin/main:docs/agents/usine.md` depuis la racine du
-projet. L'agent peut modifier son arbre de travail, pas ce que l'humain a fusionné ; une ligne `on` posée
+`docs/agents/usine-gardes.md` sur `refs/remotes/origin/main` depuis la racine du projet (voir **Le fichier
+des clés protégées**), ou `docs/agents/usine.md` sur la même référence tant que le premier y est absent.
+L'agent peut modifier son arbre de travail, pas ce que l'humain a fusionné ; une ligne `on` posée
 seulement dans l'arbre n'ouvre rien, et une ligne retirée seulement dans l'arbre ne ferme rien. Absente,
 répétée, d'une valeur autre que `on`, ou illisible (pas de `origin/main`, pas de fichier, pas de git, délai
 dépassé), la clé refuse. Le refus dit que le garde refuse parce que la clé n'est pas `on`, et que le geste
@@ -533,6 +534,38 @@ comme un processus pour le tag, la fusion et l'outil MCP), sous Linux seulement.
 vraie session de Claude Code : le hook MCP n'a pas été joué sur un vrai serveur GitHub, et le nom exact
 des outils de fusion des serveurs MCP est supposé (`merge_pull_request`, `pull_request_write`). Sous
 Windows, le chemin du dépôt lu par `git show` n'a pas été essayé.
+
+## Le fichier des clés protégées : `docs/agents/usine-gardes.md`
+
+Vingt et une clés de `usine.md` bornent les pouvoirs de l'agent (ikoro-labs/forge#345) : `agent-autonomy`,
+`protected-path`, `gh-api-allow`, `owner-gesture`, `never-weaken`, `infra-hosts`, `infra-verify`,
+`pr-cap-raiser`, `ticket-pr-cap`, `ticket-pr-cap-since`, `ticket-budget`, `run-limits`, `run-budget`,
+`budget-action`, `slo`, `accepting-human`, `validation-owner`, `validation-reviewer`, `pin-bump`,
+`readonly-agent` et `readonly-command`. Les lire dans l'arbre de travail ne tenait que parce que `usine.md`
+était un `protected-path` : chaque réglage libre (`merge-method`, `release-trigger`, `output-words-*`...)
+attendait donc l'humain avec elles. Le plugin lit désormais ces vingt et une clés dans un second fichier,
+`docs/agents/usine-gardes.md`, tel que `origin/main` le tient (`git ls-tree` puis `git cat-file` sur
+`refs/remotes/origin/main`), et `usine.load` fusionne les deux fichiers. Les autres clés restent dans
+`usine.md`. Le chemin du fichier est une constante de `plugins/forge/hooks/usine.py`, jamais une clé, et
+l'ensemble des clés protégées est `SENSITIVE_KEYS`, au même endroit.
+
+- **Une clé protégée écrite dans `usine.md`** alors que le fichier est sur `origin/main` est ignorée, et
+  `guard_git` le dit sur sa sortie d'erreur. Une clé libre écrite dans `usine-gardes.md` l'est aussi.
+- **Le fichier absent de `origin/main`** : toutes les clés se lisent dans `usine.md`, avec un avis, comme
+  avant ce fichier. Un projet qui monte de version sans rien déplacer garde ses gardes.
+- **Le fichier présent et illisible** (une erreur de git, un délai dépassé, un objet manquant) : toute
+  fusion, tout tag et toute release sont refusés par `guard_git`, et le refus nomme le fichier. Pas de
+  `origin/main` du tout, ou pas de dépôt, vaut illisible ; les clés se lisent alors dans `usine.md`, pour
+  que les autres hooks continuent de tourner.
+- **Chaque clé du gabarit a sa classe** : `tests/test_usine_keys_classified.py` échoue sur une clé ajoutée
+  au gabarit qui n'est ni dans `SENSITIVE_KEYS` ni dans sa liste des clés libres.
+
+Éprouvé par `tests/test_usine_guard_file.py` et `tests/test_usine_keys_classified.py` (dépôts jetables,
+`HOME` jeté, le hook joué comme un processus), sous Linux seulement. Non tenu ici : les scripts qui lisent
+leur fichier par `usine.parse` (par exemple `bounded_run.py` pour `run-limits` et `run-budget`,
+`never_weaken.py` pour `never-weaken`, `e2e_trial.py` pour `run-limits`) ne passent pas par ce lecteur
+et continuent de lire `usine.md` ; le déplacement des clés de ce dépôt, de `CODEOWNERS` et de
+`protected-path` vers le nouveau fichier est une PR à part.
 
 ## Supprimer une branche locale : `git branch -D` et le bundle
 

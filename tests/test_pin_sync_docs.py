@@ -67,7 +67,7 @@ class Neighbours(unittest.TestCase):
 
     def test_the_template_of_the_key_no_longer_leaves_the_gesture_to_the_human_alone(self) -> None:
         text = read("plugins", "forge", "templates", "usine.md")
-        section = text[text.index("`pin-bump`") - 1500 : text.index("- `pin-bump` : `auto`")]
+        section = text[text.index("(clé `pin-bump` absente)") - 1500 : text.index("- `pin-bump` : `auto`")]
         self.assertIn("pin_sync.py", section)
         self.assertNotIn("reste à l'humain. Sans la clé", section)
 
