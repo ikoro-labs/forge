@@ -5,9 +5,9 @@ agree on its shape. The block is the field `Features` of `templates/session-repl
 
     Features:
 
-    | Feature | Closed / total | Open PRs | Blocked | Ready |
-    |---|---|---|---|---|
-    | F-0001 <title> | 33 % (1 / 3) | #77 | #13 | #12 |
+    | Feature | Closed / total | Merged PRs | Open PRs | Blocked | Ready |
+    |---|---|---|---|---|---|
+    | F-0001 <title> | 33 % (1 / 3) | 4 / 45 (#12: 3, #13: 1) | #77 | #13 | #12 |
 
     In parallel: free slots 1; tickets #12 (F-0001); or features F-0001.
 
@@ -22,7 +22,7 @@ import re
 from collections.abc import Mapping
 from typing import Any
 
-HEADER_CELLS = ("Feature", "Closed / total", "Open PRs", "Blocked", "Ready")
+HEADER_CELLS = ("Feature", "Closed / total", "Merged PRs", "Open PRs", "Blocked", "Ready")
 PARALLEL = "In parallel:"
 NONE = "none"
 UNREAD = "-"
@@ -64,10 +64,10 @@ def render(state: Mapping[str, Any]) -> str:
     out = ["Features:", "", "| " + " | ".join(HEADER_CELLS) + " |", "|" + "---|" * len(HEADER_CELLS)]
     for entry in state["features"]:
         if entry["error"]:
-            cells = [entry["label"], entry["error"], UNREAD, UNREAD, UNREAD]
+            cells = [entry["label"], entry["error"], UNREAD, UNREAD, UNREAD, UNREAD]
         else:
             cells = [
-                entry["label"], entry["percent"], _numbers(entry["prs"]),
+                entry["label"], entry["percent"], entry["merged"], _numbers(entry["prs"]),
                 _numbers(entry["blocked"]), _numbers(entry["ready"]),
             ]
         out.append("| " + " | ".join(cells) + " |")

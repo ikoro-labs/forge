@@ -77,9 +77,9 @@ CI and runners: pc 2/2 online, 1 busy; queued 0, main success abc1234.
 
 Features:
 
-| Feature | Closed / total | Open PRs | Blocked | Ready |
-|---|---|---|---|---|
-| F-0001 demo | 33 % (1 / 3) | #77 | #13 | #12 |
+| Feature | Closed / total | Merged PRs | Open PRs | Blocked | Ready |
+|---|---|---|---|---|---|
+| F-0001 demo | 33 % (1 / 3) | 4 / 45 (#12: 3, #13: 1) | #77 | #13 | #12 |
 
 In parallel: free slots 1; tickets #12 (F-0001); or features F-0001.
 """
@@ -219,15 +219,19 @@ class Refused(unittest.TestCase):
                 self.assertRefused(without + text + "\n", "session-reply", "neither the table")
 
     def test_a11_the_table_needs_its_header_its_separator_its_rows_and_its_parallel_line(self) -> None:
-        header = "| Feature | Closed / total | Open PRs | Blocked | Ready |\n"
-        row = "| F-0001 demo | 33 % (1 / 3) | #77 | #13 | #12 |\n"
+        header = "| Feature | Closed / total | Merged PRs | Open PRs | Blocked | Ready |\n"
+        row = "| F-0001 demo | 33 % (1 / 3) | 4 / 45 (#12: 3, #13: 1) | #77 | #13 | #12 |\n"
         parallel = "In parallel: free slots 1; tickets #12 (F-0001); or features F-0001.\n"
         broken = {
             "no header": FEATURES_BLOCK.replace(header, ""),
             "another header": FEATURES_BLOCK.replace("Blocked", "Stuck"),
-            "no separator": FEATURES_BLOCK.replace("|---|---|---|---|---|\n", ""),
+            "no separator": FEATURES_BLOCK.replace("|---|---|---|---|---|---|\n", ""),
             "no row": FEATURES_BLOCK.replace(row, ""),
             "short row": FEATURES_BLOCK.replace(row, "| F-0001 demo | 33 % |\n"),
+            # #335 A1: the five columns of the earlier pin no longer pass the reply check.
+            "earlier five columns": FEATURES_BLOCK.replace(" Merged PRs |", "").replace(
+                "|---|---|---|---|---|---|", "|---|---|---|---|---|"
+            ).replace(" 4 / 45 (#12: 3, #13: 1) |", ""),
             "no parallel line": FEATURES_BLOCK.replace(parallel, ""),
             "empty parallel line": FEATURES_BLOCK.replace(parallel, "In parallel:\n"),
         }
@@ -239,8 +243,8 @@ class Refused(unittest.TestCase):
         import features_block
 
         entry: dict[str, Any] = {"feature": "F-0001", "label": "F-0001 demo", "percent": "33 % (1 / 3)", "prs": [77],
-                 "blocked": [13], "ready": [12], "error": None}
-        unread = {**entry, "feature": "F-0002", "label": "F-0002 other", "percent": None, "prs": [],
+                 "merged": "4 / 45 (#12: 3, #13: 1)", "blocked": [13], "ready": [12], "error": None}
+        unread = {**entry, "feature": "F-0002", "label": "F-0002 other", "percent": None, "prs": [], "merged": "-",
                   "blocked": [], "ready": [], "error": "tickets not read"}
         base: dict[str, Any] = {"note": None, "absent": None, "features": [entry, unread], "free": 1,
                 "proposal": [("F-0001", 12)], "parallel": ["F-0001"], "why": None}
@@ -256,7 +260,7 @@ class Refused(unittest.TestCase):
                 self.assertEqual(deviations(text, "session-reply"), [])
 
     def test_a11_the_block_is_left_out_of_the_line_and_word_caps_only(self) -> None:
-        rows = "".join(f"| F-{n:04d} a feature title of some length | 33 % (1 / 3) | #77 | #13 | #12 |\n"
+        rows = "".join(f"| F-{n:04d} a feature title of some length | 33 % (1 / 3) | 4 / 45 (#12: 3, #13: 1) | #77 | #13 | #12 |\n"
                        for n in range(2, 12))
         long = REPLY.replace("\n\nIn parallel", "\n" + rows + "\nIn parallel")
         self.assertEqual(deviations(long, "session-reply"), [])

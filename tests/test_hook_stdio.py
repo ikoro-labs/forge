@@ -22,8 +22,8 @@ REPLY_FR = (
     "| Champ | État |\n|---|---|\n| Fait | PR #12 fusionnée. |\n| Mesuré | CI 4 min, run 99. |\n"
     "| Attend ta décision | rien. |\n\n"
     "CI et runners: poste 2/2 en ligne; main success abc1234.\n\n"
-    "Features:\n\n| Feature | Closed / total | Open PRs | Blocked | Ready |\n|---|---|---|---|---|\n"
-    "| F-0001 demo | 33 % (1 / 3) | #77 | #13 | #12 |\n\n"
+    "Features:\n\n| Feature | Closed / total | Merged PRs | Open PRs | Blocked | Ready |\n|---|---|---|---|---|---|\n"
+    "| F-0001 demo | 33 % (1 / 3) | 4 / 45 (#12: 3, #13: 1) | #77 | #13 | #12 |\n\n"
     "In parallel: free slots 1; tickets #12 (F-0001); or features F-0001.\n"
 )
 # A French reply out of its template: its prose sits outside the table.
