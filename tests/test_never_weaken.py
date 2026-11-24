@@ -271,6 +271,16 @@ class RaisedEntry(unittest.TestCase):
         self.assertIn("3", results[0].detail)
         self.assertIn("4", results[0].detail)
 
+    def test_f0002_a14_a_removed_key_or_a_lower_count_passes(self) -> None:
+        removed = diff(BASELINE, "-3 src/a.py", " 2 src/b.py")
+        lowered = diff(BASELINE, "-3 src/a.py", "+2 src/a.py")
+        self.assertEqual(statuses([ENTRY], removed), [NONE])
+        self.assertEqual(statuses([ENTRY], lowered), [NONE])
+
+    def test_f0002_a14_a_reordered_file_with_the_same_counts_passes(self) -> None:
+        text = diff(BASELINE, "-2 src/a.py", "-src/b.py", "+src/b.py", "+2 src/a.py")
+        self.assertEqual(statuses([ENTRY], text), [NONE])
+
 
 class Command(unittest.TestCase):
     def run_main(self, usine_text: str | None, diff_text: str) -> tuple[int, str, str]:
