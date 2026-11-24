@@ -122,6 +122,18 @@ def evaluate(root: Path, lock_entry: str, base: str, head: str, stack_path: str,
     return [line for name in added if (line := judge(ecosystem, name, path, stack_path, entries))]
 
 
+def uncovered(lock_entries: list[str], entries: list[Entry], stack_path: str) -> list[str]:
+    """A NOT RUN line per ecosystem the list names and no `lockfile` entry reads: nothing there is compared."""
+    covered = {parts[1] for entry in lock_entries if (parts := usine.split_value(entry, 2))}
+    named = dict.fromkeys(entry.ecosystem for entry in entries)
+    return [
+        f"NOT RUN\t{stack_path}\t{ecosystem}\taucune entrée `<chemin> | {ecosystem}` dans la clé {LOCKFILE_KEY} : "
+        f"les paquets {ecosystem} ajoutés ne sont pas comparés"
+        for ecosystem in named
+        if ecosystem not in covered
+    ]
+
+
 def read_config(args: argparse.Namespace) -> dict[str, list[str]]:
     """The keys of the usine file: `--usine` when given, else `usine.md` as the base has it (never the head's)."""
     if args.usine:
@@ -173,6 +185,7 @@ def main(argv: list[str] | None = None) -> int:
     lines = problems + added_entries(Path(args.root), args.base, stack_path, entries)
     for lock_entry in config[LOCKFILE_KEY]:
         lines += evaluate(Path(args.root), lock_entry, args.base, args.head, stack_path, entries)
+    lines += uncovered(config[LOCKFILE_KEY], entries, stack_path)
     for line in lines:
         print(line)
     statuses = {line.split("\t", 1)[0] for line in lines}
