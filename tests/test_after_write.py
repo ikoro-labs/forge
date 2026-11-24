@@ -107,8 +107,12 @@ class Pattern(unittest.TestCase):
 def run_hook(root: Path, target: Path) -> tuple[int, str]:
     event = json.dumps({"tool_input": {"file_path": str(target)}, "cwd": str(root)})
     err = io.StringIO()
+    # A refused write adds a line to the journal under HOME: never the real `~/.claude`.
     with (
-        mock.patch.dict("os.environ", {"CLAUDE_PROJECT_DIR": str(root)}),
+        tempfile.TemporaryDirectory() as home,
+        mock.patch.dict(
+            "os.environ", {"CLAUDE_PROJECT_DIR": str(root), "HOME": home, "USERPROFILE": home}
+        ),
         mock.patch("sys.stdin", io.StringIO(event)),
         mock.patch("sys.stderr", err),
     ):
@@ -284,7 +288,8 @@ class FormatOnWrite(unittest.TestCase):
             mock.patch.object(after_write.subprocess, "Popen") as popen,
         ):
             code, err = run_hook(self.root, target)
-        popen.assert_not_called()
+        # The journal reads git through the same mock: only a start of the formatter on the path counts.
+        self.assertFalse([call for call in popen.call_args_list if str(target) in call.args[0]])
         self.assertEqual(code, 2)
         self.assertEqual(
             err,
