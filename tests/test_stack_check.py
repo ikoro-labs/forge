@@ -141,7 +141,8 @@ class StackFile(StackCase):
         head = self.commit({"uv.lock": uv_lock(), "stack.txt": stack})
         code, lines, _ = self.run_check(self.usine(*STACK_AND_LOCK), base, head)
         self.assertEqual(code, 0)
-        self.assertEqual([line.split("\t")[:2] for line in lines], [["NONE", "uv.lock"]])
+        self.assertEqual(sorted({line.split("\t")[0] for line in lines}), ["ADDED", "NONE"])  # never INVALID
+        self.assertIn(["NONE", "uv.lock"], [line.split("\t")[:2] for line in lines])
 
     def test_a2_a_malformed_line_is_invalid_with_its_number_and_never_completed(self) -> None:
         """F-0002 A2: an unknown ecosystem, a missing field or an empty name is `INVALID` at its line number."""
@@ -177,6 +178,19 @@ class Comparison(StackCase):
         code, lines, _ = self.run_check(self.usine(*STACK_AND_LOCK), base, head)
         self.assertEqual(code, 1)
         self.assertEqual([line.split("\t")[:3] for line in lines if not line.startswith("ADDED")], [["NO SOURCE", "uv.lock", "pypi idna"]])
+
+    def test_a7_a_listed_dependency_with_a_source_is_ok_and_each_added_list_line_is_added(self) -> None:
+        """F-0002 A7: an added dependency listed with its source is `OK`; a list line the PR adds is `ADDED` with its source."""
+        base = self.commit({"uv.lock": uv_lock(), "stack.txt": "pypi | requests | ADR-0001\n"})
+        head = self.commit(
+            {"uv.lock": uv_lock("idna"), "stack.txt": "pypi | requests | ADR-0001\npypi | idna | session 2026-11-23\n"}
+        )
+        code, lines, _ = self.run_check(self.usine(*STACK_AND_LOCK), base, head)
+        self.assertEqual(code, 0)
+        rows = [line.split("\t") for line in lines]
+        self.assertEqual([row[:3] for row in rows], [["ADDED", "stack.txt:2", "pypi idna"], ["OK", "uv.lock", "pypi idna"]])
+        self.assertIn("session 2026-11-23", rows[0][3])
+        self.assertIn("session 2026-11-23", rows[1][3])
 
 
 if __name__ == "__main__":
