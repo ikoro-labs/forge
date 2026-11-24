@@ -263,6 +263,14 @@ class RaisedEntry(unittest.TestCase):
         self.assertIn(BASELINE, results[0].detail)
         self.assertIn("src/new.py", results[0].detail)
 
+    def test_f0002_a13_a_count_raised_from_3_to_4_is_refused_naming_the_key_and_both_counts(self) -> None:
+        text = diff(BASELINE, "-3 src/a.py", "+4 src/a.py")
+        results = check([ENTRY], text)
+        self.assertEqual([result.status for result in results], [APPLIES])
+        self.assertIn("src/a.py", results[0].detail)
+        self.assertIn("3", results[0].detail)
+        self.assertIn("4", results[0].detail)
+
 
 class Command(unittest.TestCase):
     def run_main(self, usine_text: str | None, diff_text: str) -> tuple[int, str, str]:

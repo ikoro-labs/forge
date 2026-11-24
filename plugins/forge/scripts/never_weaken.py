@@ -193,6 +193,22 @@ def _raised_number(changes: list[FileChange], scope: str, parameter: str) -> tup
     return NONE, "aucune valeur relevée sous le chemin"
 
 
+_COUNTED = re.compile(r"^(\d+)\s+(\S.*)$")
+
+
+def _counts(lines: list[str]) -> dict[str, int]:
+    """The keys of a reference file's lines and their counts: `<count> <key>`, or `<key>` alone for 1."""
+    counts: dict[str, int] = {}
+    for line in lines:
+        text = line.strip()
+        if not text:
+            continue
+        counted = _COUNTED.match(text)
+        key, number = (counted.group(2).strip(), int(counted.group(1))) if counted else (text, 1)
+        counts[key] = counts.get(key, 0) + number
+    return counts
+
+
 def _raised_entry(changes: list[FileChange], scope: str) -> tuple[str, str]:
     hits: list[str] = []
     for change in changes:
@@ -202,10 +218,12 @@ def _raised_entry(changes: list[FileChange], scope: str) -> tuple[str, str]:
         path = _scoped(change, scope)
         if path is None:
             continue
-        removed = {line.strip() for line in change.removed}
-        for key in dict.fromkeys(line.strip() for line in change.added):
-            if key and key not in removed:
-                hits.append(f"{path}: clé ajoutée `{key}`")
+        before, after = _counts(change.removed), _counts(change.added)
+        for key, count in after.items():
+            if key not in before:
+                hits.append(f"{path}: clé ajoutée `{key}` ({count})")
+            elif count > before[key]:
+                hits.append(f"{path}: `{key}` relevé de {before[key]} à {count}")
     if hits:
         return APPLIES, "; ".join(hits)
     return NONE, "aucune clé ajoutée ni nombre relevé sous le chemin"
