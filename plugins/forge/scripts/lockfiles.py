@@ -129,7 +129,9 @@ def _uv_direct(text: str) -> list[str]:
 def _npm_direct(text: str) -> list[str]:
     """The packages the root and the workspace folders of a `package-lock.json` declare, workspaces left out."""
     entries = json.loads(text)["packages"]
-    folders = [entry for key, entry in entries.items() if "node_modules/" not in key]  # the root and the workspaces
+    if "" not in entries:
+        raise ValueError('pas d\'entrée racine `packages[""]` : les paquets directs ne se distinguent pas des autres')
+    folders =[entry for key, entry in entries.items() if "node_modules/" not in key]  # the root and the workspaces
     workspaces = {key.rsplit("node_modules/", 1)[1] for key, entry in entries.items() if entry.get("link")}
     found: list[str] = []
     for folder in folders:

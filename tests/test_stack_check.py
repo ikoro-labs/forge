@@ -141,12 +141,14 @@ class StackFile(StackCase):
     def test_a1_well_formed_lines_give_no_invalid_and_a_lock_without_additions_says_none(self) -> None:
         """F-0002 A1: lines `<ecosystem> | <package> | <source>` of `pypi` and `npm` are not INVALID; nothing added is NONE."""
         stack = "pypi | requests | ADR-0001\nnpm | left-pad | session 2026-11-23 | with a bar\n"
-        base = self.commit({"uv.lock": uv_lock(), "stack.txt": ""})
-        head = self.commit({"uv.lock": uv_lock(), "stack.txt": stack})
-        code, lines, _ = self.run_check(self.usine(*STACK_AND_LOCK), base, head)
+        locks = {"uv.lock": uv_lock(), "package-lock.json": npm_lock()}
+        usine = self.usine("`stack` : `stack.txt`", "`lockfile` : `uv.lock | pypi`", "`lockfile` : `package-lock.json | npm`")
+        base = self.commit({**locks, "stack.txt": ""})
+        head = self.commit({**locks, "stack.txt": stack})
+        code, lines, _ = self.run_check(usine, base, head)
         self.assertEqual(code, 0)
         self.assertEqual(sorted({line.split("\t")[0] for line in lines}), ["ADDED", "NONE"])  # never INVALID
-        self.assertIn(["NONE", "uv.lock"], [line.split("\t")[:2] for line in lines])
+        self.assertEqual([line.split("\t")[:2] for line in lines if line.startswith("NONE")], [["NONE", "uv.lock"], ["NONE", "package-lock.json"]])
 
     def test_a2_a_malformed_line_is_invalid_with_its_number_and_never_completed(self) -> None:
         """F-0002 A2: an unknown ecosystem, a missing field or an empty name is `INVALID` at its line number."""
@@ -226,6 +228,49 @@ class Comparison(StackCase):
         code, lines, _ = self.run_check(usine, base, exact)
         self.assertEqual(code, 0)
         self.assertEqual([line.split("\t")[:3] for line in lines if not line.startswith("ADDED")], [["OK", "package-lock.json", "npm left-pad"]])
+
+
+class NeverOk(StackCase):
+    """A11: what cannot be read is `INVALID` or `NOT RUN` with its reason, never `OK`."""
+
+    def test_a11_a_package_lock_without_its_root_entry_is_invalid(self) -> None:
+        """F-0002 A11: a `package-lock.json` whose `packages[""]` is missing says INVALID: the direct ones cannot be told."""
+        lock = json.loads(npm_lock((("left-pad", "1.3.0"),)))
+        del lock["packages"][""]
+        usine = self.usine("`stack` : `stack.txt`", "`lockfile` : `package-lock.json | npm`")
+        base = self.commit({"package-lock.json": npm_lock(), "stack.txt": ""})
+        head = self.commit({"package-lock.json": json.dumps(lock), "stack.txt": "npm | left-pad | ADR-0001\n"})
+        code, lines, _ = self.run_check(usine, base, head)
+        self.assertEqual(code, 2)
+        rows = [line.split("\t") for line in lines if not line.startswith("ADDED")]
+        self.assertEqual([row[:2] for row in rows], [["INVALID", "package-lock.json"]])
+        self.assertIn('packages[""]', rows[0][3])
+
+    def test_a11_an_unreadable_lock_or_an_unknown_lockfile_ecosystem_is_invalid(self) -> None:
+        """F-0002 A11: a lock that is not a lock, and a `lockfile` entry of another ecosystem, say INVALID with the reason."""
+        base = self.commit({"uv.lock": uv_lock(), "stack.txt": ""})
+        head = self.commit({"uv.lock": "this is not a lock\n", "stack.txt": "pypi | idna | ADR-0001\n"})
+        code, lines, _ = self.run_check(self.usine(*STACK_AND_LOCK), base, head)
+        self.assertEqual(code, 2)
+        rows = [line.split("\t") for line in lines if not line.startswith("ADDED")]
+        self.assertEqual([row[:2] for row in rows], [["INVALID", "uv.lock"]])
+        self.assertIn("uv.lock", rows[0][3])
+        usine = self.usine("`stack` : `stack.txt`", "`lockfile` : `Cargo.lock | cargo`")
+        code, lines, _ = self.run_check(usine, base, head)
+        self.assertEqual(code, 2)
+        statuses = [line.split("\t")[:2] for line in lines if not line.startswith("ADDED")]
+        self.assertEqual(statuses, [["INVALID", "Cargo.lock"], ["NOT RUN", "stack.txt"]])  # and the pypi line has no lock
+
+    def test_a11_an_ecosystem_of_the_list_with_no_lockfile_is_not_run(self) -> None:
+        """F-0002 A11: a list that holds npm packages while `lockfile` names only a uv.lock compares none of them: NOT RUN."""
+        base = self.commit({"uv.lock": uv_lock(), "stack.txt": ""})
+        head = self.commit({"uv.lock": uv_lock(), "stack.txt": "npm | left-pad | ADR-0001\n"})
+        code, lines, _ = self.run_check(self.usine(*STACK_AND_LOCK), base, head)
+        self.assertEqual(code, 2)
+        rows = [line.split("\t") for line in lines if line.startswith("NOT RUN")]
+        self.assertEqual(len(rows), 1)
+        self.assertIn("npm", rows[0][1] + rows[0][3])
+        self.assertIn("lockfile", rows[0][3])
 
 
 def usine_text(stack_path: str) -> str:
