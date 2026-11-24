@@ -553,6 +553,29 @@ ne lance aucune commande du projet. `forge:qc-conf` fait de `YOUNG` et de `NOT F
 - `lockfile` : `<package-lock.json | npm>`
 - `dependency-min-age` : `<7>`
 
+Les dépendances directes qu'une PR ajoute, comparées à la liste de ce que le projet a décidé de permettre. Un
+paquet qu'un agent ajoute sans décision acceptée est refusé, et le refus dit la ligne à écrire. Une clé, sans
+valeur par défaut.
+
+`stack` : le fichier de la liste, un chemin relatif à la racine du projet, sur une seule ligne. Chaque ligne du
+fichier est `<écosystème> | <paquet> | <source>` : l'écosystème est fermé (`pypi` ou `npm`), et la source est la
+décision acceptée qui permet le paquet (un ADR, une séance). Pour `pypi`, les noms se comparent normalisés
+(casse, `-`, `_`, `.`) ; pour `npm`, tels qu'écrits. Une ligne mal formée est `INVALID` avec son numéro, jamais
+complétée. Sans la clé, « sans objet (clé `stack` absente) » : aucune valeur par défaut, et la sonde ne compare rien.
+
+`forge:qc-gate` lance `scripts/stack_check.py` avec les clés lues sur la base : le chemin du fichier vient de la
+base, pour qu'une PR ne relève pas la liste qui la juge, et son contenu se lit sur la tête. Le script compare, pour
+chaque entrée de la clé `lockfile`, les paquets directs que le lockfile d'un membre local déclare à la tête et
+non à la base ; une dépendance indirecte n'est pas comparée. Il rend une ligne par paquet : `OK` (dans la liste,
+avec sa source), `UNLISTED` (absent de la liste : la ligne dit la ligne à écrire et le chemin du fichier),
+`NO SOURCE` (dans la liste, sans source), `ADDED` (une ligne que la PR ajoute à la liste, avec sa source), `NONE`,
+`NOT RUN` (un écosystème de la liste qu'aucune entrée de `lockfile` ne lit) ou `INVALID`. Il n'ouvre aucun accès
+réseau et ne lance aucune commande du projet. Il lit la clé `lockfile` en même temps : sans elle, « sans objet
+(clé `lockfile` absente) ». `forge:qc-conf` fait de `UNLISTED` et de `NO SOURCE` un `BLOCKER`, et lit la source
+de chaque ligne `ADDED`.
+
+- `stack` : `<docs/agents/stack.md>`
+
 ## Essai de bout en bout
 
 L'essai de l'usine avant une version, par `scripts/e2e_trial.py`. Les tests de `tests/` éprouvent chaque
