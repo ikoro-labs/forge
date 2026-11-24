@@ -959,14 +959,16 @@ class Binding(unittest.TestCase):
         self.assertIn("Blocked by the forge plugin (guard_ticket_budget)", completed.stderr)
 
     def test_the_template_and_the_skill_declare_the_budget(self) -> None:
+        """Ticket #329, A2: the template and the skill say 12, the ceiling of the guard."""
         template = (support.PLUGIN / "templates" / "features" / "design.md").read_text(
             encoding="utf-8"
         )
-        self.assertIn("\nfeature-tickets: <N, at most 15", template.split("\n---\n")[0])
+        self.assertIn(f"\nfeature-tickets: <N, at most {CEILING}", template.split("\n---\n")[0])
         skill = (support.PLUGIN / "skills" / "feature-design" / "SKILL.md").read_text(
             encoding="utf-8"
         )
-        self.assertIn("`forge:product-owner` cuts the feature into at most 15 tickets", skill)
+        self.assertIn(f"`forge:product-owner` cuts the feature into at most {CEILING} tickets", skill)
+        self.assertEqual(CEILING, 12)
 
 
 if __name__ == "__main__":
