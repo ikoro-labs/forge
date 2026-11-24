@@ -93,17 +93,20 @@ Les objectifs de départ de l'usine (ticket #76), lus par `plugins/forge/scripts
 jours glissants. L'humain a retenu le 2026-11-16 de mesurer pendant 30 jours sans rien bloquer :
 chaque action de budget est `alert`, jamais `human-merge` ni `feature-freeze`. Les cibles sont à
 réviser à la date de `slo-review-date`, sur le rapport des SLO ; changer une valeur reste une
-décision de l'humain. `tokens-per-merge` n'a pas de ligne : sa cible n'est pas fixée.
+décision de l'humain. Le 2026-11-24, l'humain a choisi des cibles qui visent l'optimum, même hors
+d'atteinte ; les deux durées (1 h) sont la recommandation du `forge:staff-engineer`, appuyée sur le
+repère « moins d'un jour » du groupe le plus rapide de DORA. `tokens-per-merge` n'a pas de ligne : sa
+cible n'est pas fixée.
 
 - `release-tag` : `forge--v{version}`
-- `slo` : `accept-round-1 | >= 80 % | 30`
-- `slo` : `lead-time p90 | <= 24 h | 30`
-- `slo` : `release-lag p90 | <= 24 h | 30`
-- `slo` : `escaped-defects | <= 10 % | 30`
-- `slo` : `change-failure | <= 10 % | 30`
-- `slo` : `human-touch | <= 10 % | 30`
+- `slo` : `accept-round-1 | >= 99 % | 30`
+- `slo` : `lead-time p90 | <= 1 h | 30`
+- `slo` : `release-lag p90 | <= 1 h | 30`
+- `slo` : `escaped-defects | <= 1 % | 30`
+- `slo` : `change-failure | <= 1 % | 30`
+- `slo` : `human-touch | <= 1 % | 30`
 - `slo` : `main-green | >= 100 % | 30`
-- `slo` : `judge-recall | >= 95 % | 30`
+- `slo` : `judge-recall | >= 99 % | 30`
 - `slo` : `false-accept | <= 0 % | 30`
 - `slo-review-date` : `2026-12-16`
 - `slo-issue` : `55`
