@@ -81,14 +81,43 @@ fait, et les limites connues.
    un projet épinglé sur une version passe à celle qu'un autre projet du poste a déclarée en
    dernier.
 
-**Jamais pendant un `/forge:feature-build` actif.** Une session garde les versions qu'elle a
+**Jamais entre un coder et le verdict de la revue.** Une session garde les versions qu'elle a
 chargées, mais la suivante charge la nouvelle : un passage repris dans une nouvelle session
-changerait d'usine au milieu d'une feature. La mise à jour automatique de la marketplace reste
-coupée.
+changerait d'usine entre la PR qu'un coder écrit et le verdict qui la juge. L'installation est permise
+entre deux tickets d'un `/forge:feature-build`, et c'est le geste de la session (décision de l'humain du
+2026-11-24, ticket #333). La mise à jour automatique de la marketplace reste coupée.
 
-Un poste qui n'a pas lancé `claude plugin update` garde l'ancienne version, et rien ne l'en avertit
-en dehors de `/plugin` : après chaque montée, comparer `claude plugin list --json` au `ref` du
-projet.
+Un poste qui n'a pas lancé `claude plugin update` garde l'ancienne version. `plugins/forge/scripts/pin_sync.py`
+le dit (`check`, qui n'ouvre aucun accès réseau) et le corrige (`apply`) :
+
+- `pin_sync.py check --all` (ou `check <projet>`) compare, pour chaque projet où `claude plugin list --json`
+  liste le plugin, le `ref` épinglé sur `origin/main` (tel que le dernier `git fetch` l'a ramené, pas l'arbre
+  de travail) à la version installée, et écrit une ligne par projet : `OK`, `BEHIND` (la version installée
+  diffère de l'épingle : la ligne dit les deux versions et le sens) ou `NOT RUN` (le `claude` ne répond pas,
+  l'épingle ne se lit pas, ou `claude plugin marketplace add` serait refusé, voir plus bas). Sortie 0 si toutes
+  les lignes sont `OK`, 1 pour un `BEHIND`, 2 pour un `NOT RUN`.
+- `pin_sync.py apply <projet> [--passation <fichier>]` refuse (`REFUSED`, sortie 3, rien de lancé, pas même un
+  `git fetch`) tant qu'un agent du dépôt tourne (un worktree d'agent verrouillé par une session vivante,
+  comme le relais le lit) ou, avec `--passation`, tant que `en_vol` ou `file_revue` de l'en-tête de la
+  passation n'est pas vide : un tour de revue qui n'a pas de worktree n'est vu que par la passation. Sinon il
+  lance `git fetch origin main`, puis, depuis la racine du projet, `claude plugin marketplace add
+  <dépôt>@<ref> --scope project` et `claude plugin update forge@<marketplace> --scope project` (`install` quand
+  le poste ne liste rien pour ce projet), chacune dite sur la sortie d'erreur avant d'être lancée, et finit par
+  `check`, dont la ligne et la sortie sont les siennes : une installation qui laisse l'ancienne version finit
+  sur `BEHIND`, jamais sur `OK`. Un projet déjà `OK` ne lance rien.
+- Quand les réglages utilisateur (`~/.claude/settings.json`, ou `CLAUDE_CONFIG_DIR`) épinglent la
+  marketplace à un autre `ref` que le projet, `claude plugin marketplace add` sort en 1 (« its source
+  doesn't match its extraKnownMarketplaces entry in user or managed settings », mesuré à la main le
+  2026-11-24). `check` et `apply` rendent alors `NOT RUN` avec la raison « l'entrée de marketplace de
+  niveau utilisateur diffère de l'épingle », avant toute commande quand les réglages utilisateur le
+  montrent, et après le refus de la commande quand ils ne le montrent pas (réglages gérés). Ils ne
+  modifient aucun fichier de réglages utilisateur : l'aligner est le geste de l'humain. Non vérifié : si
+  changer le `ref` de ce niveau déplace les autres projets du poste.
+
+Éprouvé par les tests (`tests/test_pin_sync_check.py`, `tests/test_pin_sync_apply.py`), sous Linux seulement,
+avec un `claude` simulé et git réel sur des dépôts jetables : `pin_sync.py` n'a pas été lancé contre le vrai
+`claude plugin marketplace add` ni `update`, seul le format de `claude plugin list --json` a été lu sur un vrai
+poste. Le côté Windows n'a pas été essayé.
 
 ### Laisser la session ouvrir la PR de montée : la clé `pin-bump`
 
@@ -105,16 +134,25 @@ plus récent que le `ref`, ajoute à la session un avis qui le nomme, avec l'ép
 - pour un sous-agent, et quand le `ref` est déjà le tag le plus récent ;
 - tant qu'une PR ouverte change `.claude/settings.json` (la PR de montée est déjà là) ;
 - dès qu'il ne sait pas : `gh` absent ou en échec, réseau coupé, fichier ou événement illisible, ou
-  délai dépassé (8 secondes par appel `gh`, 20 secondes au total par le `timeout` de `hooks.json`). Il
-  sort toujours en 0 : il observe, il ne bloque jamais la session.
+  délai dépassé (8 secondes par appel `gh`, 4 secondes par commande `claude` ou `git` de l'avis suivant,
+  30 secondes au total par le `timeout` de `hooks.json`). Il sort toujours en 0 : il observe, il ne
+  bloque jamais la session.
+
+Le même hook porte un second avis, sans clé et sans réseau (ticket #333). Il lance le contrôle de
+`pin_sync.py check` pour le dépôt principal de la session (un sous-dossier ou un worktree compte pour lui) :
+sur `BEHIND`, il ajoute à la session les deux versions et la commande `pin_sync.py apply <projet>`, qu'il ne
+lance jamais lui-même. `OK` ne dit rien, `NOT RUN` non plus (un `claude` qui ne répond pas, une épingle
+illisible, des réglages utilisateur qui épinglent la marketplace ailleurs) : seul un retard prouvé s'annonce.
+Chaque avis échoue seul, et sans bruit. Éprouvé par `tests/test_pin_notice_behind.py` (un `claude` simulé
+sur le `PATH`, git réel), sous Linux ; pas dans une vraie session.
 
 La clé ne change pas qui fusionne. `forge:qc` juge la PR de montée comme n'importe quelle autre et
 la fusionne sur ACCEPT, à condition que la clé `agent-autonomy` soit `on` ; un fichier du diff sous un
 `protected-path` (un projet qui déclare `.claude/settings.json` y laisse la fusion à l'humain) ou une
 action `human-merge` active l'arrête, par `forge:qc` et par `guard_git`. L'épingle est déléguée à
 l'agent, projets consommateurs compris (décision de l'humain du 2026-11-21) : ce n'est plus un geste
-de l'humain. Les deux commandes de l'étape 2 se lancent sur chaque poste une fois la PR fusionnée, et
-jamais pendant un `/forge:feature-build` actif. Ce dépôt ne déclare pas la clé : son épingle se monte
+de l'humain. Les deux commandes de l'étape 2 se lancent sur chaque poste une fois la PR fusionnée, par
+`pin_sync.py apply`, entre deux tickets et jamais entre un coder et le verdict de la revue. Ce dépôt ne déclare pas la clé : son épingle se monte
 par une PR à part de la PR de version (voir `docs/contribuer.md`), que l'agent fusionne sur ACCEPT.
 Essayé par les tests seulement (`gh` simulé), sous Linux ; pas encore dans une vraie session, ni sous
 Windows.
@@ -1097,8 +1135,8 @@ Ce qu'aucun agent ne fait à la place d'un humain :
 La montée d'épingle n'en est plus un, depuis le 2026-11-21 : la PR qui la porte, dans ce dépôt comme
 dans un projet consommateur, est ouverte et fusionnée sur ACCEPT par l'agent (voir **Laisser la session
 ouvrir la PR de montée**). Les deux commandes de **Monter de version** restent à lancer sur chaque
-poste une fois la PR fusionnée ; aucun garde de forge ne les réserve à l'humain, mais aucun agent ne
-les a encore lancées sur un vrai poste.
+poste une fois la PR fusionnée, par `pin_sync.py apply` entre deux tickets ; aucun garde de forge ne les
+réserve à l'humain, mais aucun agent ne les a encore lancées sur un vrai poste.
 
 ## Output structure
 

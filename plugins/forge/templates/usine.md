@@ -318,8 +318,10 @@ coupé ou qu'un fichier ne se lit pas. La clé ne décide pas la fusion : `forge
 montée sur ACCEPT comme toute PR, et un fichier du diff sous un `protected-path` (déclare
 `.claude/settings.json` pour que l'humain garde la montée) ou une action `human-merge` active l'arrête
 comme avant ; le geste sur chaque poste (`claude plugin marketplace add`, puis `claude plugin update`)
-reste à l'humain. Sans la clé, « sans objet (clé `pin-bump` absente) » : rien ne se dit, aucune valeur
-n'est supposée.
+est celui de la session entre deux tickets, par `scripts/pin_sync.py apply`, jamais entre un coder et le verdict
+de la revue. Sans la clé, « sans objet (clé `pin-bump` absente) » : rien ne se dit, aucune valeur
+n'est supposée. Le même hook porte un second avis qui ne lit aucune clé : il dit quand la version installée
+diffère de l'épingle de `origin/main` (`pin_sync.py check`, `BEHIND`) et donne la commande, sans la lancer.
 
 - `pin-bump` : `auto`
 

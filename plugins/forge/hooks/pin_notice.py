@@ -1,5 +1,7 @@
-"""SessionStart hook: with the key `pin-bump`, tell a consumer session that the plugin has a newer tag
-than the `ref` its `.claude/settings.json` pins (ikoro-labs/forge#278).
+"""SessionStart hook: two notices about the pin of the plugin, each independent of the other.
+
+The bump notice (ikoro-labs/forge#278): with the key `pin-bump`, tell a consumer session that the plugin
+has a newer tag than the `ref` its `.claude/settings.json` pins.
 
 The key `pin-bump` of `docs/agents/usine.md`, with its only value `auto`, is the human's consent for the
 session to open the pin PR; without it the hook asks nothing and says nothing. The pin is read where
@@ -8,9 +10,20 @@ Claude Code reads it: the marketplace of the enabled `forge@<marketplace>` plugi
 marketplace repository, compared as numbers.
 
 It says nothing when the pin is the newest tag, when a PR that changes `.claude/settings.json` is already
-open, nor for a subagent. It never blocks: a `gh` that is missing, fails or exceeds its delay, a
-settings file or an event it cannot read, any error at all, exits 0 and says nothing. It does not decide
-the merge: `protected-path` and `human-merge` stay the rules of `forge:qc` and of `guard_git`.
+open, nor for a subagent. It does not decide the merge: `protected-path` and `human-merge` stay the rules
+of `forge:qc` and of `guard_git`.
+
+The BEHIND notice (ikoro-labs/forge#333), with no key: a merged bump changes `.claude/settings.json` and
+nothing else, so the install stays old until `claude plugin marketplace add` and `claude plugin update`
+run. `pin_state.check`, the verdict of `pin_sync.py check`, compares the `ref` on `origin/main` with the
+version `claude plugin list --json` lists for this project (its main checkout, a worktree or a subfolder
+included). On BEHIND, the session is told both versions and the command, `pin_sync.py apply <project>`,
+which the hook never runs. OK says nothing, and so does NOT RUN (a `claude` that does not answer, no pin
+to read, a pin of the user's own settings that makes `marketplace add` refuse): only a proved lag is said.
+It asks nothing of the network.
+
+Neither notice blocks: a command that is missing, fails or exceeds its delay, a settings file or an
+event it cannot read, any error at all, exits 0 and says nothing, and one notice failing costs only itself.
 """
 
 from __future__ import annotations
@@ -22,6 +35,7 @@ import subprocess
 import sys
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 from utf8_stdio import use_utf8
 
@@ -95,8 +109,8 @@ def notice_text(prefix: str, current: tuple[int, ...], latest: tuple[int, ...]) 
         "n'ouvre aucune fusion de plus : un chemin de `protected-path` dans le diff ou une action "
         "`human-merge` active arrête la fusion, et l'humain fusionne. Pas pendant un `/forge:feature-build` "
         "actif. Une fois la PR fusionnée, le geste sur chaque poste (`claude plugin marketplace add`, puis "
-        "`claude plugin update`, voir « Monter de version » de la page d'installation du plugin) reste à "
-        "l'humain."
+        "`claude plugin update`, voir « Monter de version » de la page d'installation du plugin) est celui de "
+        "la session, par `pin_sync.py apply`, entre deux tickets."
     )
 
 
@@ -130,14 +144,50 @@ def notice(event: dict, run: Runner = run_gh) -> str | None:
     return notice_text(prefix, current, latest)
 
 
+def behind_notice_text(project: Path, detail: str) -> str:
+    script = Path(__file__).resolve().parent.parent / "scripts" / "pin_sync.py"
+    return (
+        f"Le plugin installé sur ce poste pour ce projet n'est pas celui que `{SETTINGS}` épingle sur `origin/main` "
+        f"({detail}) : une PR de montée ne change que ce fichier, l'installation reste à faire. Entre deux "
+        f"tickets, lance `uv run --no-project --quiet python \"{script}\" apply \"{project}\"`. Elle refuse tant "
+        "qu'un coder ou un tour de `forge:qc` est en vol (jamais entre un coder et le verdict de la revue, donc "
+        "pas pendant un `/forge:feature-build` actif entre les deux), rend `NOT RUN` avec la raison quand les "
+        "réglages utilisateur épinglent la marketplace à un autre `ref`, et ne modifie aucun réglage utilisateur."
+    )
+
+
+def behind_notice(event: dict, run: Callable[..., Any] | None = None) -> str | None:
+    """The context for this session when the install lags the pin, else None: OK, NOT RUN, a subagent."""
+    if event.get("agent_id"):
+        return None
+    # Imported here, so that a broken sibling costs only this notice.
+    import handoff_header
+    import pin_state
+    import usine
+
+    # The path that keeps its case: the command shown to the session runs on it, and `pin_state` compares it itself.
+    project = Path(handoff_header.main_checkout_path(usine.project_root(event)))
+    result = pin_state.check(project, run or pin_state.run_command)
+    return behind_notice_text(project, result.detail) if result.status == "BEHIND" else None
+
+
+def safely(make: Callable[[dict], str | None], event: dict) -> str | None:
+    """One notice or None: whatever goes wrong inside a notice costs that notice only."""
+    try:
+        return make(event)
+    except Exception:  # noqa: BLE001 - an observing hook never blocks the session
+        return None
+
+
 def main(stdin) -> int:
     try:
         event = json.load(stdin)
         if not isinstance(event, dict) or not isinstance(event.get("cwd", ""), str):
             return 0
-        message = notice(event)
-        if message is not None:
-            print(json.dumps({"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": message}}))
+        messages = [text for make in (notice, behind_notice) if (text := safely(make, event)) is not None]
+        if messages:
+            context = "\n\n".join(messages)
+            print(json.dumps({"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": context}}))
     except Exception:  # noqa: BLE001 - an observing hook never blocks the session
         pass
     return 0
