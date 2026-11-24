@@ -110,8 +110,9 @@ class StackCase(unittest.TestCase):
         """Replace the tracked files by `files`, commit, and return the commit's sha."""
         for child in self.repo.iterdir():
             if child.name != ".git":
-                child.unlink()
+                shutil.rmtree(child) if child.is_dir() else child.unlink()
         for name, text in files.items():
+            (self.repo / name).parent.mkdir(parents=True, exist_ok=True)
             (self.repo / name).write_text(text, encoding="utf-8")
         self.git("add", "-A")
         self.git("commit", "--quiet", "--allow-empty", "-m", "state")
@@ -122,9 +123,11 @@ class StackCase(unittest.TestCase):
         path.write_text("# usine\n\n" + "\n".join(f"- {line}" for line in lines) + "\n", encoding="utf-8")
         return path
 
-    def run_check(self, usine: Path, base: str, head: str) -> tuple[int, list[str], str]:
-        """The exit code, the output lines and the error output of the check."""
-        args = ["--usine", str(usine), "--root", str(self.repo), "--base", base, "--head", head]
+    def run_check(self, usine: Path | None, base: str, head: str) -> tuple[int, list[str], str]:
+        """The exit code, the output lines and the error output of the check (`usine` None: read on the base)."""
+        args = ["--root", str(self.repo), "--base", base, "--head", head]
+        if usine is not None:
+            args += ["--usine", str(usine)]
         out, err = io.StringIO(), io.StringIO()
         with redirect_stdout(out), redirect_stderr(err):
             code = main(args)
@@ -223,6 +226,28 @@ class Comparison(StackCase):
         code, lines, _ = self.run_check(usine, base, exact)
         self.assertEqual(code, 0)
         self.assertEqual([line.split("\t")[:3] for line in lines if not line.startswith("ADDED")], [["OK", "package-lock.json", "npm left-pad"]])
+
+
+def usine_text(stack_path: str) -> str:
+    return f"# usine\n\n- `stack` : `{stack_path}`\n- `lockfile` : `uv.lock | pypi`\n"
+
+
+class PathOnTheBase(StackCase):
+    USINE = "docs/agents/usine.md"
+
+    def test_a9_the_path_is_read_on_the_base_and_a_head_without_the_file_is_an_empty_list(self) -> None:
+        """F-0002 A9: a PR that moves the `stack` path in usine.md is judged by the base's path; no file at the head is an empty list."""
+        base = self.commit({self.USINE: usine_text("stack.txt"), "uv.lock": uv_lock(), "stack.txt": "pypi | idna | ADR-0001\n"})
+        # The head points the key at a file that allows everything, and deletes the file the base names.
+        head = self.commit(
+            {self.USINE: usine_text("lenient.txt"), "uv.lock": uv_lock("idna"), "lenient.txt": "pypi | idna | ADR-0001\n"}
+        )
+        code, lines, _ = self.run_check(None, base, head)
+        self.assertEqual(code, 1)
+        self.assertEqual(
+            [line.split("\t")[:3] for line in lines if not line.startswith("ADDED")], [["UNLISTED", "uv.lock", "pypi idna"]]
+        )
+        self.assertFalse([line for line in lines if line.startswith("INVALID")])
 
 
 if __name__ == "__main__":

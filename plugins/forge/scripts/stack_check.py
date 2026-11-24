@@ -122,28 +122,27 @@ def evaluate(root: Path, lock_entry: str, base: str, head: str, stack_path: str,
     return [line for name in added if (line := judge(ecosystem, name, path, stack_path, entries))]
 
 
+def read_config(args: argparse.Namespace) -> dict[str, list[str]]:
+    """The keys of the usine file: `--usine` when given, else `usine.md` as the base has it (never the head's)."""
+    if args.usine:
+        try:
+            return usine.parse(Path(args.usine).read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            return {}
+    text = read_at(Path(args.root), args.base, usine.CONFIG_PATH.as_posix())
+    return usine.parse(text) if text else {}
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument("--base", required=True, help="the git ref the PR starts from")
     parser.add_argument("--head", required=True, help="the git ref of the PR's head")
     parser.add_argument("--root", default=".", help="a clone of the project (default: the current directory)")
-    parser.add_argument("--usine", help="the usine.md to read (default: docs/agents/usine.md under --root)")
+    parser.add_argument("--usine", help="the usine.md to read (default: docs/agents/usine.md at --base)")
     args = parser.parse_args(argv)
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure"):
             stream.reconfigure(encoding="utf-8", errors="replace")
-    config_file = Path(args.usine) if args.usine else Path(args.root) / usine.CONFIG_PATH
-    try:
-        config = usine.parse(config_file.read_text(encoding="utf-8"))
-    except FileNotFoundError:
-        config = {}
-    except (OSError, UnicodeDecodeError) as error:
-        print(f"stack_check: {error}", file=sys.stderr)
-        return 2
-    for key in (STACK_KEY, LOCKFILE_KEY):
-        if not config.get(key):
-            print(f"sans objet (clé {key} absente)")
-            return 0
     for ref in (args.base, args.head):
         found = subprocess.run(
             ["git", "-C", args.root, "rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}"], capture_output=True
@@ -151,6 +150,15 @@ def main(argv: list[str] | None = None) -> int:
         if found.returncode != 0:
             print(f"stack_check: la référence git `{ref}` est introuvable dans {args.root}", file=sys.stderr)
             return 2
+    try:
+        config = read_config(args)
+    except (OSError, UnicodeDecodeError) as error:
+        print(f"stack_check: {error}", file=sys.stderr)
+        return 2
+    for key in (STACK_KEY, LOCKFILE_KEY):
+        if not config.get(key):
+            print(f"sans objet (clé {key} absente)")
+            return 0
     stack_values = config[STACK_KEY]
     if len(stack_values) != 1:
         print(invalid(STACK_KEY, f"un seul fichier par la clé {STACK_KEY}, lu : {' ; '.join(stack_values)}"))
