@@ -281,6 +281,16 @@ class RaisedEntry(unittest.TestCase):
         text = diff(BASELINE, "-2 src/a.py", "-src/b.py", "+src/b.py", "+2 src/a.py")
         self.assertEqual(statuses([ENTRY], text), [NONE])
 
+    def test_f0002_a15_a_lone_key_counts_1_so_an_added_lone_key_is_a_raise(self) -> None:
+        added = diff(BASELINE, "+src/new.py")
+        raised = diff(BASELINE, "-src/a.py", "+2 src/a.py")
+        lowered = diff(BASELINE, "-2 src/a.py", "+src/a.py")
+        self.assertEqual(statuses([ENTRY], added), [APPLIES])
+        results = check([ENTRY], raised)
+        self.assertEqual([result.status for result in results], [APPLIES])
+        self.assertIn("1 à 2", results[0].detail)
+        self.assertEqual(statuses([ENTRY], lowered), [NONE])
+
 
 class Command(unittest.TestCase):
     def run_main(self, usine_text: str | None, diff_text: str) -> tuple[int, str, str]:
