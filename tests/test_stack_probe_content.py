@@ -77,5 +77,31 @@ class TemplateDocumentsTheStackKey(unittest.TestCase):
             self.assertIn(text, section)
 
 
+def judge_section() -> str:
+    judge = read("agents", "qc-conf.md")
+    section = judge[judge.index("## Dépendances permises"):]
+    return section[: section.index(" ## ")] if " ## " in section else section
+
+
+class JudgeReadsTheStackProbe(unittest.TestCase):
+    def test_an_unlisted_or_unsourced_package_is_a_blocker_that_cites_the_line_to_write(self) -> None:
+        """F-0002 A10: `UNLISTED` and `NO SOURCE` are `BLOCKER`s under rule `F-8`, with the line to write as the scenario."""
+        section = judge_section()
+        for text in ("`UNLISTED`", "`NO SOURCE`", "`BLOCKER`", "`F-8`", "ligne à écrire", "pas de `probe:`","« déduit »"):
+            self.assertIn(text, section)
+
+    def test_not_run_and_invalid_are_rendered_as_they_are(self) -> None:
+        """F-0002 A10: `NOT RUN` and `INVALID` go to `GATES`, never read as `OK` or as no dependency added."""
+        section = judge_section()
+        for text in ("`NOT RUN`", "`INVALID`", "`GATES`", "stack : sans objet", "jamais lue comme « aucune »", "jamais `OK`"):
+            self.assertIn(text, section)
+
+    def test_an_added_list_line_is_read_for_its_source(self) -> None:
+        """F-0002 A10: an `ADDED` line is not a finding by itself; its source is read under `F-8`."""
+        section = judge_section()
+        self.assertIn("`ADDED`", section)
+        self.assertIn("source", section[section.index("`ADDED`"):])
+
+
 if __name__ == "__main__":
     unittest.main()
