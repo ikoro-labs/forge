@@ -1,18 +1,21 @@
-"""PostToolUse hook: what an agent writes is formatted, and carries no em dash.
+"""PostToolUse hook: what an agent writes is formatted, linted, and carries no em dash.
 
 After an Edit or a Write, the commands of the `format-on-write` key of `docs/agents/usine.md`
-whose pattern matches the file run on it, in the file's order, then an em dash beyond the file's
-allowance is reported. Both report with exit code 2, which Claude Code shows to the agent so it
-fixes the file before going on; the write itself stays.
+whose pattern matches the file run on it, in the file's order, then those of the `lint-on-write`
+key the same way, then an em dash beyond the file's allowance is reported. All report with exit
+code 2, which Claude Code shows to the agent so it fixes the file before going on; the write itself
+stays. A failing command is reported as `<key>: <command> failed on <path> (<reason>)`, followed by
+the end of what it printed: the last `TAIL_LINES` lines and `TAIL_BYTES` bytes at most.
 
-A `format-on-write` line is `<pattern> | <command>`. The pattern is compared with the whole
+A line of either key is `<pattern> | <command>`; a line that is not is ignored, and the message
+says so. The pattern is compared with the whole
 relative POSIX path, case included: `**/` (any directories, or none), `*` and `?` (not a `/`),
 `{a,b}` (alternatives, not nested); anything else is literal. The command is split like a POSIX
 shell would, run without a shell from the project root, with the file's absolute path as its last
-argument. Each command has `COMMAND_TIMEOUT` seconds, all of them together `TOTAL_TIMEOUT`.
-Each runs in its own process group, killed whole at the delay. On Windows a `.cmd` or `.bat`
-formatter goes through cmd.exe, so a path with a cmd.exe metacharacter is refused, not quoted.
-Without the key nothing is formatted and no formatter is guessed.
+argument. Each command has `COMMAND_TIMEOUT` seconds, all of them together `TOTAL_TIMEOUT`, the two
+keys sharing that total. Each runs in its own process group, killed whole at the delay. On Windows
+a `.cmd` or `.bat` command goes through cmd.exe, so a path with a cmd.exe metacharacter is refused,
+not quoted. Without a key nothing runs for it and no command is guessed.
 
 The em dash allowances are the project's, in the file the `em-dash-allowances` key names, one
 `<count> <path>` line per file; without that key no file has any.
@@ -43,6 +46,7 @@ from utf8_stdio import use_utf8
 EM_DASH = chr(0x2014)
 ALLOWANCES_KEY = "em-dash-allowances"
 FORMAT_KEY = "format-on-write"
+LINT_KEY = "lint-on-write"
 COMMAND_TIMEOUT = 30
 TOTAL_TIMEOUT = 120
 TAIL_LINES = 20
@@ -202,7 +206,10 @@ def main() -> int:
     if not path.is_file():
         return 0
     config = load(root)
-    problems = _run_key(FORMAT_KEY, config, root, path.resolve(), relative, _Deadline())
+    deadline = _Deadline()
+    problems: list[str] = []
+    for key in (FORMAT_KEY, LINT_KEY):
+        problems.extend(_run_key(key, config, root, path.resolve(), relative, deadline))
     content = path.read_text(encoding="utf-8", errors="replace")
     if problem := em_dash_problem(relative, content, load_allowances(root)):
         problems.append(problem)

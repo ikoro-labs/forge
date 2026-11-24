@@ -490,5 +490,26 @@ class OutputTail(_KeyedHook):
         self.assertEqual(set(relayed), {"\u00e9"})
 
 
+class LintOnWrite(_KeyedHook):
+    """F-0002 A17, A20, A21, A22: the `lint-on-write` key, on the runner of `format-on-write`."""
+
+    def test_a_failing_lint_refuses_the_write_and_relays_the_output(self) -> None:
+        """F-0002 A17: exit 2, the failure line of the key, then the end of the tool output."""
+        command = self.failing("print('E501 line too long')")
+        self.configure(("lint-on-write", f"**/*.txt | {command}"))
+        code, err = run_hook(self.root, self.target)
+        self.assertEqual(code, 2)
+        self.assertEqual(
+            err, f"lint-on-write: {command} failed on a.txt (exit 1)\nE501 line too long\n"
+        )
+        self.assertEqual(self.target.read_text(encoding="utf-8"), "x")
+        # A passing command, or a pattern that does not match the file, stays silent.
+        passing = self.script("ok.py", "print('fine')\n")
+        self.configure(
+            ("lint-on-write", f"**/*.txt | {passing}"), ("lint-on-write", f"**/*.py | {command}")
+        )
+        self.assertEqual(run_hook(self.root, self.target), (0, ""))
+
+
 if __name__ == "__main__":
     unittest.main()
