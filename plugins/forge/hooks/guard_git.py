@@ -47,10 +47,12 @@ Refused, with the reason on stderr and exit code 2 so Claude Code blocks the cal
   of the repository the command acts in, which `local_tag_exists` reads: closed when it cannot tell,
   and a push of a branch is not held) and `gh release create` (it creates a tag), for every agent,
   unless the project's `agent-autonomy`
-  key is one line, `on`, in `docs/agents/usine.md` as `origin/main` holds it (`autonomy_refusal`). The
-  file is read by `git show` on the remote-tracking ref, never in the working tree, which an agent can
-  edit; a key absent, repeated, not `on`, or a file or ref that cannot be read, refuses, and the
-  refusal says the gesture stays the human's. A listing of tags is a reading. `--disable-auto` alone
+  key is one line, `on`, in `docs/agents/usine-gardes.md` as `origin/main` holds it, or in
+  `docs/agents/usine.md` as `origin/main` holds it while the guard file is absent there
+  (`autonomy_refusal`). The file is read from the remote-tracking ref (`git ls-tree`, `git
+  cat-file`), never in the working tree, which an agent can edit; a key absent, repeated, not `on`,
+  or a file or ref that cannot be read, a guard file that git lists and cannot read included,
+  refuses, and the refusal says the gesture stays the human's. A listing of tags is a reading. `--disable-auto` alone
   merges nothing and reads no key. The end-to-end trial and the absence of `sev1` that `release`
   requires are not read here. A caller of `refusal` that passes no `autonomy` (None) does not ask for
   the check; `main` always passes it.
@@ -154,7 +156,16 @@ from typing import NamedTuple
 from budget import KEY as BUDGET_KEY
 from budget import merge_refusal, state_path
 from refusal_journal import record
-from usine import load, pattern_regex, project_root, split_value
+from usine import (
+    CONFIG_PATH,
+    GUARD_PATH,
+    OnMain,
+    load_checked,
+    on_main,
+    pattern_regex,
+    project_root,
+    split_value,
+)
 from usine import parse as parse_usine
 from utf8_stdio import use_utf8
 
@@ -168,9 +179,8 @@ PROTECTED_KEY = "protected-path"
 # The one way the project merges a PR: `merge`, `squash` or `rebase`.
 METHOD_KEY = "merge-method"
 BUNDLE_KEY = "rescue-bundle-dir"
-# The switch of the agent's merge and tag: read in the file as `origin/main` holds it, not on disk.
+# The switch of the agent's merge and tag: read in the guard file as `origin/main` holds it, not on disk.
 AUTONOMY_KEY = "agent-autonomy"
-AUTONOMY_SOURCE = ("refs/remotes/origin/main", "docs/agents/usine.md")
 MERGE_METHODS = ("merge", "squash", "rebase")
 
 # Every external call has a timeout: a hook that hangs blocks the agent's command.
@@ -2506,20 +2516,25 @@ def bundle_covers(directory: str | None, names: list[str], folders: Iterable[str
 def autonomy_refusal(directory: str | None, gesture: str) -> str | None:
     """Why `gesture` (`merge` or `tag`) is refused for the key `agent-autonomy`, or None: it is `on`.
 
-    The key is read in `docs/agents/usine.md` as `refs/remotes/origin/main` holds it (`git show`),
-    never in the working tree, which the agent can edit: what counts is what the human merged. A
-    line `on` alone opens the gesture. An absent key, a repeated one, any other value, and a file
-    or a ref that cannot be read (no git, a timeout, no `origin/main`, no repository) refuse it.
-    The ref is the one this clone last fetched: a key the human removed closes the gesture here
-    only from the next `git fetch`.
+    The key is read in `docs/agents/usine-gardes.md` as `refs/remotes/origin/main` holds it (`git
+    ls-tree`, `git cat-file`), or, while that file is absent there, in `docs/agents/usine.md` as
+    the same ref holds it; never in the working tree, which the agent can edit: what counts is what
+    the human merged. A line `on` alone opens the gesture. An absent key, a repeated one, any other
+    value, and a file or a ref that cannot be read (no git, a timeout, no `origin/main`, no
+    repository, a guard file the ref lists and git cannot read) refuse it. The ref is the one this
+    clone last fetched: a key the human removed closes the gesture here only from the next `git
+    fetch`.
     """
-    git = shutil.which("git")
     where = native_directory(directory)
-    ref, path = AUTONOMY_SOURCE
-    shown = _run([git, "show", f"{ref}:{path}"], where) if git and where else None
-    if shown is None or shown.returncode != 0:
+    nowhere = OnMain(None, "no directory")
+    shown = on_main(where, GUARD_PATH) if where else nowhere
+    path = GUARD_PATH.as_posix()
+    if shown.text is None and shown.why is None:  # the guard file is absent: the keys are not moved yet
+        shown = on_main(where, CONFIG_PATH) if where else nowhere
+        path = CONFIG_PATH.as_posix()
+    if shown.text is None:  # unreadable, or no file at all: a guard file that cannot be read refuses the merge
         why = f"{path} cannot be read on origin/main"
-    elif not (lines := parse_usine(shown.stdout).get(AUTONOMY_KEY, [])):
+    elif not (lines := parse_usine(shown.text).get(AUTONOMY_KEY, [])):
         why = f"{path} on origin/main has no `{AUTONOMY_KEY}` line"
     elif len(lines) > 1:
         listed = ", ".join(f"- `{AUTONOMY_KEY}` : `{value}`" for value in lines)
@@ -2801,7 +2816,10 @@ def main() -> int:
     command = str(event.get("tool_input", {}).get("command", ""))
     cwd = event.get("cwd")
     root = project_root(event)
-    config = load(root)
+    loaded = load_checked(root)
+    config = loaded.config
+    for notice in loaded.notices:
+        sys.stderr.write(f"forge guard_git: {notice}.\n")
     if mcp_merge(event.get("tool_name"), event.get("tool_input")):
         reason = autonomy_refusal(str(root), "merge")
         if reason is None:

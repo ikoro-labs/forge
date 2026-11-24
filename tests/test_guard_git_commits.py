@@ -11,6 +11,7 @@ from unittest import mock
 
 import support  # noqa: F401  met les hooks sur le chemin d'import
 from guard_git import commits_via_gh, guarded_main, parse_commits, refusal
+from usine import Loaded
 
 Commit = tuple[str, str]
 SHA = "8e80a6e46958d38d63deb30b4500f23899bf5c01"
@@ -216,7 +217,7 @@ class TheHook(unittest.TestCase):
                 mock.patch("guard_git.autonomy_refusal", lambda _directory, _gesture: None),  # the key is read in origin/main: tests/test_guard_git_autonomy.py
                 mock.patch("guard_git.changed_files_via_gh", lambda _cwd: lambda *_args: []),
                 mock.patch("guard_git.commits_via_gh", lambda _cwd: lambda *_target: commits),
-                mock.patch("guard_git.load", lambda _root: {"merge-method": ["merge"]}),
+                mock.patch("guard_git.load_checked", lambda _root: Loaded({"merge-method": ["merge"]}, [], None)),
             ):
                 return guarded_main(), err.getvalue()
 

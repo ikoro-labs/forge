@@ -6,15 +6,18 @@ session's `CLAUDE_` or `GIT_` variables reaches git, and the real `~/.claude` is
 written.
 """
 
+import json
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from pathlib import Path
 
-import support  # noqa: F401  met les hooks sur le chemin d'import
+import support
+from guard_git import autonomy_refusal
 from usine import GUARD_PATH, SENSITIVE_KEYS, load, load_checked
 
 USINE = Path("docs") / "agents" / "usine.md"
@@ -136,6 +139,124 @@ class SensitiveKeysAreReadInTheGuardFile(unittest.TestCase):
             config = load(where)
         self.assertEqual(len(SENSITIVE_KEYS), 21)
         self.assertEqual({key: config.get(key) for key in SENSITIVE_KEYS}, {key: [f"guard-{key}"] for key in SENSITIVE_KEYS})
+
+
+def lose_the_guard_file(where: Path, home: Path) -> None:
+    """Delete the object of the guard file: the ref lists it and git cannot read it."""
+    sha = git(where, home, "rev-parse", f"refs/remotes/origin/main:{GUARD_PATH.as_posix()}").strip()
+    loose = where / ".git" / "objects" / sha[:2] / sha[2:]
+    loose.chmod(0o600)
+    loose.unlink()
+
+
+def run_guard(where: Path, event: Mapping[str, object]) -> subprocess.CompletedProcess[str]:
+    """`guard_git.py` as a process, in `where`, under the temporary HOME of that project."""
+    return subprocess.run(  # noqa: S603 - the interpreter running this suite, a fixed script
+        [sys.executable, str(support.PLUGIN / "hooks" / "guard_git.py")],
+        input=json.dumps({"cwd": str(where), **event}),
+        env=environment(where.parent / "home"),
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=60,
+    )
+
+
+def bash(command: str) -> dict[str, object]:
+    return {"tool_name": "Bash", "tool_input": {"command": command}}
+
+
+GITHUB_MERGE = {"tool_name": "mcp__github__merge_pull_request", "tool_input": {"pullNumber": 5}}
+
+
+class AnUnreadableGuardFileRefusesTheMerge(unittest.TestCase):
+    def test_b4_the_loader_says_why_the_guard_file_cannot_be_read(self) -> None:
+        """#345 B4: the ref lists `usine-gardes.md` and git cannot read it: `unreadable` is set, the keys fall back."""
+        on_main = {GUARD_PATH: entry("ticket-pr-cap", "3"), USINE: entry("merge-method", "merge")}
+        with project(on_main) as where:
+            lose_the_guard_file(where, where.parent / "home")
+            loaded = load_checked(where)
+        self.assertIsNotNone(loaded.unreadable)
+        self.assertEqual(loaded.config["merge-method"], ["merge"])
+        self.assertIn("cannot be read", loaded.notices[0])
+
+    def test_b4_no_origin_main_and_no_repository_are_unreadable_too(self) -> None:
+        """#345 B4: git cannot tell what the human merged: not "absent", unreadable."""
+        with project({USINE: entry("merge-method", "merge")}) as where:
+            git(where, where.parent / "home", "update-ref", "-d", "refs/remotes/origin/main")
+            self.assertIsNotNone(load_checked(where).unreadable)
+        with tempfile.TemporaryDirectory() as folder:
+            self.assertIsNotNone(load_checked(Path(folder)).unreadable)
+
+    def test_b4_a_merge_through_the_github_tool_is_refused_and_the_reason_names_the_guard_file(self) -> None:
+        """#345 B4: `agent-autonomy` is `on` in `usine.md`, but the guard file cannot be read: refused."""
+        on_main = {GUARD_PATH: entry("agent-autonomy", "on"), USINE: entry("agent-autonomy", "on")}
+        with project(on_main) as where:
+            lose_the_guard_file(where, where.parent / "home")
+            done = run_guard(where, GITHUB_MERGE)
+        self.assertEqual(done.returncode, 2, done.stderr)
+        self.assertIn("docs/agents/usine-gardes.md cannot be read on origin/main", done.stderr)
+
+    def test_b4_a_gh_merge_is_refused_the_same_way(self) -> None:
+        """#345 B4: `gh pr merge` goes through the same reader."""
+        on_main = {GUARD_PATH: entry("agent-autonomy", "on")}
+        with project(on_main) as where:
+            lose_the_guard_file(where, where.parent / "home")
+            done = run_guard(where, bash("gh pr merge 5 --merge"))
+        self.assertEqual(done.returncode, 2, done.stderr)
+        self.assertIn("docs/agents/usine-gardes.md cannot be read on origin/main", done.stderr)
+
+
+class TheAutonomySwitchIsReadInTheGuardFile(unittest.TestCase):
+    def test_the_switch_on_in_the_guard_file_opens_the_gesture(self) -> None:
+        """#345 B1: `agent-autonomy` is a sensitive key: `on` in `usine-gardes.md` on `origin/main` opens it."""
+        with project({GUARD_PATH: entry("agent-autonomy", "on"), USINE: "# Usine\n"}) as where:
+            self.assertIsNone(autonomy_refusal(str(where), "merge"))
+            self.assertIsNone(autonomy_refusal(str(where), "tag"))
+
+    def test_the_guard_file_wins_over_usine_md_on_origin_main(self) -> None:
+        """#345 B1: `off` in the guard file, `on` in `usine.md`: refused, the guard file speaks."""
+        on_main = {GUARD_PATH: entry("agent-autonomy", "off"), USINE: entry("agent-autonomy", "on")}
+        with project(on_main) as where:
+            reason = autonomy_refusal(str(where), "merge")
+        assert reason is not None
+        self.assertIn("docs/agents/usine-gardes.md", reason)
+
+    def test_the_switch_is_still_read_in_usine_md_while_the_guard_file_is_absent(self) -> None:
+        """#345 B3: before the move, `usine.md` on `origin/main` holds the switch, as it did."""
+        with project({USINE: entry("agent-autonomy", "on")}) as where:
+            self.assertIsNone(autonomy_refusal(str(where), "merge"))
+
+    def test_the_switch_in_the_working_tree_guard_file_does_not_count(self) -> None:
+        """#345 B1: the agent edits the guard file on disk; `origin/main` says `off`."""
+        with project({GUARD_PATH: entry("agent-autonomy", "off")}, in_tree={GUARD_PATH: entry("agent-autonomy", "on")}) as where:
+            self.assertIsNotNone(autonomy_refusal(str(where), "merge"))
+
+
+class TheOtherGuardKeysGoThroughTheLoader(unittest.TestCase):
+    OWNER = entry("owner-gesture", "gh label delete | labels belong to the owner")
+
+    def test_b1_a_guard_key_of_the_guard_file_is_applied_by_guard_git(self) -> None:
+        """#345 B1: `owner-gesture` in the guard file refuses `gh label delete`, with the human's reason."""
+        with project({GUARD_PATH: self.OWNER, USINE: "# Usine\n"}) as where:
+            done = run_guard(where, bash("gh label delete bug"))
+        self.assertEqual(done.returncode, 2, done.stderr)
+        self.assertIn("labels belong to the owner", done.stderr)
+
+    def test_b2_the_same_key_written_in_usine_md_is_not_applied_and_the_notice_is_on_stderr(self) -> None:
+        """#345 B2: dropped from `usine.md` once the guard file exists; the guard says so on stderr."""
+        with project({GUARD_PATH: "# Gardes\n", USINE: self.OWNER}) as where:
+            done = run_guard(where, bash("git status"))
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("`owner-gesture` in docs/agents/usine.md is dropped", done.stderr)
+
+    def test_b3_before_the_guard_file_exists_usine_md_is_applied_and_a_notice_is_on_stderr(self) -> None:
+        """#345 B3: the project that has not moved its keys keeps its guards, and the guard says why."""
+        with project({USINE: self.OWNER}) as where:
+            done = run_guard(where, bash("gh label delete bug"))
+        self.assertEqual(done.returncode, 2, done.stderr)
+        self.assertIn("labels belong to the owner", done.stderr)
+        self.assertIn("docs/agents/usine-gardes.md is absent on origin/main", done.stderr)
 
 
 class WithoutAGuardFileOnOriginMainTheKeysComeFromUsineMd(unittest.TestCase):

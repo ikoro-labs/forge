@@ -353,7 +353,9 @@ class Hook(Repositories):
             self.assertIn("forced branch deletion", message)
         self.git("bundle", "create", str(self.rescue / "x.bundle"), "feat/x", "--not", "--remotes")
         with run_hook(command, self.work, self.work, str(self.rescue)) as (code, message):
-            self.assertEqual((code, message), (0, ""))
+            # This repository has no `origin/main`: the guard says on stderr that it read its keys from `usine.md`.
+            self.assertEqual(code, 0)
+            self.assertNotIn("Blocked by the forge plugin", message)
 
     def test_the_hook_without_the_key_keeps_the_refusal(self) -> None:
         """#280 A5: key absent: step without object, no default folder, the refusal stays."""
