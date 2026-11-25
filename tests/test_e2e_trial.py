@@ -544,11 +544,16 @@ class Launch(unittest.TestCase):
         self.assertIn("RESULTAT: PASS", out)
 
     def test_the_options_win_over_e2e_run_limits(self) -> None:
-        """Ticket #359, A1 : `--timeout 1` l'emporte sur `e2e-run-limits` à 60 s."""
-        keys = {**KEYS, "e2e-run-limits": "500 | 60"}
-        _, code, out, _ = self.launch("--timeout", "1", keys=keys, claude=[{"has": ["-p"], "sleep": 5}])
-        self.assertEqual(code, 1)
-        self.assertIn("délai", out)
+        """Ticket #359, A1 : `--timeout 60` l'emporte sur le délai de `e2e-run-limits` (1 s), dont la mémoire borne le reste.
+
+        Sans `run-limits`, seule la clé `e2e-run-limits` fournit la mémoire : l'option de délai complète la
+        clé au lieu de la contredire, et le lancement de 3 s passe sous le délai de l'option, non celui de la clé.
+        """
+        keys = {name: value for name, value in KEYS.items() if name != "run-limits"}
+        keys["e2e-run-limits"] = "500 | 1"
+        _, code, out, _ = self.launch("--timeout", "60", keys=keys, claude=[{"has": ["-p"], "sleep": 3}])
+        self.assertEqual(code, 0, out)
+        self.assertIn("RESULTAT: PASS", out)
 
     def test_an_option_wins_part_by_part_the_other_part_comes_from_e2e_run_limits(self) -> None:
         """Ticket #359, A1 : `--memory-mb` seul laisse le délai de `e2e-run-limits` (1 s) tuer le lancement."""
