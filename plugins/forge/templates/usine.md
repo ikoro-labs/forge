@@ -19,9 +19,9 @@ relatifs à la racine du dépôt.
 
 ## Clés protégées : `docs/agents/usine-gardes.md`
 
-Vingt et une clés bornent les pouvoirs de l'agent : `agent-autonomy`, `protected-path`,
+Vingt-deux clés bornent les pouvoirs de l'agent : `agent-autonomy`, `protected-path`,
 `gh-api-allow`, `owner-gesture`, `never-weaken`, `infra-hosts`, `infra-verify`, `pr-cap-raiser`,
-`ticket-pr-cap`, `ticket-pr-cap-since`, `ticket-budget`, `run-limits`, `run-budget`,
+`ticket-pr-cap`, `ticket-pr-cap-since`, `ticket-budget`, `run-limits`, `e2e-run-limits`, `run-budget`,
 `budget-action`, `slo`, `accepting-human`, `validation-owner`, `validation-reviewer`, `pin-bump`,
 `readonly-agent` et `readonly-command`. Elles gardent ici leur forme et leur section d'exemple, mais
 un projet les écrit dans un second fichier, `docs/agents/usine-gardes.md`, protégé comme les gardes
@@ -35,6 +35,11 @@ bornes. Les autres clés, dites libres, restent dans `usine.md`.
 - Tant que ce fichier est absent de `origin/main`, toutes les clés se lisent dans `usine.md`, avec
   un avis : un projet qui n'a pas déplacé ses clés continue de fonctionner.
 - Si le fichier est présent et que git ne peut pas le lire, le garde refuse la fusion.
+- Les scripts du plugin lisent la configuration par le même chargeur (`usine.read_config`) : les clés libres de
+  `usine.md` et les clés protégées de ce fichier sur `origin/main`. Quand git ne sait pas lire le fichier
+  (ni dépôt, ni `origin/main`, un objet illisible), un script refuse (code 2, la raison nomme le fichier) au lieu
+  de lire `usine.md` seul. Un script lancé avec `--usine <fichier>` lit ce fichier tel quel : `forge:qc-gate` le
+  fabrique de la base, les deux fichiers réunis, par `usine_base.py`.
 
 Chaque clé de ce gabarit est rangée d'un côté ou de l'autre : un test échoue sur une clé ajoutée
 sans classe.
@@ -691,7 +696,8 @@ sont facultatives. Toute autre marque est refusée. Sans la clé, l'étape est
 
 - `e2e-budget-usd` : `<2.50>`
 
-`e2e-run-limits` : clé facultative, la mémoire en Mo et le délai en secondes du seul lancement de la
+`e2e-run-limits` : clé facultative, protégée (elle lève la borne de `run-limits` pour le lancement : elle se lit dans
+`usine-gardes.md`), la mémoire en Mo et le délai en secondes du seul lancement de la
 commande, sous la forme de `run-limits` (une seule ligne, deux nombres positifs). Une feature entière
 (`forge:feature-build`) tourne plus longtemps qu'une suite de tests : `run-limits` est dimensionnée pour
 la suite, et cette clé donne à l'essai sa propre borne. Elle l'emporte sur `run-limits`, les options
