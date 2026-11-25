@@ -70,9 +70,8 @@ def _print(*fields: str) -> None:
 
 def declencher(args: argparse.Namespace) -> int:
     root = Path(args.root) if args.root else usine.project_root()
-    config_file = Path(args.usine) if args.usine else root / usine.CONFIG_PATH
     try:
-        config = usine.parse(config_file.read_text(encoding="utf-8"))
+        config = usine.read_config(args.usine, root)
     except FileNotFoundError:
         if args.usine:
             raise
@@ -240,7 +239,7 @@ def main(argv: list[str] | None = None) -> int:
     commands = parser.add_subparsers(dest="command", required=True)
     trigger = commands.add_parser("declencher", help="does a merged diff trigger the review, and on which screens")
     trigger.add_argument("--files", required=True, help="the files the merged PR changed, one per line")
-    trigger.add_argument("--usine", help="the usine.md to read (default: docs/agents/usine.md)")
+    trigger.add_argument("--usine", help="the usine.md to read, as it is (default: docs/agents/usine.md with docs/agents/usine-gardes.md on origin/main)")
     trigger.add_argument("--root", help="the project copy to read (default: the project directory)")
     trigger.add_argument("--matrice", help="the matrix of the feature, to find the screens of the ticket")
     trigger.add_argument("--ticket", help="the merged ticket, written #n")

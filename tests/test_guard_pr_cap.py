@@ -878,8 +878,8 @@ class ExemptKeyDeclared(unittest.TestCase):
         text = " ".join((support.PLUGIN / "templates" / "usine.md").read_text(encoding="utf-8").split())
         section = text.split("## Clés protégées")[1].split(" Les autres clés")[0]
         self.assertIn("`ticket-pr-cap-exempt`", section)
-        self.assertIn("Vingt-deux clés", section)
-        self.assertEqual(len(SENSITIVE_KEYS), 22)
+        self.assertIn("Vingt-trois clés", section)
+        self.assertEqual(len(SENSITIVE_KEYS), 23)
 
 
 class ExemptCreation(unittest.TestCase):

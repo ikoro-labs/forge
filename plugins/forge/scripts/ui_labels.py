@@ -164,16 +164,15 @@ def _glossary_section(config: dict[str, list[str]], paths: list[str], text: str,
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument("diff", help="the unified diff of the PR, or - for the standard input")
-    parser.add_argument("--usine", help="the usine.md to read (default: docs/agents/usine.md)")
+    parser.add_argument("--usine", help="the usine.md to read, as it is (default: docs/agents/usine.md with docs/agents/usine-gardes.md on origin/main)")
     parser.add_argument("--root", help="the project copy to read (default: the project directory)")
     args = parser.parse_args(argv)
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     root = Path(args.root) if args.root else usine.project_root()
-    config_file = Path(args.usine) if args.usine else root / usine.CONFIG_PATH
     try:
         try:
-            config = usine.parse(config_file.read_text(encoding="utf-8"))
+            config = usine.read_config(args.usine, root)
         except FileNotFoundError:
             if args.usine:
                 raise

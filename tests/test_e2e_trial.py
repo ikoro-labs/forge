@@ -30,6 +30,7 @@ from unittest import mock
 import support
 from e2e_trial import main
 from output_check import deviations
+from test_usine_guard_file import git as isolated_git
 from usine import parse
 
 USINE_TEMPLATE = support.PLUGIN / "templates" / "usine.md"
@@ -45,6 +46,13 @@ KEYS = {
     "e2e-budget-usd": "2.5",
     "run-limits": "500 | 60",
 }
+
+
+def with_origin_main(where: Path, home: Path) -> None:
+    """Make `where` a repository whose `origin/main` exists: the scripts read `usine-gardes.md` there (ticket #345)."""
+    for words in (("init", "-q", "-b", "main"), ("commit", "-q", "--allow-empty", "-m", "init"),
+                  ("update-ref", "refs/remotes/origin/main", "HEAD")):
+        isolated_git(where, home, *words)
 
 
 def usine_text(**keys: str) -> str:
@@ -129,6 +137,7 @@ def scenario(**changes: list[dict]) -> dict[str, list[dict]]:
             {"has": ["pr", "checks"], "stdout": checks(("tests", "pass"), ("lint", "pass"))},
         ],
         "git": [
+            {"has": ["ls-tree"]},  # the guard file is absent on `origin/main` (ticket #345): `usine.md` alone
             {"has": ["remote", "-v"], "stdout": remotes(OWN_URL)},
             {"has": ["commit"], "snapshot": True},
             {"has": ["rev-parse", "HEAD"], "stdout": "0123abc\n"},
@@ -156,6 +165,8 @@ class Project:
             (self.root / "docs" / "agents" / "usine.md").write_text(usine_text(**keys), encoding="utf-8")
         self.home = Path(folder.name) / "home"
         self.home.mkdir()
+        if tools is None:  # real git: the project is a repository, so that the guard file is readable (absent)
+            with_origin_main(self.root, self.home)
         self.state = Path(folder.name) / "state"
         self.state.mkdir()
         self.env = {
@@ -774,6 +785,7 @@ class ReleaseInstruction(unittest.TestCase):
             home.mkdir()
             project = Path(folder) / "projet"
             project.mkdir()
+            with_origin_main(project, home)
             env = {
                 "PATH": os.environ.get("PATH", ""),
                 "SYSTEMROOT": os.environ.get("SYSTEMROOT", ""),

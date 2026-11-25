@@ -545,14 +545,15 @@ Windows, le chemin du dépôt lu par `git show` n'a pas été essayé.
 
 ## Le fichier des clés protégées : `docs/agents/usine-gardes.md`
 
-Vingt-deux clés de `usine.md` bornent les pouvoirs de l'agent (ikoro-labs/forge#345 ; `ticket-pr-cap-exempt`
-s'y est ajoutée avec ikoro-labs/forge#314) : `agent-autonomy`,
+Vingt-trois clés de `usine.md` bornent les pouvoirs de l'agent (ikoro-labs/forge#345 ; `e2e-run-limits` et
+`ticket-pr-cap-exempt` s'y sont ajoutées, avec ikoro-labs/forge#359 et ikoro-labs/forge#314) : `agent-autonomy`,
 `protected-path`, `gh-api-allow`, `owner-gesture`, `never-weaken`, `infra-hosts`, `infra-verify`,
-`pr-cap-raiser`, `ticket-pr-cap`, `ticket-pr-cap-since`, `ticket-pr-cap-exempt`, `ticket-budget`, `run-limits`, `run-budget`,
+`pr-cap-raiser`, `ticket-pr-cap`, `ticket-pr-cap-since`, `ticket-pr-cap-exempt`, `ticket-budget`, `run-limits`,
+`e2e-run-limits`, `run-budget`,
 `budget-action`, `slo`, `accepting-human`, `validation-owner`, `validation-reviewer`, `pin-bump`,
 `readonly-agent` et `readonly-command`. Les lire dans l'arbre de travail ne tenait que parce que `usine.md`
 était un `protected-path` : chaque réglage libre (`merge-method`, `release-trigger`, `output-words-*`...)
-attendait donc l'humain avec elles. Le plugin lit désormais ces vingt-deux clés dans un second fichier,
+attendait donc l'humain avec elles. Le plugin lit désormais ces vingt-trois clés dans un second fichier,
 `docs/agents/usine-gardes.md`, tel que `origin/main` le tient (`git ls-tree` puis `git cat-file` sur
 `refs/remotes/origin/main`), et `usine.load` fusionne les deux fichiers. Les autres clés restent dans
 `usine.md`. Le chemin du fichier est une constante de `plugins/forge/hooks/usine.py`, jamais une clé, et
@@ -569,12 +570,36 @@ l'ensemble des clés protégées est `SENSITIVE_KEYS`, au même endroit.
 - **Chaque clé du gabarit a sa classe** : `tests/test_usine_keys_classified.py` échoue sur une clé ajoutée
   au gabarit qui n'est ni dans `SENSITIVE_KEYS` ni dans sa liste des clés libres.
 
-Éprouvé par `tests/test_usine_guard_file.py` et `tests/test_usine_keys_classified.py` (dépôts jetables,
-`HOME` jeté, le hook joué comme un processus), sous Linux seulement. Non tenu ici : les scripts qui lisent
-leur fichier par `usine.parse` (par exemple `bounded_run.py` pour `run-limits` et `run-budget`,
-`never_weaken.py` pour `never-weaken`, `e2e_trial.py` pour `run-limits`) ne passent pas par ce lecteur
-et continuent de lire `usine.md` ; le déplacement des clés de ce dépôt, de `CODEOWNERS` et de
-`protected-path` vers le nouveau fichier est une PR à part.
+- **Les scripts du plugin lisent les deux fichiers** (ikoro-labs/forge#345, partie 2 du plan : les lecteurs).
+  `bounded_run.py` (`run-limits`, `run-budget`), `commit_replay.py`, `base_replay.py`, `probe_replay.py`,
+  `e2e_trial.py` (`e2e-run-limits`), `never_weaken.py` (`never-weaken`), `lockfile_age.py`, `stack_check.py`,
+  `matrice.py`, `parcours.py`, `source_ids.py`, `ui_labels.py`, `preuves_ecran.py` et `revue_boucle.py` passent par
+  `usine.read_config`, qui fusionne `usine-gardes.md` comme le chargeur. Sans `--usine`, un fichier de gardes que
+  git ne sait pas lire (un objet illisible, pas d'`origin/main`, pas de dépôt) fait refuser le script, code 2, avec
+  le nom du fichier : il ne lit pas `usine.md` seul à la place. Un script sans `usine.md` ni fichier de gardes
+  dans un dépôt dont `origin/main` existe reste « sans objet », comme avant. Un checkout de CI qui ne ramène pas
+  `origin/main` (`actions/checkout` à profondeur 1) le ramène avant de lancer un script
+  (`git fetch origin main:refs/remotes/origin/main`) ou passe `--usine <fichier>` ; sans l'un des deux, le script
+  refuse. Avec `--usine <fichier>`, le
+  fichier est lu tel quel, sans second fichier. `e2e_trial.py` confie au lanceur borné un fichier où les deux
+  fichiers sont réunis, parce que le lancement se fait dans le clone d'essai.
+- **`forge:qc-gate` fabrique `usine-base.md` de la base** par `scripts/usine_base.py --base origin/<base>
+  usine-base.md`, qui réunit `usine.md` et `usine-gardes.md` tels que `origin/<base>` les tient, par la règle du
+  chargeur. Un fichier de gardes que git ne sait pas lire sur la base : code 2, aucun fichier écrit, la sonde
+  est un `FAIL`. Une PR ne lève donc aucune borne en changeant l'un ou l'autre fichier.
+- **`never_weaken.py` surveille les deux fichiers** : une entrée `never-weaken` retirée ou modifiée dans
+  `usine.md` comme dans `usine-gardes.md`, ou l'un des deux supprimé, déplacé ou remplacé, s'applique ; le
+  script imprime une ligne par fichier (`docs/agents/usine.md : never-weaken`, `docs/agents/usine-gardes.md :
+  never-weaken`).
+
+Éprouvé par `tests/test_usine_guard_file.py`, `tests/test_usine_keys_classified.py`,
+`tests/test_usine_read_config.py`, `tests/test_usine_readers_guard_file.py`, `tests/test_usine_base.py` et
+`tests/test_never_weaken.py` (dépôts jetables, `HOME` jeté, les scripts joués comme des processus), sous Linux
+seulement. Non tenu ici : le déplacement des clés de ce dépôt, de `CODEOWNERS` et de `protected-path` vers le
+nouveau fichier est une PR à part, après la version qui porte ces lecteurs ; `--usine-tete` de
+`preuves_ecran.py` (le `usine.md` de la tête, pour un `journey-replay` que la PR introduit) reste lu tel quel,
+sans gardes, parce qu'il ne porte aucune clé protégée ; sous Windows, la lecture par `git ls-tree` n'a pas été
+essayée.
 
 ## Supprimer une branche locale : `git branch -D` et le bundle
 
