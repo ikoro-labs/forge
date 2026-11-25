@@ -96,8 +96,8 @@ class DepotConfiguration(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         isolate(self, self.tmp.name, CLAUDE_CONFIG_DIR=str(Path(self.tmp.name) / "vide"))
         self.world = build(Path(self.tmp.name))
-        real = support.REPO_ROOT / "docs" / "agents" / "usine.md"
-        (self.world.root / "docs" / "agents" / "usine.md").write_text(real.read_text(encoding="utf-8"), encoding="utf-8")
+        # The two files of this repository, in the one file the fictitious world reads: the world has no `origin/main`.
+        (self.world.root / "docs" / "agents" / "usine.md").write_text(support.repo_usine_text(), encoding="utf-8")
 
     def run_command(self, command: str) -> tuple[int, str, str]:
         out, err = io.StringIO(), io.StringIO()

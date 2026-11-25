@@ -1,6 +1,6 @@
-# Les chemins de la clé `protected-path` (docs/agents/usine.md) : l'humain les approuve, jamais l'agent.
+# Les chemins de la clé `protected-path` (docs/agents/usine-gardes.md) : l'humain les approuve, jamais l'agent.
 # Une ligne par clé ; tests/test_codeowners.py garde la correspondance.
 /.github/CODEOWNERS* @sunderland-labs
 /plugins/forge/hooks/hooks.json* @sunderland-labs
 /plugins/forge/hooks/guard_* @sunderland-labs
-/docs/agents/usine.md* @sunderland-labs
+/docs/agents/usine-gardes.md* @sunderland-labs

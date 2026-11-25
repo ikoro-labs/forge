@@ -588,8 +588,8 @@ class TheKey(unittest.TestCase):
                 self.assertIn(phrase, before)
 
     def test_this_repository_counts_from_the_day_the_human_asked(self) -> None:
-        """Ticket #314, A8: `docs/agents/usine.md` holds `ticket-pr-cap-since : 2026-11-23`."""
-        text = (support.REPO_ROOT / "docs" / "agents" / "usine.md").read_text(encoding="utf-8")
+        """Ticket #314, A8: `docs/agents/usine-gardes.md` (moved by #345) holds `ticket-pr-cap-since : 2026-11-23`."""
+        text = support.repo_usine_text()
         self.assertIn("- `ticket-pr-cap-since` : `2026-11-23`", text)
 
     def test_the_plugin_names_no_date_of_its_own(self) -> None:
@@ -598,8 +598,8 @@ class TheKey(unittest.TestCase):
         self.assertNotRegex(text, r"\b20\d\d-\d\d-\d\d\b")
 
     def test_this_repository_declares_the_key_at_three(self) -> None:
-        """Ticket #314, A2: `docs/agents/usine.md` of this repository holds `ticket-pr-cap : 3`."""
-        text = (support.REPO_ROOT / "docs" / "agents" / "usine.md").read_text(encoding="utf-8")
+        """Ticket #314, A2: this repository holds `ticket-pr-cap : 3` in `docs/agents/usine-gardes.md` (moved by #345)."""
+        text = support.repo_usine_text()
         self.assertIn("- `ticket-pr-cap` : `3`", text)
 
 
@@ -906,10 +906,11 @@ class RaisedCap(unittest.TestCase):
         self.assertIsNone(project.create(pr_body("Closes #5"), self.full(3, [raised("kevin")])))
 
     def test_in_this_repository_no_account_raises_the_cap(self) -> None:
-        """Ticket #314, A4: with the real `docs/agents/usine.md`, the key is absent: neither account of the agent raises the cap."""
-        text = (support.REPO_ROOT / "docs" / "agents" / "usine.md").read_text(encoding="utf-8")
+        """Ticket #314, A4: with the real configuration of this repository, the key is absent: neither account of the agent raises the cap."""
+        text = support.repo_usine_text()
         self.assertNotRegex(text, r"(?m)^- `pr-cap-raiser` : `")
-        self.assertIn("`pr-cap-raiser`", text.split("## Clés absentes", 1)[1])
+        guard = (support.REPO_ROOT / "docs" / "agents" / "usine-gardes.md").read_text(encoding="utf-8")
+        self.assertIn("`pr-cap-raiser`", guard.split("## Clés absentes", 1)[1])
         project = Project(self, text)
         for login in ("ikoro-labs", "sunderland-labs"):
             with self.subTest(login=login):

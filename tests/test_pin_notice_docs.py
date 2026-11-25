@@ -34,8 +34,7 @@ class Documentation(unittest.TestCase):
 
     def test_this_repository_does_not_declare_the_key(self) -> None:
         """Out of scope of #278: this repository's pin stays a human gesture."""
-        factory = (support.REPO_ROOT / "docs" / "agents" / "usine.md").read_text(encoding="utf-8")
-        self.assertNotIn("`pin-bump` :", factory)
+        self.assertNotIn("pin-bump", support.repo_usine())
 
 
 if __name__ == "__main__":

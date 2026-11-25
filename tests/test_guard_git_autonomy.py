@@ -641,15 +641,16 @@ class TheMcpMergeToolFollowsTheKey(unittest.TestCase):
 class TheFileOfTheKeyIsTheHumansToMerge(unittest.TestCase):
     """The key is read in `origin/main`: a PR is the one way to change what `origin/main` holds."""
 
-    def test_this_repository_protects_usine_md_so_that_no_agent_merges_a_change_of_the_key(self) -> None:
-        """#280: `docs/agents/usine.md` is a `protected-path`, and a merge that touches it is refused."""
-        protected = load(support.REPO_ROOT).get("protected-path", [])
-        self.assertIn("docs/agents/usine.md", protected)
+    def test_this_repository_protects_the_guard_file_so_that_no_agent_merges_a_change_of_the_key(self) -> None:
+        """#280, moved by #345: `docs/agents/usine-gardes.md` is a `protected-path`, and a merge that touches it is refused."""
+        protected = support.repo_usine().get("protected-path", [])
+        self.assertIn("docs/agents/usine-gardes.md", protected)
+        self.assertNotIn("docs/agents/usine.md", protected)
         reason = judged(
             "gh pr merge 5 --merge",
             Asked(None),
             protected_paths=protected,
-            changed_files=lambda *_target: ["docs/agents/usine.md"],
+            changed_files=lambda *_target: ["docs/agents/usine-gardes.md"],
         )
         self.assertIn("protected-path", str(reason))
 
