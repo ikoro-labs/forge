@@ -14,6 +14,17 @@ The criteria of the ticket, numbered in the order it lists them:
   keeps out of the count the PRs created before that day (`createdAt`); without it every PR counts;
 - A9 (decision of the human on 2026-11-23, comment 7114825269): a ticket with a PR created before that
   day finishes the PR in flight, then admits one last new PR instead of the cap; the label still raises to 6.
+
+Third part of #314 (the decision of the human of 2026-11-25 and the staff-engineer's, whose criteria restart at
+A1; the tests of this part say "part 3"):
+
+- A1: the key `ticket-pr-cap-exempt` (one `type(scope)` per line) takes a PR whose title starts with
+  `type(scope):` out of the count of a ticket, open or merged, the title read in the one `gh pr list` call;
+  absent, every PR counts; the key is protected;
+- A2: a PR being created is exempt only through its `--title` / `-t` argument;
+- A3: the template documents the key;
+- A4: the page, the coder's brief, the judge's grid and this repository's `usine.md`;
+- A5: these tests (HOME and USERPROFILE isolated, no `CLAUDE_` variable, Linux and Windows).
 """
 
 import json
@@ -51,7 +62,9 @@ class FakeGh:
         events: list[dict] | None = None,
         issue: dict | None = None,
         created: Sequence[str | None] | None = None,
+        titles: Sequence[str | None] | None = None,
     ) -> None:
+        self.titles = titles  # title of each listed PR, None leaves the field out (None as a whole: no field)
         self.created = created  # createdAt of each listed PR, None leaves the field out (None as a whole: no field)
         self.prs = prs  # (state, body) of each PR gh lists; None plays an unreachable gh
         self.viewed = viewed  # (number, body) of the PR `gh pr view` gives, None plays a gh error
@@ -80,6 +93,10 @@ class FakeGh:
                 for item, stamp in zip(listed, self.created):
                     if stamp is not None:
                         item["createdAt"] = stamp
+            if self.titles is not None:
+                for item, title in zip(listed, self.titles):
+                    if title is not None:
+                        item["title"] = title
             return json.dumps(listed)
         return None
 
@@ -699,6 +716,131 @@ class SinceDate(unittest.TestCase):
         other = Project(self, USINE + SINCE, memory=True)
         self.assertIsNone(other.create(pr_body("Refs #5", "Third."), old))
         self.assertIn("#5 already has 1 PRs", other.create(pr_body("Refs #5", "Fourth."), old) or "")
+
+
+EXEMPT = "- `ticket-pr-cap-exempt` : `chore(factory)`\n"
+
+
+class ExemptKey(unittest.TestCase):
+    """Part 3, A1: `ticket-pr-cap-exempt` takes a PR out of the count by the prefix `type(scope):` of its title."""
+
+    def listed(self, *entries: tuple[str, str], ticket: int = 5) -> FakeGh:
+        """gh lists one PR per `(state, title)`, each citing `ticket`."""
+        return FakeGh(
+            [(state, pr_body(f"Refs #{ticket}")) for state, _ in entries], titles=[title for _, title in entries]
+        )
+
+    def test_a_listed_pr_leaves_the_count_open_or_merged(self) -> None:
+        """Ticket #314 part 3, A1: two `chore(factory)` PRs, one open and one merged, do not fill a cap of 3."""
+        project = Project(self, USINE + EXEMPT)
+        gh = self.listed(
+            ("OPEN", "chore(factory): pin forge--v1.21.0"),
+            ("MERGED", "chore(factory): count from 2026-11-24"),
+            ("MERGED", "feat(j2): screens"),
+            ("MERGED", "feat(j2): more screens"),
+        )
+        self.assertIsNone(project.create(pr_body("Closes #5"), gh))
+        full = self.listed(
+            ("MERGED", "feat(a): one"), ("OPEN", "feat(b): two"), ("OPEN", "chore(factory): pin"), ("MERGED", "fix(c): three")
+        )
+        self.assertIn("#5 already has 3 PRs", project.create(pr_body("Closes #5"), full) or "")
+
+    def test_the_title_is_read_in_the_one_listing(self) -> None:
+        """Ticket #314 part 3, A1: `title` is a field of the `gh pr list --json` call the guard already makes, no other call."""
+        project = Project(self, USINE + EXEMPT)
+        gh = self.listed(("MERGED", "chore(factory): pin"))
+        project.create(pr_body("Closes #5"), gh)
+        listing = gh.asked("pr", "list")
+        self.assertEqual(len(listing), 1)
+        self.assertIn("title", listing[0][listing[0].index("--json") + 1].split(","))
+        self.assertEqual(gh.asked("pr", "view"), [])
+
+    def test_without_the_key_every_pr_counts_whatever_its_title(self) -> None:
+        """Ticket #314 part 3, A1: no key `ticket-pr-cap-exempt`, no default: three `chore(factory)` PRs fill the cap."""
+        project = Project(self, USINE)
+        gh = self.listed(*[("MERGED", "chore(factory): pin")] * 3)
+        self.assertIn("#5 already has 3 PRs", project.create(pr_body("Closes #5"), gh) or "")
+
+    def test_the_match_is_the_exact_prefix_type_scope_colon(self) -> None:
+        """Ticket #314 part 3, A1: another scope, no scope, no colon, another case or a leading space still count."""
+        project = Project(self, USINE + EXEMPT)
+        for title in (
+            "chore(factory-x): a",
+            "chore(factor): a",
+            "chore: a",
+            "chore(factory) a",
+            "Chore(factory): a",
+            "feat(factory): a",
+            " chore(factory): a",
+            "fix: chore(factory): a",
+            "",
+        ):
+            with self.subTest(title=title):
+                gh = self.listed(*[("MERGED", title)] * 3)
+                self.assertIn("#5 already has 3 PRs", project.create(pr_body("Closes #5"), gh) or "")
+        for title in ("chore(factory): a", "chore(factory):a", "chore(factory):"):
+            with self.subTest(title=title):
+                gh = self.listed(*[("MERGED", title)] * 3)
+                self.assertIsNone(project.create(pr_body("Closes #5"), gh))
+
+    def test_each_line_of_the_key_is_one_exempt_prefix(self) -> None:
+        """Ticket #314 part 3, A1: `chore(pin)` and `chore(release)` on two lines each exempt their own PRs, and no other."""
+        project = Project(self, USINE + "- `ticket-pr-cap-exempt` : `chore(pin)`\n- `ticket-pr-cap-exempt` : `chore(release)`\n")
+        gh = self.listed(
+            ("MERGED", "chore(pin): forge--v1.22.0"),
+            ("MERGED", "chore(release): forge 1.22.0, a thing"),
+            ("MERGED", "chore(factory): not listed"),
+            ("MERGED", "chore(pin): again"),
+        )
+        self.assertIsNone(project.create(pr_body("Closes #5"), gh))
+        three = self.listed(*[("MERGED", "chore(factory): x")] * 3)
+        self.assertIn("#5 already has 3 PRs", project.create(pr_body("Closes #5"), three) or "")
+
+    def test_a_listed_pr_is_left_out_whatever_its_date(self) -> None:
+        """Ticket #314 part 3, A1: the exemption and the day `ticket-pr-cap-since` filter the same count, one after the other."""
+        project = Project(self, USINE + SINCE + EXEMPT)
+        gh = self.listed(
+            ("MERGED", "chore(factory): pin"),
+            ("MERGED", "chore(factory): date"),
+            ("MERGED", "feat(a): one"),
+        )
+        gh.created = ["2026-11-24T10:00:00Z", "2026-11-22T10:00:00Z", "2026-11-24T11:00:00Z"]
+        self.assertIsNone(project.create(pr_body("Closes #5"), gh))
+
+    def test_a_listed_pr_does_not_start_a_ticket(self) -> None:
+        """Ticket #314 part 3, A1: a `chore(factory)` PR from before the day does not make the ticket a started one."""
+        project = Project(self, USINE + SINCE + EXEMPT)
+        gh = self.listed(("MERGED", "chore(factory): pin"), ("MERGED", "feat(a): one"), ("MERGED", "feat(b): two"))
+        gh.created = ["2026-11-20T10:00:00Z", "2026-11-24T10:00:00Z", "2026-11-24T11:00:00Z"]
+        self.assertIsNone(project.create(pr_body("Closes #5"), gh))
+
+    def test_a_value_that_is_no_type_scope_refuses_a_pr_that_cites_a_ticket(self) -> None:
+        """Ticket #314 part 3, A1: fails closed: `chore`, `chore(factory):`, an empty value or one with a space names the key."""
+        for value in ("`chore`", "`chore(factory):`", "``", "`chore (factory)`", "`(factory)`", "`chore()`"):
+            with self.subTest(value=value):
+                project = Project(self, USINE + f"- `ticket-pr-cap-exempt` : {value}\n")
+                refused = project.create(pr_body("Closes #5"), self.listed(("MERGED", "chore(factory): a"))) or ""
+                self.assertIn("`ticket-pr-cap-exempt`", refused)
+
+    def test_a_malformed_key_holds_back_nothing_that_cites_no_ticket(self) -> None:
+        """Ticket #314 part 3, A1: a PR with no `Closes|Refs #n` is not held by an exempt key that cannot be read."""
+        project = Project(self, USINE + "- `ticket-pr-cap-exempt` : `chore`\n")
+        self.assertIsNone(project.create(pr_body("No ticket."), self.listed()))
+
+    def test_a_pr_with_no_readable_title_cannot_be_counted_once_the_key_is_declared(self) -> None:
+        """Ticket #314 part 3, A1: a listed PR without a `title` text fails closed like a gh error; no key, no title is read."""
+        keyed = Project(self, USINE + EXEMPT)
+        gh = FakeGh([("MERGED", pr_body("Refs #5"))])
+        self.assertIn("cannot be counted", keyed.create(pr_body("Closes #5"), gh) or "")
+        bare = Project(self, USINE)
+        self.assertIsNone(bare.create(pr_body("Closes #5"), FakeGh([("MERGED", pr_body("Refs #5"))])))
+
+    def test_the_key_alone_without_the_cap_reads_nothing(self) -> None:
+        """Ticket #314 part 3, A1: `ticket-pr-cap` absent, the step is sans objet: no gh call, whatever the exempt key."""
+        project = Project(self, "# Usine\n" + EXEMPT)
+        gh = self.listed(("MERGED", "chore(factory): pin"))
+        self.assertIsNone(project.create(pr_body("Closes #5"), gh))
+        self.assertEqual(gh.calls, [])
 
 
 class LastPr(unittest.TestCase):
