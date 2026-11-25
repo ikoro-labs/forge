@@ -39,7 +39,8 @@ reprend la main sur un projet en retirant la ligne.
   bout passe et qu'aucun ticket `sev1` n'est ouvert ; l'état des SLO est cité dans la PR de version, il ne
   bloque pas.
 - **Clé absente** : `forge:qc` poste son verdict, pose `needs-your-attention` et ne fusionne jamais ; `release`
-  n'ouvre que la PR de version. L'humain fusionne et publie.
+  n'ouvre que la PR de version (lancé par l'humain : lancé par le modèle, il n'écrit rien, étape 4). L'humain
+  fusionne et publie.
 
 Le skill n'est pas seul à tenir cet interrupteur : le hook `guard_git` tient la même clé, pour tout
 agent. Sans une seule ligne `agent-autonomy` : `on`, il refuse la fusion et le tag (`gh pr merge`, la
@@ -66,13 +67,23 @@ l'agent ou à l'humain que le verdict désigne.
 - **Sans la clé `decision-matrix`**, les deux agents rendent tout en `RESERVED` : la commande suit
   la ligne ci-dessus pour chaque question.
 
-## 4. Ce que la clé n'ouvre pas
+## 4. Ce que la clé ouvre en plus : l'acceptation et la publication
 
-- **`feature-accept`** garde `disable-model-invocation: true` : seul un humain de la clé
-  `accepting-human` l'écrit, en la tapant. Un document que le modèle produit reste `en-revue`, et
-  la commande suivante qu'il dit est celle de l'acceptation, à l'humain.
-- **`release`** garde `disable-model-invocation: true` et reste commandée par la clé
-  `release-trigger`, qui dit quand une version est due. `agent-autonomy` dit si l'agent publie : absente, `release`
-  ouvre la PR de version et s'arrête, sans tag.
+`feature-accept` et `release` ne portent plus `disable-model-invocation` : le modèle les lance comme les
+autres skills de la chaîne, et chacun applique cette règle avant ses étapes.
+
+- **`feature-accept`** : lancé par le modèle, clé absente, il n'écrit rien, n'ouvre ni branche ni PR et rend
+  la commande exacte à l'humain (étape 2). Clé à `on`, le modèle accepte à la place de l'humain : la clé
+  `accepting-human` doit exister, mais le skill ne compare pas `git config user.name`, qui est le nom de
+  l'humain de la session. L'en-tête garde `accepte_par: <identifiant court>` et gagne
+  `accepte_via: agent-autonomy`, que le commit et la PR répètent ; une acceptation tapée n'écrit pas
+  `accepte_via`. Un document qui garde des points ouverts n'est pas accepté par le modèle : chaque point
+  va à `forge:product-owner` ou à `forge:staff-engineer` (étape 3), un point `RESERVED` laisse le document
+  `en-revue` avec `needs-your-attention`, et quand tous sont `DECIDED`, le skill du document les écrit,
+  puis `feature-accept` se relance.
+- **`release`** : lancé par le modèle, clé absente, il n'écrit rien, pas même la PR de version, et rend la
+  commande exacte à l'humain. Tapé par l'humain sans la clé, il ouvre la PR de version seule (étape 2). Il
+  reste commandé par la clé `release-trigger`, qui dit quand une version est due ; `agent-autonomy` dit si
+  l'agent publie.
 - **Ce que la matrice réserve à l'humain** (clé `decision-matrix`, sa section réservée) reste à lui,
   clé ouverte ou non : l'étape 3 le dit pour chaque question.

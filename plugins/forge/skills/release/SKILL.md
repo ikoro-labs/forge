@@ -1,10 +1,14 @@
 ---
 name: release
-description: "Publier une version quand le déclencheur de la clé release-trigger est atteint : l'agent publie seul si et seulement si la clé agent-autonomy est on, l'essai de bout en bout passe sur la tête de la base et aucun ticket sev1 n'est ouvert ; l'état des SLO et de budget-action est cité dans la PR de version, il ne bloque pas. Sinon il ouvre la PR de version, pose needs-your-attention avec la condition manquante, et la publication revient à l'humain (clé agent-autonomy absente : la PR de version seule). Clé release-trigger absente : sans objet, l'agent ne publie rien."
-disable-model-invocation: true
+description: "Publier une version quand le déclencheur de la clé release-trigger est atteint : l'agent publie seul si et seulement si la clé agent-autonomy est on, l'essai de bout en bout passe sur la tête de la base et aucun ticket sev1 n'est ouvert ; l'état des SLO et de budget-action est cité dans la PR de version, il ne bloque pas. Sinon il ouvre la PR de version, pose needs-your-attention avec la condition manquante, et la publication revient à l'humain (clé agent-autonomy absente : la PR de version seule). Clé release-trigger absente : sans objet, l'agent ne publie rien. Lancé par le modèle sans la clé agent-autonomy : il n'écrit rien, pas même la PR de version, et rend la commande à l'humain."
 ---
 
 # La publication continue
+
+Avant tout, applique `${CLAUDE_PLUGIN_ROOT}/autonomie.md` : lancé par le modèle plutôt que tapé par
+l'humain, ce skill ne s'exécute que si la clé `agent-autonomy` l'ouvre. Clé absente : n'écris rien,
+n'ouvre pas même la PR de version, et rends à l'humain la commande exacte, `/forge:release`. Tapé par
+l'humain, il s'exécute comme ci-dessous, clé ou non : sans la clé, il ouvre la PR de version seule.
 
 Une version attend des fusions : l'usine qui relit le projet reste épinglée sur l'ancienne tant qu'aucun tag
 ne sort. Ce skill dit quand une version est due, et si l'agent la publie seul ou la rend à l'humain. Il lit
