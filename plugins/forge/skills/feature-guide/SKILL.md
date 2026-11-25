@@ -88,7 +88,8 @@ la première.
 
 Une fois le document validé en entier et déclaré dans la clé `product-source`, tu en tires trois
 documents dans le dossier de la feature. Chacun s'écrit en `en-revue` ou sans statut : seul
-`/forge:feature-accept`, tapée par un humain, accepte (protocole, étape 6).
+`/forge:feature-accept`, tapée par un humain ou lancée par le modèle sous la clé `agent-autonomy`,
+accepte (protocole, étape 6).
 
 1. **La spec, au grain de la procédure cible.** Depuis `${CLAUDE_PLUGIN_ROOT}/templates/features/spec.md`
    et en suivant `/forge:feature-spec` : la section « Éléments de la source » reprend chaque

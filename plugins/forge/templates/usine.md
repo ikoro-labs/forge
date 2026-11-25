@@ -58,8 +58,8 @@ seuls, sous veto, ou jamais. Sans elle, ils ne tranchent rien et rendent tout en
 
 L'autonomie des agents sur ce projet, que l'utilisateur du projet ouvre et que le plugin ne pose
 jamais. La seule valeur est `on`. Avec elle, un skill de la chaîne des features (`feature-new`
-jusqu'à `feature-design`, `feature-guide`, `feature-brainstorm`, `feature-status`) et les skills
-`slo`, `audit-jetons` et `improve-codebase-architecture` peuvent être lancés par le modèle, et leurs
+jusqu'à `feature-design`, `feature-guide`, `feature-brainstorm`, `feature-status`, `feature-accept`) et les
+skills `slo`, `audit-jetons`, `improve-codebase-architecture` et `release` peuvent être lancés par le modèle, et leurs
 questions vont d'abord à `forge:product-owner` ou à `forge:staff-engineer`, selon la clé
 `decision-matrix`. Sans la clé, ou avec une autre valeur, un skill lancé par le modèle écrit
 « sans objet (clé `agent-autonomy` absente) » et rend l'étape à l'humain, avec la commande à taper ;
@@ -72,9 +72,11 @@ la PR de version : l'humain reprend la main sur un projet en retirant la ligne. 
 même clé : sans une seule ligne `on`, `guard_git` refuse alors la fusion et le tag, et le refus dit que le geste
 reste à l'humain ; il la lit dans `docs/agents/usine-gardes.md` tel que `origin/main` le tient (dans `usine.md` tant que
 ce fichier y est absent), jamais dans l'arbre de travail, et un projet qui adopte la clé déclare ce
-fichier en `protected-path`. `feature-accept` reste tapé par
-un humain de la clé `accepting-human`, et `release` reste commandé par la clé `release-trigger` pour savoir
-quand une version est due : la clé n'ouvre pas ces deux skills au modèle. La règle est dans
+fichier en `protected-path`. `feature-accept` lancé par le modèle accepte à la place de l'humain, sans
+comparer `git config user.name` (la clé `accepting-human` doit exister) : l'en-tête garde `accepte_par` et
+gagne `accepte_via: agent-autonomy`, et un document qui garde des points ouverts n'est jamais accepté par le
+modèle. `release` lancé par le modèle sans la clé n'écrit rien, pas même la PR de version, et reste commandé
+par la clé `release-trigger` pour savoir quand une version est due. La règle est dans
 `plugins/forge/autonomie.md`.
 
 - `agent-autonomy` : `on`
