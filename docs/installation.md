@@ -180,17 +180,25 @@ agent fusionner doit donc poser la clé, sans quoi la fusion lui revient. Éprou
 `tests/test_guard_git_merge_method.py` ; la lecture de la méthode d'une fusion par `gh api` n'a pas
 été jouée sur un vrai dépôt GitHub.
 
-La clé `agent-autonomy` (valeur `on`, ticket #266) ouvre l'autonomie des agents sur le projet : dix des
+La clé `agent-autonomy` (valeur `on`, tickets #266 et #355) ouvre l'autonomie des agents sur le projet : les
 douze skills qui interdisaient le modèle (`feature-new` jusqu'à `feature-design`, `feature-guide`,
-`feature-brainstorm`, `feature-status`, `slo`, `audit-jetons`, `improve-codebase-architecture`) peuvent
-être lancés par lui. Le drapeau `disable-model-invocation` est statique pour tout le plugin : il ne
+`feature-brainstorm`, `feature-status`, `slo`, `audit-jetons`, `improve-codebase-architecture`, et depuis le
+ticket #355 `feature-accept` et `release`) peuvent être lancés par lui. Le drapeau `disable-model-invocation` est statique pour tout le plugin : il ne
 peut pas varier d'un projet à l'autre, alors c'est la règle `plugins/forge/autonomie.md` qui lit la
 clé. Lancé par le modèle sans la clé, un skill n'écrit rien et dit la commande à taper ; lancé par
 l'humain, il s'exécute toujours. Avec la clé, ses questions vont d'abord à `forge:product-owner` ou à
 `forge:staff-engineer`, la décision s'écrit dans le document avec sa case de la matrice, et ce que la
-matrice réserve à l'humain lui reste, la case nommée. `feature-accept` et `release` gardent le drapeau :
-la clé ne les ouvre pas au modèle, et `release` reste commandée par `release-trigger`, qui dit quand une
-version est due.
+matrice réserve à l'humain lui reste, la case nommée. `feature-accept` et `release` ne portent plus le
+drapeau. Lancé par le modèle sans la clé, `release` n'écrit rien, pas même la PR de version (tapé par
+l'humain, il l'ouvre seule), et reste commandé par `release-trigger`, qui dit quand une version est due.
+Lancé par le modèle avec la clé, `feature-accept` accepte à la place de l'humain : l'en-tête garde
+`accepte_par` et gagne `accepte_via: agent-autonomy`, que le commit et la PR répètent ; une acceptation
+tapée n'écrit pas ce champ. Il ne compare pas `git config user.name` (la clé `accepting-human` doit
+exister) et n'accepte jamais un document qui garde des points ouverts : chacun va à `forge:product-owner`
+ou à `forge:staff-engineer`, un `RESERVED` laisse le document `en-revue` avec `needs-your-attention`, et
+quand tous sont `DECIDED`, le skill du document les écrit puis `feature-accept` se relance. Ces deux
+lancements n'ont été éprouvés que par les tests qui lisent le texte des skills ; aucun n'a été joué dans
+une vraie session de Claude Code.
 
 Depuis le ticket #280, la même clé est l'interrupteur de la fusion et de la publication, et l'humain
 reprend la main sur un projet en la retirant. À `on`, `forge:qc` fusionne un ACCEPT hors `protected-path`

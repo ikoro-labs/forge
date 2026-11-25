@@ -14,7 +14,8 @@ configuration, ses règles, ses skills de domaine.
 ## Comment ça marche
 
 1. **On écrit la feature.** Une idée (`/forge:feature-new`) devient un cadrage, une spec puis un
-   design, chacun écrit par un skill et accepté par un humain avec `/forge:feature-accept`. Le
+   design, chacun écrit par un skill et accepté avec `/forge:feature-accept`, tapé par un humain ou, sous la
+   clé `agent-autonomy`, lancé par le modèle. Le
    design accepté est découpé en tickets, par le skill de découpage du projet ou à la main.
 2. **Un agent code chaque ticket.** `/forge:feature-build` confie chaque ticket prêt à
    `forge:coder`, qui le code en test-first dans son worktree jusqu'à une PR, en parallèle quand
@@ -35,7 +36,7 @@ configuration, ses règles, ses skills de domaine.
 Une question technique ou produit en chemin va d'abord à `forge:staff-engineer` ou à
 `forge:product-owner`, qui la tranchent selon la matrice des droits de décision du projet, ou
 disent qu'elle revient à un humain ; passé le délai de la clé `question-default-delay`, une décision que la matrice leur donne se poste par défaut, réversible, et ce qu'elle réserve à l'humain lui est rappelé. Un projet dont l'utilisateur écrit la clé `agent-autonomy` laisse
-le modèle lancer lui-même ces commandes, sauf `/forge:feature-accept` et `/forge:release`. Des hooks gardent le tout : aucun agent ne pousse sur `main`,
+le modèle lancer lui-même ces commandes, `/forge:feature-accept` et `/forge:release` compris. Des hooks gardent le tout : aucun agent ne pousse sur `main`,
 ne fusionne une PR rouge, ou ne sort de son rôle.
 
 ## Ce que le plugin apporte
@@ -54,7 +55,7 @@ ne fusionne une PR rouge, ou ne sort de son rôle.
 | --- | --- |
 | `/forge:feature-new`, `-brainstorm`, `-frame`, `-spec`, `-design` | écrire une feature, de l'idée aux tickets |
 | `/forge:feature-guide` | conduire la conception avec un expert métier, question par question |
-| `/forge:feature-accept` | accepter un document, geste réservé à un humain |
+| `/forge:feature-accept` | accepter un document : tapé par un humain, ou lancé par le modèle sous `agent-autonomy` |
 | `/forge:feature-build`, `/forge:qc` | coder les tickets, relire et fusionner les PR |
 | `/forge:feature-verify`, `-close`, `-status` | la recette, la clôture, et où en est chaque feature |
 | `/forge:feature-review` | la revue de bout en bout : le parcours joué sur l'application réelle, jugé contre la source sur des captures |

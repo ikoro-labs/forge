@@ -23,12 +23,12 @@ def prose(path: Path) -> str:
 
 
 class ReleaseSkill(unittest.TestCase):
-    def test_the_skill_is_a_skill_named_release_that_the_model_does_not_start_alone(self) -> None:
-        """Ticket #71 : le skill existe sous le nom `forge:release`, et il pose un tag : l'humain le lance."""
+    def test_the_skill_is_a_skill_named_release_that_the_model_starts_only_under_the_key(self) -> None:
+        """Ticket #71, #355 A1 : le skill `forge:release` existe ; le modèle le lance, sous la clé `agent-autonomy`."""
         fields = frontmatter(SKILL)
         self.assertEqual(fields.get("name"), "release")
         self.assertTrue(fields.get("description"))
-        self.assertEqual(fields.get("disable-model-invocation"), "true")
+        self.assertNotIn("disable-model-invocation", fields)
 
     def test_it_names_the_three_conditions_and_the_keys_it_reads(self) -> None:
         """Ticket #280 A1 : la clé `agent-autonomy` à `on`, l'essai sur la tête de la base, aucun `sev1`."""
