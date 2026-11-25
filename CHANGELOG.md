@@ -15,7 +15,7 @@ La base de règles de code de F-0002 entre dans l'usine : un refus d'écriture p
 des dépendances directes qu'une PR ajoute (clé `stack`), la sonde de la clé `architecture-check`, les constats
 récurrents du juge et le type `raised-entry` de `never-weaken`. Les clés qui bornent l'agent se lisent aussi
 dans `docs/agents/usine-gardes.md`. Version mineure : des clés et des sondes nouvelles. Déclencheur de la clé
-`release-trigger` atteint (23 fusions en attente pour 1 demandée, la plus ancienne depuis le 2026-11-23).
+`release-trigger` atteint (27 fusions en attente pour 1 demandée, mesuré le 2026-11-25 sur `4fa6a36`).
 
 - Hooks : `after_write` n'a plus qu'un exécuteur par clé ; la clé `lint-on-write` refuse une écriture dont la
   commande de lint échoue et relaie la fin de la sortie de l'outil ; ces refus entrent dans le journal des
