@@ -575,7 +575,10 @@ l'ensemble des clés protégées est `SENSITIVE_KEYS`, au même endroit.
   `usine.read_config`, qui fusionne `usine-gardes.md` comme le chargeur. Sans `--usine`, un fichier de gardes que
   git ne sait pas lire (un objet illisible, pas d'`origin/main`, pas de dépôt) fait refuser le script, code 2, avec
   le nom du fichier : il ne lit pas `usine.md` seul à la place. Un script sans `usine.md` ni fichier de gardes
-  dans un dépôt dont `origin/main` existe reste « sans objet », comme avant. Avec `--usine <fichier>`, le
+  dans un dépôt dont `origin/main` existe reste « sans objet », comme avant. Un checkout de CI qui ne ramène pas
+  `origin/main` (`actions/checkout` à profondeur 1) le ramène avant de lancer un script
+  (`git fetch origin main:refs/remotes/origin/main`) ou passe `--usine <fichier>` ; sans l'un des deux, le script
+  refuse. Avec `--usine <fichier>`, le
   fichier est lu tel quel, sans second fichier. `e2e_trial.py` confie au lanceur borné un fichier où les deux
   fichiers sont réunis, parce que le lancement se fait dans le clone d'essai.
 - **`forge:qc-gate` fabrique `usine-base.md` de la base** par `scripts/usine_base.py --base origin/<base>

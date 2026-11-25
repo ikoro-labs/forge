@@ -26,14 +26,19 @@ UNREADABLE = {GUARD_PATH / "x": "not a file\n", USINE: entry("merge-method", "me
 GATE_REF = ["--base", "HEAD", "--head", "HEAD"]
 
 
-def launch(script: str, where: Path, *argv: str) -> subprocess.CompletedProcess[str]:
-    """`script` in the repository `where`, as the project's directory, with a clean environment."""
+def launch(
+    script: str, where: Path, *argv: str, encoding: str | None = None
+) -> subprocess.CompletedProcess[str]:
+    """`script` in the repository `where`, as the project's directory, with a clean environment.
+
+    Its output is read in the code page of the pipe, as most scripts write it; `encoding="utf-8"` for a
+    script that sets its own output to UTF-8 (`e2e_trial`), whose accents a Windows pipe would misread."""
     home = where.parent / "home"
     env = environment(home)
     env["CLAUDE_PROJECT_DIR"] = str(where)
     return subprocess.run(  # noqa: S603 - the plugin's own script, argv built here
         [sys.executable, str(SCRIPTS / f"{script}.py"), *argv],
-        cwd=where, env=env, capture_output=True, text=True, timeout=120, check=False,
+        cwd=where, env=env, capture_output=True, text=True, encoding=encoding, timeout=120, check=False,
     )
 
 
@@ -155,7 +160,7 @@ class TheTrialLaunchesWithTheMergedKeys(unittest.TestCase):
         """#345 B1: the bound of the launch is `run-limits` or `e2e-run-limits`, both sensitive: no `sans objet` for it."""
         on_main = {GUARD_PATH: entry("run-limits", "2000 | 60"), USINE: "# Usine\n"}
         with project(on_main) as where:
-            done = launch("e2e_trial", where, "--projet", str(where))
+            done = launch("e2e_trial", where, "--projet", str(where), encoding="utf-8")
         self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
         self.assertIn("SANS-OBJET (clé `e2e-repo` absente)", done.stdout)
         self.assertNotIn("run-limits", done.stdout)
