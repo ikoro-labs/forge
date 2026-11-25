@@ -1470,6 +1470,14 @@ class ExemptDocumentation(unittest.TestCase):
         self.assertLess(text.index("- `ticket-pr-cap` :"), text.index("- `ticket-pr-cap-exempt` :"))
         self.assertNotIn(chr(0x2014), text)
 
+    def test_the_git_rules_of_this_repository_say_a_maintenance_pr_cites_no_ticket(self) -> None:
+        """Ticket #314 part 3, A4: `.claude/rules/git.md` says what the page says: a listed title, no ticket, not counted."""
+        rules = " ".join((support.REPO_ROOT / ".claude" / "rules" / "git.md").read_text(encoding="utf-8").split())
+        bullet = next(part for part in rules.split(" - ") if "`ticket-pr-cap-exempt`" in part)
+        for phrase in ("PR d'entretien de l'usine", "ne cite aucun ticket", "`type(scope)`", "plafond de PR"):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, bullet)
+
 
 class Binding(unittest.TestCase):
     def test_hooks_json_binds_the_guard_on_every_gh_gesture_and_fails_closed(self) -> None:
