@@ -105,7 +105,7 @@ class AModelAcceptance(unittest.TestCase):
         self.assertIn("le nom de l'humain", step)
 
     def test_no_script_or_hook_reads_the_via_field_or_trips_on_it(self) -> None:
-        """Ticket #355 A3 : aucun lecteur de `accepte_par` ne casse sur le champ ajouté (rien ne le lit)."""
+        """Ticket #355 A3 : test de caractérisation, vert aussi sur la base : aucun hook ni script ne lit `accepte_par`, donc le champ ajouté ne casse aucun lecteur. Il garde cette absence."""
         for folder in ("hooks", "scripts"):
             for path in (support.PLUGIN / folder).glob("*.py"):
                 with self.subTest(file=path.name):

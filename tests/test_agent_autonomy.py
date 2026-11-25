@@ -81,13 +81,17 @@ class QuestionsGoToTheDecisionAgents(unittest.TestCase):
 
 class WhatStaysWithTheHuman(unittest.TestCase):
     def test_the_rule_keeps_release_commanded_by_its_trigger(self) -> None:
-        """Ticket #266 A3, #355 A5 : la règle dit que `release` garde la clé `release-trigger`."""
-        text = prose(RULE)
-        self.assertRegex(text, r"`release`.{0,600}clé `release-trigger`")
+        """Ticket #266 A3, #355 A5 : lancé par le modèle, `release` reste commandé par la clé `release-trigger`."""
+        section = prose(RULE).split("## 4.", 1)[1]
+        self.assertRegex(section, r"`release`.{0,200}lancé par le modèle.{0,600}clé `release-trigger`")
 
     def test_the_rule_keeps_the_matrix_reserved_cases_with_the_human(self) -> None:
-        """Ticket #266 A3 : ce que la matrice réserve à l'humain reste à lui, clé ouverte ou non."""
-        self.assertRegex(prose(RULE), r"matrice réserve à l'humain.{0,200}reste à lui, clé ouverte ou non")
+        """Ticket #266 A3, #355 A5 : même quand le modèle accepte, ce que la matrice réserve reste à l'humain."""
+        section = prose(RULE).split("## 4.", 1)[1]
+        self.assertRegex(
+            section,
+            r"`accepte_via: agent-autonomy`.{0,1800}matrice réserve à l'humain.{0,200}reste à lui, clé ouverte ou non",
+        )
 
 
 if __name__ == "__main__":
