@@ -16,10 +16,11 @@ agents, réglages du dépôt, la matrice elle-même, un risque de sécurité san
 
 L'autonomie des agents, ouverte par l'utilisateur de ce dépôt le 2026-11-20 : le modèle peut lancer
 les skills de la chaîne des features, et leurs questions vont d'abord aux agents de décision.
-`feature-accept` reste tapé par l'humain, et `release-trigger` dit quand une version est due. Depuis le
-ticket #280, la clé est aussi l'interrupteur de la fusion par `forge:qc` et de la publication : l'humain
-reprend la main sur ce dépôt en retirant la ligne. Elle n'agit qu'une fois l'épingle montée à une
-version qui la lit (1.18.0 pour les skills, 1.19.0 pour la fusion et la publication).
+Depuis le ticket #355, le modèle lance aussi `feature-accept` et `release` sous cette clé, et
+`release-trigger` dit quand une version est due. Depuis le ticket #280, la clé est aussi l'interrupteur
+de la fusion par `forge:qc` et de la publication : l'humain reprend la main sur ce dépôt en retirant la
+ligne. Elle n'agit qu'une fois l'épingle montée à une version qui la lit (1.18.0 pour les skills, 1.19.0
+pour la fusion et la publication, 1.22.0 pour `feature-accept` et `release`).
 
 - `agent-autonomy` : `on`
 
@@ -163,11 +164,17 @@ L'essai de l'usine avant une version, par `plugins/forge/scripts/e2e_trial.py`, 
 que l'humain a créé le 2026-11-16 et qui n'est pas ce dépôt. Le plafond de 2.50 dollars est la valeur du
 gabarit, reprise le 2026-11-24 sur l'accord de l'humain. La ligne de commande est celle du gabarit : un premier
 essai l'a lancée le 2026-11-24 et a fini en `FAIL` à l'étape `checks`, le dépôt d'essai n'ayant alors aucun
-workflow ; un workflow y a été fusionné depuis, et aucun essai n'a tourné depuis.
+workflow ; un workflow y a été fusionné depuis. Le 2026-11-25, un essai lancé par `release.py check` a
+fini en `FAIL` à l'étape `lancement`, tué par les 300 s de `run-limits` ; lancé à la main avec un délai de
+1800 s, il a rendu `PASS` en 6 min 37 s (ticket #359). La clé `e2e-run-limits` donne au lancement ce délai
+de 1800 s, sous le plafond de 3600 s que `release.py` met à l'essai entier, attente des vérifications
+comprise. Elle est lue par le script de la 1.22.0, ou de la tête de `main` passé à `release.py` par
+`--essai`.
 
 - `e2e-repo` : `ikoro-labs/forge-essai`
 - `e2e-command` : `claude -p --plugin-dir {plugin} --max-budget-usd {budget} "/forge:feature-build {feature} --base {base}"`
 - `e2e-budget-usd` : `2.50`
+- `e2e-run-limits` : `2000 | 1800`
 
 ## Hooks
 
