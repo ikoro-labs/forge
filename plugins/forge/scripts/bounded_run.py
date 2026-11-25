@@ -208,15 +208,15 @@ def positive_float(text: str) -> float:
     return value
 
 
-def read_config(path: str | None) -> dict[str, list[str]]:
-    """The keys of `usine.md` (`--usine`, else the project's); empty when the file is absent."""
-    config_file = Path(path) if path else usine.project_root() / usine.CONFIG_PATH
+def read_config(path: str | None, root: Path | None = None) -> dict[str, list[str]]:
+    """The keys of the configuration (`--usine`, else the project's `root`, by `usine.read_config`);
+    empty when the file is absent, a refusal (`ValueError`) when it or the guard file is unreadable."""
     try:
-        return usine.parse(config_file.read_text(encoding="utf-8"))
+        return usine.read_config(path, root or usine.project_root())
     except FileNotFoundError:
         return {}
     except (OSError, UnicodeDecodeError) as error:
-        raise ValueError(f"{config_file} illisible ({error})") from error
+        raise ValueError(f"{path or usine.CONFIG_PATH} illisible ({error})") from error
 
 
 def key_limits(config: dict[str, list[str]], key: str = "run-limits") -> tuple[int | None, int | None]:
@@ -413,7 +413,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--max-workers", dest="max_workers", type=positive, help="ceiling of pytest-xdist workers")
     parser.add_argument("--wait", type=non_negative, help="seconds to wait for the budget (else the key run-budget)")
     parser.add_argument("--check", action="store_true", help="only read the budget, launch nothing")
-    parser.add_argument("--usine", help="the usine.md to read (default: docs/agents/usine.md)")
+    parser.add_argument("--usine", help="the usine.md to read, as it is (default: docs/agents/usine.md with docs/agents/usine-gardes.md on origin/main)")
     args = parser.parse_args(options)
     try:
         config = read_config(args.usine)

@@ -21,7 +21,7 @@ FREE_KEYS = frozenset(
         "ci-replay-light",
         "completion-column", "computer-use-host", "decision-matrix", "dependency-min-age", "doc-cap",
         "doc-frontmatter", "doc-index", "domain-arbiter", "domain-owner", "domain-rules",
-        "domain-skill", "e2e-budget-usd", "e2e-command", "e2e-repo", "e2e-run-limits", "em-dash-allowances",
+        "domain-skill", "e2e-budget-usd", "e2e-command", "e2e-repo", "em-dash-allowances",
         "entry-gate", "feature-catalog-command", "feature-dir", "feature-gate", "feature-state",
         "format-on-write", "git-rules", "glossary", "incident-dir", "install", "journey-paths",
         "journey-replay", "lever-peers", "lint-on-write", "lockfile", "merge-method",
@@ -64,3 +64,9 @@ class EveryTemplateKeyIsClassified(unittest.TestCase):
         """#345 B5: a key removed from the template leaves the lists too, so they stay the template's map."""
         keys = set(parse(TEMPLATE.read_text(encoding="utf-8")))
         self.assertEqual(sorted((SENSITIVE_KEYS | FREE_KEYS) - keys), [])
+
+    def test_b5_the_key_that_overrides_run_limits_is_sensitive(self) -> None:
+        """#345 B5 (MINOR of #361 and #362): `e2e-run-limits` replaces the bound of `run-limits` for the trial launch, so it bounds the agent as `run-limits` does."""
+        self.assertIn("run-limits", SENSITIVE_KEYS)
+        self.assertIn("e2e-run-limits", SENSITIVE_KEYS)
+        self.assertNotIn("e2e-run-limits", FREE_KEYS)

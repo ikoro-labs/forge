@@ -7,7 +7,7 @@ The tests of `tests/` prove each hook and each script alone. This script proves 
 that opens its pull request, a guard that lets a legitimate gesture through. It builds a throwaway
 project, launches `claude -p` on it with the plugin under test, reads what the run left on the trial
 repository, and cleans up. It reads three keys of `docs/agents/usine.md` (`--usine` reads another
-file), none of which has a default:
+file; without it, `docs/agents/usine-gardes.md` as `origin/main` holds it is merged in), none of which has a default:
 
     - `e2e-repo` : `<owner>/<name>`, the trial repository on GitHub
     - `e2e-command` : the command line launched in the throwaway project
@@ -362,6 +362,16 @@ LAUNCHER_CODES = {
 }
 
 
+def usine_for_launcher(explicit: str | None, config: dict[str, list[str]], folder: Path) -> Path:
+    """The file the bounded launcher reads: `--usine` as given, else the project's keys, both files
+    merged, written in `folder`. The launch runs in the clone, where the launcher cannot find the project."""
+    if explicit:
+        return Path(explicit).resolve()
+    merged = folder / "usine-launcher.md"
+    merged.write_text(usine.render(config), encoding="utf-8")
+    return merged
+
+
 def launcher(usine_file: Path, memory_mb: int | None, timeout: int | None, *rest: str) -> list[str]:
     """The call of the bounded launcher: the project's keys, then the limits that win over them."""
     call = [sys.executable, str(LAUNCHER), "--usine", str(usine_file)]
@@ -555,7 +565,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = Call(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument("--projet", default=".", help="the project that runs the trial (default: .)")
     parser.add_argument("--plugin", help="the plugin to try (default: the one that holds this script)")
-    parser.add_argument("--usine", help="the usine.md to read (default: <projet>/docs/agents/usine.md)")
+    parser.add_argument("--usine", help="the usine.md to read, as it is (default: <projet>/docs/agents/usine.md with docs/agents/usine-gardes.md on origin/main)")
     parser.add_argument("--memory-mb", dest="memory_mb", type=bounded_run.positive, help="memory limit of the launch, in MB (else the key e2e-run-limits, then run-limits)")
     parser.add_argument("--timeout", type=bounded_run.positive, help="delay of the launch, in seconds (else the key e2e-run-limits, then run-limits)")
     parser.add_argument("--wait-checks", dest="wait_checks", type=bounded_run.non_negative, default=600,
@@ -566,9 +576,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     # The launch runs in the clone: a relative path would then point into the clone (ticket #359).
     project = Path(args.projet).resolve()
-    usine_file = Path(args.usine).resolve() if args.usine else project / usine.CONFIG_PATH
     try:
-        config = bounded_run.read_config(str(usine_file))
+        config = bounded_run.read_config(str(Path(args.usine).resolve()) if args.usine else None, project)
         launch_limits = bounded_run.key_limits(config, E2E_LIMITS_KEY)
         own = bool(args.memory_mb or launch_limits[0]) and bool(args.timeout or launch_limits[1])
         settings = read_settings(config, bounded=own)
@@ -597,6 +606,7 @@ def main(argv: list[str] | None = None) -> int:
     plugin = Path(args.plugin).resolve() if args.plugin else Path(__file__).resolve().parent.parent
     with tempfile.TemporaryDirectory(prefix="forge-e2e-", dir=scratch_root()) as folder:
         trial = Trial(settings.repo, name, Path(folder))
+        usine_file = usine_for_launcher(args.usine, config, Path(folder))
         head = head_tried(plugin)
         failure: Failure | None = None
         checks = 0

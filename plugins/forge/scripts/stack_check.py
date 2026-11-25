@@ -146,14 +146,13 @@ def uncovered(lock_entries: list[str], entries: list[Entry], stack_path: str) ->
 
 
 def read_config(args: argparse.Namespace) -> dict[str, list[str]]:
-    """The keys of the usine file: `--usine` when given, else `usine.md` as the base has it (never the head's)."""
+    """The keys of the usine file: `--usine` when given, else both files as the base has them (never the head's)."""
     if args.usine:
         try:
-            return usine.parse(Path(args.usine).read_text(encoding="utf-8"))
+            return usine.read_config(args.usine, Path(args.root))
         except FileNotFoundError:
             return {}
-    text = read_at(Path(args.root), args.base, usine.CONFIG_PATH.as_posix())
-    return usine.parse(text) if text else {}
+    return usine.read_config_at(Path(args.root), args.base)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -161,7 +160,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--base", required=True, help="the git ref the PR starts from")
     parser.add_argument("--head", required=True, help="the git ref of the PR's head")
     parser.add_argument("--root", default=".", help="a clone of the project (default: the current directory)")
-    parser.add_argument("--usine", help="the usine.md to read (default: docs/agents/usine.md at --base)")
+    parser.add_argument("--usine", help="the usine.md to read, as it is (default: both files at --base)")
     args = parser.parse_args(argv)
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure"):

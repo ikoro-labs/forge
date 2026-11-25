@@ -10,6 +10,7 @@ from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
 import support  # noqa: F401
+from test_usine_guard_file import project
 from ui_labels import FORBIDDEN, check, main
 
 SCRIPT = Path(support.PLUGIN) / "scripts" / "ui_labels.py"
@@ -135,11 +136,11 @@ class Keys(unittest.TestCase):
 
     def test_the_default_usine_file_missing_is_still_without_object(self) -> None:
         """No F-NNNN: ticket #98, A4: sans --usine, un projet sans docs/agents/usine.md reste sans objet."""
-        with tempfile.TemporaryDirectory() as folder:
-            (Path(folder) / "pr.diff").write_text(diff("app/i18n/fr.yml", "a: commit"), encoding="utf-8")
+        with project({}) as where:  # a repository: the guard file is read on `origin/main` too (ticket #345)
+            (where / "pr.diff").write_text(diff("app/i18n/fr.yml", "a: commit"), encoding="utf-8")
             out = io.StringIO()
             with redirect_stdout(out):
-                code = main(["--root", folder, str(Path(folder) / "pr.diff")])
+                code = main(["--root", str(where), str(where / "pr.diff")])
         self.assertEqual((code, out.getvalue().strip()), (0, "sans objet (clé ui-labels absente)"))
 
     def test_a_label_outside_cp1252_is_written_on_a_cp1252_stream(self) -> None:
