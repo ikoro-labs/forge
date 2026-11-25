@@ -21,7 +21,7 @@ when no package is YOUNG, NOT FOUND or NOT CHECKED, 1 when one is, 2 when one li
 INVALID, or the call is wrong. Without the `lockfile` key or the `dependency-min-age` key (a number
 of days, no default), the step is "sans objet" and the exit code is 0.
 
-The keys are read from `--usine` (`git show origin/<base>:docs/agents/usine.md`): a PR cannot lift
+The keys are read from `--usine` (`usine_base.py --base origin/<base>`, both files of the base): a PR cannot lift
 the threshold it is judged by. The standard library only.
 """
 

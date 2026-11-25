@@ -620,7 +620,7 @@ class NeverWeaken(unittest.TestCase):
         self.assertIn("${CLAUDE_PLUGIN_ROOT}/scripts/never_weaken.py", gate)
         self.assertIn("--usine", gate)
         self.assertIn("-c core.quotePath=false diff origin/<base>...<tête> > pr.diff", gate)
-        self.assertIn("git show origin/<base>:docs/agents/usine.md", gate)
+        self.assertIn("scripts/usine_base.py", gate)  # both files of the base, not `usine.md` alone (#345)
         self.assertIn("clé never-weaken absente", gate)
 
     def test_the_judge_names_the_entry_that_applies_in_the_gates_line(self) -> None:

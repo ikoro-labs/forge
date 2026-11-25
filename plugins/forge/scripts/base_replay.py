@@ -52,7 +52,7 @@ only, and its first run failed (the limit was not held, a process kept the folde
 written from the Win32 documentation and is not yet seen to pass. macOS is not covered. A command
 whose limit cannot be set is `NOT RUN`.
 
-The entries are read from the base (`--usine`, `git show origin/<base>:docs/agents/usine.md`), so a
+The entries are read from the base (`--usine`, `usine_base.py --base origin/<base>`, both files of the base), so a
 PR cannot lift the guard it is judged by. The standard library only.
 """
 

@@ -48,7 +48,7 @@ no probe runs: each is `NOT RUN`, none ever runs unbounded. Without `test-path` 
 probe is `NOT RUN`, "sans objet (clé <nom> absente)". Without `run-budget`, the budget is "sans objet
 (clé `run-budget` absente)", said on stderr. The command goes through a shell, where the launcher
 cannot see a `-n` of pytest-xdist: the workers are not brought down here. The entries are read from the
-base (`--usine`, `git show origin/<base>:docs/agents/usine.md`), so a PR cannot lift the bound it is
+base (`--usine`, `usine_base.py --base origin/<base>`, both files of the base), so a PR cannot lift the bound it is
 judged by, nor change the command its probes run by. The Linux side was run on a Linux workstation.
 The Windows side has not run: it rests on the same `run_bounded` as `base_replay.py`, whose Windows
 form has run in the CI of this repository only. macOS is not covered. The standard library only.

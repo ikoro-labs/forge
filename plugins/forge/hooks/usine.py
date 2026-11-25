@@ -239,10 +239,11 @@ def read_config(file: str | Path | None, root: Path) -> dict[str, list[str]]:
     return loaded.config
 
 
-def read_config_at(root: Path, ref: str) -> dict[str, list[str]]:
+def load_at(root: Path, ref: str) -> Loaded:
     """The configuration as `ref` holds it: `usine.md` and `usine-gardes.md`, never the working tree.
 
-    A file the ref lacks is empty; a ref or a file git cannot read raises `ConfigUnreadable`.
+    A file the ref lacks is empty; a ref or a file git cannot read raises `ConfigUnreadable`. The
+    notices say what `merge` dropped or ignored.
     """
     free = on_ref(root, CONFIG_PATH, ref)
     if free.why is not None:
@@ -250,7 +251,12 @@ def read_config_at(root: Path, ref: str) -> dict[str, list[str]]:
     loaded = merge(parse(free.text or ""), on_ref(root, GUARD_PATH, ref), ref)
     if loaded.unreadable is not None:
         raise ConfigUnreadable(loaded.notices[0])
-    return loaded.config
+    return loaded
+
+
+def read_config_at(root: Path, ref: str) -> dict[str, list[str]]:
+    """The configuration of `load_at`, without its notices."""
+    return load_at(root, ref).config
 
 
 def render(config: dict[str, list[str]]) -> str:

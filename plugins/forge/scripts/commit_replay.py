@@ -36,7 +36,7 @@ command, so a PR of n commits can take n times the suite. The Linux side was run
 workstation. The Windows side has not run: it rests on the same `run_bounded` as `base_replay.py`,
 whose Windows form has run in the CI of this repository only. macOS is not covered.
 
-The entries are read from the base (`--usine`, `git show origin/<base>:docs/agents/usine.md`), so a
+The entries are read from the base (`--usine`, `usine_base.py --base origin/<base>`, both files of the base), so a
 PR cannot lift the guard it is judged by. The standard library only.
 """
 
