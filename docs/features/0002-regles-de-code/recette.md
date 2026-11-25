@@ -1,7 +1,9 @@
 ---
 feature: F-0002
 document: recette
-statut: en-revue
+statut: accepte
+accepte_par: ikoro-labs
+accepte_le: 2026-11-25
 destinataires: ikoro-labs
 version: c45a2da (tête de main, non publiée ; la dernière version publiée est forge 1.21.0)
 base: c45a2da
