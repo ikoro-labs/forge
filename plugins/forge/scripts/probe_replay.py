@@ -172,7 +172,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument("verdict", help="the verdict of forge:qc-conf, a file or - for the standard input")
     parser.add_argument("--root", required=True, help="the copy of the head where each test file runs")
-    parser.add_argument("--usine", help="the usine.md to read (default: docs/agents/usine.md)")
+    parser.add_argument("--usine", help="the usine.md to read, as it is (default: docs/agents/usine.md with docs/agents/usine-gardes.md on origin/main)")
     parser.add_argument("--memory-mb", type=positive, help="memory limit of each probe (else the key run-limits)")
     parser.add_argument("--timeout", type=positive, help="delay of each probe (else the key run-limits)")
     args = parser.parse_args(argv)

@@ -48,8 +48,11 @@ class Runner:
 
     def run(self, *options: str, command: list[str] | None = None) -> subprocess.CompletedProcess:
         tail = ["--", *command] if command is not None else []
+        # The folder is no repository: without `--usine`, the launcher would refuse the guard file it cannot
+        # read on `origin/main` (ticket #345). These tests are about the bounds, not about where the keys are.
+        given = [] if "--usine" in options else ["--usine", str(self.root / "absent.md")]
         return subprocess.run(
-            [sys.executable, str(SCRIPT), *options, *tail],
+            [sys.executable, str(SCRIPT), *given, *options, *tail],
             cwd=self.root, env=self.env, capture_output=True, text=True, timeout=60,
         )
 

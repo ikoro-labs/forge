@@ -222,7 +222,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--base", required=True, help="the git ref the PR starts from")
     parser.add_argument("--head", required=True, help="the git ref of the PR's head")
     parser.add_argument("--root", default=".", help="a clone of the project (default: the current directory)")
-    parser.add_argument("--usine", help="the usine.md to read (default: docs/agents/usine.md under --root)")
+    parser.add_argument("--usine", help="the usine.md to read, as it is (default: docs/agents/usine.md under --root with docs/agents/usine-gardes.md on origin/main)")
     parser.add_argument(
         "--registry", action="append", default=[], metavar="ECOSYSTEM=URL",
         help="the API root of an ecosystem's registry, for a mirror or a simulated registry",
@@ -231,9 +231,8 @@ def main(argv: list[str] | None = None) -> int:
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure"):
             stream.reconfigure(encoding="utf-8", errors="replace")
-    config_file = Path(args.usine) if args.usine else Path(args.root) / usine.CONFIG_PATH
     try:
-        config = usine.parse(config_file.read_text(encoding="utf-8"))
+        config = usine.read_config(args.usine, Path(args.root))
     except FileNotFoundError:
         config = {}
     except (OSError, UnicodeDecodeError) as error:

@@ -117,13 +117,12 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument("--base", required=True, help="the base ref of the PR")
     parser.add_argument("--head", required=True, help="the head ref of the PR")
-    parser.add_argument("--usine", help="the usine.md to read (default: docs/agents/usine.md)")
+    parser.add_argument("--usine", help="the usine.md to read, as it is (default: docs/agents/usine.md with docs/agents/usine-gardes.md on origin/main)")
     parser.add_argument("--memory-mb", type=positive, help="memory limit of each command (else the key run-limits)")
     parser.add_argument("--timeout", type=positive, help="delay of each command (else the key run-limits)")
     args = parser.parse_args(argv)
-    config_file = Path(args.usine) if args.usine else usine.project_root() / usine.CONFIG_PATH
     try:
-        config = usine.parse(config_file.read_text(encoding="utf-8"))
+        config = usine.read_config(args.usine, usine.project_root())
     except FileNotFoundError:
         config = {}
     except (OSError, UnicodeDecodeError) as error:
