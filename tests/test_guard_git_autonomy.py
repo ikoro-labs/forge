@@ -20,7 +20,6 @@ from typing import Any
 import support  # noqa: F401  met les hooks sur le chemin d'import
 from guard_git import RULES, UNKNOWN, autonomy_refusal, local_tag_exists, refusal
 from refusal_journal import rule_of
-from usine import load
 
 USINE = Path("docs") / "agents" / "usine.md"
 PROSE = "# Usine\n\nDu texte, puis la clé.\n\n"

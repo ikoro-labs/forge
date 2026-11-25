@@ -159,7 +159,8 @@ Windows.
 
 ## Configurer : `docs/agents/usine.md`
 
-Le seul fichier où un projet décrit son usine au plugin : qui accepte, la matrice de décision,
+Le fichier où un projet décrit son usine au plugin (ses clés protégées peuvent vivre dans
+`docs/agents/usine-gardes.md`, voir plus bas) : qui accepte, la matrice de décision,
 l'arbitre du métier, les commandes d'installation et de rejeu de la CI, les checks obligatoires, la
 grille de revue, les chemins protégés, les changements que nul agent ne fusionne (`never-weaken` :
 une ligne retirée, un nombre relevé, un rang abaissé, mesurés sur le diff par
@@ -515,10 +516,10 @@ dépassé), la clé refuse. Le refus dit que le garde refuse parce que la clé n
 reste à l'humain ; le journal des refus le nomme `agent-autonomy`. Un autre nom de branche de base que
 `main` n'est pas lu : un projet dont la base s'appelle autrement voit ses fusions refusées.
 
-`docs/agents/usine.md` est un `protected-path` de ce dépôt, avec sa ligne dans `.github/CODEOWNERS` : une PR
+`docs/agents/usine-gardes.md` est un `protected-path` de ce dépôt, avec sa ligne dans `.github/CODEOWNERS` : une PR
 est la seule façon de changer ce que `origin/main` en dit, et aucun agent ne fusionne celle-là. Un projet qui
-adopte la clé déclare la même ligne ; sans elle, clé `on`, un agent peut fusionner une PR qui change le
-fichier. Aucune protection d'écriture n'a été ajoutée à `guard_coder` ni à `guard_readonly` : ils ne
+adopte la clé déclare la même ligne (celle de `docs/agents/usine.md` tant que ses clés n'ont pas bougé) ; sans
+elle, clé `on`, un agent peut fusionner une PR qui change le fichier. Aucune protection d'écriture n'a été ajoutée à `guard_coder` ni à `guard_readonly` : ils ne
 protègent aucun fichier par son nom, et refuser l'écriture empêcherait aussi l'agent de proposer un
 changement par PR, que la revue juge.
 
@@ -545,13 +546,13 @@ Windows, le chemin du dépôt lu par `git show` n'a pas été essayé.
 
 ## Le fichier des clés protégées : `docs/agents/usine-gardes.md`
 
-Vingt et une clés de `usine.md` bornent les pouvoirs de l'agent (ikoro-labs/forge#345) : `agent-autonomy`,
+Vingt-deux clés de `usine.md` bornent les pouvoirs de l'agent (ikoro-labs/forge#345) : `agent-autonomy`,
 `protected-path`, `gh-api-allow`, `owner-gesture`, `never-weaken`, `infra-hosts`, `infra-verify`,
-`pr-cap-raiser`, `ticket-pr-cap`, `ticket-pr-cap-since`, `ticket-budget`, `run-limits`, `run-budget`,
-`budget-action`, `slo`, `accepting-human`, `validation-owner`, `validation-reviewer`, `pin-bump`,
-`readonly-agent` et `readonly-command`. Les lire dans l'arbre de travail ne tenait que parce que `usine.md`
-était un `protected-path` : chaque réglage libre (`merge-method`, `release-trigger`, `output-words-*`...)
-attendait donc l'humain avec elles. Le plugin lit désormais ces vingt et une clés dans un second fichier,
+`pr-cap-raiser`, `ticket-pr-cap`, `ticket-pr-cap-since`, `ticket-budget`, `run-limits`, `e2e-run-limits`,
+`run-budget`, `budget-action`, `slo`, `accepting-human`, `validation-owner`, `validation-reviewer`,
+`pin-bump`, `readonly-agent` et `readonly-command`. Les lire dans l'arbre de travail ne tenait que parce que
+`usine.md` était un `protected-path` : chaque réglage libre (`merge-method`, `release-trigger`,
+`output-words-*`...) attendait donc l'humain avec elles. Le plugin lit désormais ces vingt-deux clés dans un second fichier,
 `docs/agents/usine-gardes.md`, tel que `origin/main` le tient (`git ls-tree` puis `git cat-file` sur
 `refs/remotes/origin/main`), et `usine.load` fusionne les deux fichiers. Les autres clés restent dans
 `usine.md`. Le chemin du fichier est une constante de `plugins/forge/hooks/usine.py`, jamais une clé, et
@@ -569,11 +570,17 @@ l'ensemble des clés protégées est `SENSITIVE_KEYS`, au même endroit.
   au gabarit qui n'est ni dans `SENSITIVE_KEYS` ni dans sa liste des clés libres.
 
 Éprouvé par `tests/test_usine_guard_file.py` et `tests/test_usine_keys_classified.py` (dépôts jetables,
-`HOME` jeté, le hook joué comme un processus), sous Linux seulement. Non tenu ici : les scripts qui lisent
-leur fichier par `usine.parse` (par exemple `bounded_run.py` pour `run-limits` et `run-budget`,
-`never_weaken.py` pour `never-weaken`, `e2e_trial.py` pour `run-limits`) ne passent pas par ce lecteur
-et continuent de lire `usine.md` ; le déplacement des clés de ce dépôt, de `CODEOWNERS` et de
-`protected-path` vers le nouveau fichier est une PR à part.
+`HOME` jeté, le hook joué comme un processus), sous Linux seulement. Ce dépôt a déplacé ses clés : les dix qu'il
+déclare sont dans son `docs/agents/usine-gardes.md`, qui est son `protected-path` et sa ligne de
+`.github/CODEOWNERS`, et `usine.md` ne porte plus que des clés libres (une PR ordinaire le change).
+
+Non tenu ici : les scripts qui lisent leur fichier par `usine.parse` (`bounded_run.py` pour `run-limits` et
+`run-budget`, donc aussi `probe_replay.py`, `commit_replay.py` et `e2e_trial.py`, `never_weaken.py` pour
+`never-weaken`) ne passent pas par ce lecteur : ils lisent `usine.md`, ou le fichier que leur donne
+`--usine`, et jamais `usine-gardes.md`. Dans un projet qui a déplacé ses clés, ces scripts voient donc
+la clé absente : `bounded_run.py` demande alors `--memory-mb` et `--timeout`, et le budget du poste est
+« sans objet ». Les faire lire le fichier fusionné, et faire de même au `usine-base.md` que `forge:qc-gate`
+écrit depuis la base, est à faire avant qu'un projet consommateur déplace ses clés de borne.
 
 ## Supprimer une branche locale : `git branch -D` et le bundle
 

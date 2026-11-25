@@ -1,6 +1,6 @@
 # Matrice des droits de décision du dépôt forge
 
-Ce que l'humain (`accepting-human` de `docs/agents/usine.md`) délègue à `forge:staff-engineer`
+Ce que l'humain (`accepting-human` de `docs/agents/usine-gardes.md`) délègue à `forge:staff-engineer`
 (technique, gouvernance) et à `forge:product-owner` (produit, formulation, priorité dans le
 périmètre), et ce qu'il se réserve. La clé `decision-matrix` de `usine.md` désigne ce fichier ; les
 deux agents le lisent, et leur ligne `MATRIX_CELL` cite l'identifiant de la case qu'ils appliquent
@@ -52,7 +52,7 @@ case, donne sa recommandation et pose `needs-your-attention`.
 
 | Case | Décision ou geste réservé | Raison |
 | --- | --- | --- |
-| `H1` | Fusionner une PR qui touche un `protected-path` de `usine.md` | Ces chemins tiennent les gardes des agents et `CODEOWNERS`, qui les garde : un agent ne s'en juge pas lui-même. L'épingle de ce dépôt n'en fait plus partie (voir `H2`) : un agent peut donc, par une PR qu'il fusionne, changer quels gardes tournent. |
+| `H1` | Fusionner une PR qui touche un `protected-path` de `usine-gardes.md` | Ces chemins tiennent les gardes des agents et `CODEOWNERS`, qui les garde : un agent ne s'en juge pas lui-même. L'épingle de ce dépôt n'en fait plus partie (voir `H2`) : un agent peut donc, par une PR qu'il fusionne, changer quels gardes tournent. |
 | `H2` | Retirée le 2026-11-21 : l'agent publie, tag compris, et fusionne la montée de l'épingle sur ACCEPT | Délégué par l'humain : l'épingle de ce dépôt et celle des projets consommateurs sont à l'agent, avec ce que cela laisse de pouvoir sur les gardes chargés. Les conditions de publication sont dans `.claude/rules/git.md`. |
 | `H3` | Protection des branches, réglages du dépôt, changement de compte ou de permission | Hors de la portée des agents, et un mauvais réglage ouvre une voie que la revue ne couvre pas. |
 | `H4` | Cette matrice : l'ajout, le retrait ou le changement d'une case | Elle dit ce que l'humain délègue ; lui seul la tranche. |

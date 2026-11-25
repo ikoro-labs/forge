@@ -154,10 +154,12 @@ poste) : [`docs/installation.md`](docs/installation.md).
 
 ## Configurer
 
-Un projet décrit son usine dans un seul fichier, `docs/agents/usine.md` : qui accepte, la matrice
-de décision, les commandes de la CI, les checks obligatoires, la grille de revue, les chemins
-protégés. Le gabarit, [`plugins/forge/templates/usine.md`](plugins/forge/templates/usine.md),
-documente chaque clé.
+Un projet décrit son usine dans `docs/agents/usine.md` : la matrice de décision, les commandes de la CI,
+les checks obligatoires, la grille de revue. Les clés qui bornent l'agent (qui accepte, les chemins
+protégés, les bornes et les plafonds) peuvent vivre dans un second fichier protégé,
+`docs/agents/usine-gardes.md`, que le plugin lit tel que `origin/main` le tient : un changement de
+`usine.md` n'attend alors plus l'humain. Le gabarit,
+[`plugins/forge/templates/usine.md`](plugins/forge/templates/usine.md), documente chaque clé.
 
 Une clé absente ne prend jamais de valeur par défaut : l'étape qui la lit se dit « sans objet »,
 jamais `PASS`. Une revue vaut donc ce que la configuration déclare.
