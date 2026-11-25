@@ -61,7 +61,8 @@ dans `docs/agents/usine-gardes.md`. Version mineure : des clés et des sondes no
 - Resté dehors : `bounded_run.py`, `never_weaken.py` et `e2e_trial.py` lisent encore les clés sensibles par
   `usine.parse`, sans le chargeur (avant la partie 2 de #345). La ligne ruff du gabarit refuserait 88 fonctions
   de forge : jamais essayée sur un projet consommateur. Rien de F-0002 n'a été vu en marche sur un projet.
-  L'essai de bout en bout a échoué à l'étape lancement (délai de 300 s dépassé), sur `a1058a5`, tête de `main`.
+  L'essai de bout en bout passe sur `4fa6a36`, tête de `main`, avec la clé `e2e-run-limits` à 1800 s (le
+  2026-11-25 ; à 300 s, il échouait au lancement).
 
 ### Objectifs de service
 
