@@ -58,8 +58,8 @@ seuls, sous veto, ou jamais. Sans elle, ils ne tranchent rien et rendent tout en
 
 L'autonomie des agents sur ce projet, que l'utilisateur du projet ouvre et que le plugin ne pose
 jamais. La seule valeur est `on`. Avec elle, un skill de la chaîne des features (`feature-new`
-jusqu'à `feature-design`, `feature-guide`, `feature-brainstorm`, `feature-status`) et les skills
-`slo`, `audit-jetons` et `improve-codebase-architecture` peuvent être lancés par le modèle, et leurs
+jusqu'à `feature-design`, `feature-guide`, `feature-brainstorm`, `feature-status`, `feature-accept`) et les
+skills `slo`, `audit-jetons`, `improve-codebase-architecture` et `release` peuvent être lancés par le modèle, et leurs
 questions vont d'abord à `forge:product-owner` ou à `forge:staff-engineer`, selon la clé
 `decision-matrix`. Sans la clé, ou avec une autre valeur, un skill lancé par le modèle écrit
 « sans objet (clé `agent-autonomy` absente) » et rend l'étape à l'humain, avec la commande à taper ;
@@ -72,9 +72,11 @@ la PR de version : l'humain reprend la main sur un projet en retirant la ligne. 
 même clé : sans une seule ligne `on`, `guard_git` refuse alors la fusion et le tag, et le refus dit que le geste
 reste à l'humain ; il la lit dans `docs/agents/usine-gardes.md` tel que `origin/main` le tient (dans `usine.md` tant que
 ce fichier y est absent), jamais dans l'arbre de travail, et un projet qui adopte la clé déclare ce
-fichier en `protected-path`. `feature-accept` reste tapé par
-un humain de la clé `accepting-human`, et `release` reste commandé par la clé `release-trigger` pour savoir
-quand une version est due : la clé n'ouvre pas ces deux skills au modèle. La règle est dans
+fichier en `protected-path`. `feature-accept` lancé par le modèle accepte à la place de l'humain, sans
+comparer `git config user.name` (la clé `accepting-human` doit exister) : l'en-tête garde `accepte_par` et
+gagne `accepte_via: agent-autonomy`, et un document qui garde des points ouverts n'est jamais accepté par le
+modèle. `release` lancé par le modèle sans la clé n'écrit rien, pas même la PR de version, et reste commandé
+par la clé `release-trigger` pour savoir quand une version est due. La règle est dans
 `plugins/forge/autonomie.md`.
 
 - `agent-autonomy` : `on`
@@ -666,8 +668,8 @@ L'essai de l'usine avant une version, par `scripts/e2e_trial.py`. Les tests de `
 hook et chaque script seul ; l'essai éprouve l'enchaînement (un coder qui n'ouvre pas sa PR, un garde qui
 refuse un geste légitime) sur un dépôt d'essai que le projet désigne. Trois clés, chacune sur une seule
 ligne et sans valeur par défaut : une clé absente rend « sans objet (clé `<nom>` absente) » et le script
-n'écrit jamais `PASS`. La création du dépôt d'essai et de son jeton est un geste humain : le script ne la
-fait pas.
+n'écrit jamais `PASS`. Une quatrième, `e2e-run-limits`, est facultative. La création du dépôt d'essai et
+de son jeton est un geste humain : le script ne la fait pas.
 
 `e2e-repo` : le dépôt d'essai sur GitHub, `<propriétaire>/<nom>`. Le script y crée un ticket fictif et y
 nettoie ensuite ce qu'il a créé, retrouvé par son numéro, rien d'autre. Sans la clé, l'étape est
@@ -676,7 +678,7 @@ nettoie ensuite ce qu'il a créé, retrouvé par son numéro, rien d'autre. Sans
 - `e2e-repo` : `<propriétaire/depot-d-essai>`
 
 `e2e-command` : la commande lancée dans le projet jetable, un clone neuf du dépôt d'essai, découpée en mots
-comme le fait un shell puis lancée sans shell, sous le lanceur borné (`run-limits`, `run-budget`). Elle cite
+comme le fait un shell puis lancée sans shell, sous le lanceur borné (`e2e-run-limits` ou `run-limits`, `run-budget`). Elle cite
 `{plugin}` (le plugin à essayer) et `{budget}` (la clé `e2e-budget-usd`), sans quoi l'essai ne tiendrait pas
 le plugin à essayer sous le plafond ; `{feature}`, `{ticket}` et `{base}` (la branche de base de l'essai)
 sont facultatives. Toute autre marque est refusée. Sans la clé, l'étape est
@@ -688,6 +690,19 @@ sont facultatives. Toute autre marque est refusée. Sans la clé, l'étape est
 `--max-budget-usd` par `{budget}`. Sans la clé, l'étape est « sans objet (clé `e2e-budget-usd` absente) ».
 
 - `e2e-budget-usd` : `<2.50>`
+
+`e2e-run-limits` : clé facultative, la mémoire en Mo et le délai en secondes du seul lancement de la
+commande, sous la forme de `run-limits` (une seule ligne, deux nombres positifs). Une feature entière
+(`forge:feature-build`) tourne plus longtemps qu'une suite de tests : `run-limits` est dimensionnée pour
+la suite, et cette clé donne à l'essai sa propre borne. Elle l'emporte sur `run-limits`, les options
+`--memory-mb` et `--timeout` du script l'emportent sur les deux, chaque part (mémoire, délai) séparément.
+Elle ne borne que le lancement : le budget du poste (`run-budget`) se lit comme avant. Sans la clé, la
+borne est celle de `run-limits`, comme avant ; une valeur mal formée refuse l'appel (code 2). Le
+délai de la clé, plus l'attente des vérifications (`--wait-checks`, 600 s par défaut), doit rester sous
+le plafond de 3600 s que `scripts/release.py` met à l'essai entier : au-delà, le script est tué sans
+avoir nettoyé.
+
+- `e2e-run-limits` : `<mémoire en Mo> | <délai en secondes>`
 
 ## Libellés de l'écran
 

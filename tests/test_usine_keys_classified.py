@@ -21,7 +21,7 @@ FREE_KEYS = frozenset(
         "ci-replay-light",
         "completion-column", "computer-use-host", "decision-matrix", "dependency-min-age", "doc-cap",
         "doc-frontmatter", "doc-index", "domain-arbiter", "domain-owner", "domain-rules",
-        "domain-skill", "e2e-budget-usd", "e2e-command", "e2e-repo", "em-dash-allowances",
+        "domain-skill", "e2e-budget-usd", "e2e-command", "e2e-repo", "e2e-run-limits", "em-dash-allowances",
         "entry-gate", "feature-catalog-command", "feature-dir", "feature-gate", "feature-state",
         "format-on-write", "git-rules", "glossary", "incident-dir", "install", "journey-paths",
         "journey-replay", "lever-peers", "lint-on-write", "lockfile", "merge-method",

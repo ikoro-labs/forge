@@ -47,6 +47,15 @@ Publier une version :
    est un geste humain. L'essai coûte de vrais appels de modèle : il ne se lance qu'à un geste de version,
    celui de l'humain ou celui de `/forge:release` (voir plus bas), jamais depuis un test ni depuis un autre
    passage de l'usine.
+
+   Le lancement d'une feature entière dure plus qu'une suite de tests : sous la clé `run-limits` (300 s
+   ici, dimensionnée pour la suite), `forge:feature-build` est tué à 300 s. La clé facultative
+   `e2e-run-limits` (`<mémoire en Mo> | <délai en secondes>`) donne au seul lancement de l'essai sa borne ;
+   elle l'emporte sur `run-limits`, et `--memory-mb` et `--timeout` l'emportent sur les deux. Le délai de
+   cette clé plus l'attente des vérifications (`--wait-checks`, 600 s) doit rester sous les 3600 s que
+   `release.py` laisse à l'essai entier (`TRIAL_TIMEOUT_SECONDS`) : un essai tué à ce plafond n'a pas
+   nettoyé le dépôt d'essai. Le script résout `--projet`, `--usine` et `--plugin` avant de lancer dans le
+   clone : un chemin relatif est lu depuis le dossier où on l'a lancé.
 4. Vérifier :
 
    ```sh

@@ -1,7 +1,8 @@
 """Ticket #266 : le modèle lance les skills de la chaîne quand le projet a ouvert l'autonomie.
 
 La clé `agent-autonomy` de `usine.md` ouvre l'autonomie ; sans elle, le skill rend l'étape à l'humain.
-`feature-accept` reste tapé par un humain, `release` garde la clé `release-trigger`.
+`feature-accept` et `release` s'y ajoutent depuis le ticket #355 (voir `test_agent_acceptance.py`) :
+`release` garde la clé `release-trigger`.
 """
 
 import unittest
@@ -15,8 +16,7 @@ SKILLS = support.PLUGIN / "skills"
 TEMPLATE = support.PLUGIN / "templates" / "usine.md"
 RULE = support.PLUGIN / "autonomie.md"
 PROTOCOLE = support.PLUGIN / "templates" / "features" / "protocole.md"
-HUMAN_ONLY = ("feature-accept", "release")
-# The twelve skills that carried `disable-model-invocation: true` before #266, less the two above.
+# The ten skills opened by #266. `feature-accept` and `release` followed with #355.
 OPENED = (
     "audit-jetons", "feature-brainstorm", "feature-design", "feature-frame", "feature-guide",
     "feature-new", "feature-spec", "feature-status", "improve-codebase-architecture", "slo",
@@ -80,17 +80,18 @@ class QuestionsGoToTheDecisionAgents(unittest.TestCase):
 
 
 class WhatStaysWithTheHuman(unittest.TestCase):
-    def test_feature_accept_and_release_keep_the_flag(self) -> None:
-        """Ticket #266 A3.1 : le drapeau reste sur feature-accept et release."""
-        for name in HUMAN_ONLY:
-            with self.subTest(skill=name):
-                self.assertEqual(frontmatter(SKILLS / name / "SKILL.md").get("disable-model-invocation"), "true")
+    def test_the_rule_keeps_release_commanded_by_its_trigger(self) -> None:
+        """Ticket #266 A3, #355 A5 : lancé par le modèle, `release` reste commandé par la clé `release-trigger`."""
+        section = prose(RULE).split("## 4.", 1)[1]
+        self.assertRegex(section, r"`release`.{0,200}lancé par le modèle.{0,600}clé `release-trigger`")
 
-    def test_the_rule_opens_neither_acceptance_nor_publication(self) -> None:
-        """Ticket #266 A3 : la règle dit que l'autonomie n'accepte rien et que `release` garde `release-trigger`."""
-        text = prose(RULE)
-        self.assertRegex(text, r"`feature-accept`.{0,200}humain de la clé `accepting-human`")
-        self.assertRegex(text, r"`release`.{0,200}clé `release-trigger`")
+    def test_the_rule_keeps_the_matrix_reserved_cases_with_the_human(self) -> None:
+        """Ticket #266 A3, #355 A5 : même quand le modèle accepte, ce que la matrice réserve reste à l'humain."""
+        section = prose(RULE).split("## 4.", 1)[1]
+        self.assertRegex(
+            section,
+            r"`accepte_via: agent-autonomy`.{0,1800}matrice réserve à l'humain.{0,200}reste à lui, clé ouverte ou non",
+        )
 
 
 if __name__ == "__main__":
