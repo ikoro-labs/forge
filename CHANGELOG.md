@@ -43,11 +43,19 @@ dans `docs/agents/usine-gardes.md`. Version mineure : des clés et des sondes no
 - Skills : le gabarit `usine.md` porte une ligne `lint-on-write` pour ruff (complexité 10, paramètres 5,
   imbrication 5), et la page `docs/regles-de-code.md` nomme chaque clé de la base de règles
   (ikoro-labs/forge#313).
-- Tests : la suite passe à 2627 tests sous Linux, 6 ignorés (mesuré le 2026-11-25 sur `a1058a5`, tête de `main`). `tests/test_usine_keys_classified.py` classe `architecture-check` et `recurring-finding` parmi les clés
+- Skills : `forge:feature-accept` et `forge:release` peuvent être lancés par le modèle ; ils lisent d'abord
+  `autonomie.md` : sans `agent-autonomy` à `on`, ils n'écrivent rien et rendent la commande à l'humain. Une
+  acceptation par le modèle ajoute `accepte_via: agent-autonomy` (ikoro-labs/forge#355, #360).
+- Skills : l'essai de bout en bout du skill `release` borne son lancement par la clé facultative
+  `e2e-run-limits` (`<Mo> | <secondes>`) avant `run-limits` ; un `--projet`, `--usine` ou `--plugin` relatif
+  est résolu avant le lancement (ikoro-labs/forge#359, #362).
+- Tests : la suite passe à 2657 tests sous Linux, 7 ignorés (mesuré le 2026-11-25 sur `e155ccb`, qui ne
+  change que `docs/agents/usine.md` sur `31a0cfa`, tête de `main`). `tests/test_usine_keys_classified.py` classe `architecture-check` et `recurring-finding` parmi les clés
   libres, ce qui a remis `main` au vert (ikoro-labs/forge#345).
 - Gestes humains : un projet qui monte son épingle sur cette version voit la colonne `Merged PRs` exigée par le
   garde de la réponse de session ; un design de 13 tickets ou plus est refusé. Les clés `stack`, `lint-on-write`,
-  `architecture-check`, `recurring-finding` et `ci-replay-light` sont facultatives : sans elles, « sans objet ».
+  `architecture-check`, `recurring-finding`, `ci-replay-light` et `e2e-run-limits` sont facultatives : sans
+  elles, « sans objet ». Sous `agent-autonomy` à `on`, le modèle accepte une étape et publie une version.
   Sans `docs/agents/usine-gardes.md`, rien ne change hors l'avis ; déplacer les clés dans ce fichier est la
   partie 2 de ikoro-labs/forge#345, après la montée de l'épingle.
 - Resté dehors : `bounded_run.py`, `never_weaken.py` et `e2e_trial.py` lisent encore les clés sensibles par
