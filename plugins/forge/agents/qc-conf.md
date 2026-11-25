@@ -326,7 +326,11 @@ pour un constat voisin d'un `MINOR`, ni parce que le ticket n'en parle pas. Elle
   du ticket : un diff qui ouvre ce trou, ou le laisse ouvert dans une ligne qu'il touche, ne se
   fusionne pas. Le scénario d'échec est le geste qui passe : la commande ou le chemin, et ce que la
   règle devait arrêter. Une évasion que le diff n'introduit ni n'aggrave est une `NOTE` `out of diff`
-  (socle).
+  (socle). Le titre d'une PR qui commence par un `type(scope):` de la clé `ticket-pr-cap-exempt`, sur un
+  diff qui n'est pas de l'entretien de l'usine (une épingle de version, une date de plafond, une version
+  publiée), est une évasion de `guard_pr_cap` : `BLOCKER`, règle `F-25`, le scénario d'échec étant le
+  titre et ce que le diff change en vrai ; une PR d'entretien ne cite aucun ticket, et celle qui en cite
+  un se relève en `NOTE`. Sans la clé, « sans objet (clé `ticket-pr-cap-exempt` absente) » : rien à lire.
 - **Test qui ne peut pas échouer sur l'ancien code** : `BLOCKER`, règle `F-9` quand il porte un
   critère, `F-10` sinon. Deux façons de le voir : une ligne `PASSES` sans justification
   (**Lecture du rejeu sur la base**), ou une lecture qui montre qu'il passe par construction

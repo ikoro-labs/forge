@@ -1215,6 +1215,7 @@ class RaisedCap(unittest.TestCase):
             with self.subTest(login=login):
                 gh = self.full(3, [raised(login)])
                 gh.created = ["2026-11-23T10:00:00Z"] * 3  # this repository counts from a day: its PRs carry one
+                gh.titles = ["feat(x): one", "feat(y): two", "fix(z): three"]  # and lists titles to leave out: gh gives them
                 reason = project.create(pr_body("Closes #5"), gh) or ""
                 self.assertIn("#5 already has 3 PRs for a cap of 3", reason)
                 self.assertIn("clé `pr-cap-raiser` absente", reason)
@@ -1411,6 +1412,63 @@ class LastPrDocumentation(unittest.TestCase):
                 self.assertIn(phrase, entry)
         self.assertIn("ikoro-labs/forge#314", entry)
         self.assertNotIn("`ticket-pr-cap-last`", entry)
+
+
+class ExemptDocumentation(unittest.TestCase):
+    """Part 3, A4: the page, the README row, the coder's brief, the judge's grid and this repository's `usine.md`."""
+
+    def section(self) -> str:
+        text = (support.REPO_ROOT / "docs" / "installation.md").read_text(encoding="utf-8")
+        return " ".join(text.split("## The PRs of a ticket", 1)[1].split("\n## ", 1)[0].split())
+
+    def test_the_page_describes_the_exempt_key(self) -> None:
+        """Ticket #314 part 3, A4: the page names the key, the exact prefix, the title door, the judge and the absent key."""
+        section = self.section()
+        for phrase in (
+            "`ticket-pr-cap-exempt`",
+            "`type(scope):`",
+            "`--title`",
+            "cites no ticket",
+            "`forge:qc-conf`",
+            "sans objet (clé `ticket-pr-cap-exempt` absente)",
+            "`gh pr edit`",
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, section)
+
+    def test_the_readme_row_names_the_exempt_key(self) -> None:
+        """Ticket #314 part 3, A4: the README summarises the key and keeps the link to the page."""
+        row = next(line for line in (support.REPO_ROOT / "README.md").read_text(encoding="utf-8").splitlines() if "`guard_pr_cap`" in line)
+        self.assertIn("`ticket-pr-cap-exempt`", row)
+        self.assertIn("docs/installation.md#the-prs-of-a-ticket", row)
+
+    def test_the_coder_cites_no_ticket_in_a_maintenance_pr(self) -> None:
+        """Ticket #314 part 3, A4: the brief says a listed PR is not counted, cites no ticket, and the key's absence."""
+        text = " ".join((support.PLUGIN / "agents" / "coder.md").read_text(encoding="utf-8").split())
+        for phrase in (
+            "`ticket-pr-cap-exempt`",
+            "ne cite aucun ticket",
+            "sans objet (clé `ticket-pr-cap-exempt` absente)",
+            "--json number,state,body,title",
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, text)
+
+    def test_the_judge_refuses_a_listed_title_on_a_diff_that_is_not_factory_maintenance(self) -> None:
+        """Ticket #314 part 3, A4: the grid of `forge:qc-conf` has one line: a listed title on another diff is a `BLOCKER`, `F-25`."""
+        text = " ".join((support.PLUGIN / "agents" / "qc-conf.md").read_text(encoding="utf-8").split())
+        line = next(part for part in text.split(" - ") if "`ticket-pr-cap-exempt`" in part)
+        for phrase in ("`BLOCKER`", "`F-25`", "entretien de l'usine", "ne cite aucun ticket"):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, line)
+
+    def test_this_repository_exempts_the_pin_and_the_release(self) -> None:
+        """Ticket #314 part 3, A4: `docs/agents/usine.md` lists `chore(pin)` and `chore(release)` next to the cap, and only them."""
+        text = (support.REPO_ROOT / "docs" / "agents" / "usine.md").read_text(encoding="utf-8")
+        lines = [line for line in text.splitlines() if line.startswith("- `ticket-pr-cap-exempt`")]
+        self.assertEqual(lines, ["- `ticket-pr-cap-exempt` : `chore(pin)`", "- `ticket-pr-cap-exempt` : `chore(release)`"])
+        self.assertLess(text.index("- `ticket-pr-cap` :"), text.index("- `ticket-pr-cap-exempt` :"))
+        self.assertNotIn(chr(0x2014), text)
 
 
 class Binding(unittest.TestCase):

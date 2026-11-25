@@ -974,6 +974,20 @@ a nested shell and behind a wrapper (the reader is `hooks/gh_bodies.py`, shared 
   PR of the ticket counts, whatever its date. Without the key `ticket-pr-cap` the date is not read either. A
   value that is not a valid day, a repeated key, and a PR whose `createdAt` cannot be read, fail closed like
   the rest of the count: the PR that cites a ticket is refused until it is fixed.
+- **Maintenance PRs.** The key `ticket-pr-cap-exempt` (protected, one `type(scope)` per line, as
+  `chore(factory)`) leaves out of the count every PR whose title starts with `type(scope):`, exactly, open or
+  merged alike: a forge pin or a cap date has nothing to do with the ticket it happens to cite. The title is one
+  more field (`title`) of the same `gh pr list --json` call; a PR being created (`gh pr create`) is exempt only
+  through its `--title` or `-t` argument, and reserves no place, while one with no title, or one the shell
+  fills in or escapes, counts. A maintenance PR cites no ticket: `forge:coder` and the git rules of the project
+  say so, and a listed PR that cites one is left out of the count all the same. The guard does not read the
+  diff, so the dodge it leaves open (a listed title on a PR that is not maintenance) is closed by the judge:
+  `forge:qc-conf` refuses, as a `BLOCKER` of rule `F-25`, a title of the key on a diff that is not factory
+  maintenance. Without the key the step is « sans objet (clé `ticket-pr-cap-exempt` absente) »: every PR
+  counts, whatever its title, and no value is guessed. A line that is not one `type(scope)`, or a listed PR
+  whose `title` cannot be read, fails closed like the rest of the count. `gh pr edit`, `gh api` and the MCP
+  tools are not exempted by a title: an edit adds tickets to a PR already open, and the other doors are read as
+  before. This repository lists `chore(pin)` and `chore(release)`.
 - **A ticket started before that day.** A ticket with at least one open or merged PR that cites it, created
   before the day of the key, is a started ticket: it finishes the PR in flight (a PR from before the day is
   never counted, so editing it, the `forge:qc` report included, is not refused), then admits one last PR, as a
