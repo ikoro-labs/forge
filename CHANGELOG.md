@@ -9,6 +9,79 @@ Ce dépôt a été recréé le 2026-10-23 ; l'ancien est `ikoro-labs/forge-archi
 numéros de PR et de ticket nus (`#38`) renvoient à l'ancien dépôt ; un renvoi au nouveau dépôt
 porte son nom (`ikoro-labs/forge#7`).
 
+## [1.22.0] - 2026-11-25
+
+La base de règles de code de F-0002 entre dans l'usine : un refus d'écriture par la clé `lint-on-write`, la liste
+des dépendances directes qu'une PR ajoute (clé `stack`), la sonde de la clé `architecture-check`, les constats
+récurrents du juge et le type `raised-entry` de `never-weaken`. Les clés qui bornent l'agent se lisent aussi
+dans `docs/agents/usine-gardes.md`. Version mineure : des clés et des sondes nouvelles. Déclencheur de la clé
+`release-trigger` atteint (27 fusions en attente pour 1 demandée, mesuré le 2026-11-25 sur `4fa6a36`).
+
+- Hooks : `after_write` n'a plus qu'un exécuteur par clé ; la clé `lint-on-write` refuse une écriture dont la
+  commande de lint échoue et relaie la fin de la sortie de l'outil ; ces refus entrent dans le journal des
+  refus, et `guard-refusals` ne compte plus que `guard_git`, `guard_coder` et `guard_readonly`
+  (ikoro-labs/forge#305, #307, #310).
+- Hooks : les clés qui bornent l'agent (`agent-autonomy`, `protected-path`, `never-weaken`, `ticket-pr-cap` et
+  les autres de la liste du chargeur) se lisent dans `docs/agents/usine-gardes.md` sur `origin/main` ; une telle
+  clé restée dans `usine.md` est écartée et signalée ; sans le fichier, `usine.md` reste lu, avec un avis
+  (ikoro-labs/forge#345, partie 1).
+- Hooks : une feature publie au plus 12 tickets, non plus 15 (ikoro-labs/forge#329).
+- Hooks : `pin_sync.py` met l'installation d'un projet à la version de son épingle, et `pin_notice.py` avertit
+  quand elle est en retard ; le hook de début de session lance `claude plugin list` et `git show`, délai porté à
+  30 s (ikoro-labs/forge#333).
+- Agents : la sonde 16 de `forge:qc-gate` lance `stack_check.py` (dépendances directes ajoutées à un verrou,
+  comparées au fichier de la clé `stack`), avec un `BLOCKER` de `forge:qc-conf` pour une dépendance hors liste ;
+  la sonde 17 rend `PASS`, `FAIL` ou `NOT RUN` pour la clé `architecture-check`, règle `BLOCKER` F-15 ; la sonde
+  14 rejoue la clé optionnelle `ci-replay-light` sur les commits d'avant la tête (ikoro-labs/forge#306, #308,
+  #311, #331).
+- Agents : le type `raised-entry` de `never-weaken` refuse un fichier de référence qui gagne une clé ou en
+  relève le compte (ikoro-labs/forge#309).
+- Skills : `forge:qc` lance `recurring_findings.py` après un verdict : un constat cité par au moins N PR
+  distinctes sur la fenêtre de la clé `recurring-finding` est listé dans un seul commentaire
+  (ikoro-labs/forge#312). La réponse de session gagne la colonne `Merged PRs` dans son tableau `Features`
+  (ikoro-labs/forge#335).
+- Skills : le gabarit `usine.md` porte une ligne `lint-on-write` pour ruff (complexité 10, paramètres 5,
+  imbrication 5), et la page `docs/regles-de-code.md` nomme chaque clé de la base de règles
+  (ikoro-labs/forge#313).
+- Skills : `forge:feature-accept` et `forge:release` peuvent être lancés par le modèle ; ils lisent d'abord
+  `autonomie.md` : sans `agent-autonomy` à `on`, ils n'écrivent rien et rendent la commande à l'humain. Une
+  acceptation par le modèle ajoute `accepte_via: agent-autonomy` (ikoro-labs/forge#355, #360).
+- Skills : l'essai de bout en bout du skill `release` borne son lancement par la clé facultative
+  `e2e-run-limits` (`<Mo> | <secondes>`) avant `run-limits` ; un `--projet`, `--usine` ou `--plugin` relatif
+  est résolu avant le lancement (ikoro-labs/forge#359, #362).
+- Tests : la suite passe à 2657 tests sous Linux, 7 ignorés (mesuré le 2026-11-25 sur `e155ccb`, qui ne
+  change que `docs/agents/usine.md` sur `31a0cfa`, tête de `main`). `tests/test_usine_keys_classified.py` classe `architecture-check` et `recurring-finding` parmi les clés
+  libres, ce qui a remis `main` au vert (ikoro-labs/forge#345).
+- Gestes humains : un projet qui monte son épingle sur cette version voit la colonne `Merged PRs` exigée par le
+  garde de la réponse de session ; un design de 13 tickets ou plus est refusé. Les clés `stack`, `lint-on-write`,
+  `architecture-check`, `recurring-finding`, `ci-replay-light` et `e2e-run-limits` sont facultatives : sans
+  elles, « sans objet ». Sous `agent-autonomy` à `on`, le modèle accepte une étape et publie une version.
+  Sans `docs/agents/usine-gardes.md`, rien ne change hors l'avis ; déplacer les clés dans ce fichier est la
+  partie 2 de ikoro-labs/forge#345, après la montée de l'épingle.
+- Resté dehors : `bounded_run.py`, `never_weaken.py` et `e2e_trial.py` lisent encore les clés sensibles par
+  `usine.parse`, sans le chargeur (avant la partie 2 de #345). La ligne ruff du gabarit refuserait 88 fonctions
+  de forge : jamais essayée sur un projet consommateur. Rien de F-0002 n'a été vu en marche sur un projet.
+  L'essai de bout en bout passe sur `4fa6a36`, tête de `main`, avec la clé `e2e-run-limits` à 1800 s (le
+  2026-11-25 ; à 300 s, il échouait au lancement).
+
+### Objectifs de service
+
+État de chaque objectif au 2026-11-25.
+
+| Objectif | Cible | Fenêtre | Valeur | Budget restant | État |
+|---|---|---|---|---|---|
+| `accept-round-1` | >= 99 % | 30 j | 66.37 % | 0 % sur 1 % | épuisé |
+| `lead-time p90` | <= 1 h | 30 j | 544.1 h | 0 h sur 1 h | épuisé |
+| `release-lag p90` | <= 1 h | 30 j | 30.8 h | 0 h sur 1 h | épuisé |
+| `escaped-defects` | <= 1 % | 30 j | 0 % | 1 % sur 1 % | tenu |
+| `change-failure` | <= 1 % | 30 j | 0 % | 1 % sur 1 % | tenu |
+| `human-touch` | <= 1 % | 30 j | 28.67 % | 0 % sur 1 % | épuisé |
+| `main-green` | >= 100 % | 30 j | 96.53 % | 0 % sur 0 % | épuisé |
+| `judge-recall` | >= 99 % | 30 j | sans objet | aucun résultat du jeu de référence (option `--reference` absente) | sans objet |
+| `false-accept` | <= 0 % | 30 j | sans objet | aucun résultat du jeu de référence (option `--reference` absente) | sans objet |
+
+Aucun `escaped-defect` ouvert depuis le 2026-11-23.
+
 ## [1.21.0] - 2026-11-23
 
 Le garde `guard_git` tient la fusion et le tag tant que la clé `agent-autonomy` n'est pas `on` sur `origin/main`, et un
