@@ -17,7 +17,8 @@ TEMPLATE = support.PLUGIN / "templates" / "usine.md"
 # is an ordinary PR. To add a key to the template, add it here, or to `usine.SENSITIVE_KEYS`.
 FREE_KEYS = frozenset(
     {
-        "agent-cache-dir", "baselines", "browser-drive", "ci-replay", "ci-replay-light",
+        "agent-cache-dir", "architecture-check", "baselines", "browser-drive", "ci-replay",
+        "ci-replay-light",
         "completion-column", "computer-use-host", "decision-matrix", "dependency-min-age", "doc-cap",
         "doc-frontmatter", "doc-index", "domain-arbiter", "domain-owner", "domain-rules",
         "domain-skill", "e2e-budget-usd", "e2e-command", "e2e-repo", "em-dash-allowances",
@@ -28,7 +29,7 @@ FREE_KEYS = frozenset(
         "output-words-paragraph", "output-words-pr", "output-words-report-mail",
         "output-words-session-reply", "output-words-subagent-return", "output-words-ticket",
         "pr-template", "product-source", "property-test-lib", "question-default-delay",
-        "recording-command", "red-replay", "release-tag", "release-trigger",
+        "recording-command", "recurring-finding", "red-replay", "release-tag", "release-trigger",
         "report-attention-label", "report-digest-hour", "report-host", "report-host-floor",
         "report-host-probe", "report-main-workflow", "report-repo", "required-contexts",
         "rescue-bundle-dir", "review-grid", "screenshot-command", "security-rules", "shared-doc",
