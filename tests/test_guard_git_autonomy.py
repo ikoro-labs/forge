@@ -685,7 +685,7 @@ class TheTextsSayWhoHoldsTheKey(unittest.TestCase):
             "`git push <remote> <nom>`",
             "`gh release create`",
             "l'outil MCP",
-            "`docs/agents/usine.md` est un `protected-path`",
+            "`docs/agents/usine-gardes.md` est un `protected-path`",
             "ne sont pas tenus par le garde",
             "l'essai de bout en bout",
             "tests/test_guard_git_autonomy.py",
