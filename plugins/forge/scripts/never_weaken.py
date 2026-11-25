@@ -1,4 +1,4 @@
-"""Say which `never-weaken` entries of `docs/agents/usine.md` a PR's diff touches.
+"""Say which `never-weaken` entries of `docs/agents/usine.md` and `docs/agents/usine-gardes.md` a PR's diff touches.
 
     python never_weaken.py [--usine FILE] <diff-file | ->
 
@@ -18,13 +18,14 @@ for 1, and a key added or a count raised, against the removed lines of the same 
 `<entry>` and `<detail>` separated by tabs, the status being APPLIES (the diff weakens what the
 entry guards), NONE, or INVALID (the entry is malformed). A diff that cannot be read (a binary
 patch) is read as a change for `raised-number`, `lowered-rank` and `raised-entry`; `removed-line` sees a binary
-file only when it is deleted or modified, not when it is created under the path. A last line,
-`docs/agents/usine.md : never-weaken`, says whether the diff removes or edits an entry (APPLIES) :
+file only when it is deleted or modified, not when it is created under the path. Two last lines,
+`docs/agents/usine.md : never-weaken` and `docs/agents/usine-gardes.md : never-weaken` (the entries
+may sit in either file), say whether the diff removes or edits an entry of that file (APPLIES) :
 a PR cannot lift the guard it is judged by. Exit code 0 when no entry applies, 1 when one does
 (an unreadable diff included), 2 when one is invalid or the call is wrong. Without the key, the step is "sans objet" and the exit code is 0.
 
-The entries are read from the base (`--usine`, `git show origin/<base>:docs/agents/usine.md`), so a
-PR cannot lift the guard it is judged by. The standard library only.
+The entries are read from the base (`--usine`, the file `usine_base.py` writes from both files of
+`origin/<base>`), so a PR cannot lift the guard it is judged by. The standard library only.
 """
 
 from __future__ import annotations
@@ -313,9 +314,9 @@ def check(entries: list[str], diff_text: str) -> list[Result]:
     return [check_entry(entry, changes) for entry in entries]
 
 
-def _guard_config(changes: list[FileChange]) -> Result:
-    """A PR that removes or edits a `never-weaken` entry lifts the guard it is judged by."""
-    name = usine.CONFIG_PATH.as_posix()
+def _guard_file(changes: list[FileChange], path: Path) -> Result:
+    """A PR that removes or edits a `never-weaken` entry of `path` lifts the guard it is judged by."""
+    name = path.as_posix()
     lifted = [
         line
         for change in changes
@@ -331,6 +332,11 @@ def _guard_config(changes: list[FileChange]) -> Result:
         if change.new_path == name and change.old_path not in (None, name):
             return Result(f"{name} : {KEY}", APPLIES, f"fichier remplacé par {change.old_path}")
     return Result(f"{name} : {KEY}", NONE, "aucune entrée retirée ni modifiée")
+
+
+def _guard_config(changes: list[FileChange]) -> list[Result]:
+    """One result for `usine.md` and one for `usine-gardes.md`: the entries sit in either of them."""
+    return [_guard_file(changes, usine.CONFIG_PATH), _guard_file(changes, usine.GUARD_PATH)]
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -351,7 +357,7 @@ def main(argv: list[str] | None = None) -> int:
     if not entries:
         print(f"sans objet (clé {KEY} absente)")
         return 0
-    results = check(entries, text) + [_guard_config(parse_diff(text))]
+    results = check(entries, text) + _guard_config(parse_diff(text))
     for result in results:
         print(f"{result.status}\t{result.entry}\t{result.detail}")
     statuses = {result.status for result in results}
