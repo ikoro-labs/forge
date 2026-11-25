@@ -34,8 +34,8 @@ SENSITIVE_KEYS: frozenset[str] = frozenset(
         "accepting-human", "agent-autonomy", "budget-action", "gh-api-allow", "infra-hosts",
         "infra-verify", "never-weaken", "owner-gesture", "pin-bump", "pr-cap-raiser",
         "protected-path", "readonly-agent", "readonly-command", "run-budget", "run-limits",
-        "slo", "ticket-budget", "ticket-pr-cap", "ticket-pr-cap-since", "validation-owner",
-        "validation-reviewer",
+        "slo", "ticket-budget", "ticket-pr-cap", "ticket-pr-cap-exempt", "ticket-pr-cap-since",
+        "validation-owner", "validation-reviewer",
     }
 )  # fmt: skip
 ENTRY =re.compile(r"^\s*[-*]\s+`([A-Za-z0-9_.-]+)`\s*:\s*`([^`]*)`\s*$")

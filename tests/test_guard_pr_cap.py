@@ -40,6 +40,7 @@ from unittest import mock
 
 import support
 from guard_pr_cap import Runner, refusal
+from usine import SENSITIVE_KEYS
 
 USINE = (
     "# Usine\n- `ticket-pr-cap` : `3`\n- `accepting-human` : `Kevin Humain | the-human`\n"
@@ -843,6 +844,44 @@ class ExemptKey(unittest.TestCase):
         self.assertEqual(gh.calls, [])
 
 
+class ExemptKeyDeclared(unittest.TestCase):
+    """Part 3, A1 and A3: the key is protected and the template documents it."""
+
+    def test_the_key_is_protected_like_the_cap(self) -> None:
+        """Ticket #314 part 3, A1: `ticket-pr-cap-exempt` is read in `usine-gardes.md`, wherever `ticket-pr-cap` is."""
+        self.assertIn("ticket-pr-cap-exempt", SENSITIVE_KEYS)
+        self.assertIn("ticket-pr-cap", SENSITIVE_KEYS)
+
+    def test_the_template_documents_the_key_next_to_the_cap_without_a_default(self) -> None:
+        """Ticket #314 part 3, A3: the template line, its form, the exact prefix, `sans objet`, no default, no em dash."""
+        raw = (support.PLUGIN / "templates" / "usine.md").read_text(encoding="utf-8")
+        text = " ".join(raw.split())
+        self.assertIn("- `ticket-pr-cap-exempt` : `<chore(factory)>`", text)
+        self.assertLess(text.index("- `ticket-pr-cap-since` :"), text.index("- `ticket-pr-cap-exempt` :"))
+        self.assertLess(text.index("- `ticket-pr-cap-exempt` :"), text.index("- `pr-cap-raiser` :"))
+        before = text.split("- `ticket-pr-cap-exempt`")[0][-1800:]
+        for phrase in (
+            "une ligne par `type(scope)`",
+            "type(scope):",
+            "ouvertes ou fusionnées",
+            "sans objet (clé `ticket-pr-cap-exempt` absente)",
+            "aucune valeur par défaut",
+            "ne cite aucun ticket",
+            "forge:qc-conf",
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, before)
+        self.assertNotIn("\u2014", raw)
+
+    def test_the_template_lists_the_key_among_the_protected_ones(self) -> None:
+        """Ticket #314 part 3, A1: the protected section of the template counts and names the key."""
+        text = " ".join((support.PLUGIN / "templates" / "usine.md").read_text(encoding="utf-8").split())
+        section = text.split("## Clés protégées")[1].split(" Les autres clés")[0]
+        self.assertIn("`ticket-pr-cap-exempt`", section)
+        self.assertIn("Vingt-deux clés", section)
+        self.assertEqual(len(SENSITIVE_KEYS), 22)
+
+
 class LastPr(unittest.TestCase):
     """A9: a ticket started before `ticket-pr-cap-since` finishes its PR in flight, then admits one last PR."""
 
@@ -949,10 +988,10 @@ class LastPr(unittest.TestCase):
         self.assertIsNone(project.create(pr_body("Closes #5"), self.listed(self.OLD)))
 
     def test_the_plugin_adds_no_key_for_the_last_pr(self) -> None:
-        """Ticket #314, A9: no new key: the template names the keys of the cap as before."""
+        """Ticket #314, A9: the last PR has no key of its own; part 3 adds `ticket-pr-cap-exempt`, a key of the count."""
         text = (support.PLUGIN / "templates" / "usine.md").read_text(encoding="utf-8")
         keys = {line.split("`")[1] for line in text.splitlines() if line.startswith("- `ticket-pr-cap")}
-        self.assertEqual(keys, {"ticket-pr-cap", "ticket-pr-cap-since"})
+        self.assertEqual(keys, {"ticket-pr-cap", "ticket-pr-cap-since", "ticket-pr-cap-exempt"})
 
 
 class FourthPr(unittest.TestCase):
