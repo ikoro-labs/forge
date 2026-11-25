@@ -10,7 +10,9 @@ A repeated key is a list, in the file's order. A value of several parts is `<par
 which `split_value` cuts. Any other line is prose and is ignored. An absent key has no default: whoever reads it says the step is "sans objet" and names the key.
 
 The keys that bound the agent's powers (`SENSITIVE_KEYS`) are read in a second file,
-`docs/agents/usine-gardes.md`, as `origin/main` holds it; `load` merges the two.
+`docs/agents/usine-gardes.md`, as `origin/main` holds it; `load` merges the two. A script reads the
+configuration through `read_config` (the project's, or the file a caller gives) or `read_config_at` (a
+git ref), never by `parse` on `usine.md` alone.
 """
 
 from __future__ import annotations
@@ -119,18 +121,18 @@ def _git(argv: list[str], directory: Path | str) -> subprocess.CompletedProcess[
         return None
 
 
-def on_main(directory: Path | str, path: Path) -> OnMain:
-    """`path` as `origin/main` holds it, read by `git ls-tree` then `git cat-file`.
+def on_ref(directory: Path | str, path: Path, ref: str) -> OnMain:
+    """`path` as `ref` holds it, read by `git ls-tree` then `git cat-file`.
 
-    Never the working tree, which an agent can edit: what counts is what the human merged. The ref
-    is the one this clone last fetched. The tree is listed first so that a file the ref lacks
-    (absent) is told apart from a ref or a repository git cannot read (unreadable).
+    Never the working tree, which an agent can edit: what counts is what the human merged. The tree
+    is listed first so that a file the ref lacks (absent) is told apart from a ref or a repository
+    git cannot read (unreadable).
     """
     git = shutil.which("git")
     if not git:
         return OnMain(None, "git is not installed")
     name = path.as_posix()
-    listed = _git([git, "ls-tree", "-z", "--full-tree", MAIN_REF, "--", name], directory)
+    listed = _git([git, "ls-tree", "-z", "--full-tree", ref, "--", name], directory)
     if listed is None:
         return OnMain(None, "git ls-tree did not finish")
     if listed.returncode != 0:
@@ -141,14 +143,19 @@ def on_main(directory: Path | str, path: Path) -> OnMain:
         return OnMain(None, None)
     fields = entry.split("\t", 1)[0].split()
     if len(fields) != 3 or fields[1] != "blob":
-        return OnMain(None, f"{name} is not a file on {MAIN_REF}")
+        return OnMain(None, f"{name} is not a file on {ref}")
     shown = _git([git, "cat-file", "blob", fields[2]], directory)
     if shown is None or shown.returncode != 0:
         return OnMain(None, f"git cat-file could not read {name}")
     try:
         return OnMain(shown.stdout.decode("utf-8"), None)
     except UnicodeDecodeError:
-        return OnMain(None, f"{name} on {MAIN_REF} is not UTF-8")
+        return OnMain(None, f"{name} on {ref} is not UTF-8")
+
+
+def on_main(directory: Path | str, path: Path) -> OnMain:
+    """`path` as `refs/remotes/origin/main` holds it: the ref this clone last fetched."""
+    return on_ref(directory, path, MAIN_REF)
 
 
 class Loaded(NamedTuple):
@@ -172,29 +179,26 @@ def _working_tree(root: Path) -> dict[str, list[str]]:
         return {}
 
 
-def load_checked(root: Path) -> Loaded:
-    """The configuration of the project at `root`: `usine.md` for the free keys, `usine-gardes.md`
-    as `origin/main` holds it for the sensitive ones (`SENSITIVE_KEYS`).
+def merge(working: dict[str, list[str]], guard: OnMain, ref: str = "origin/main") -> Loaded:
+    """The free keys of `working` and the sensitive ones of the guard file `guard`, read on `ref`.
 
-    A sensitive key in `usine.md` is dropped and reported when the guard file is on `origin/main`;
-    a key of the guard file that is not sensitive is ignored and reported. Without the guard file
-    on `origin/main`, or when git cannot tell, every key comes from `usine.md`, as before the file
-    existed, with a notice; in the second case `unreadable` says why, and a merge is refused.
+    A sensitive key in `working` is dropped and reported when the guard file is there; a key of the
+    guard file that is not sensitive is ignored and reported. Without the guard file, or when git
+    cannot tell, every key comes from `working`, as before the file existed, with a notice; in the
+    second case `unreadable` says why, and a caller that merges refuses.
     """
-    working = _working_tree(root)
-    guard = on_main(root, GUARD_PATH)
     path = GUARD_PATH.as_posix()
     if guard.text is None:
         if guard.why is not None:
-            note = f"{path} cannot be read on origin/main ({guard.why}): its keys are read from {CONFIG_PATH.as_posix()}"
+            note = f"{path} cannot be read on {ref} ({guard.why}): its keys are read from {CONFIG_PATH.as_posix()}"
         else:
-            note = f"{path} is absent on origin/main: its keys are read from {CONFIG_PATH.as_posix()}"
+            note = f"{path} is absent on {ref}: its keys are read from {CONFIG_PATH.as_posix()}"
         return Loaded(working, [note], guard.why)
     notices: list[str] = []
     config = {key: value for key, value in working.items() if key not in SENSITIVE_KEYS}
     for key in sorted(working.keys() & SENSITIVE_KEYS):
         notices.append(
-            f"`{key}` in {CONFIG_PATH.as_posix()} is dropped: a key that bounds the agent counts only in {path} on origin/main"
+            f"`{key}` in {CONFIG_PATH.as_posix()} is dropped: a key that bounds the agent counts only in {path} on {ref}"
         )
     for key, values in parse(guard.text).items():
         if key in SENSITIVE_KEYS:
@@ -202,6 +206,56 @@ def load_checked(root: Path) -> Loaded:
         else:
             notices.append(f"`{key}` in {path} is ignored: it is not a key that bounds the agent")
     return Loaded(config, notices, None)
+
+
+def load_checked(root: Path) -> Loaded:
+    """The configuration of the project at `root`: `usine.md` for the free keys, `usine-gardes.md`
+    as `origin/main` holds it for the sensitive ones (`SENSITIVE_KEYS`), as `merge` says."""
+    return merge(_working_tree(root), on_main(root, GUARD_PATH))
+
+
+class ConfigUnreadable(OSError):
+    """The guard file cannot be read: a reader of the configuration refuses rather than guess."""
+
+
+def read_config(file: str | Path | None, root: Path) -> dict[str, list[str]]:
+    """The configuration a script reads: the one reader of the plugin's scripts.
+
+    `file` given (`--usine`): that file, parsed as it is; `forge:qc-gate` writes it from the base
+    (`usine_base.py`), both files merged. A missing file raises `FileNotFoundError`, for the caller to
+    decide. Else the project at `root`: `usine.md` of the working tree (missing is empty) and the
+    guard file as `origin/main` holds it, merged by `load_checked`. A guard file git cannot read
+    raises `ConfigUnreadable`, an `OSError`; an absent one leaves every key to `usine.md`.
+    """
+    if file:
+        return parse(Path(file).read_text(encoding="utf-8"))
+    try:
+        working = parse((root / CONFIG_PATH).read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        working = {}
+    loaded = merge(working, on_main(root, GUARD_PATH))
+    if loaded.unreadable is not None:
+        raise ConfigUnreadable(loaded.notices[0])
+    return loaded.config
+
+
+def read_config_at(root: Path, ref: str) -> dict[str, list[str]]:
+    """The configuration as `ref` holds it: `usine.md` and `usine-gardes.md`, never the working tree.
+
+    A file the ref lacks is empty; a ref or a file git cannot read raises `ConfigUnreadable`.
+    """
+    free = on_ref(root, CONFIG_PATH, ref)
+    if free.why is not None:
+        raise ConfigUnreadable(f"{CONFIG_PATH.as_posix()} cannot be read on {ref} ({free.why})")
+    loaded = merge(parse(free.text or ""), on_ref(root, GUARD_PATH, ref), ref)
+    if loaded.unreadable is not None:
+        raise ConfigUnreadable(loaded.notices[0])
+    return loaded.config
+
+
+def render(config: dict[str, list[str]]) -> str:
+    """`config` as a file `parse` reads back: one list item per value, the file's order kept."""
+    return "".join(f"- `{key}` : `{value}`\n" for key, values in config.items() for value in values)
 
 
 def load(root: Path) -> dict[str, list[str]]:
