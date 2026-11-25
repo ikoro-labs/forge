@@ -31,8 +31,8 @@ MAIN_REF = "refs/remotes/origin/main"
 GIT_TIMEOUT_SECONDS = 5
 SENSITIVE_KEYS: frozenset[str] = frozenset(
     {
-        "accepting-human", "agent-autonomy", "budget-action", "gh-api-allow", "infra-hosts",
-        "infra-verify", "never-weaken", "owner-gesture", "pin-bump", "pr-cap-raiser",
+        "accepting-human", "agent-autonomy", "budget-action", "e2e-run-limits", "gh-api-allow",
+        "infra-hosts", "infra-verify", "never-weaken", "owner-gesture", "pin-bump", "pr-cap-raiser",
         "protected-path", "readonly-agent", "readonly-command", "run-budget", "run-limits",
         "slo", "ticket-budget", "ticket-pr-cap", "ticket-pr-cap-since", "validation-owner",
         "validation-reviewer",
