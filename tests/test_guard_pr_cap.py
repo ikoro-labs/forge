@@ -882,6 +882,125 @@ class ExemptKeyDeclared(unittest.TestCase):
         self.assertEqual(len(SENSITIVE_KEYS), 22)
 
 
+class ExemptCreation(unittest.TestCase):
+    """Part 3, A2 and A5: a PR being created is exempt only through its `--title` / `-t` argument."""
+
+    TITLE = "chore(factory): pin forge--v1.22.0"
+
+    def create(self, project: Project, tool: str, command: str, gh: Runner) -> str | None:
+        """`command` run by the tool `tool` (`Bash` or `PowerShell`), `{body}` the body file."""
+        body = project.body_file(pr_body("Closes #5"))
+        return project.tool(tool, {"command": command.format(body=body)}, gh)
+
+    def full(self) -> FakeGh:
+        """A ticket that holds its three PRs, none of them listed."""
+        return FakeGh([("MERGED", pr_body("Closes #5"))] * 3, titles=["feat(a): x", "feat(b): y", "fix(c): z"])
+
+    def test_a_listed_title_is_exempt_under_bash_and_powershell(self) -> None:
+        """Ticket #314 part 3, A2 and A5: a quoted title with parentheses, as typed under each shell, passes a full ticket."""
+        project = Project(self, USINE + EXEMPT)
+        typed = (
+            'gh pr create --title "chore(factory): pin forge--v1.22.0" --body-file {body}',
+            "gh pr create --title 'chore(factory): pin forge--v1.22.0' --body-file {body}",
+            'gh pr create -t "chore(factory): pin forge--v1.22.0" --body-file {body}',
+            'gh pr create -t"chore(factory): pin" --body-file {body}',
+            'gh pr create --title="chore(factory): pin" --body-file {body}',
+            "gh pr create --body-file {body} --title 'chore(factory): pin' --draft",
+            'gh.exe pr create --title "chore(factory): pin forge--v1.22.0" --body-file {body}',
+            'gh pr create --title "chore(factory): pin" --body "Closes #5"',
+        )
+        for tool in ("Bash", "PowerShell"):
+            for command in typed:
+                with self.subTest(tool=tool, command=command):
+                    self.assertIsNone(self.create(project, tool, command, self.full()))
+
+    def test_a_listed_title_reserves_no_place(self) -> None:
+        """Ticket #314 part 3, A2: the exempt PR counts for no one, not even in the reservations of the next PR."""
+        project = Project(self, USINE + EXEMPT, memory=True)
+        gh = FakeGh([("MERGED", pr_body("Closes #5"))], titles=["feat(a): x"])
+
+        def open_pr(title: str, part: str) -> str | None:
+            """`gh pr create` of its own body (the same body twice is one PR for the guard)."""
+            body = project.body_file(pr_body("Closes #5", part), name=f"{part}.md")
+            return project.bash(f'gh pr create --title "{title}" --body-file {body}', gh)
+
+        for part in ("one", "two", "three"):
+            self.assertIsNone(open_pr(self.TITLE, part))
+        self.assertIsNone(open_pr("feat(b): next", "four"))
+        self.assertIsNone(open_pr("feat(c): next", "five"))
+        self.assertIn("#5 already has 3 PRs", open_pr("feat(d): next", "six") or "")
+
+    def test_no_title_argument_counts(self) -> None:
+        """Ticket #314 part 3, A2: no `--title` or `-t`, the PR counts and a full ticket refuses it, whatever the shell."""
+        project = Project(self, USINE + EXEMPT)
+        for tool in ("Bash", "PowerShell"):
+            for command in (
+                "gh pr create --body-file {body}",
+                "gh pr create --body-file {body} --fill",
+                'gh pr create --body-file {body} --head "chore(factory): x"',
+                'gh pr create --body-file {body} --body "Closes #5 chore(factory): x"',
+                "gh pr create --body-file {body} --label -t 'chore(factory): x'",
+                "gh pr create --body-file {body} --title",
+            ):
+                with self.subTest(tool=tool, command=command):
+                    self.assertIn("#5 already has 3 PRs", self.create(project, tool, command, self.full()) or "")
+
+    def test_another_title_counts(self) -> None:
+        """Ticket #314 part 3, A2: a title outside the key, near it or empty, counts under both shells."""
+        project = Project(self, USINE + EXEMPT)
+        for tool in ("Bash", "PowerShell"):
+            for title in ("feat(factory): x", "chore(factory-x): x", "chore: x", "chore(factory) x", "fix: chore(factory): x", ""):
+                with self.subTest(tool=tool, title=title):
+                    command = f"gh pr create --title '{title}' --body-file {{body}}"
+                    self.assertIn("#5 already has 3 PRs", self.create(project, tool, command, self.full()) or "")
+
+    def test_the_last_title_is_the_one_gh_uses(self) -> None:
+        """Ticket #314 part 3, A2: gh keeps the last `--title`; a listed one before an ordinary one does not exempt."""
+        project = Project(self, USINE + EXEMPT)
+        first = "gh pr create --title 'chore(factory): a' -t 'feat: b' --body-file {body}"
+        self.assertIn("#5 already has 3 PRs", self.create(project, "Bash", first, self.full()) or "")
+        last = "gh pr create --title 'feat: b' -t 'chore(factory): a' --body-file {body}"
+        self.assertIsNone(self.create(project, "Bash", last, self.full()))
+
+    def test_a_title_the_shell_fills_in_cannot_be_read_and_counts(self) -> None:
+        """Ticket #314 part 3, A2: a variable, a substitution or a PowerShell escape is no readable title: the PR counts."""
+        project = Project(self, USINE + EXEMPT)
+        for tool, title in (
+            ("Bash", '"$TITLE"'),
+            ("Bash", '"chore(factory): $(date)"'),
+            ("Bash", '"chore(factory): $5"'),
+            ("PowerShell", '"chore(factory): $title"'),
+            ("PowerShell", '"chore(factory): $($x)"'),
+            ("PowerShell", '"chore`(factory): x"'),
+        ):
+            with self.subTest(tool=tool, title=title):
+                command = f"gh pr create --title {title} --body-file {{body}}"
+                self.assertIn("#5 already has 3 PRs", self.create(project, tool, command, self.full()) or "")
+
+    def test_without_the_key_a_title_exempts_nothing(self) -> None:
+        """Ticket #314 part 3, A2: the key absent, a `chore(factory)` title is a title like another: the PR counts."""
+        project = Project(self, USINE)
+        command = f'gh pr create --title "{self.TITLE}" --body-file {{body}}'
+        self.assertIn("#5 already has 3 PRs", self.create(project, "Bash", command, self.full()) or "")
+
+    def test_the_other_doors_do_not_read_a_title(self) -> None:
+        """Ticket #314 part 3, A2: only `gh pr create` is exempted by a title: `gh api` and the MCP tool create count."""
+        project = Project(self, USINE + EXEMPT)
+        body = pr_body("Closes #5")
+        api = f"gh api repos/o/r/pulls -f title='{self.TITLE}' -f head=h -f base=main -F body=@{project.body_file(body)}"
+        self.assertIn("#5 already has 3 PRs", project.bash(api, self.full()) or "")
+        mcp = {"owner": "o", "repo": "r", "title": self.TITLE, "head": "h", "base": "main", "body": body}
+        self.assertIn("#5 already has 3 PRs", project.tool("mcp__github__create_pull_request", mcp, self.full()) or "")
+
+    def test_an_edit_is_not_exempted_by_a_title(self) -> None:
+        """Ticket #314 part 3, A2: `gh pr edit --title` does not exempt the tickets an edit adds to a PR."""
+        project = Project(self, USINE + EXEMPT)
+        gh = self.full()
+        gh.viewed = (7, pr_body("No ticket."))
+        edit = f"gh pr edit 7 --title '{self.TITLE}' --body-file {project.body_file(pr_body('Closes #5'))}"
+        self.assertIn("#5 already has 3 PRs", project.bash(edit, gh) or "")
+
+
 class LastPr(unittest.TestCase):
     """A9: a ticket started before `ticket-pr-cap-since` finishes its PR in flight, then admits one last PR."""
 
