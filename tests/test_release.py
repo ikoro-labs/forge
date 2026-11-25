@@ -483,6 +483,12 @@ class Check(Base):
         self.assertEqual(TRIAL_SCRIPT, support.PLUGIN / "scripts" / "e2e_trial.py")
         self.assertTrue(TRIAL_SCRIPT.is_file())
 
+    def test_the_cap_on_the_whole_trial_holds_the_measured_launch_and_the_wait_for_the_checks(self) -> None:
+        """Ticket #359 : le plafond de l'essai entier reste au-dessus d'un lancement de 1800 s (mesuré) et des 600 s d'attente."""
+        from release import TRIAL_TIMEOUT_SECONDS
+
+        self.assertGreater(TRIAL_TIMEOUT_SECONDS, 1800 + 600)
+
 
 class Sev1Condition(Base):
     """Aucun ticket `sev1` n'est ouvert."""

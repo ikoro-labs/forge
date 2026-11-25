@@ -668,8 +668,8 @@ L'essai de l'usine avant une version, par `scripts/e2e_trial.py`. Les tests de `
 hook et chaque script seul ; l'essai éprouve l'enchaînement (un coder qui n'ouvre pas sa PR, un garde qui
 refuse un geste légitime) sur un dépôt d'essai que le projet désigne. Trois clés, chacune sur une seule
 ligne et sans valeur par défaut : une clé absente rend « sans objet (clé `<nom>` absente) » et le script
-n'écrit jamais `PASS`. La création du dépôt d'essai et de son jeton est un geste humain : le script ne la
-fait pas.
+n'écrit jamais `PASS`. Une quatrième, `e2e-run-limits`, est facultative. La création du dépôt d'essai et
+de son jeton est un geste humain : le script ne la fait pas.
 
 `e2e-repo` : le dépôt d'essai sur GitHub, `<propriétaire>/<nom>`. Le script y crée un ticket fictif et y
 nettoie ensuite ce qu'il a créé, retrouvé par son numéro, rien d'autre. Sans la clé, l'étape est
@@ -678,7 +678,7 @@ nettoie ensuite ce qu'il a créé, retrouvé par son numéro, rien d'autre. Sans
 - `e2e-repo` : `<propriétaire/depot-d-essai>`
 
 `e2e-command` : la commande lancée dans le projet jetable, un clone neuf du dépôt d'essai, découpée en mots
-comme le fait un shell puis lancée sans shell, sous le lanceur borné (`run-limits`, `run-budget`). Elle cite
+comme le fait un shell puis lancée sans shell, sous le lanceur borné (`e2e-run-limits` ou `run-limits`, `run-budget`). Elle cite
 `{plugin}` (le plugin à essayer) et `{budget}` (la clé `e2e-budget-usd`), sans quoi l'essai ne tiendrait pas
 le plugin à essayer sous le plafond ; `{feature}`, `{ticket}` et `{base}` (la branche de base de l'essai)
 sont facultatives. Toute autre marque est refusée. Sans la clé, l'étape est
@@ -690,6 +690,19 @@ sont facultatives. Toute autre marque est refusée. Sans la clé, l'étape est
 `--max-budget-usd` par `{budget}`. Sans la clé, l'étape est « sans objet (clé `e2e-budget-usd` absente) ».
 
 - `e2e-budget-usd` : `<2.50>`
+
+`e2e-run-limits` : clé facultative, la mémoire en Mo et le délai en secondes du seul lancement de la
+commande, sous la forme de `run-limits` (une seule ligne, deux nombres positifs). Une feature entière
+(`forge:feature-build`) tourne plus longtemps qu'une suite de tests : `run-limits` est dimensionnée pour
+la suite, et cette clé donne à l'essai sa propre borne. Elle l'emporte sur `run-limits`, les options
+`--memory-mb` et `--timeout` du script l'emportent sur les deux, chaque part (mémoire, délai) séparément.
+Elle ne borne que le lancement : le budget du poste (`run-budget`) se lit comme avant. Sans la clé, la
+borne est celle de `run-limits`, comme avant ; une valeur mal formée refuse l'appel (code 2). Le
+délai de la clé, plus l'attente des vérifications (`--wait-checks`, 600 s par défaut), doit rester sous
+le plafond de 3600 s que `scripts/release.py` met à l'essai entier : au-delà, le script est tué sans
+avoir nettoyé.
+
+- `e2e-run-limits` : `<mémoire en Mo> | <délai en secondes>`
 
 ## Libellés de l'écran
 

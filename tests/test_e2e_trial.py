@@ -254,6 +254,30 @@ class Keys(unittest.TestCase):
                 self.assertNotIn("PASS", out)
                 self.assertTrue(err.strip())
 
+    def test_the_template_documents_the_key_e2e_run_limits(self) -> None:
+        """Ticket #359, A2 : le gabarit de `usine.md` documente `e2e-run-limits`, de la forme de `run-limits`."""
+        text = USINE_TEMPLATE.read_text(encoding="utf-8")
+        self.assertRegex(text, r"(?m)^- `e2e-run-limits` : `<mémoire en Mo> \| <délai en secondes>`$")
+
+    def test_an_ill_formed_e2e_run_limits_fails_the_call(self) -> None:
+        """Ticket #359, A2 : une valeur de `e2e-run-limits` mal formée est une erreur d'appel (code 2), jamais devinée."""
+        cases = ["500", "0 | 60", "500 | 0", "beaucoup | 60", "500 | longtemps", "500 | 60 | 1", "-5 | 60"]
+        for value in cases:
+            with self.subTest(value=value):
+                code, out, err = Project(self, {**KEYS, "e2e-run-limits": value}).run()
+                self.assertEqual(code, 2)
+                self.assertNotIn("PASS", out)
+                self.assertIn("e2e-run-limits", err)
+
+    def test_a_repeated_e2e_run_limits_fails_the_call(self) -> None:
+        """Ticket #359, A2 : `e2e-run-limits` répétée n'a pas une seule valeur : erreur d'appel."""
+        project = Project(self, {**KEYS, "e2e-run-limits": "500 | 60"})
+        usine = project.root / "docs" / "agents" / "usine.md"
+        usine.write_text(usine.read_text(encoding="utf-8") + "- `e2e-run-limits` : `500 | 90`\n", encoding="utf-8")
+        code, _, err = project.run()
+        self.assertEqual(code, 2)
+        self.assertIn("e2e-run-limits", err)
+
     def test_a_repeated_key_fails_the_call(self) -> None:
         """Ticket #70, critère 1 : une clé répétée n'a pas une seule valeur : erreur d'appel."""
         project = Project(self, KEYS)
@@ -456,6 +480,12 @@ class OwnRepositoryGuard(unittest.TestCase):
 
 @posix_only
 class Launch(unittest.TestCase):
+    def chdir(self, folder: Path) -> None:
+        """Work from `folder` for the rest of the test (`contextlib.chdir` needs Python 3.11)."""
+        before = os.getcwd()
+        os.chdir(folder)
+        self.addCleanup(os.chdir, before)
+
     def launch(self, *options: str, keys: dict[str, str] | None = None, **changes: list[dict]):
         project = Project(self, keys or KEYS, scenario(**changes))
         code, out, err = project.run(*options)
@@ -497,6 +527,73 @@ class Launch(unittest.TestCase):
         _, code, out, _ = self.launch(keys={**KEYS, "run-limits": "500 | 1"}, claude=[{"has": ["-p"], "sleep": 20}])
         self.assertEqual(code, 1)
         self.assertIn("délai", out)
+
+    def test_the_key_e2e_run_limits_bounds_the_launch_and_wins_over_run_limits(self) -> None:
+        """Ticket #359, A1 : `e2e-run-limits` (ici 1 s) borne le lancement, `run-limits` (60 s) ne compte pas."""
+        keys = {**KEYS, "run-limits": "500 | 60", "e2e-run-limits": "500 | 1"}
+        _, code, out, _ = self.launch(keys=keys, claude=[{"has": ["-p"], "sleep": 5}])
+        self.assertEqual(code, 1)
+        self.assertRegex(out, r"(?m)^ETAPE: lancement$")
+        self.assertIn("délai", out)
+
+    def test_a_wider_e2e_run_limits_lets_a_launch_through_that_run_limits_would_kill(self) -> None:
+        """Ticket #359, A1 : `run-limits` à 1 s tuerait ce lancement de 3 s ; `e2e-run-limits` à 60 s le laisse finir."""
+        keys = {**KEYS, "run-limits": "500 | 1", "e2e-run-limits": "500 | 60"}
+        _, code, out, _ = self.launch(keys=keys, claude=[{"has": ["-p"], "sleep": 3}])
+        self.assertEqual(code, 0, out)
+        self.assertIn("RESULTAT: PASS", out)
+
+    def test_the_options_win_over_e2e_run_limits(self) -> None:
+        """Ticket #359, A1 : `--timeout 60` l'emporte sur le délai de `e2e-run-limits` (1 s), dont la mémoire borne le reste.
+
+        Sans `run-limits`, seule la clé `e2e-run-limits` fournit la mémoire : l'option de délai complète la
+        clé au lieu de la contredire, et le lancement de 3 s passe sous le délai de l'option, non celui de la clé.
+        """
+        keys = {name: value for name, value in KEYS.items() if name != "run-limits"}
+        keys["e2e-run-limits"] = "500 | 1"
+        _, code, out, _ = self.launch("--timeout", "60", keys=keys, claude=[{"has": ["-p"], "sleep": 3}])
+        self.assertEqual(code, 0, out)
+        self.assertIn("RESULTAT: PASS", out)
+
+    def test_an_option_wins_part_by_part_the_other_part_comes_from_e2e_run_limits(self) -> None:
+        """Ticket #359, A1 : `--memory-mb` seul laisse le délai de `e2e-run-limits` (1 s) tuer le lancement."""
+        keys = {**KEYS, "run-limits": "500 | 60", "e2e-run-limits": "500 | 1"}
+        _, code, out, _ = self.launch("--memory-mb", "700", keys=keys, claude=[{"has": ["-p"], "sleep": 5}])
+        self.assertEqual(code, 1)
+        self.assertIn("délai", out)
+
+    def test_e2e_run_limits_alone_bounds_the_launch_when_run_limits_is_absent(self) -> None:
+        """Ticket #359, A1 : sans `run-limits`, `e2e-run-limits` borne le lancement : pas de « sans objet »."""
+        keys = {name: value for name, value in KEYS.items() if name != "run-limits"}
+        _, code, out, _ = self.launch(keys={**keys, "e2e-run-limits": "500 | 60"})
+        self.assertEqual(code, 0, out)
+        self.assertIn("RESULTAT: PASS", out)
+
+    def test_a_relative_projet_is_resolved_before_the_launch_runs_in_the_clone(self) -> None:
+        """Ticket #359, A3 : `--projet` relatif ne fait pas lire au lanceur l'`usine.md` minimale du clone."""
+        project = Project(self, KEYS, scenario())
+        self.chdir(project.root.parent)
+        code, out, _ = project.run("--projet", project.root.name)
+        self.assertEqual(code, 0, out)
+        self.assertIn("RESULTAT: PASS", out)
+
+    def test_a_relative_usine_is_resolved_before_the_launch_runs_in_the_clone(self) -> None:
+        """Ticket #359, A3 : `--usine` relatif désigne le fichier du projet, pas celui du clone."""
+        project = Project(self, KEYS, scenario())
+        self.chdir(project.root)
+        code, out, _ = project.run("--usine", "docs/agents/usine.md")
+        self.assertEqual(code, 0, out)
+        self.assertIn("RESULTAT: PASS", out)
+
+    def test_a_relative_plugin_is_resolved_before_the_launch_runs_in_the_clone(self) -> None:
+        """Ticket #359, A3 : `--plugin` relatif, cité par `{plugin}`, désigne le même dossier dans le clone."""
+        project = Project(self, KEYS, scenario())
+        self.chdir(project.root)
+        project.run("--plugin", "docs")
+        (call,) = project.calls("claude")
+        given = call["args"][call["args"].index("--plugin-dir") + 1]
+        self.assertTrue(Path(given).is_absolute(), given)
+        self.assertEqual(os.path.realpath(given), os.path.realpath(project.root / "docs"))
 
     def test_a_claude_that_fails_is_a_fail_at_lancement_with_its_code(self) -> None:
         """Ticket #70, critère 3 : un `claude` qui sort en 3 est `FAIL` à `lancement`, avec le code."""

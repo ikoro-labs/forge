@@ -219,9 +219,9 @@ def read_config(path: str | None) -> dict[str, list[str]]:
         raise ValueError(f"{config_file} illisible ({error})") from error
 
 
-def key_limits(config: dict[str, list[str]]) -> tuple[int | None, int | None]:
-    """The memory (MB) and the delay (s) of the key `run-limits`, None for both when it is absent."""
-    values = config.get("run-limits")
+def key_limits(config: dict[str, list[str]], key: str = "run-limits") -> tuple[int | None, int | None]:
+    """The memory (MB) and the delay (s) of `key` (`run-limits`, or a key of the same form), None for both when absent."""
+    values = config.get(key)
     if not values:
         return None, None
     parts = usine.split_value(values[0], 2) if len(values) == 1 else None
@@ -231,7 +231,7 @@ def key_limits(config: dict[str, list[str]]) -> tuple[int | None, int | None]:
     except (ValueError, argparse.ArgumentTypeError):
         pass
     raise ValueError(
-        "la clé `run-limits` vaut une seule ligne `<mémoire en Mo> | <délai en secondes>`, deux nombres positifs"
+        f"la clé `{key}` vaut une seule ligne `<mémoire en Mo> | <délai en secondes>`, deux nombres positifs"
     )
 
 
