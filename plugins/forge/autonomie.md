@@ -82,8 +82,8 @@ autres skills de la chaîne, et chacun applique cette règle avant ses étapes.
   `en-revue` avec `needs-your-attention`, et quand tous sont `DECIDED`, le skill du document les écrit,
   puis `feature-accept` se relance.
 - **`release`** : lancé par le modèle, clé absente, il n'écrit rien, pas même la PR de version, et rend la
-  commande exacte à l'humain. Tapé par l'humain sans la clé, il ouvre la PR de version seule (étape 2). Il
-  reste commandé par la clé `release-trigger`, qui dit quand une version est due ; `agent-autonomy` dit si
-  l'agent publie.
+  commande exacte à l'humain. Il reste commandé par la clé `release-trigger`, qui dit quand une version est
+  due ; `agent-autonomy` dit si l'agent publie : absente, `release` tapé par l'humain ouvre la PR de version
+  seule, sans tag (étape 2).
 - **Ce que la matrice réserve à l'humain** (clé `decision-matrix`, sa section réservée) reste à lui,
   clé ouverte ou non : l'étape 3 le dit pour chaque question.

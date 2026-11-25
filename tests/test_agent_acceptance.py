@@ -4,6 +4,7 @@ La clé `agent-autonomy` de `usine.md` ouvre les deux skills au modèle ; sans e
 modèle n'écrit rien et rend la commande exacte à l'humain. Une commande tapée s'exécute comme avant.
 """
 
+import re
 import unittest
 from pathlib import Path
 
@@ -133,6 +134,41 @@ class OpenPoints(unittest.TestCase):
         for skill in ("feature-frame", "feature-spec", "feature-design", "feature-verify", "feature-close"):
             with self.subTest(skill=skill):
                 self.assertIn(skill, text)
+
+
+class TheThreePagesAgree(unittest.TestCase):
+    def test_the_rule_opens_acceptance_and_publication_under_the_key(self) -> None:
+        """Ticket #355 A5 : `autonomie.md` dit que la clé ouvre l'acceptation et la publication au modèle."""
+        section = prose(RULE).split("## 4.", 1)[1]
+        self.assertNotIn("garde `disable-model-invocation: true`", section)
+        self.assertRegex(section, r"`feature-accept`.{0,400}`accepte_via: agent-autonomy`")
+        self.assertRegex(section, r"`release`.{0,600}`release-trigger`")
+
+    def test_the_protocol_no_longer_reserves_acceptance_to_the_typed_command(self) -> None:
+        """Ticket #355 A5 : `protocole.md` dit l'acceptation tapée par un humain, ou lancée par le modèle sous la clé."""
+        text = prose(PROTOCOLE)
+        self.assertNotRegex(text, r"s'accepte par `/forge:feature-accept`, tapée par un humain\.")
+        self.assertRegex(text, r"s'accepte par `/forge:feature-accept`.{0,200}`agent-autonomy`")
+        self.assertRegex(text, r"\*\*Jamais `accepte`\*\*.{0,300}`agent-autonomy`")
+        self.assertRegex(text, r"Savoir qui parle.{0,900}lancée? par le modèle.{0,200}`agent-autonomy`")
+
+    def test_the_readme_says_the_model_can_start_both(self) -> None:
+        """Ticket #355 A5 : le README ne dit plus `sauf feature-accept et release` ni `geste réservé à un humain`."""
+        text = prose(README)
+        self.assertNotIn("sauf `/forge:feature-accept` et `/forge:release`", text)
+        self.assertNotIn("accepter un document, geste réservé à un humain", text)
+        self.assertRegex(text, r"`/forge:feature-accept` \| accepter un document.{0,120}`agent-autonomy`")
+        self.assertRegex(text, r"clé `agent-autonomy` laisse le modèle lancer lui-même ces commandes, `/forge:feature-accept` et `/forge:release` compris")
+
+    def test_the_other_pages_no_longer_keep_the_flag_on_the_two_skills(self) -> None:
+        """Ticket #355 A5 : la page d'installation et le gabarit `usine.md` disent les deux skills ouverts."""
+        for path in (INSTALLATION, USINE_TEMPLATE):
+            with self.subTest(file=path.name):
+                text = prose(path)
+                self.assertNotIn("`feature-accept` et `release` gardent le drapeau", text)
+                self.assertNotIn("`feature-accept` reste tapé par un humain", text)
+                self.assertNotIn("la clé n'ouvre pas ces deux skills au modèle", text)
+                self.assertIsNotNone(re.search(r"`feature-accept`.{0,300}`accepte_via: agent-autonomy`", text))
 
 
 if __name__ == "__main__":

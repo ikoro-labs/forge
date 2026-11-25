@@ -48,13 +48,17 @@ La matrice de traçabilité, `matrice.md` (une ligne par identifiant de la sourc
 juge par `scripts/matrice.py` : elle non plus n'est pas une étape de la chaîne et n'a pas de `statut`.
 
 Une séance (`/forge:feature-brainstorm`) est permise à toute étape. Chaque document, sauf l'idée,
-s'accepte par `/forge:feature-accept`, tapée par un humain.
+s'accepte par `/forge:feature-accept`, tapée par un humain de la clé `accepting-human`, ou lancée par le
+modèle quand la clé `agent-autonomy` est `on` (`${CLAUDE_PLUGIN_ROOT}/autonomie.md`, étape 4).
 
 ## 1. Savoir qui parle
 
 `git config user.name`, comparé aux valeurs de la clé `accepting-human`. Une valeur égale : c'est
 cet humain. Sinon, demande-lui son nom. L'auteur signe les séances ; seul un humain de la clé
-`accepting-human` peut accepter. Sans la clé, personne ne peut accepter : dis-le.
+`accepting-human` peut accepter. Sans la clé, personne ne peut accepter : dis-le. Quand `/forge:feature-accept` est
+lancée par le modèle (clé `agent-autonomy` à `on`), il n'y a pas d'humain à reconnaître : la clé
+`accepting-human` doit exister, le `user.name` n'est pas comparé, et l'en-tête reçoit en plus
+`accepte_via: agent-autonomy`.
 
 ## 2. Partir de la base, sur une branche à soi
 
@@ -101,7 +105,7 @@ document, avec son fondement et ce qui change si le relecteur lit autrement.
 ## 6. Écrire le document
 
 Depuis son gabarit, avec `statut: en-revue`. **Jamais `accepte`** : seul `/forge:feature-accept`,
-tapée par un humain, l'écrit. Modifier un document déjà accepté le repasse en `en-revue`, avec une
+tapée par un humain ou lancée par le modèle sous la clé `agent-autonomy`, l'écrit. Modifier un document déjà accepté le repasse en `en-revue`, avec une
 ligne qui dit pourquoi. Exception : la section 9 du design (« Décisions prises pendant la
 construction ») s'écrit pendant la construction, sans rouvrir le document ni le repasser en revue.
 Chaque terme nouveau entre dans le glossaire de son contexte (clé
