@@ -603,6 +603,13 @@ de chaque ligne `ADDED`.
 
 - `stack` : `<docs/agents/stack.md>`
 
+Le fichier que la clé désigne, à titre d'exemple : une ligne `<écosystème> | <paquet> | <source>` par paquet permis.
+
+```
+pypi | httpx | docs/decisions/client-http.md
+npm | zod | docs/seances/validation-des-formulaires.md
+```
+
 La mesure de la carte des modules, ce que le design accepté d'une feature déclare : un module ne s'utilise que par
 son interface, et les dépendances pointent vers l'intérieur. Une clé, sans valeur par défaut.
 
@@ -618,6 +625,17 @@ ce fichier par une entrée `never-weaken` de type `removed-line`.
 
 - `architecture-check` : `<uv run python scripts/check_modules.py>`
 - `never-weaken` : `<docs/agents/modules.md | removed-line>`
+
+La forme que prend la carte des modules, à titre d'exemple : un fichier de lignes `<module> | <interface publique>
+| <dépend de>`, que la commande du projet lit et que forge ne lit pas. Elle dit, pour chaque module, ce qu'on en
+utilise (l'interface) et de quels modules il dépend (`aucun` pour une feuille) ; une dépendance qui n'est pas dans
+cette colonne, ou qui contourne l'interface, est ce que la commande refuse. Une carte qui ne suit pas cette forme
+convient aussi, pourvu que la commande sorte 0 quand elle est tenue.
+
+```
+lockfiles | read_at, parse_uv_lock, direct_dependencies | aucun
+stack_check | main | lockfiles, usine
+```
 
 ## Essai de bout en bout
 
@@ -975,6 +993,20 @@ clé, rien ne tourne et l'étape est « sans objet (clé `lint-on-write` absente
 n'est deviné. Le nombre de lignes n'est pas plafonné.
 
 - `lint-on-write` : `<**/*.py | uv run ruff check>`
+
+La base de règles de code que ce gabarit propose à un projet Python, en une ligne de `lint-on-write` : trois
+règles de ruff, chacune avec son seuil écrit en clair. `C901` refuse une fonction de complexité cyclomatique
+supérieure à 10 (le seuil de McCabe, repris par la norme NIST SP 500-235), `PLR0913` une fonction de plus de 5
+paramètres (le défaut de ruff) et `PLR1702` une fonction qui imbrique plus de 5 blocs (le défaut de ruff
+aussi). `PLR1702` est en aperçu dans ruff : `--preview` est nécessaire, et la version de ruff s'épingle
+(`--with ruff==<version>`), car une règle d'aperçu peut changer de sens ou disparaître d'une version à l'autre ;
+monter l'épingle est un geste du projet, qui relance la commande sur son code avant de la changer. `--select`
+limite le contrôle à ces trois règles : l'aperçu ne s'applique alors qu'à elles, et la ligne `uv run ruff check`
+du projet garde ses propres règles. Un seuil se règle sur la ligne, jamais dans un défaut du plugin. Il n'y a aucun
+plafond de lignes : aucune règle de la base ne borne la longueur d'une fonction ni d'un fichier, aucune source ne
+relie la longueur aux défauts.
+
+- `lint-on-write` : `<**/*.py | uv run --no-project --quiet --with ruff==0.17.3 ruff check --preview --select C901,PLR0913,PLR1702 --config lint.mccabe.max-complexity=10 --config lint.pylint.max-args=5 --config lint.pylint.max-nested-blocks=5>`
 
 Les documents que le projet tient par hook plutôt que par une consigne dans un skill. Le hook
 `after_write` les contrôle sur le fichier que l'agent vient d'écrire, avec la même sortie que le
