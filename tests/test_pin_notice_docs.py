@@ -14,7 +14,7 @@ class Documentation(unittest.TestCase):
         text = self.read("templates", "usine.md")
         self.assertIn("- `pin-bump` : `auto`", text)
         self.assertIn("Sans la clé", text)
-        start = text.index("`pin-bump`")
+        start = text.index("(clé `pin-bump` absente)")  # the key's own paragraph, not the list of guard keys above it
         section = text[start - 1500 : start + 1500]
         for word in ("protected-path", "human-merge", "SessionStart", "forge--v"):
             self.assertIn(word, section)

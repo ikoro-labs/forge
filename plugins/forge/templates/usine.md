@@ -17,6 +17,28 @@ séparés par un deux-points : comme chaque ligne d'exemple plus bas. Une clé r
 prose, tableaux, lignes sans cette forme exacte) est ignoré : commente librement. Les chemins sont
 relatifs à la racine du dépôt.
 
+## Clés protégées : `docs/agents/usine-gardes.md`
+
+Vingt et une clés bornent les pouvoirs de l'agent : `agent-autonomy`, `protected-path`,
+`gh-api-allow`, `owner-gesture`, `never-weaken`, `infra-hosts`, `infra-verify`, `pr-cap-raiser`,
+`ticket-pr-cap`, `ticket-pr-cap-since`, `ticket-budget`, `run-limits`, `run-budget`,
+`budget-action`, `slo`, `accepting-human`, `validation-owner`, `validation-reviewer`, `pin-bump`,
+`readonly-agent` et `readonly-command`. Elles gardent ici leur forme et leur section d'exemple, mais
+un projet les écrit dans un second fichier, `docs/agents/usine-gardes.md`, protégé comme les gardes
+(clé `protected-path`, `CODEOWNERS`) : un agent qui modifie `usine.md` ne change donc aucune de ces
+bornes. Les autres clés, dites libres, restent dans `usine.md`.
+
+- Le chemin `docs/agents/usine-gardes.md` est une constante du plugin, jamais une clé.
+- Le hook lit ce fichier tel que `origin/main` le tient (`git ls-tree` puis `git cat-file`), jamais dans l'arbre de travail.
+  Une clé protégée écrite dans `usine.md` alors que ce fichier existe sur `origin/main` est ignorée, et
+  le garde le signale sur sa sortie d'erreur ; une clé libre écrite dans `usine-gardes.md` l'est aussi.
+- Tant que ce fichier est absent de `origin/main`, toutes les clés se lisent dans `usine.md`, avec
+  un avis : un projet qui n'a pas déplacé ses clés continue de fonctionner.
+- Si le fichier est présent et que git ne peut pas le lire, le garde refuse la fusion.
+
+Chaque clé de ce gabarit est rangée d'un côté ou de l'autre : un test échoue sur une clé ajoutée
+sans classe.
+
 ## Personnes et décisions
 
 Les humains qui acceptent un document de feature et à qui reviennent les décisions réservées. Une
@@ -48,8 +70,9 @@ passe et qu'aucun `sev1` n'est ouvert ; l'état des SLO est cité dans la PR de 
 clé, `forge:qc` poste son verdict, pose `needs-your-attention` et ne fusionne jamais, et `release` n'ouvre que
 la PR de version : l'humain reprend la main sur un projet en retirant la ligne. Le hook `guard_git` tient la
 même clé : sans une seule ligne `on`, `guard_git` refuse alors la fusion et le tag, et le refus dit que le geste
-reste à l'humain ; il la lit dans `origin/main`, jamais dans l'arbre de travail, et un projet qui adopte la
-clé déclare `docs/agents/usine.md` en `protected-path`. `feature-accept` reste tapé par
+reste à l'humain ; il la lit dans `docs/agents/usine-gardes.md` tel que `origin/main` le tient (dans `usine.md` tant que
+ce fichier y est absent), jamais dans l'arbre de travail, et un projet qui adopte la clé déclare ce
+fichier en `protected-path`. `feature-accept` reste tapé par
 un humain de la clé `accepting-human`, et `release` reste commandé par la clé `release-trigger` pour savoir
 quand une version est due : la clé n'ouvre pas ces deux skills au modèle. La règle est dans
 `plugins/forge/autonomie.md`.
