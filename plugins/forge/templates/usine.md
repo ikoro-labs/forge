@@ -19,9 +19,10 @@ relatifs à la racine du dépôt.
 
 ## Clés protégées : `docs/agents/usine-gardes.md`
 
-Vingt-deux clés bornent les pouvoirs de l'agent : `agent-autonomy`, `protected-path`,
+Vingt-trois clés bornent les pouvoirs de l'agent : `agent-autonomy`, `protected-path`,
 `gh-api-allow`, `owner-gesture`, `never-weaken`, `infra-hosts`, `infra-verify`, `pr-cap-raiser`,
-`ticket-pr-cap`, `ticket-pr-cap-since`, `ticket-budget`, `run-limits`, `e2e-run-limits`, `run-budget`,
+`ticket-pr-cap`, `ticket-pr-cap-since`, `ticket-pr-cap-exempt`, `ticket-budget`, `run-limits`,
+`e2e-run-limits`, `run-budget`,
 `budget-action`, `slo`, `accepting-human`, `validation-owner`, `validation-reviewer`, `pin-bump`,
 `readonly-agent` et `readonly-command`. Elles gardent ici leur forme et leur section d'exemple, mais
 un projet les écrit dans un second fichier, `docs/agents/usine-gardes.md`, protégé comme les gardes
@@ -524,6 +525,20 @@ valeur qui n'est pas un jour valide (`2026-13-45`, `demain`), une clé répété
 illisible fait refuser toute PR qui cite un ticket, tant que ce n'est pas corrigé.
 
 - `ticket-pr-cap-since` : `<AAAA-MM-JJ>`
+
+Les PR d'entretien de l'usine, que `guard_pr_cap` laisse hors du compte du plafond : une ligne par
+`type(scope)` (`chore(factory)`, `chore(pin)`), et une PR dont le titre commence exactement par
+`type(scope):` ne compte pour aucun ticket, ouvertes ou fusionnées. Une PR d'entretien (une épingle de
+forge, une date de plafond) n'a rien à voir avec le ticket qu'elle cite : elle ne cite aucun ticket, et celle
+qui en cite un sort du compte quand même. Le titre est lu dans l'appel `gh pr list --json` que le garde fait
+déjà ; une PR en création n'est exemptée que par son argument `--title` ou `-t`, et sans titre elle compte.
+Le garde ne vérifie pas le diff : la clé est protégée, et le juge (`forge:qc-conf`) refuse un titre de cette
+liste sur un diff qui n'est pas de l'entretien de l'usine. Sans la clé `ticket-pr-cap-exempt`, « sans objet
+(clé `ticket-pr-cap-exempt` absente) » : toutes les PR comptent, aucune valeur par défaut n'est devinée.
+Une ligne qui n'est pas un `type(scope)`, ou une PR du compte dont le titre est illisible, fait refuser
+toute PR qui cite un ticket, tant que ce n'est pas corrigé.
+
+- `ticket-pr-cap-exempt` : `<chore(factory)>`
 
 Les comptes GitHub qui peuvent relever le plafond de PR par ticket à 6, en posant l'étiquette `pr-cap-raised`.
 Une ligne par compte, le login GitHub (ou `<nom> | <login>` : le login après ` | `) ; la casse est libre.
