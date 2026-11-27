@@ -717,7 +717,9 @@ commande, sous la forme de `run-limits` (une seule ligne, deux nombres positifs)
 (`forge:feature-build`) tourne plus longtemps qu'une suite de tests : `run-limits` est dimensionnée pour
 la suite, et cette clé donne à l'essai sa propre borne. Elle l'emporte sur `run-limits`, les options
 `--memory-mb` et `--timeout` du script l'emportent sur les deux, chaque part (mémoire, délai) séparément.
-Elle ne borne que le lancement : le budget du poste (`run-budget`) se lit comme avant. Sans la clé, la
+Elle ne borne que le lancement : le budget du poste (`run-budget`) se lit comme avant. Comme `run-limits`,
+qu'elle remplace pour le lancement, elle borne l'agent : un projet l'écrit dans `docs/agents/usine-gardes.md`,
+avec les autres clés protégées. Sans la clé, la
 borne est celle de `run-limits`, comme avant ; une valeur mal formée refuse l'appel (code 2). Le
 délai de la clé, plus l'attente des vérifications (`--wait-checks`, 600 s par défaut), doit rester sous
 le plafond de 3600 s que `scripts/release.py` met à l'essai entier : au-delà, le script est tué sans

@@ -362,9 +362,10 @@ class Documentation(unittest.TestCase):
         self.assertIn("Sans la clé, seule la liste du plugin", template)
 
     def test_a4_this_repository_declares_no_value_for_the_key(self) -> None:
-        usine = (REPO_ROOT / "docs" / "agents" / "usine.md").read_text(encoding="utf-8")
-        self.assertNotIn("gh-api-allow", parse(usine))
-        self.assertIn("`gh-api-allow`", usine, "the absent key is listed with its reason")
+        guard = (REPO_ROOT / "docs" / "agents" / "usine-gardes.md").read_text(encoding="utf-8")
+        self.assertNotIn("gh-api-allow", parse((REPO_ROOT / "docs" / "agents" / "usine.md").read_text(encoding="utf-8")))
+        self.assertNotIn("gh-api-allow", parse(guard))
+        self.assertIn("`gh-api-allow`", guard.split("## Clés absentes", 1)[1], "the absent key is listed with its reason")
 
 
 if __name__ == "__main__":

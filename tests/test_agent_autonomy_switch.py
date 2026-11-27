@@ -98,7 +98,7 @@ class BothWaysAreDescribed(unittest.TestCase):
         ("the rule", RULE),
         ("the template", TEMPLATE),
         ("the installation page", INSTALLATION),
-        ("this repository's configuration", support.REPO_ROOT / "docs" / "agents" / "usine.md"),
+        ("this repository's protected configuration", support.REPO_ROOT / "docs" / "agents" / "usine-gardes.md"),
     )
 
     def test_each_place_says_the_key_opens_the_merge_and_the_publication(self) -> None:
