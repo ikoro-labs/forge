@@ -161,7 +161,8 @@ README.md                         la page d'accueil : ce que fait forge, l'insta
 docs/*.md                         le détail : installation, sessions, modèles et jetons, contribuer
 CHANGELOG.md                      une entrée par version publiée
 CLAUDE.md, .claude/               l'usine de ce dépôt : son épingle, ses règles
-docs/agents/usine.md              sa configuration
+docs/agents/usine.md              sa configuration, les clés libres
+docs/agents/usine-gardes.md       ses clés protégées, que l'humain seul fusionne
 docs/architecture.excalidraw      le schéma du README, sa source éditable
 docs/architecture.svg             son export, que le README affiche
 docs/logo.svg                     le logo, sa source

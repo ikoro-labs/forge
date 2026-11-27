@@ -366,9 +366,9 @@ class Wiring(unittest.TestCase):
 
     def test_this_repository_declares_its_limits_and_its_budget(self) -> None:
         """No F-NNNN: ticket #66, critère 8: ce dépôt déclare 2000 Mo | 300 s, 4096 Mo, charge 12, 2 workers."""
-        from usine import load, split_value
+        from usine import split_value
 
-        config = load(support.REPO_ROOT)
+        config = support.repo_usine()
         self.assertEqual(config["run-limits"], ["2000 | 300"])
         parts = split_value(config["run-budget"][0], 4)
         assert parts is not None, "the key run-budget has four parts"

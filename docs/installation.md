@@ -159,7 +159,8 @@ Windows.
 
 ## Configurer : `docs/agents/usine.md`
 
-Le seul fichier où un projet décrit son usine au plugin : qui accepte, la matrice de décision,
+Le fichier où un projet décrit son usine au plugin (ses clés protégées peuvent vivre dans
+`docs/agents/usine-gardes.md`, voir plus bas) : qui accepte, la matrice de décision,
 l'arbitre du métier, les commandes d'installation et de rejeu de la CI, les checks obligatoires, la
 grille de revue, les chemins protégés, les changements que nul agent ne fusionne (`never-weaken` :
 une ligne retirée, un nombre relevé, un rang abaissé, mesurés sur le diff par
@@ -515,10 +516,10 @@ dépassé), la clé refuse. Le refus dit que le garde refuse parce que la clé n
 reste à l'humain ; le journal des refus le nomme `agent-autonomy`. Un autre nom de branche de base que
 `main` n'est pas lu : un projet dont la base s'appelle autrement voit ses fusions refusées.
 
-`docs/agents/usine.md` est un `protected-path` de ce dépôt, avec sa ligne dans `.github/CODEOWNERS` : une PR
+`docs/agents/usine-gardes.md` est un `protected-path` de ce dépôt, avec sa ligne dans `.github/CODEOWNERS` : une PR
 est la seule façon de changer ce que `origin/main` en dit, et aucun agent ne fusionne celle-là. Un projet qui
-adopte la clé déclare la même ligne ; sans elle, clé `on`, un agent peut fusionner une PR qui change le
-fichier. Aucune protection d'écriture n'a été ajoutée à `guard_coder` ni à `guard_readonly` : ils ne
+adopte la clé déclare la même ligne (celle de `docs/agents/usine.md` tant que ses clés n'ont pas bougé) ; sans
+elle, clé `on`, un agent peut fusionner une PR qui change le fichier. Aucune protection d'écriture n'a été ajoutée à `guard_coder` ni à `guard_readonly` : ils ne
 protègent aucun fichier par son nom, et refuser l'écriture empêcherait aussi l'agent de proposer un
 changement par PR, que la revue juge.
 
@@ -595,8 +596,11 @@ l'ensemble des clés protégées est `SENSITIVE_KEYS`, au même endroit.
 Éprouvé par `tests/test_usine_guard_file.py`, `tests/test_usine_keys_classified.py`,
 `tests/test_usine_read_config.py`, `tests/test_usine_readers_guard_file.py`, `tests/test_usine_base.py` et
 `tests/test_never_weaken.py` (dépôts jetables, `HOME` jeté, les scripts joués comme des processus), sous Linux
-seulement. Non tenu ici : le déplacement des clés de ce dépôt, de `CODEOWNERS` et de `protected-path` vers le
-nouveau fichier est une PR à part, après la version qui porte ces lecteurs ; `--usine-tete` de
+seulement. Ce dépôt a déplacé ses clés (partie 3 du plan, une fois la version qui porte ces lecteurs épinglée) :
+les onze qu'il déclare (`accepting-human`, `agent-autonomy`, `run-limits`, `run-budget`, `ticket-pr-cap`,
+`ticket-pr-cap-since`, `ticket-pr-cap-exempt`, `slo`, `budget-action`, `e2e-run-limits` et `protected-path`) sont
+dans son `docs/agents/usine-gardes.md`, qui est son `protected-path` et sa ligne de `.github/CODEOWNERS`, et
+`usine.md` ne porte plus que des clés libres (une PR ordinaire le change). Non tenu ici : `--usine-tete` de
 `preuves_ecran.py` (le `usine.md` de la tête, pour un `journey-replay` que la PR introduit) reste lu tel quel,
 sans gardes, parce qu'il ne porte aucune clé protégée ; sous Windows, la lecture par `git ls-tree` n'a pas été
 essayée.

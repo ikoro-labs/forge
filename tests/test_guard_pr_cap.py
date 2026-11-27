@@ -607,8 +607,8 @@ class TheKey(unittest.TestCase):
                 self.assertIn(phrase, before)
 
     def test_this_repository_counts_from_the_day_the_human_asked(self) -> None:
-        """Ticket #314, A8: `docs/agents/usine.md` holds `ticket-pr-cap-since : 2026-11-23`."""
-        text = (support.REPO_ROOT / "docs" / "agents" / "usine.md").read_text(encoding="utf-8")
+        """Ticket #314, A8: `docs/agents/usine-gardes.md` (moved by #345) holds `ticket-pr-cap-since : 2026-11-23`."""
+        text = support.repo_usine_text()
         self.assertIn("- `ticket-pr-cap-since` : `2026-11-23`", text)
 
     def test_the_plugin_names_no_date_of_its_own(self) -> None:
@@ -617,8 +617,8 @@ class TheKey(unittest.TestCase):
         self.assertNotRegex(text, r"\b20\d\d-\d\d-\d\d\b")
 
     def test_this_repository_declares_the_key_at_four(self) -> None:
-        """Ticket #367, A1 (was #314, A2 at 3): `docs/agents/usine.md` holds `ticket-pr-cap : 4`, once."""
-        text = (support.REPO_ROOT / "docs" / "agents" / "usine.md").read_text(encoding="utf-8")
+        """Ticket #367, A1 (was #314, A2 at 3): `docs/agents/usine-gardes.md` (moved by #345) holds `ticket-pr-cap : 4`, once."""
+        text = support.repo_usine_text()
         self.assertEqual(re.findall(r"^- `ticket-pr-cap` : `(\d+)`$", text, re.MULTILINE), ["4"])
 
 
@@ -1207,10 +1207,11 @@ class RaisedCap(unittest.TestCase):
         self.assertIsNone(project.create(pr_body("Closes #5"), self.full(3, [raised("kevin")])))
 
     def test_in_this_repository_no_account_raises_the_cap(self) -> None:
-        """Ticket #314, A4: with the real `docs/agents/usine.md`, the key is absent: neither account of the agent raises the cap."""
-        text = (support.REPO_ROOT / "docs" / "agents" / "usine.md").read_text(encoding="utf-8")
+        """Ticket #314, A4: with the real configuration of this repository, the key is absent: neither account of the agent raises the cap."""
+        text = support.repo_usine_text()
         self.assertNotRegex(text, r"(?m)^- `pr-cap-raiser` : `")
-        self.assertIn("`pr-cap-raiser`", text.split("## Clés absentes", 1)[1])
+        guard = (support.REPO_ROOT / "docs" / "agents" / "usine-gardes.md").read_text(encoding="utf-8")
+        self.assertIn("`pr-cap-raiser`", guard.split("## Clés absentes", 1)[1])
         project = Project(self, text)
         for login in ("ikoro-labs", "sunderland-labs"):
             with self.subTest(login=login):
@@ -1464,8 +1465,8 @@ class ExemptDocumentation(unittest.TestCase):
                 self.assertIn(phrase, line)
 
     def test_this_repository_exempts_the_pin_and_the_release(self) -> None:
-        """Ticket #314 part 3, A4: `docs/agents/usine.md` lists `chore(pin)` and `chore(release)` next to the cap, and only them."""
-        text = (support.REPO_ROOT / "docs" / "agents" / "usine.md").read_text(encoding="utf-8")
+        """Ticket #314 part 3, A4: `docs/agents/usine-gardes.md` (moved by #345) lists `chore(pin)` and `chore(release)` next to the cap, and only them."""
+        text = support.repo_usine_text()
         lines = [line for line in text.splitlines() if line.startswith("- `ticket-pr-cap-exempt`")]
         self.assertEqual(lines, ["- `ticket-pr-cap-exempt` : `chore(pin)`", "- `ticket-pr-cap-exempt` : `chore(release)`"])
         self.assertLess(text.index("- `ticket-pr-cap` :"), text.index("- `ticket-pr-cap-exempt` :"))
