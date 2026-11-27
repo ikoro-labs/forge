@@ -48,8 +48,11 @@ class Runner:
 
     def run(self, *options: str, command: list[str] | None = None) -> subprocess.CompletedProcess:
         tail = ["--", *command] if command is not None else []
+        # The folder is no repository: without `--usine`, the launcher would refuse the guard file it cannot
+        # read on `origin/main` (ticket #345). These tests are about the bounds, not about where the keys are.
+        given = [] if "--usine" in options else ["--usine", str(self.root / "absent.md")]
         return subprocess.run(
-            [sys.executable, str(SCRIPT), *options, *tail],
+            [sys.executable, str(SCRIPT), *given, *options, *tail],
             cwd=self.root, env=self.env, capture_output=True, text=True, timeout=60,
         )
 
@@ -185,10 +188,13 @@ class Budget(unittest.TestCase):
         marker = runner.root / "ran"
         source = f"open({str(marker)!r}, 'w').close()"
         err = io.StringIO()
+        # An empty file given with `--usine`: the keys come from it as it is, never from the clone's
+        # `origin/main`, which a CI checkout lacks (ticket #345). These tests are about the budget.
+        usine = runner.usine("")
         with mock.patch.object(bounded_run, "system_state", return_value=state), contextlib.redirect_stderr(err):
             code = bounded_run.main(
-                ["--memory-mb", "400", "--timeout", "20", "--min-available-mb", "4096", "--max-load", "12",
-                 "--max-workers", "2", "--wait", "0", *options, "--", *python(source)]
+                ["--usine", usine, "--memory-mb", "400", "--timeout", "20", "--min-available-mb", "4096",
+                 "--max-load", "12", "--max-workers", "2", "--wait", "0", *options, "--", *python(source)]
             )
         return code, err.getvalue(), marker.exists()
 

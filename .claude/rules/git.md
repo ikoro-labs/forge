@@ -7,6 +7,9 @@
 - Jamais de commit ni de push sur `main` : tout passe par une PR, fusionnée par un commit de fusion.
 - Le titre d'une PR suit le format des commits. Son corps suit `.github/pull_request_template.md`
   et cite son ticket (`Closes #n`, ou `Refs #n` quand la PR n'en livre qu'une partie).
+- Une PR d'entretien de l'usine (la montée de l'épingle, la PR de version) ne cite aucun ticket : son titre
+  commence par un `type(scope)` que liste la clé `ticket-pr-cap-exempt` de `docs/agents/usine-gardes.md`, et le
+  plafond de PR d'un ticket ne la compte pas.
 - Les tickets, les titres et les corps de PR s'écrivent en anglais. Restent en français la section
   `Rapport d'agent` d'une PR et les réponses à l'humain.
 

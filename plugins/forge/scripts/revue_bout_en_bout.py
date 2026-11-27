@@ -348,7 +348,7 @@ def main(argv: list[str] | None = None) -> int:
     verdict = commands.add_parser("verdict", help="the verdict of the judge against the matrix")
     verdict.add_argument("verdict", help="the verdict of the judge")
     verdict.add_argument("--matrice", required=True, help="the matrix file of the feature")
-    verdict.add_argument("--usine", help="the usine.md to read (default: docs/agents/usine.md)")
+    verdict.add_argument("--usine", help="the usine.md to read, as it is (default: docs/agents/usine.md with docs/agents/usine-gardes.md on origin/main)")
     verdict.add_argument("--root", help="the project copy to read (default: the project directory)")
     verdict.add_argument("--manifeste", help="the manifest of the run: a capture cited must be in it")
     verdict.add_argument("--captures", help="the folder of the capture files, checked when given")

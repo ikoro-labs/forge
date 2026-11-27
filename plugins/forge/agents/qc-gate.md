@@ -17,8 +17,9 @@ toute modification de la copie de travail du projet, et la règle reste aussi un
 rejeux se font dans une copie de la tête (worktree détaché ou `git archive`) dans le scratchpad,
 supprimée ensuite. Chaque sonde est une commande dont tu recopies le résultat.
 
-Le projet décrit ses portes dans `docs/agents/usine.md`, que tu lis par Bash : tu démarres sans
-les `CLAUDE.md` du projet, ce fichier et ton prompt te donnent tout. Une sonde dont la clé manque
+Le projet décrit ses portes dans `docs/agents/usine.md`, et les clés qui bornent l'agent dans
+`docs/agents/usine-gardes.md` quand ce fichier existe, que tu lis par Bash : tu démarres sans
+les `CLAUDE.md` du projet, ces fichiers et ton prompt te donnent tout. Une sonde dont la clé manque
 se rend `sans objet (clé <nom> absente)`, jamais `PASS`, et tu ne devines pas de valeur.
 
 Quand GraphQL est bloqué (sessions d'agent), `gh pr view`, `gh pr checks` et `gh issue view`
@@ -35,8 +36,9 @@ sondes** et seulement elle.
 
 Toute suite et toute sonde de tests que tu lances passe par le lanceur du plugin, jamais seule :
 `uv run --no-project --quiet python "${CLAUDE_PLUGIN_ROOT}/scripts/bounded_run.py" --usine usine-base.md -- <commande>`,
-avec le `usine-base.md` de la sonde 10 (`git show origin/<base>:docs/agents/usine.md > usine-base.md`,
-écrit dans le scratchpad **avant** la sonde 4) : les bornes viennent de la base, pour qu'une PR ne
+avec le `usine-base.md` de la sonde 10 (écrit dans le scratchpad **avant** la sonde 4 par
+`uv run --no-project --quiet python "${CLAUDE_PLUGIN_ROOT}/scripts/usine_base.py" --base origin/<base> usine-base.md`,
+qui y réunit les deux fichiers de la base) : les bornes viennent de la base, pour qu'une PR ne
 lève pas celle qui la juge. Cela vaut pour chaque commande de `ci-replay` (sonde 4) et chaque suite
 rejouée sur une copie de la base (sonde 5). Le lanceur lit `run-limits` (mémoire et délai) et
 `run-budget` (budget du poste, workers) ; tu recopies son code de sortie, et sa raison sur stderr
@@ -98,15 +100,22 @@ elles-mêmes leurs commandes.
 9. **Trace.** La conclusion du check que nomme la clé `trace-check` ; s'il n'a pas tourné, rejoue
    la commande de la clé `trace-replay` dans la copie de la tête, avec
    `--title "<titre>" --body-file body.md` (`gh pr view <n> --json body -q .body > body.md`).
-10. **Règles `never-weaken`.** Écris le diff de la PR et le fichier de configuration de la **base**
-    dans le scratchpad, puis lance le script du plugin :
+10. **Règles `never-weaken`.** Écris le diff de la PR et la configuration de la **base** dans le
+    scratchpad, puis lance le script du plugin. La configuration est `usine-base.md`, que le script
+    `usine_base.py` fabrique des deux fichiers de la base, `docs/agents/usine.md` et
+    `docs/agents/usine-gardes.md` : les clés qui bornent l'agent viennent du second, les autres du
+    premier, et un fichier de gardes que git ne sait pas lire fait sortir le script en 2 sans rien
+    écrire (`FAIL`, avec la raison de stderr, jamais `PASS`, et aucune sonde qui lit `usine-base.md` ne
+    tourne alors) :
     `git -c core.quotePath=false diff origin/<base>...<tête> > pr.diff`,
-    `git show origin/<base>:docs/agents/usine.md > usine-base.md`, puis
+    `uv run --no-project --quiet python "${CLAUDE_PLUGIN_ROOT}/scripts/usine_base.py" --base origin/<base> usine-base.md`, puis
     `uv run --no-project --quiet python "${CLAUDE_PLUGIN_ROOT}/scripts/never_weaken.py" --usine usine-base.md pr.diff`.
     Les entrées viennent de la base, pour qu'une PR ne lève pas la règle qui la juge. Recopie
     chaque ligne du script, verbatim, et son code de sortie : 0 rien ne s'applique, 1 une entrée
     s'applique (rends `APPLIES` et l'entrée), 2 une entrée est invalide ou l'appel a échoué
-    (`FAIL`, jamais `PASS`). Quand la base n'a pas `docs/agents/usine.md`, ou que le script rend
+    (`FAIL`, jamais `PASS`). Le script rend aussi une ligne par fichier de configuration
+    (`docs/agents/usine.md : never-weaken`, `docs/agents/usine-gardes.md : never-weaken`) : une entrée
+    retirée ou modifiée dans l'un ou l'autre s'applique. Quand la base n'a aucun des deux fichiers, ou que le script rend
     `sans objet (clé never-weaken absente)`, la sonde se rend `sans objet (clé never-weaken absente)`.
     Tu ne juges pas l'entrée : tu rends ce que le script a mesuré.
 11. **Rejeu des tests sur la base.** Le rouge d'un test n'est qu'une déclaration tant que personne ne
@@ -251,7 +260,9 @@ quels `BLOCKER` comptent. Tu ne lances jamais toi-même un nom ni une commande l
 seul le script les lit.
 
 1. Écris le verdict dans le scratchpad (`verdict.md`) et la configuration de la **base** à côté
-   (`git show origin/<base>:docs/agents/usine.md > usine-base.md`) : une PR ne lève pas la borne qui
+   (`uv run --no-project --quiet python "${CLAUDE_PLUGIN_ROOT}/scripts/usine_base.py" --base origin/<base> usine-base.md`,
+   qui réunit `docs/agents/usine.md` et `docs/agents/usine-gardes.md` de la base ; code 2, la sonde est
+   `NOT RUN` avec la raison de stderr) : une PR ne lève pas la borne qui
    la juge, ni ne change la commande qui lance ses tests.
 2. Fais, dans le scratchpad, la copie de la tête que le verdict a jugée (la ligne `HEAD:`) par
    `git archive`, sans `.git`, et supprime-la ensuite : un worktree ou un clone partagerait le vrai

@@ -30,7 +30,7 @@ fait, et les limites connues.
          "source": {
            "source": "github",
            "repo": "ikoro-labs/forge",
-           "ref": "forge--v1.22.0"
+           "ref": "forge--v1.23.0"
          }
        }
      }
@@ -47,7 +47,7 @@ fait, et les limites connues.
    l'installer. Depuis la racine du projet, redéclarer d'abord son épingle, puis installer :
 
    ```sh
-   claude plugin marketplace add ikoro-labs/forge@forge--v1.22.0 --scope project
+   claude plugin marketplace add ikoro-labs/forge@forge--v1.23.0 --scope project
    claude plugin install forge@ikoro-labs --scope project
    ```
 
@@ -546,13 +546,15 @@ Windows, le chemin du dépôt lu par `git show` n'a pas été essayé.
 
 ## Le fichier des clés protégées : `docs/agents/usine-gardes.md`
 
-Vingt-deux clés de `usine.md` bornent les pouvoirs de l'agent (ikoro-labs/forge#345) : `agent-autonomy`,
+Vingt-trois clés de `usine.md` bornent les pouvoirs de l'agent (ikoro-labs/forge#345 ; `e2e-run-limits` et
+`ticket-pr-cap-exempt` s'y sont ajoutées, avec ikoro-labs/forge#359 et ikoro-labs/forge#314) : `agent-autonomy`,
 `protected-path`, `gh-api-allow`, `owner-gesture`, `never-weaken`, `infra-hosts`, `infra-verify`,
-`pr-cap-raiser`, `ticket-pr-cap`, `ticket-pr-cap-since`, `ticket-budget`, `run-limits`, `e2e-run-limits`,
-`run-budget`, `budget-action`, `slo`, `accepting-human`, `validation-owner`, `validation-reviewer`,
-`pin-bump`, `readonly-agent` et `readonly-command`. Les lire dans l'arbre de travail ne tenait que parce que
-`usine.md` était un `protected-path` : chaque réglage libre (`merge-method`, `release-trigger`,
-`output-words-*`...) attendait donc l'humain avec elles. Le plugin lit désormais ces vingt-deux clés dans un second fichier,
+`pr-cap-raiser`, `ticket-pr-cap`, `ticket-pr-cap-since`, `ticket-pr-cap-exempt`, `ticket-budget`, `run-limits`,
+`e2e-run-limits`, `run-budget`,
+`budget-action`, `slo`, `accepting-human`, `validation-owner`, `validation-reviewer`, `pin-bump`,
+`readonly-agent` et `readonly-command`. Les lire dans l'arbre de travail ne tenait que parce que `usine.md`
+était un `protected-path` : chaque réglage libre (`merge-method`, `release-trigger`, `output-words-*`...)
+attendait donc l'humain avec elles. Le plugin lit désormais ces vingt-trois clés dans un second fichier,
 `docs/agents/usine-gardes.md`, tel que `origin/main` le tient (`git ls-tree` puis `git cat-file` sur
 `refs/remotes/origin/main`), et `usine.load` fusionne les deux fichiers. Les autres clés restent dans
 `usine.md`. Le chemin du fichier est une constante de `plugins/forge/hooks/usine.py`, jamais une clé, et
@@ -569,18 +571,39 @@ l'ensemble des clés protégées est `SENSITIVE_KEYS`, au même endroit.
 - **Chaque clé du gabarit a sa classe** : `tests/test_usine_keys_classified.py` échoue sur une clé ajoutée
   au gabarit qui n'est ni dans `SENSITIVE_KEYS` ni dans sa liste des clés libres.
 
-Éprouvé par `tests/test_usine_guard_file.py` et `tests/test_usine_keys_classified.py` (dépôts jetables,
-`HOME` jeté, le hook joué comme un processus), sous Linux seulement. Ce dépôt a déplacé ses clés : les dix qu'il
-déclare sont dans son `docs/agents/usine-gardes.md`, qui est son `protected-path` et sa ligne de
-`.github/CODEOWNERS`, et `usine.md` ne porte plus que des clés libres (une PR ordinaire le change).
+- **Les scripts du plugin lisent les deux fichiers** (ikoro-labs/forge#345, partie 2 du plan : les lecteurs).
+  `bounded_run.py` (`run-limits`, `run-budget`), `commit_replay.py`, `base_replay.py`, `probe_replay.py`,
+  `e2e_trial.py` (`e2e-run-limits`), `never_weaken.py` (`never-weaken`), `lockfile_age.py`, `stack_check.py`,
+  `matrice.py`, `parcours.py`, `source_ids.py`, `ui_labels.py`, `preuves_ecran.py` et `revue_boucle.py` passent par
+  `usine.read_config`, qui fusionne `usine-gardes.md` comme le chargeur. Sans `--usine`, un fichier de gardes que
+  git ne sait pas lire (un objet illisible, pas d'`origin/main`, pas de dépôt) fait refuser le script, code 2, avec
+  le nom du fichier : il ne lit pas `usine.md` seul à la place. Un script sans `usine.md` ni fichier de gardes
+  dans un dépôt dont `origin/main` existe reste « sans objet », comme avant. Un checkout de CI qui ne ramène pas
+  `origin/main` (`actions/checkout` à profondeur 1) le ramène avant de lancer un script
+  (`git fetch origin main:refs/remotes/origin/main`) ou passe `--usine <fichier>` ; sans l'un des deux, le script
+  refuse. Avec `--usine <fichier>`, le
+  fichier est lu tel quel, sans second fichier. `e2e_trial.py` confie au lanceur borné un fichier où les deux
+  fichiers sont réunis, parce que le lancement se fait dans le clone d'essai.
+- **`forge:qc-gate` fabrique `usine-base.md` de la base** par `scripts/usine_base.py --base origin/<base>
+  usine-base.md`, qui réunit `usine.md` et `usine-gardes.md` tels que `origin/<base>` les tient, par la règle du
+  chargeur. Un fichier de gardes que git ne sait pas lire sur la base : code 2, aucun fichier écrit, la sonde
+  est un `FAIL`. Une PR ne lève donc aucune borne en changeant l'un ou l'autre fichier.
+- **`never_weaken.py` surveille les deux fichiers** : une entrée `never-weaken` retirée ou modifiée dans
+  `usine.md` comme dans `usine-gardes.md`, ou l'un des deux supprimé, déplacé ou remplacé, s'applique ; le
+  script imprime une ligne par fichier (`docs/agents/usine.md : never-weaken`, `docs/agents/usine-gardes.md :
+  never-weaken`).
 
-Non tenu ici : les scripts qui lisent leur fichier par `usine.parse` (`bounded_run.py` pour `run-limits` et
-`run-budget`, donc aussi `probe_replay.py`, `commit_replay.py` et `e2e_trial.py`, `never_weaken.py` pour
-`never-weaken`) ne passent pas par ce lecteur : ils lisent `usine.md`, ou le fichier que leur donne
-`--usine`, et jamais `usine-gardes.md`. Dans un projet qui a déplacé ses clés, ces scripts voient donc
-la clé absente : `bounded_run.py` demande alors `--memory-mb` et `--timeout`, et le budget du poste est
-« sans objet ». Les faire lire le fichier fusionné, et faire de même au `usine-base.md` que `forge:qc-gate`
-écrit depuis la base, est à faire avant qu'un projet consommateur déplace ses clés de borne.
+Éprouvé par `tests/test_usine_guard_file.py`, `tests/test_usine_keys_classified.py`,
+`tests/test_usine_read_config.py`, `tests/test_usine_readers_guard_file.py`, `tests/test_usine_base.py` et
+`tests/test_never_weaken.py` (dépôts jetables, `HOME` jeté, les scripts joués comme des processus), sous Linux
+seulement. Ce dépôt a déplacé ses clés (partie 3 du plan, une fois la version qui porte ces lecteurs épinglée) :
+les onze qu'il déclare (`accepting-human`, `agent-autonomy`, `run-limits`, `run-budget`, `ticket-pr-cap`,
+`ticket-pr-cap-since`, `ticket-pr-cap-exempt`, `slo`, `budget-action`, `e2e-run-limits` et `protected-path`) sont
+dans son `docs/agents/usine-gardes.md`, qui est son `protected-path` et sa ligne de `.github/CODEOWNERS`, et
+`usine.md` ne porte plus que des clés libres (une PR ordinaire le change). Non tenu ici : `--usine-tete` de
+`preuves_ecran.py` (le `usine.md` de la tête, pour un `journey-replay` que la PR introduit) reste lu tel quel,
+sans gardes, parce qu'il ne porte aucune clé protégée ; sous Windows, la lecture par `git ls-tree` n'a pas été
+essayée.
 
 ## Supprimer une branche locale : `git branch -D` et le bundle
 
@@ -980,6 +1003,20 @@ a nested shell and behind a wrapper (the reader is `hooks/gh_bodies.py`, shared 
   PR of the ticket counts, whatever its date. Without the key `ticket-pr-cap` the date is not read either. A
   value that is not a valid day, a repeated key, and a PR whose `createdAt` cannot be read, fail closed like
   the rest of the count: the PR that cites a ticket is refused until it is fixed.
+- **Maintenance PRs.** The key `ticket-pr-cap-exempt` (protected, one `type(scope)` per line, as
+  `chore(factory)`) leaves out of the count every PR whose title starts with `type(scope):`, exactly, open or
+  merged alike: a forge pin or a cap date has nothing to do with the ticket it happens to cite. The title is one
+  more field (`title`) of the same `gh pr list --json` call; a PR being created (`gh pr create`) is exempt only
+  through its `--title` or `-t` argument, and reserves no place, while one with no title, or one the shell
+  fills in or escapes, counts. A maintenance PR cites no ticket: `forge:coder` and the git rules of the project
+  say so, and a listed PR that cites one is left out of the count all the same. The guard does not read the
+  diff, so the dodge it leaves open (a listed title on a PR that is not maintenance) is closed by the judge:
+  `forge:qc-conf` refuses, as a `BLOCKER` of rule `F-25`, a title of the key on a diff that is not factory
+  maintenance. Without the key the step is « sans objet (clé `ticket-pr-cap-exempt` absente) »: every PR
+  counts, whatever its title, and no value is guessed. A line that is not one `type(scope)`, or a listed PR
+  whose `title` cannot be read, fails closed like the rest of the count. `gh pr edit`, `gh api` and the MCP
+  tools are not exempted by a title: an edit adds tickets to a PR already open, and the other doors are read as
+  before. This repository lists `chore(pin)` and `chore(release)`.
 - **A ticket started before that day.** A ticket with at least one open or merged PR that cites it, created
   before the day of the key, is a started ticket: it finishes the PR in flight (a PR from before the day is
   never counted, so editing it, the `forge:qc` report included, is not refused), then admits one last PR, as a

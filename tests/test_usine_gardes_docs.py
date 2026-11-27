@@ -9,6 +9,7 @@ import unittest
 from pathlib import Path
 
 import support
+from test_usine_gardes_repo import DECLARED
 from usine import SENSITIVE_KEYS
 
 TEMPLATE = support.PLUGIN / "templates" / "usine.md"
@@ -16,7 +17,7 @@ INSTALLATION = support.REPO_ROOT / "docs" / "installation.md"
 CONTRIBUER = support.REPO_ROOT / "docs" / "contribuer.md"
 DECISIONS = support.REPO_ROOT / "docs" / "agents" / "decisions.md"
 
-COUNT = "Vingt-deux clés"
+COUNT = "Vingt-trois clés"
 
 
 def section(path: Path, heading: str) -> str:
@@ -30,7 +31,7 @@ def section(path: Path, heading: str) -> str:
 
 class TheTemplateListsEverySensitiveKey(unittest.TestCase):
     def test_b6_the_section_of_the_protected_keys_names_each_one_and_counts_them(self) -> None:
-        """#345 B6: 22 keys, `e2e-run-limits` among them, each named in the template's section."""
+        """#345 B6: 23 keys, `e2e-run-limits` and `ticket-pr-cap-exempt` among them, each named in the template's section."""
         text = section(TEMPLATE, "Clés protégées")
         self.assertIn(COUNT, text)
         for key in sorted(SENSITIVE_KEYS):
@@ -52,13 +53,24 @@ class TheInstallationPageSaysWhatMoved(unittest.TestCase):
             with self.subTest(key=key):
                 self.assertIn(f"`{key}`", text)
 
-    def test_b6_the_page_says_this_repository_moved_its_keys_and_what_the_scripts_still_read(self) -> None:
-        """#345 B6: the move is no longer « une PR à part »; the limit of the scripts that read `usine.md` stays said."""
+    def test_b6_the_page_says_this_repository_moved_its_keys_and_that_the_scripts_follow(self) -> None:
+        """#345 B6: the move is no longer « une PR à part » and the scripts are no longer said to read `usine.md` alone."""
         text = section(INSTALLATION, "Le fichier des clés protégées")
         self.assertNotIn("est une PR à part", text)
+        self.assertNotIn("Non tenu ici : les scripts", text)
         self.assertIn("Ce dépôt a déplacé ses clés", text)
         self.assertIn("`bounded_run.py`", text)
-        self.assertIn("`usine.parse`", text)
+        self.assertIn("`usine.read_config`", text)
+
+    def test_b6_the_page_names_each_key_this_repository_moved_and_counts_them(self) -> None:
+        """#345 B6: the sentence on the move lists the keys `usine-gardes.md` holds, and their count in words."""
+        text = section(INSTALLATION, "Le fichier des clés protégées")
+        moved = text.split("Ce dépôt a déplacé ses clés", 1)[1].split("Non tenu ici", 1)[0]
+        for key in sorted(DECLARED):
+            with self.subTest(key=key):
+                self.assertIn(f"`{key}`", moved)
+        self.assertIn("les onze qu'il déclare", moved)
+        self.assertEqual(len(DECLARED), 11)
 
     def test_b6_the_protected_path_paragraph_names_the_guard_file(self) -> None:
         """#345 B6: the paragraph on this repository's `protected-path` names `usine-gardes.md`, not `usine.md`."""

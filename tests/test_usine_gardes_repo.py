@@ -20,7 +20,7 @@ GUARD_FILE = support.REPO_ROOT / "docs" / "agents" / "usine-gardes.md"
 # section "Clés absentes" of the guard file, with its reason.
 DECLARED = {
     "accepting-human", "agent-autonomy", "budget-action", "e2e-run-limits", "protected-path",
-    "run-budget", "run-limits", "slo", "ticket-pr-cap", "ticket-pr-cap-since",
+    "run-budget", "run-limits", "slo", "ticket-pr-cap", "ticket-pr-cap-exempt", "ticket-pr-cap-since",
 }  # fmt: skip
 
 
@@ -57,7 +57,8 @@ class TheGuardFileHoldsTheSensitiveKeys(unittest.TestCase):
             loaded = load_checked(where)
         self.assertEqual((loaded.notices, loaded.unreadable), ([], None))
         config = loaded.config
-        self.assertEqual(config["ticket-pr-cap"], ["3"])
+        self.assertEqual(config["ticket-pr-cap"], ["4"])
+        self.assertEqual(config["ticket-pr-cap-exempt"], ["chore(pin)", "chore(release)"])
         self.assertEqual(config["ticket-pr-cap-since"], ["2026-11-23"])
         self.assertEqual(config["run-limits"], ["2000 | 300"])
         self.assertEqual(config["run-budget"], ["4096 | 12 | 2 | 300"])

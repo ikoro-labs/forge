@@ -396,6 +396,25 @@ class Command(unittest.TestCase):
         other = diff("docs/agents/usine.md", "-- `install` : `a`", "+- `install` : `b`")
         self.assertEqual(self.run_main(usine_text, other)[0], 0)
 
+    def test_345_b1_a_pr_cannot_lift_the_guard_by_editing_the_guard_file_either(self) -> None:
+        """#345 B1: `never-weaken` may sit in `usine-gardes.md`: removing or editing its entry there applies."""
+        usine_text = f"- `never-weaken` : `{WORKFLOWS}`\n"
+        lifted = diff("docs/agents/usine-gardes.md", f"-- `never-weaken` : `{WORKFLOWS}`", "+- `ticket-pr-cap` : `9`")
+        code, out, _ = self.run_main(usine_text, lifted)
+        self.assertEqual(code, 1)
+        self.assertIn("APPLIES\tdocs/agents/usine-gardes.md : never-weaken", out)
+        self.assertIn("NONE\tdocs/agents/usine.md : never-weaken", out)
+        edited = diff("docs/agents/usine-gardes.md", f"-- `never-weaken` : `{WORKFLOWS}`", "+- `never-weaken` : `docs/`")
+        self.assertEqual(self.run_main(usine_text, edited)[0], 1)
+
+    def test_345_b1_another_entry_of_the_guard_file_may_change(self) -> None:
+        """#345 B1: only the `never-weaken` entries are the guard a PR is judged by; the rest is the human's gate."""
+        usine_text = f"- `never-weaken` : `{WORKFLOWS}`\n"
+        other = diff("docs/agents/usine-gardes.md", "-- `ticket-pr-cap` : `3`", "+- `ticket-pr-cap` : `4`")
+        code, out, _ = self.run_main(usine_text, other)
+        self.assertEqual(code, 0, out)
+        self.assertIn("NONE\tdocs/agents/usine-gardes.md : never-weaken", out)
+
     def test_the_diff_is_read_from_the_standard_input_with_a_dash(self) -> None:
         stdin = io.StringIO(diff(".github/workflows/t.yml", "-a"))
         with tempfile.TemporaryDirectory() as folder:
@@ -462,6 +481,21 @@ class RealGitDiffs(unittest.TestCase):
                 with redirect_stdout(io.StringIO()):
                     code = main(["--usine", str(Path(folder) / "usine.md"), str(Path(folder) / "pr.diff")])
             self.assertEqual(code, 1, text)
+
+
+    def test_345_b1_a_renamed_or_removed_guard_file_lifts_the_guard(self) -> None:
+        """#345 B1: the guard file deleted, or moved away, no longer holds the entries the PR is judged by."""
+        body = f"- `never-weaken` : `{WORKFLOWS}`\n".encode()
+        for after in ({"docs/agents/ancien.md": body}, {"gardes.md": body}, {"README.md": b"x\n"}):
+            text = real_diff({"docs/agents/usine-gardes.md": body}, after)
+            with tempfile.TemporaryDirectory() as folder:
+                (Path(folder) / "usine.md").write_bytes(body)
+                (Path(folder) / "pr.diff").write_text(text, encoding="utf-8")
+                out = io.StringIO()
+                with redirect_stdout(out):
+                    code = main(["--usine", str(Path(folder) / "usine.md"), str(Path(folder) / "pr.diff")])
+            self.assertEqual(code, 1, text)
+            self.assertIn("APPLIES\tdocs/agents/usine-gardes.md : never-weaken", out.getvalue())
 
 
 class RenameKeepsItsPath(unittest.TestCase):

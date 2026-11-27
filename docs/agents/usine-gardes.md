@@ -39,8 +39,9 @@ le choix de ce dépôt, que le ticket ne fixait pas.
 
 ## Plafond de PR par ticket
 
-Un ticket tient en trois PR au plus, ouvertes ou fusionnées (ticket #314, demandé par l'humain). Le garde
-`guard_pr_cap` refuse la quatrième, que le coder rend en `BLOCKED` ; seule l'étiquette `pr-cap-raised`,
+Un ticket tient en quatre PR au plus, ouvertes ou fusionnées (ticket #314, demandé par l'humain ; trois
+jusqu'au 2026-11-27, puis quatre sur décision de l'humain, ticket #367). Le garde `guard_pr_cap` refuse la
+cinquième, que le coder rend en `BLOCKED` ; seule l'étiquette `pr-cap-raised`,
 posée par un compte de la clé `pr-cap-raiser`, relève le plafond à 6. Cette clé est absente ici (voir
 « Clés absentes ») : on relève le plafond en changeant `ticket-pr-cap` par une PR. Le garde agit une fois
 l'épingle montée à la version qui le publie.
@@ -49,8 +50,15 @@ Le plafond ne compte que les PR créées à partir du 2026-11-23 (demande de l'h
 tickets en cours dans des projets de l'humain avaient déjà dépassé trois PR avant le plafond, et les PR
 d'avant cette date ne comptent pas.
 
-- `ticket-pr-cap` : `3`
+- `ticket-pr-cap` : `4`
 - `ticket-pr-cap-since` : `2026-11-23`
+
+Les PR d'entretien de l'usine (la montée de l'épingle, la PR de version) n'ont rien à voir avec le ticket
+qu'elles citeraient : leur titre `chore(pin):` ou `chore(release):` les sort du compte (décision de l'humain du
+2026-11-25, ticket #314), et elles ne citent aucun ticket.
+
+- `ticket-pr-cap-exempt` : `chore(pin)`
+- `ticket-pr-cap-exempt` : `chore(release)`
 
 ## Objectifs de service
 
