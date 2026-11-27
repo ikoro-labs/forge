@@ -95,6 +95,13 @@ d'avant cette date ne comptent pas.
 - `ticket-pr-cap` : `3`
 - `ticket-pr-cap-since` : `2026-11-23`
 
+Les PR d'entretien de l'usine (la montée de l'épingle, la PR de version) n'ont rien à voir avec le ticket
+qu'elles citeraient : leur titre `chore(pin):` ou `chore(release):` les sort du compte (décision de l'humain du
+2026-11-25, ticket #314), et elles ne citent aucun ticket.
+
+- `ticket-pr-cap-exempt` : `chore(pin)`
+- `ticket-pr-cap-exempt` : `chore(release)`
+
 ## Objectifs de service
 
 Les objectifs de départ de l'usine (ticket #76), lus par `plugins/forge/scripts/factory_slo.py` sur 30
