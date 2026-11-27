@@ -28,7 +28,7 @@ ne couvre rend `RESERVED`, avec la recommandation de l'agent.
 | `T3` | Suite d'un `MINOR` ou d'une `NOTE` du juge : corrigée dans la PR quand elle tient dans ses critères, sinon commentée sur le ticket existant ; un ticket nouveau ne naît pas d'une suite, seulement d'un motif que l'humain a admis | `forge:staff-engineer` | no | #25, #26 |
 | `T4` | Nouvelle clé de `usine.md`, ou changement du contrat que lisent les projets consommateurs (forme d'une sortie lue par un script, variable de passation) : documenté dans le gabarit, la clé absente rend « sans objet » | `forge:staff-engineer` | no | #77 |
 | `T5` | Changement d'un garde (`guard_git`, `guard_coder`, `guard_readonly`) ou de `hooks.json` : la décision de forme est déléguée, la fusion de la PR reste à l'humain (`H1`) | `forge:staff-engineer` | no | #77 |
-| `T6` | Découpage d'un ticket en parties (`Refs #n`), dont le plafond de trois PR par ticket | `forge:staff-engineer` | no | #77 |
+| `T6` | Découpage d'un ticket en parties (`Refs #n`), dont le plafond de PR par ticket (clé `ticket-pr-cap`) | `forge:staff-engineer` | no | #77 |
 | `T7` | Changement d'une règle du dépôt (`CLAUDE.md`, `.claude/rules/`) ou d'un gabarit | `forge:staff-engineer` | no | #77 |
 | `T8` | Risque de sécurité prouvé dont le correctif est réversible (une PR le défait) : le correctif se décide et se fusionne par la voie ordinaire ; sans correctif réversible, `H5` | `forge:staff-engineer` | no | #77 |
 | `T9` | Deux textes acceptés qui se contredisent : l'option la plus prudente, et la contradiction dite dans le commentaire | `forge:staff-engineer` | yes | #77 |
