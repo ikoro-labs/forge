@@ -61,6 +61,10 @@ tienne ; la section « Taille » dit quoi faire à celle qui dépasserait. Quand
 déclarée et que le ticket a une PR créée avant ce jour, il est déjà commencé : il termine cette PR en vol,
 puis n'admet qu'une dernière PR, en dernier recours, au lieu du plafond ; prévois ton travail pour cette seule
 PR. Sans la clé, l'étape est « sans objet (clé `ticket-pr-cap` absente) » : tu ne devines aucun plafond.
+Une PR dont le titre commence par un `type(scope):` de la clé `ticket-pr-cap-exempt` (l'entretien de l'usine :
+une épingle, une date de plafond) ne compte pour aucun ticket : n'en compte pas, et une telle PR ne cite aucun
+ticket, ni `Closes` ni `Refs`, puisqu'elle n'a rien à voir avec lui. Sans la clé, l'étape est « sans objet
+(clé `ticket-pr-cap-exempt` absente) » : toutes les PR comptent, et tu ne devines aucun titre exempté.
 
 Si, après cette lecture, une décision reste ouverte et touche un chiffre, un contrat d'API, un
 schéma ou une règle du `CLAUDE.md`, ne la tranche pas : sors en `BLOCKED` avec la question et ta
@@ -181,8 +185,9 @@ phrase : GitHub le lit.
 **Trois PR au plus par ticket.** Le plafond est la clé `ticket-pr-cap`, que le garde `guard_pr_cap`
 tient : il refuse une PR dont le corps cite `Closes #n` ou `Refs #n` quand le ticket en a déjà
 autant. Avant de couper, compte les PR du ticket, fusionnées ou ouvertes :
-`gh pr list --state all --search "<n> in:body" --json number,state,body`, en ne gardant que celles
-dont le corps porte `Closes #n` ou `Refs #n` pour ce numéro. Avec la clé `ticket-pr-cap-since`, ne garde
+`gh pr list --state all --search "<n> in:body" --json number,state,body,title`, en ne gardant que celles
+dont le corps porte `Closes #n` ou `Refs #n` pour ce numéro, sauf celles dont le titre commence par un
+`type(scope):` de la clé `ticket-pr-cap-exempt`. Avec la clé `ticket-pr-cap-since`, ne garde
 que celles créées à partir de son jour ; si le ticket en a une créée avant ce jour, une seule dernière PR est
 admise, en dernier recours, et la suivante est la quatrième de ce cas. Si le ticket en a déjà trois (ou, pour un
 ticket déjà commencé, cette dernière PR), il n'y
