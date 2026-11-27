@@ -9,6 +9,52 @@ Ce dépôt a été recréé le 2026-10-23 ; l'ancien est `ikoro-labs/forge-archi
 numéros de PR et de ticket nus (`#38`) renvoient à l'ancien dépôt ; un renvoi au nouveau dépôt
 porte son nom (`ikoro-labs/forge#7`).
 
+## [1.23.0] - 2026-11-27
+
+Les scripts et la porte de revue lisent aussi les clés protégées de `docs/agents/usine-gardes.md`, par le chargeur
+des hooks. Version mineure : un script nouveau (`usine_base.py`) et un refus nouveau quand git ne sait pas lire le
+fichier de gardes. Déclencheur de la clé `release-trigger` atteint (2 fusions en attente pour 1 demandée, mesuré
+le 2026-11-27 sur `b911894`).
+
+- Hooks : `usine.read_config` réunit les clés libres de `usine.md` et les clés protégées du fichier de gardes sur
+  `origin/main` ; quatorze scripts (`bounded_run.py`, `never_weaken.py`, `e2e_trial.py`, `stack_check.py` et les
+  autres) le prennent. Quand git ne sait pas lire le fichier (ni dépôt, ni `origin/main`, un objet illisible), un
+  script sans `--usine` refuse en code 2, la raison nommant le fichier, au lieu de lire `usine.md` seul
+  (ikoro-labs/forge#345, étape 1 de la partie 2, PR ikoro-labs/forge#365).
+- Agents : `forge:qc-gate` fabrique la configuration de la base par `usine_base.py`, qui réunit
+  `docs/agents/usine.md` et `docs/agents/usine-gardes.md` de la base ; un fichier de gardes illisible rend la
+  sonde 10 `FAIL` et la sonde qui lit les bornes `NOT RUN`, jamais `PASS`. `never_weaken.py` rend une ligne par
+  fichier de configuration (ikoro-labs/forge#365).
+- Skills : le gabarit `usine.md` compte vingt-deux clés qui bornent l'agent, `e2e-run-limits` comprise, désormais
+  protégée (ikoro-labs/forge#365).
+- Tests : la suite passe à 2691 tests sous Linux, 6 ignorés (mesuré le 2026-11-27 sur cette PR, tête `b911894` plus la version et le journal) ; les lecteurs du fichier de gardes ont leurs tests (`tests/test_usine_read_config.py`, `tests/test_usine_readers_guard_file.py`, `tests/test_usine_base.py`, ikoro-labs/forge#365).
+- Gestes humains : un projet qui monte son épingle sur cette version et lance un script du plugin hors d'un
+  dépôt, ou dans une copie sans `origin/main` (un checkout de CI peu profond), le voit refuser en code 2 : il
+  récupère `origin/main` ou passe `--usine`. La clé `e2e-run-limits` se lit dans le fichier de gardes quand il
+  existe.
+- Resté dehors : déplacer les clés protégées de ce dépôt dans `docs/agents/usine-gardes.md` (suite de
+  ikoro-labs/forge#345). La PR ikoro-labs/forge#366 (les PR de maintenance hors du plafond de PR d'un ticket)
+  touche des chemins protégés et attend la fusion par l'humain. Rien de cette version n'a été vu en marche sur
+  un projet consommateur ; l'essai de bout en bout passe sur `b911894`, tête de `main`, le 2026-11-27.
+
+### Objectifs de service
+
+État de chaque objectif au 2026-11-27.
+
+| Objectif | Cible | Fenêtre | Valeur | Budget restant | État |
+|---|---|---|---|---|---|
+| `accept-round-1` | >= 99 % | 30 j | 65.04 % | 0 % sur 1 % | épuisé |
+| `lead-time p90` | <= 1 h | 30 j | 544.1 h | 0 h sur 1 h | épuisé |
+| `release-lag p90` | <= 1 h | 30 j | 32.2 h | 0 h sur 1 h | épuisé |
+| `escaped-defects` | <= 1 % | 30 j | 0 % | 1 % sur 1 % | tenu |
+| `change-failure` | <= 1 % | 30 j | 0 % | 1 % sur 1 % | tenu |
+| `human-touch` | <= 1 % | 30 j | 28.12 % | 0 % sur 1 % | épuisé |
+| `main-green` | >= 100 % | 30 j | 96.69 % | 0 % sur 0 % | épuisé |
+| `judge-recall` | >= 99 % | 30 j | sans objet | aucun résultat du jeu de référence (option `--reference` absente) | sans objet |
+| `false-accept` | <= 0 % | 30 j | sans objet | aucun résultat du jeu de référence (option `--reference` absente) | sans objet |
+
+Aucun `escaped-defect` ouvert depuis le 2026-11-25.
+
 ## [1.22.0] - 2026-11-25
 
 La base de règles de code de F-0002 entre dans l'usine : un refus d'écriture par la clé `lint-on-write`, la liste
