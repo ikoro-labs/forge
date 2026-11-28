@@ -30,17 +30,31 @@ def _text(value: object) -> str | None:
     return value if isinstance(value, str) and value else None
 
 
+def _targets(call: Mapping[str, object]) -> list[tuple[str | None, str | None]]:
+    """The `(page, collection)` each write of the call aims at: one, or one per operation of a batch."""
+    page = _text(call.get("page"))
+    if call.get("action") != "batch":
+        return [(page, _text(call.get("collection")))]
+    operations = call.get("writes")
+    if not isinstance(operations, list):
+        return []
+    return [
+        (page, _text(operation.get("collection")))
+        for operation in operations
+        if isinstance(operation, Mapping)
+    ]
+
+
 def refusal(event: object, lines: Sequence[str]) -> str | None:
     """Why the call is refused, None when it passes: `lines` are the values of the key."""
     if not lines or not isinstance(event, Mapping):
         return None
     call = event.get("tool_input")
-    if not isinstance(call, Mapping) or call.get("action") not in WRITES:
+    if not isinstance(call, Mapping) or call.get("action") not in WRITES | {"batch"}:
         return None
-    page, collection = _text(call.get("page")), _text(call.get("collection"))
     for line in lines:
         pieces = split_value(line, 2)
-        if pieces and (page, collection) == (pieces[0], pieces[1]):
+        if pieces and any(target == (pieces[0], pieces[1]) for target in _targets(call)):
             return (
                 f"Blocked by the forge plugin ({GUARD}): {pieces[0]} | {pieces[1]} is a collection that"
                 " a row comes into only from the human, from their page: an agent does not write it"

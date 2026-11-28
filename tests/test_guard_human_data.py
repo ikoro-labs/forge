@@ -56,6 +56,19 @@ class AWriteIntoAHumanCollectionIsRefused(unittest.TestCase):
                     self.assertIn("only from the human", done.stderr)
                     self.assertNotIn("CONTENU-DU-CLIC", done.stderr)
 
+    def test_f_0003_a2_one_operation_of_a_batch_refuses_the_whole_call(self) -> None:
+        """F-0003 A2: a `batch` with one operation on the listed collection exits 2, whatever the others are."""
+        with project(KEYS) as where:
+            writes = [
+                {"action": "set", "collection": "notes", "doc": "n1", "data": {}},
+                {"action": "update", "collection": "decisions", "doc": "d1", "data": {}},
+            ]
+            for order in (writes, writes[::-1]):
+                with self.subTest(first=order[0]["collection"]):
+                    done = run(where, {"action": "batch", "page": "Tableau", "writes": order})
+                    self.assertEqual(done.returncode, 2, done.stderr)
+                    self.assertIn("Tableau | decisions", done.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()
