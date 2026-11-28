@@ -5,6 +5,13 @@ unless a hook keeps the agent out of the collections where only the human writes
 `human-collections` of `docs/agents/usine-gardes.md` names them, one line `<page> | <collection>`
 each, as `origin/main` holds the file: a PR that removes a line does not open the collection before
 it is merged.
+
+The guard refuses a write (`set`, `update`, `str_replace`, `delete`, and a `batch` of which one
+operation is aimed at a listed collection, the whole call then) and lets a read (`get`, `list`,
+`query`, `profiles`) and every other page or collection pass. It fails closed: a line of the key it
+cannot read, a call it cannot read, a key it cannot tell, all refuse the write. Without the key it
+refuses nothing: the step is "sans objet (clé `human-collections` absente)". `hooks.json` turns a
+crash, a missing script and a timeout into a refusal. The message never holds what is written.
 """
 
 from __future__ import annotations
@@ -15,7 +22,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from refusal_journal import record
-from usine import GUARD_PATH, on_main, parse, project_root, split_value
+from usine import CONFIG_PATH, GUARD_PATH, on_main, parse, project_root, split_value
 from utf8_stdio import use_utf8
 
 KEY = "human-collections"
@@ -27,11 +34,18 @@ RULES = (
     ("only from the human", "human-collection"),
     ("is not `<page> | <collection>`", "unreadable-key-line"),
     ("could not read the tool call", "unreadable-event"),
+    ("cannot be told", "unreadable-key"),
 )
 
 
 def _text(value: object) -> str | None:
     return value if isinstance(value, str) and value else None
+
+
+def _action(event: object) -> str | None:
+    call = event.get("tool_input") if isinstance(event, Mapping) else None
+    action = call.get("action") if isinstance(call, Mapping) else None
+    return action if isinstance(action, str) and action else None
 
 
 def _targets(call: Mapping[str, object]) -> list[tuple[str | None, str | None]]:
@@ -56,6 +70,23 @@ def _aims(target: tuple[str | None, str | None], page: str, collection: str) -> 
     return target[0] in (None, page) and target[1] in (None, collection)
 
 
+def key_lines(root: Path) -> tuple[list[str], str | None]:
+    """The values of the key as `origin/main` holds them, and why they cannot be told (None when they can).
+
+    The guard file first; while it is absent there, `usine.md` as the same ref holds it. Never the
+    working tree, which an agent can edit. A ref or a file the repository cannot give leaves the key
+    untold, unless the project has neither file on disk: it then holds no key.
+    """
+    shown, path = on_main(root, GUARD_PATH), GUARD_PATH
+    if shown.text is None and shown.why is None:
+        shown, path = on_main(root, CONFIG_PATH), CONFIG_PATH
+    if shown.text is not None:
+        return parse(shown.text).get(KEY, []), None
+    if shown.why is None or not any((root / name).exists() for name in (GUARD_PATH, CONFIG_PATH)):
+        return [], None
+    return [], f"{path.as_posix()} cannot be read on origin/main ({shown.why}), so the key `{KEY}` cannot be told"
+
+
 def refusal(event: object, lines: Sequence[str]) -> str | None:
     """Why the call is refused, None when it passes: `lines` are the values of the key.
 
@@ -64,9 +95,9 @@ def refusal(event: object, lines: Sequence[str]) -> str | None:
     """
     if not lines:
         return None
+    action = _action(event)
     call = event.get("tool_input") if isinstance(event, Mapping) else None
-    action = call.get("action") if isinstance(call, Mapping) else None
-    if not isinstance(call, Mapping) or not isinstance(action, str) or not action:
+    if action is None or not isinstance(call, Mapping):
         return f"Blocked by the forge plugin ({GUARD}): the hook could not read the tool call it was given"
     if action in READS:
         return None
@@ -91,10 +122,12 @@ def main() -> int:
         event = json.load(sys.stdin)
     except json.JSONDecodeError:
         event = None
-    root = project_root(event if isinstance(event, dict) else None)
-    shown = on_main(root, GUARD_PATH)
-    lines = parse(shown.text or "").get(KEY, [])
-    reason = refusal(event, lines)
+    lines, why = key_lines(project_root(event if isinstance(event, dict) else None))
+    if why is None:
+        reason = refusal(event, lines)
+    else:
+        # A read cannot reach a collection: only a write, or a call that cannot be read, is refused.
+        reason = None if _action(event) in READS else f"Blocked by the forge plugin ({GUARD}): {why}"
     if reason is None:
         return 0
     record(GUARD, reason, RULES, event, lambda: "ArtifactData write")
