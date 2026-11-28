@@ -616,6 +616,36 @@ commentaire, que `git ls-remote --heads origin <branche>` trouve.
   ticket compte comme à l'étape 2 celles qui sont déjà ouvertes ou fusionnées.
 - **Ni l'une ni l'autre** : sans branche ni PR, le coder part de la base, comme à l'étape 2.
 
+**Une question.** Un détail d'implémentation que la spec ne fixe pas ne se pose pas : décide-le et écris-le
+dans la PR, comme à l'étape 2. Une vraie question (un `RESULT: BLOCKED` du coder qui touche un chiffre, un
+contrat, un schéma ou une règle du `CLAUDE.md`) ne part pas à `forge:staff-engineer` ni à
+`forge:product-owner` depuis cette session : elle se pose sur le ticket, dans cet ordre.
+
+1. Commente le ticket, un commentaire par question, en trois lignes (format G5) :
+
+   ```text
+   Question : <la question du coder>
+   Recommandation : <sa recommandation>
+   Décideur : staff-engineer
+   ```
+
+   `Décideur : product-owner` quand la question est produit ou UX, selon `decision-matrix` ; une ligne absente
+   vaut `staff-engineer`. Si le commentaire échoue, n'écris rien d'autre : le ticket n'attend pas une question
+   qui n'est pas posée.
+2. Pose `needs-info`, retire `ready-for-agent`, `agent-claimed` et l'assignation :
+   `gh issue edit <n> --add-label needs-info --remove-label ready-for-agent --remove-label agent-claimed --remove-assignee @me`.
+3. Libère ton verrou :
+
+   ```
+   uv run --no-project --quiet python "${CLAUDE_PLUGIN_ROOT}/hooks/agent_lock.py" release . <n>
+   ```
+
+4. Arrête-toi, la question en sortie. Tu ne lances ni décideur ni `route` : au délai de
+   `question-default-delay`, le répartiteur fait trancher la question, puis `route --apply` rend
+   `ready-for-agent` au ticket sur une décision par défaut, et un agent reprend depuis la branche et la PR.
+   Un `BLOCKED` du plafond de PR n'est pas une question : comme à l'étape 2, commente le ticket et pose
+   `needs-your-attention`, puis arrête-toi.
+
 **L'arrêt.** Quand la PR est fusionnée, ou que son verdict est posté (un `ACCEPT` sur un chemin protégé qui
 attend l'humain, l'arrêt du tour 3, `needs-your-attention`), ou sur un arrêt sur incident, tu rends compte en
 une ligne du tableau de l'étape 6 et tu t'arrêtes : tu ne lances aucun autre ticket, ni la revue de bout en

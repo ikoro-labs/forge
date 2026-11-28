@@ -188,6 +188,55 @@ class Resume(unittest.TestCase):
         self.assertRegex(self.resume(), r"[Ss]ans (branche ni PR|l'une ni l'autre)[^.]*(base|étape 2)")
 
 
+class Question(unittest.TestCase):
+    """A57: a pinned agent that has a question posts it in the G5 format, hands the ticket back and stops."""
+
+    def question(self) -> str:
+        return mode().split("**Une question.**", 1)[1].split("**L'arrêt.**", 1)[0]
+
+    def test_the_comment_has_the_three_lines_of_the_g5_format(self) -> None:
+        """F-0003 A57: `Question :`, `Recommandation :` and `Décideur :`, one question per comment."""
+        text = self.question()
+        for line in ("Question : <", "Recommandation : <", "Décideur : staff-engineer"):
+            self.assertIn(line, text)
+        self.assertIn("Décideur : product-owner", text)
+        self.assertRegex(text, r"un commentaire par question|une question par commentaire")
+
+    def test_a_missing_decider_line_means_the_staff_engineer(self) -> None:
+        """F-0003 A57 (G5): the decider is chosen by the matrix, and a missing line reads `staff-engineer`."""
+        self.assertRegex(self.question(), r"ligne absente[^.]*`staff-engineer`|`staff-engineer`[^.]*ligne absente")
+
+    def test_the_ticket_waits_for_an_answer_and_is_no_longer_claimed(self) -> None:
+        """F-0003 A57: `needs-info` is set; `ready-for-agent`, `agent-claimed` and the assignee are removed."""
+        text = self.question()
+        self.assertIn("--add-label needs-info", text)
+        self.assertIn("--remove-label ready-for-agent", text)
+        self.assertIn("--remove-label agent-claimed", text)
+        self.assertIn("--remove-assignee", text)
+
+    def test_the_lock_is_freed_and_the_agent_stops(self) -> None:
+        """F-0003 A57: `agent_lock.py release`, then the stop; no decider is launched from here."""
+        text = self.question()
+        self.assertIn('hooks/agent_lock.py" release . <n>', text)
+        self.assertRegex(text, r"[Aa]rrête-toi")
+        self.assertRegex(text, r"ni décideur ni `route`|aucun décideur")
+
+    def test_the_comment_comes_first_and_the_lock_last(self) -> None:
+        """F-0003 A57: a ticket never waits on a question that was not posted, and the lock goes last."""
+        text = self.question()
+        comment, labels, release = (text.index(m) for m in ("Commente le ticket", "--add-label needs-info", "release ."))
+        self.assertLess(comment, labels)
+        self.assertLess(labels, release)
+
+    def test_an_implementation_detail_is_not_a_question(self) -> None:
+        """F-0003 A57: what the spec does not fix is decided and written in the PR, as step 2 says."""
+        self.assertRegex(self.question(), r"détail d'implémentation[^.]*décide-le")
+
+    def test_the_default_decision_gives_the_ticket_back(self) -> None:
+        """F-0003 A59: the section says what follows an answer: `ready-for-agent` and a resumption."""
+        self.assertRegex(self.question(), r"`ready-for-agent`[^.]*reprend")
+
+
 class Locked(unittest.TestCase):
     """A48, A57: the pinned agent runs only on a ticket whose lock it holds itself, and frees it to ask."""
 
