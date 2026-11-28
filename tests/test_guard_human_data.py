@@ -11,6 +11,7 @@ own `op`, `collection` and `doc_id`.
 import json
 import subprocess
 import sys
+import tempfile
 import unittest
 from collections.abc import Mapping
 from pathlib import Path
@@ -361,6 +362,48 @@ class TheKeyIsReadOnOriginMain(Refuses):
         with project(on_main) as where:
             self.assertEqual(run(where, call("set")).returncode, 0)
             self.assertNotIn("human-collections", load(where))
+
+
+class WithoutTheKeyNothingIsRefused(unittest.TestCase):
+    def test_f_0003_a8_the_key_absent_every_write_passes_even_an_unreadable_call(self) -> None:
+        """F-0003 A8: a guard file without the key (or no guard file, or no usine at all): exit 0, no journal."""
+        for name, on_main in (
+            ("guard file without the key", {GUARD_PATH: entry("agent-autonomy", "on"), USINE: "# Usine\n"}),
+            ("no guard file", {USINE: entry("merge-method", "merge")}),
+            ("no usine file", {}),
+        ):
+            with self.subTest(project=name), project(on_main) as where:
+                self.assertEqual(run(where, call("set")).returncode, 0)
+                self.assertEqual(run(where, batch(operation("set", "decisions"))).returncode, 0)
+                self.assertEqual(run(where, {"action": "batch", "writes": "?"}).returncode, 0)
+                self.assertEqual(run(where, {}).returncode, 0)
+                self.assertEqual(journal(where), [])
+
+    def test_f_0003_a8_outside_a_repository_nothing_is_refused(self) -> None:
+        """F-0003 A8: a directory that is no repository and holds no usine file: exit 0."""
+        with tempfile.TemporaryDirectory() as folder:
+            home = Path(folder) / "home"
+            home.mkdir()
+            where = Path(folder) / "depot"
+            where.mkdir()
+            event = {"tool_name": "ArtifactData", "tool_input": call("set"), "cwd": str(where)}
+            done = subprocess.run(  # noqa: S603 - the interpreter running this suite, a fixed script
+                [sys.executable, str(HOOK)],
+                input=json.dumps(event),
+                env=environment(home),
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=60,
+            )
+            self.assertEqual(done.returncode, 0, done.stderr)
+
+    def test_f_0003_a8_the_template_gives_the_key_a_line_and_the_page_says_it_is_not_applicable_without_it(self) -> None:
+        """F-0003 A8: the template of `usine.md` has the key line; `docs/usine-autonome.md` words the absent key."""
+        template = (support.PLUGIN / "templates" / "usine.md").read_text(encoding="utf-8")
+        self.assertIn("- `human-collections` : `<", template)
+        page = " ".join((support.REPO_ROOT / "docs" / "usine-autonome.md").read_text(encoding="utf-8").split())
+        self.assertIn("sans objet (clé `human-collections` absente)", page)
 
 
 if __name__ == "__main__":

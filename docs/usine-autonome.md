@@ -12,6 +12,7 @@ gabarit `plugins/forge/templates/usine.md` donne la forme de chacune.
 | Clé | Fichier | Rôle |
 | --- | --- | --- |
 | `ignored-session` | `docs/agents/usine.md` | les noms de session (exact, ou préfixe fini par `*`) des agents d'un répartiteur, que `handoff_header.py sessions` ne compte pas comme sessions au travail |
+| `human-collections` | `docs/agents/usine-gardes.md` | les collections de pages (`<adresse de l'artefact> \| <collection>`) que le garde `guard_human_data` ferme aux écritures d'un agent |
 
 ## Les passes ignorées (ticket 4, partie a)
 
@@ -28,6 +29,76 @@ Le nom d'une session ne prouve rien, une session de l'humain peut porter n'impor
 verrou, qu'une session de l'humain ne tient jamais, qui la distingue. La spec disait « une session
 `interactive` n'est jamais ignorée », mais une passe `claude -p` s'inscrit `interactive` (relevé du
 2026-11-28, Claude Code 2.1.332) : le design (décision Q1, veto de l'humain) a remplacé ce test par le verrou.
+
+## Les collections de l'humain : la clé `human-collections`
+
+**Le problème.** Un agent peut écrire dans la base d'une page publiée. Un clic de l'humain dans sa page ne
+prouve donc rien tant que rien n'empêche l'agent d'écrire la même ligne : un projet consommateur a refusé
+le clic comme autorisation pour cette raison (ticket #340). Le hook `guard_human_data` ferme ces écritures.
+
+**Le geste de l'humain.** Il écrit, dans `docs/agents/usine-gardes.md` (un chemin protégé : la PR qui
+change ce fichier se fusionne par lui), une ligne par collection :
+
+```
+- `human-collections` : `<adresse de l'artefact> | <collection>`
+```
+
+- La page est l'adresse de l'artefact telle que l'outil `ArtifactData` la nomme dans son champ `url`
+  (`claude.ai/artifact/<id>`, ou `claude.ai/code/artifact/<uuid>`) : l'outil n'a pas de titre de page. Deux
+  adresses valent la même page quand elles portent le même identifiant, sans égard au schéma, à la casse,
+  à la barre finale ni à la requête ; les deux formes de l'adresse, `artifact/` et `code/artifact/`, valent
+  la même page quand l'identifiant est le même (le côté prudent : on ne sait pas si un même identifiant peut
+  désigner deux artefacts selon la forme).
+- La collection est un chemin à barres, dont les segments alternent collection et document
+  (`boards/b1/columns`). Une collection listée ferme aussi tout ce qui est dessous (`decisions/d1/notes` pour
+  `decisions`), segment entier par segment entier : `decisions2` n'est pas sous `decisions`.
+- Une ligne sans ` | `, dont une partie est vide, dont la page n'est pas une adresse d'artefact (un titre
+  comme `Tableau`) ou dont la collection n'a aucun segment est illisible.
+- La clé se lit comme `origin/main` tient le fichier, jamais dans l'arbre de travail : une PR qui retire une
+  ligne n'ouvre rien avant sa fusion. Tant que `usine-gardes.md` est absent de `origin/main`, la clé se lit
+  dans `usine.md`, comme `origin/main` le tient.
+
+**Ce que le garde refuse.** À tout agent, session principale ou sous-agent, sur l'outil `ArtifactData` :
+
+- une écriture simple (`set`, `update`, `str_replace`, `delete`) sur l'artefact et la collection listés, ou
+  sous elle ;
+- un appel `batch` dont une seule entrée de `writes` (chacune porte son `op`, sa `collection` et son
+  `doc_id`) vise une collection listée : l'appel entier est refusé, aucune entrée ne passe. Une entrée que le
+  garde ne sait pas lire compte comme visant la collection ;
+- toute écriture, quel que soit l'artefact, quand une ligne de la clé est illisible : le refus cite la ligne.
+
+Le message commence par `Blocked by the forge plugin (guard_human_data): <page> | <collection>` et dit que
+la collection ne s'écrit que depuis la page de l'humain. Il ne contient jamais ce qui était écrit.
+
+**Ce qui passe.** Une lecture (`get`, `list`, `query`, `profiles`), l'écriture d'une autre collection du
+même artefact, celle d'une collection au nom qui commence pareil, et celle d'une collection du même nom sur
+un autre artefact.
+
+**Sans la clé.** L'étape est « sans objet (clé `human-collections` absente) » : aucune écriture n'est refusée. Il n'y a pas
+de valeur par défaut.
+
+**Le garde échoue fermé.** Son entrée de `hooks.json` porte `|| exit 2`, `"onFailure": "block"` et un
+`timeout` de 60 secondes : une erreur, un script absent ou un dépassement refuse l'écriture. Avec la clé, un
+appel que le garde ne sait pas lire (événement illisible, action absente) est refusé, de même qu'une écriture
+quand git ne peut pas dire ce que `origin/main` tient de la clé alors que le projet a un fichier de clés.
+Un projet sans fichier de clés, ou hors d'un dépôt git, n'a pas la clé : rien n'est refusé.
+
+**La trace.** Chaque refus ajoute une ligne à `~/.claude/hooks/state/refusals/<AAAA-MM-JJ>.jsonl`, avec les
+champs des autres gardes : `guard` à `guard_human_data`, `rule` à `human-collection` (ou `unreadable-key-line`,
+`unreadable-event`, `unreadable-key`), l'agent, le dépôt, la branche et le verbe `ArtifactData write`. Jamais le
+contenu de l'écriture. Le journal vit sur le poste : deux postes, deux journaux.
+
+**Ce qui n'est pas couvert.** Un agent qui écrit la base d'une page par un autre canal que l'outil
+`ArtifactData` (un appel réseau lancé depuis `Bash`, par exemple) échappe au garde. Un tel canal, une fois
+prouvé, se traite comme un risque de sécurité.
+
+**Ce qui n'a pas été éprouvé.** Les champs (`url`, `collection`, `doc_id`, `writes[].op`,
+`writes[].collection`) et les actions sont ceux que le schéma de l'outil donne, rapportés à l'agent qui a
+écrit le garde ; les tests rejouent le hook comme un processus sur des événements écrits à la main à cette
+forme. Le hook n'a pas été joué dans une vraie session de Claude Code : le nom exact de l'outil dans
+l'événement (`ArtifactData`, filtre de `hooks.json`) et la forme réelle de `tool_input` restent à vérifier
+dans la première vraie session qui déclare la clé. Un chemin de collection avec des segments `.` ou `..`,
+ou un `doc_id` qui porte des barres, n'est pas traité à part : on ne sait pas si l'outil les résout.
 
 ## Le relevé de base (ticket 6, story 18)
 
