@@ -23,7 +23,10 @@ GUARD = "guard_human_data"
 WRITES = frozenset({"set", "update", "str_replace", "delete"})
 
 # The refusals journal: the name of each rule, found by a fixed phrase of the reason.
-RULES = (("only from the human", "human-collection"),)
+RULES = (
+    ("only from the human", "human-collection"),
+    ("is not `<page> | <collection>`", "unreadable-key-line"),
+)
 
 
 def _text(value: object) -> str | None:
@@ -52,9 +55,15 @@ def refusal(event: object, lines: Sequence[str]) -> str | None:
     call = event.get("tool_input")
     if not isinstance(call, Mapping) or call.get("action") not in WRITES | {"batch"}:
         return None
+    targets = _targets(call)
     for line in lines:
         pieces = split_value(line, 2)
-        if pieces and any(target == (pieces[0], pieces[1]) for target in _targets(call)):
+        if pieces is None:
+            return (
+                f"Blocked by the forge plugin ({GUARD}): the line `{line}` of the key `{KEY}` is not"
+                " `<page> | <collection>`, so no write into a page database is cleared until it is fixed"
+            )
+        if any(target == (pieces[0], pieces[1]) for target in targets):
             return (
                 f"Blocked by the forge plugin ({GUARD}): {pieces[0]} | {pieces[1]} is a collection that"
                 " a row comes into only from the human, from their page: an agent does not write it"

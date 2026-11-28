@@ -70,5 +70,43 @@ class AWriteIntoAHumanCollectionIsRefused(unittest.TestCase):
                     self.assertIn("Tableau | decisions", done.stderr)
 
 
+class OtherCallsPass(unittest.TestCase):
+    def test_f_0003_a3_reads_and_the_other_pages_and_collections_pass(self) -> None:
+        """F-0003 A3: a read of the collection, a write of another collection and of the same name on another page exit 0."""
+        with project(KEYS) as where:
+            for action in ("get", "list", "query", "profiles"):
+                with self.subTest(read=action):
+                    self.assertEqual(run(where, call(action)).returncode, 0)
+            with self.subTest(write="another collection"):
+                self.assertEqual(run(where, call("set", collection="notes")).returncode, 0)
+            with self.subTest(write="the same name on another page"):
+                self.assertEqual(run(where, call("set", page="Autre")).returncode, 0)
+            with self.subTest(write="a batch that spares the collection"):
+                batch = {"action": "batch", "page": "Tableau", "writes": [{"action": "set", "collection": "notes"}]}
+                self.assertEqual(run(where, batch).returncode, 0)
+
+
+def keys(*values: str) -> dict[Path, str]:
+    return {GUARD_PATH: "".join(entry("human-collections", value) for value in values), USINE: "# Usine\n"}
+
+
+class AnUnreadableLineClosesEveryWrite(unittest.TestCase):
+    def test_f_0003_a4_a_line_without_the_separator_or_with_an_empty_part_refuses_any_write_and_is_cited(self) -> None:
+        """F-0003 A4: `Tableau decisions`, `Tableau |` and ` | decisions` close the writes of every page; reads pass."""
+        for bad in ("Tableau decisions", "Tableau | ", " | decisions"):
+            with self.subTest(line=bad), project(keys(bad)) as where:
+                done = run(where, call("set", page="Autre", collection="notes"))
+                self.assertEqual(done.returncode, 2, done.stderr)
+                self.assertIn(bad.strip(), done.stderr)
+                self.assertIn("human-collections", done.stderr)
+                self.assertEqual(run(where, call("get", page="Autre", collection="notes")).returncode, 0)
+
+    def test_f_0003_a4_one_good_line_does_not_hide_a_bad_one(self) -> None:
+        """F-0003 A4: with a good line and a bad one, a write on another page is still refused."""
+        with project(keys(LINE, "oups")) as where:
+            self.assertEqual(run(where, call("set", page="Autre", collection="notes")).returncode, 2)
+            self.assertEqual(run(where, call("set", collection="decisions")).returncode, 2)
+
+
 if __name__ == "__main__":
     unittest.main()
