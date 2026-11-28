@@ -15,8 +15,9 @@ Le pourquoi est dans `cadrage.md`, le quoi dans `spec.md` (acceptée le 2026-11-
 construit, par quelles coutures, et dans quel ordre. Chaque numéro de ligne a été lu à la base `c2ecef9` pendant
 l'écriture de ce design ; ce qui n'a pas pu l'être est à la section 10. Les questions techniques que ni le code
 ni la documentation ne tranchent sont posées à `forge:staff-engineer` dans
-`seances/2026-11-28-ikoro-labs-design.md` (tour 1, Q1 à Q9). Tant qu'elles n'ont pas de réponse, ce design porte
-la recommandation de la séance et le dit à chaque endroit où elle compte (« sous réserve de Qn »).
+`seances/2026-11-28-ikoro-labs-design.md` (tour 1, Q1 à Q9). Elles ont reçu leur réponse le 2026-11-28 ; ce design
+les porte à chaque endroit où elles comptent, et la section 9 les résume. Q1 écarte le design de C04 et de A25 sous
+veto de l'humain (case T9). Q8 est réservée à l'humain (H1) et reste hors de ce design : elle se commente sur #340.
 
 Taille L, sans écran : il n'y a pas de `parcours.md`. La clé `feature-catalog-command` est absente de
 `docs/agents/usine.md` : pas de catalogue.
@@ -34,20 +35,20 @@ fusion ne l'est pas.
 |---|---|---|---|
 | `plugins/forge/hooks/guard_human_data.py` (nouveau) | garde `PreToolUse` de l'outil `ArtifactData` : C01, message G2 | lit `human-collections` par `usine.load` sur `origin/main` ; journal par `refusal_journal.record` (`refusal_journal.py:77`) | oui (préfixe `guard_`) |
 | `plugins/forge/hooks/hooks.json` | une entrée `PreToolUse` `ArtifactData` (garde, `\|\| exit 2`, `"onFailure": "block"`, `timeout` 60) ; une entrée `Stop` pour le pont de la question ; la description de la ligne 2 | les entrées `Stop` existantes sont aux lignes 199-217 ; aucun matcher `ArtifactData` n'existe | oui |
-| `plugins/forge/hooks/usine.py` | sept clés de G1 entrent dans `SENSITIVE_KEYS` (`usine.py:34-43`) | `load` (l.268) et `read_config` (l.222) inchangés | non (voir Q8) |
-| `plugins/forge/hooks/agent_identity.py` (nouveau) | C02 (`ghs_`), lecture du jeton par `agent-token-command`, identité git de l'application | importé par `guard_git` et par `dispatch.py` ; aucune autre dépendance que `usine` | non |
-| `plugins/forge/hooks/guard_git.py` | refus d'un geste d'écriture sans jeton `ghs_` quand `agent-token-command` et `agent-login` sont présentes (nouvelle règle dans `RULES`, l.2724) ; acceptation de la fusion d'un chemin protégé quand le statut de `merge-grant` est `success` sur la tête et posé par `agent-login` | `merge_call_refusal` (l.2271-2347) appelle `protected_refusal` à la l.2341 : l'acceptation s'insère juste avant, par un appelable injecté comme les autres de `refusal` (l.2046-2066) ; `_gh_api_reads` (l.888) dit déjà lecture ou écriture | oui |
+| `plugins/forge/hooks/usine.py` | sept clés de G1 entrent dans `SENSITIVE_KEYS` (`usine.py:34-43`) | `load` (l.268) et `read_config` (l.222) inchangés | non (Q8, réservée à l'humain, hors de ce design) |
+| `plugins/forge/hooks/agent_identity.py` (nouveau) | C02 (`ghs_`), lecture du jeton par `agent-token-command`, identité git de l'application, texte du fichier `CLAUDE_ENV_FILE` d'un agent, qui exporte un `GH_TOKEN` frais avant chaque commande `Bash` (Q3) | importé par `guard_git` et par `dispatch.py` ; aucune autre dépendance que `usine` | non |
+| `plugins/forge/hooks/guard_git.py` | refus d'un geste d'écriture sans jeton `ghs_` quand `agent-token-command` et `agent-login` sont présentes (nouvelle règle dans `RULES`, l.2724), et, aux mêmes clés, refus fermé de toute écriture par un outil MCP GitHub, la lecture restant permise (Q4) ; acceptation de la fusion d'un chemin protégé quand le statut de `merge-grant` est `success` sur la tête et posé par `agent-login` | `merge_call_refusal` (l.2271-2347) appelle `protected_refusal` à la l.2341 : l'acceptation s'insère juste avant, par un appelable injecté comme les autres de `refusal` (l.2046-2066) ; `_gh_api_reads` (l.888) dit déjà lecture ou écriture | oui |
 | `plugins/forge/scripts/merge_grant.py` (nouveau) | C03 : `GRANTED`, `WAITING`, `NOT RUN`, « sans objet » | lit `merge-grant`, `human-collections`, `agent-login` ; poste le statut par `gh api` ; appelé par `forge:qc` et par le tick | non |
-| `plugins/forge/hooks/handoff_header.py` | C04 dans `other_sessions` (l.545-567), donc dans `sessions` (l.620-624), le relais et `sessions_notice.py` | lit `ignored-session` par `usine.load` ; sous réserve de Q1, lit aussi les verrous du répartiteur par `agent_lock.held` | non |
-| `plugins/forge/hooks/handoff_relay.py` | nouvel essai sur code 6 seulement (C05), trace G4 | le contrôle des autres sessions (l.425-440) précède le compteur (l.441-449) : un essai refusé ne compte pas ; une copie détachée (`detached`, l.107) attend, sous réserve de Q2 | non |
+| `plugins/forge/hooks/handoff_header.py` | C04 dans `other_sessions` (l.545-567), donc dans `sessions` (l.620-624), le relais et `sessions_notice.py` | lit `ignored-session` par `usine.load` et les verrous du répartiteur par `agent_lock.held` : une session n'est ignorée que si son `name` correspond et que son pid tient un verrou vivant, sans test sur `kind` (Q1, écart à C04) | non |
+| `plugins/forge/hooks/handoff_relay.py` | nouvel essai sur code 6 seulement (C05), trace G4 | le contrôle des autres sessions (l.425-440) précède le compteur (l.441-449) : un essai refusé ne compte pas ; une copie détachée `--retry` (sur le modèle de `detached`, l.107) attend, sous un verrou de nouvel essai par projet, et relit la passation à chaque essai (Q2) | non |
 | `plugins/forge/hooks/question_stop.py` (nouveau) | pont du hook `Stop` (story 6) | lit le transcript, appelle `question_delay.py due` ; échoue ouvert, d'où un nom hors du préfixe `guard_` | non (mais `hooks.json` l'est) |
 | `plugins/forge/hooks/agent_lock.py` (nouveau) | verrou local d'un agent du répartiteur : poser, lire, libérer, tenu ou mort | `handoff_header.process_alive` (l.215) et `process_start` (l.229) pour Linux et Windows | non |
-| `plugins/forge/scripts/dispatch.py` (nouveau) | `tick` : C06 à C08, revendication, lancement, relance, questions dues, trace G3 | `factory_slo.py queue` (`run_queue`, l.1237), `question_delay.py due` et `route --apply`, `agent_lock`, `agent_identity`, `usine.on_main` (l.157) pour `agent-autonomy` | non |
+| `plugins/forge/scripts/dispatch.py` (nouveau) | `tick` : C06 à C08, revendication, arbre de travail par `git worktree add` (Q9), lancement, relance, questions dues par un décideur lancé en `claude -p --agent` (Q7), trace G3 | `factory_slo.py queue` (`run_queue`, l.1237), `question_delay.py due` et `route --apply`, `agent_lock`, `agent_identity`, `usine.on_main` (l.157) pour `agent-autonomy` | non |
 | `plugins/forge/scripts/dispatch_trace.py` (nouveau) | écriture d'une ligne G3, liste blanche de champs par événement (T10) | importé par `dispatch.py`, `merge_grant.py` et `question_delay.py` | non |
 | `plugins/forge/scripts/question_delay.py` | `plan_for` (l.262-290) rend `ready-for-agent` à une issue sur `post-default` (A59) ; `apply` (l.293) écrit la ligne G3 `question` (A61) | `kind_of` (l.110) distingue déjà issue et PR | non |
 | `plugins/forge/scripts/factory_slo.py` | ligne `agent-identity` (A15) ; relevé de base (A84) ; `prs` (l.209-210) gagne le champ `author` | `report` (l.809), `compute` (l.551), `human_touch` (l.469) pour la forme d'un `Sli` | non |
 | `plugins/forge/scripts/ticket_graph.py` | lignes `CHAIN` (C09) et lecture de G9 dans le design | `check` (l.104-122) ; le `Gh` injecté (l.26) reste la seule couture | non |
-| `plugins/forge/skills/feature-build/SKILL.md` | argument `--ticket <n>` (story 8), question G5 d'un agent épinglé | l'en-tête `argument-hint` (l.4), l'étape 0.5 (l.40-108, voir Q5), la revendication (l.218), les questions (l.300-335) | non |
+| `plugins/forge/skills/feature-build/SKILL.md` | argument `--ticket <n>` (story 8), question G5 d'un agent épinglé | l'en-tête `argument-hint` (l.4), l'étape 0.5 (l.40-108), remplacée en mode `--ticket` par le contrôle du verrou du ticket (Q5), la revendication (l.218), les questions (l.300-335) | non |
 | `plugins/forge/skills/qc/SKILL.md` | appel de `merge_grant.py` après ACCEPT sur un chemin protégé ; une relecture à la fois par projet (A65) | contrôle d'état des lignes 11-15 ; fusion l.111-130 ; chemins protégés l.211-222 | non |
 | `plugins/forge/skills/feature-design/SKILL.md` | le seuil « 1 000 lignes lisibles » écrit en dur (l.58) devient la clé `ticket-size-max` ; ligne G8 ; étiquettes `zone:` ; appel de `check` et G9 (l.77-89) | `ticket_graph.py` | non |
 | `plugins/forge/templates/usine.md` | une ligne par clé de G1 ; le compte « Vingt-quatre clés » (l.22) passe à trente et une | gardé par `tests/test_usine_keys_classified.py`, `tests/test_usine_gardes_docs.py:20`, `tests/test_guard_pr_cap.py:890`, `tests/test_ticket_pr_cap_small.py:148` ; même phrase dans `docs/installation.md:549` | non |
@@ -61,12 +62,12 @@ voient ; le reste est caché.
 | Module | Interface | Ce qu'il cache |
 |---|---|---|
 | `guard_human_data` | `refusal(event, lines) -> str \| None` ; `main()` | la forme de l'appel `ArtifactData` (action simple ou `batch`, `writes[].collection`), la lecture des lignes `<page> \| <collection>`, le côté prudent sur une ligne ou un événement illisible |
-| `agent_identity` | `is_agent_token(env) -> bool` ; `fresh_token(command) -> str` (lève `IdentityError`) ; `git_identity(login, user_id) -> dict[str, str]` | le préfixe `ghs_`, `GH_TOKEN` avant `GITHUB_TOKEN`, l'appel de la commande et son délai, l'adresse `noreply` |
+| `agent_identity` | `is_agent_token(env) -> bool` ; `fresh_token(command) -> str` (lève `IdentityError`) ; `git_identity(login, user_id) -> dict[str, str]` ; `env_file(project) -> str` (Q3) | le préfixe `ghs_`, la commande que le fichier `CLAUDE_ENV_FILE` lance avant chaque commande `Bash`, `GH_TOKEN` avant `GITHUB_TOKEN`, l'appel de la commande et son délai, l'adresse `noreply` |
 | `agent_lock` | `claim(project, ticket, pid, name, zones) -> Path` (lève `LockHeld`) ; `held(project) -> list[Lock]` ; `release(project, ticket)` ; `Lock.alive` | l'emplacement, la création atomique (`O_CREAT \| O_EXCL`), la réutilisation d'un pid (par `process_start`), Linux et Windows |
 | `dispatch_trace` | `write(event, project, **fields)` | le dossier du jour, la liste blanche des champs, l'échec silencieux (une trace qui échoue ne casse pas un tick, comme `refusal_journal.record`) |
-| `dispatch` | `tick(project, run, launch, now) -> int` | C06 à C08, l'ordre des étapes, la revendication à trois verrous et son défaire, la relance, les questions dues |
+| `dispatch` | `tick(project, run, launch, now) -> int` | C06 à C08, l'ordre des étapes, la revendication à trois verrous et son défaire, l'arbre de travail d'un agent (Q9), la relance, les questions dues et le verrou du décideur (Q1, Q7) |
 | `merge_grant` | `grant(project, pr, run) -> Outcome` | C03, la tête de la PR, le statut, l'appel de la commande et son délai |
-| `handoff_header.other_sessions` | inchangée, `(repo, caller, session) -> list[str]` | C04 s'ajoute dedans : aucun appelant ne change |
+| `handoff_header.other_sessions` | inchangée, `(repo, caller, session) -> list[str]` | C04, dans la forme de Q1 (nom et verrou vivant), s'ajoute dedans : aucun appelant ne change |
 
 ## 2. Ports et adapters
 
@@ -77,9 +78,9 @@ modèle déjà en place (`Runner = Callable[[list[str], Path], str]` dans `relea
 
 | Bord | Adapter de production | Couture de test |
 |---|---|---|
-| `git` (clés sur `origin/main`) | `usine.on_main`, `usine.load` | un vrai dépôt temporaire avec `origin` local, comme `tests/test_guard_git_protected.py` |
+| `git` (clés sur `origin/main`, arbre d'un agent par `git worktree add` depuis `origin/main`, Q9) | `usine.on_main`, `usine.load` ; `run` pour `git worktree` | un vrai dépôt temporaire avec `origin` local, comme `tests/test_guard_git_protected.py` |
 | `gh` (issues, PR, statuts, commentaires, étiquettes) | `run(argv, project) -> str`, une fonction par script qui lance `gh` | un `run` injecté qui rend des sorties figées ; pour un test de processus, un faux `gh` en tête de `PATH` |
-| lancement de `claude` (agent épinglé, décideur) | `launch(argv, cwd, env) -> int` (le pid), par `subprocess.Popen` et les options de `handoff_relay.detached` | un `launch` injecté qui note l'appel et rend un faux pid ; pour un test de processus, un faux `claude` en tête de `PATH` |
+| lancement de `claude` (agent épinglé par `dispatch-command` ; décideur par `claude -p --agent forge:<décideur>`, nommé `forge-dispatch-q-<n>`, Q7 ; copie `--retry` du relais, Q2) | `launch(argv, cwd, env) -> int` (le pid), par `subprocess.Popen` et les options de `handoff_relay.detached` | un `launch` injecté qui note l'appel et rend un faux pid ; pour un test de processus, un faux `claude` en tête de `PATH` |
 | commande de `agent-token-command`, de `merge-grant`, de `zone-command` | `subprocess.run` avec un délai, dans le module qui la lit | une commande de test (`python -c ...`) écrite dans la clé, qui sort 0, 1, ou autre |
 | événement d'outil (`ArtifactData`, `Bash`, outil MCP GitHub) | JSON sur l'entrée standard du hook | `subprocess` du hook avec l'événement sur `stdin`, ou `mock.patch("sys.stdin")` comme `tests/test_guard_pause.py:22-26` |
 | questions de processus (pid vivant, heure de départ, parent) | `handoff_header.process_alive`, `process_start`, `parent_pid` (`/proc` sous Linux, Win32 sous Windows) | le pid du test lui-même (vivant) et un pid fini (mort), comme `tests/test_handoff.py` |
@@ -125,6 +126,15 @@ nom du projet aplati comme `handoff_relay.counter_path` (l.102-104). Champs : `t
 `process_alive(pid)` est faux ou que `process_start(pid)` diffère de `start` (pid réutilisé). Un verrou illisible
 compte pour tenu (côté prudent, comme une entrée illisible du registre, A27).
 
+Le décideur lancé par le tick sur une question due (Q7) pose aussi un verrou, `q-<n>.json` au lieu de
+`<ticket>.json`, qui ne compte pas dans les places de `agent-slots` : C04 l'ignore donc comme un agent (Q1). Le
+champ `worktree` est le chemin que le tick vient de créer par `git worktree add` depuis `origin/main`, sous un nom
+hors du préfixe `agent-*` (Q9) ; le tick ne supprime cet arbre que proprement (aucun changement non poussé), une
+fois le ticket fermé.
+
+**Verrou de nouvel essai.** `~/.claude/hooks/state/relay-retry-<projet>.lock`, posé par la copie `--retry` du
+relais (Q2), même création atomique et même lecture de vie que le verrou d'un agent : une seule attente par projet.
+
 **Trace G3.** `~/.claude/hooks/state/dispatch/<AAAA-MM-JJ>.jsonl`, une ligne JSON par événement : `date`,
 `project`, `event`, puis les champs de l'événement, pris dans une liste blanche par événement :
 
@@ -138,7 +148,8 @@ compte pour tenu (côté prudent, comme une entrée illisible du registre, A27).
 | `merge-grant` | `pr`, `sha`, `outcome` (`GRANTED`, `WAITING`, `NOT RUN`) |
 
 **Trace G4.** `~/.claude/hooks/state/relay-retry-<projet>-<AAAA-MM-JJ>.jsonl`, à côté des compteurs du relais :
-`date`, `project`, `attempt`, `wait_s`, `code`.
+`date`, `project`, `attempt`, `wait_s`, `code`, et, sur l'arrêt à la borne, `message`, le texte de A30 (nombre
+d'essais et temps attendu) (Q2).
 
 **Marqueur G6.** `<!-- forge-dispatch relaunch <n> -->` dans un commentaire du ticket, un par relance. C08 compte
 ces marqueurs dans les commentaires du ticket ; le tick ne garde rien d'autre.
@@ -173,7 +184,7 @@ protection de `main` qui l'exige, avec l'application comme source attendue, est 
 | sortie de la commande de `merge-grant` | `merge_grant` : seul le code compte, 0 ou 1 ; la sortie n'est ni lue comme une instruction ni recopiée | autre code ou délai : `NOT RUN` (A20) |
 | sortie de `agent-token-command` | `agent_identity.fresh_token` : une ligne non vide qui commence par `ghs_` | vide, autre préfixe, échec : aucun agent lancé, geste refusé (A12) |
 | le clic écrit par l'humain dans sa page | la commande de `merge-grant`, que le projet écrit ; forge ne lit jamais la page lui-même | le clic n'est cru qu'avec `human-collections` (A21) et l'identité des agents (A89) |
-| le registre des sessions, les verrous | `handoff_header`, `agent_lock` | entrée illisible : vivante, verrou illisible : tenu |
+| le registre des sessions, les verrous | `handoff_header`, `agent_lock` ; une session n'est ignorée que par son nom et un verrou vivant du répartiteur sur son pid, et une session de l'humain n'est jamais derrière un tel verrou (Q1) | entrée illisible : vivante, verrou illisible : tenu |
 | le texte d'un commentaire ou d'un ticket (question G5, marqueur G6) | lu comme donnée : le tick ne compte que les marqueurs ; le décideur lit la question | une ligne `Décideur :` absente : la question va à l'humain |
 
 **Qui fait quoi.**
@@ -193,7 +204,10 @@ l'environnement de la session. Il ne prouve pas de quelle application il vient (
 sur le dépôt passerait), ni qu'un jeton de l'humain n'est pas employé par un autre chemin : un `export GH_TOKEN=...`
 ou une affectation en tête de commande dans `Bash` change l'environnement de la commande, pas celui du hook, qui
 hérite de celui du processus `claude` (documentation des hooks, section 10). Il ne couvre pas un outil MCP GitHub,
-dont le serveur tient son propre jeton (Q4). La preuve d'auteur, a posteriori, est la ligne `agent-identity`
+dont le serveur tient son propre jeton : aux deux clés d'identité, `guard_git` refuse donc toute écriture par un
+tel outil, et les agents écrivent par `gh` (Q4). Le `GH_TOKEN` frais que le fichier `CLAUDE_ENV_FILE` exporte
+avant chaque commande `Bash` (Q3) n'est écrit dans aucun fichier par forge : le fichier ne tient que la commande.
+La preuve d'auteur, a posteriori, est la ligne `agent-identity`
 (A15) ; la preuve qui compte pour un chemin protégé est le `creator.login` du statut, que `guard_git` relit.
 
 **T10.** Aucun jeton, aucune clé privée ni commande complète n'entre dans un journal, une trace, un commentaire ou
@@ -239,6 +253,12 @@ et un `launch` injectés, et les fonctions pures de la section 2.
 - Le tick a un test par contrôle (C06 à C08), un test de deux ticks de suite sur le même état (A42), et un test
   du défaire quand le deuxième des trois verrous échoue (A51).
 - T10 a un test par module qui écrit une trace ou une sortie (section 4).
+- Quatre faits ne se prouvent que sur une vraie session, et chaque ticket concerné les éprouve avant d'écrire le
+  code qui en dépend, puis dit le résultat dans sa PR : le `kind` d'une passe `claude -p` vivante (ticket 4, Q1) ;
+  le `GH_TOKEN` frais exporté par `CLAUDE_ENV_FILE` (ticket 2, Q3) ; une attente longue dans le hook `Stop`
+  (ticket 5, Q6) ; une passe `claude -p --agent` qui charge l'agent d'un plugin (ticket 8, Q7).
+- C04 a un test d'une session nommée sans verrou (non ignorée, A25), d'une session nommée derrière un verrou
+  vivant (ignorée) et d'une session nommée derrière un verrou mort (non ignorée).
 - Un bon test ici prouve un comportement par l'interface du module (le code de sortie, la ligne écrite, l'appel
   noté par le faux `gh`), jamais par sa structure interne.
 
@@ -262,7 +282,7 @@ jour en mode sync règle.
 | 1 | garde des collections de l'humain | EXI-17 : A1 à A8 | `hooks/guard_human_data.py`, `hooks/hooks.json`, `hooks/usine.py`, `templates/usine.md`, `docs/usine-autonome.md`, `docs/installation.md`, `tests/test_guard_human_data.py` | 550 | 1 | aucun | oui |
 | 2 | identité des agents (partie 1) | EXI-18 : A9 à A16 | `hooks/agent_identity.py`, `hooks/guard_git.py`, `hooks/usine.py`, `scripts/factory_slo.py`, gabarit, page, tests | 900 | 2 | aucun | oui |
 | 3 | `merge_grant.py` et acceptation par `guard_git` | EXI-18 : A17 à A23, A89 | `scripts/merge_grant.py`, `scripts/dispatch_trace.py`, `hooks/guard_git.py`, `skills/qc/SKILL.md`, gabarit, page, tests | 750 | 1 | 1, 2 | oui |
-| 4 | passes ignorées et nouvel essai du relais | EXI-01 : A24 à A28 ; EXI-02 : A29 à A33 | `hooks/handoff_header.py`, `hooks/handoff_relay.py`, `hooks/agent_lock.py` (lecture, sous réserve de Q1), `docs/sessions.md`, gabarit, page, tests | 750 | 2 | aucun | non |
+| 4 | passes ignorées et nouvel essai du relais | EXI-01 : A24 à A28 ; EXI-02 : A29 à A33 | `hooks/handoff_header.py`, `hooks/handoff_relay.py`, `hooks/agent_lock.py` (lecture, Q1), `docs/sessions.md`, gabarit, page, tests | 750 | 2 | aucun | non |
 | 5 | pont du hook `Stop` | EXI-03 : A34 à A39 | `hooks/question_stop.py`, `hooks/hooks.json`, page, tests | 550 | 1 | aucun | oui |
 | 6 | relevé de base avant le répartiteur | story 18 : A84 à A86 | `scripts/factory_slo.py` (`baseline`, champ `author`), page, tests ; le commentaire de #340 | 450 | 1 | aucun | non |
 | 7 | entrée épinglée, question G5, `route` rend le ticket prêt | EXI-13 : A47 à A50 ; EXI-15 : A57, A59 | `skills/feature-build/SKILL.md`, `scripts/question_delay.py`, page, tests | 400 | 1 | aucun | non |
@@ -284,9 +304,12 @@ Précisions par ticket :
   refuse sur `set`, `update`, `str_replace`, `delete` et `batch` (une opération de `writes` suffit) ; `get`,
   `list`, `query` et `profiles` passent. L'action `str_replace` n'est pas nommée par A1 : c'est une écriture, et le
   garde la refuse (côté prudent).
-- **Ticket 2, deux PR.** (a) `agent_identity.py`, refus de `guard_git` sans jeton `ghs_` (A11, A12, A16), les deux
-  clés dans `SENSITIVE_KEYS`, gabarit et page. (b) l'identité git de l'application (A14), la ligne
-  `agent-identity` de `factory_slo.py` (A15), la tenue du jeton au-delà de 60 minutes (A13, sous réserve de Q3).
+- **Ticket 2, deux PR.** (a) `agent_identity.py`, refus de `guard_git` sans jeton `ghs_` (A11, A12, A16), refus
+  fermé des écritures par un outil MCP GitHub aux deux clés (Q4), les deux clés dans `SENSITIVE_KEYS`, gabarit et
+  page. (b) l'identité git de l'application (A14), la ligne `agent-identity` de `factory_slo.py` (A15), la tenue
+  du jeton au-delà de 60 minutes (A13) : ni `gh` ni aide de crédit qui garde un jeton, mais un fichier
+  `CLAUDE_ENV_FILE` qui exporte un `GH_TOKEN` frais avant chaque commande `Bash` (Q3). Le ticket l'éprouve sur une
+  vraie passe ; s'il ne tient pas, le repli est de relancer l'agent toutes les 55 minutes, et la PR le dit.
   A9 et A10 se prouvent dans la partie (b) par la fonction qui construit l'environnement de l'agent, que le
   ticket 8 appelle. `guard_git.py` : la PR va à l'humain.
 - **Ticket 3.** A89 appartient à EXI-18 et ce ticket la couvre : les plages de la spec aux lignes 256 et 386
@@ -294,17 +317,27 @@ Précisions par ticket :
   `merge-grant`) ; le ticket 8 l'étend. `guard_git.py` : la PR va à l'humain. La story 3 ne s'active qu'aux deux
   conditions de la spec (section 17) : le code se livre, la clé `merge-grant` reste absente de ce dépôt jusqu'au
   geste de l'humain.
-- **Ticket 4, deux PR.** (a) EXI-01 dans `other_sessions` (A24 à A28). (b) EXI-02 dans le relais (A29 à A33),
-  la variable `CLAUDE_HANDOFF_RETRY_MINUTES` dans `docs/sessions.md`. La forme de C04 attend la réponse à Q1 :
-  telle que la spec l'écrit, A24 ne peut pas passer pour une passe `claude -p` (section 10).
+- **Ticket 4, deux PR.** (a) EXI-01 dans `other_sessions` (A24 à A28), dans la forme de Q1 : une session est
+  ignorée quand son `name` correspond à `ignored-session` et que son pid tient un verrou vivant du répartiteur,
+  sans test sur `kind` ; A25 reste vrai pour une session sans verrou. Le ticket relève d'abord le `kind` réel d'une
+  passe `-p` vivante et le dit dans sa PR. Il pose la lecture de `agent_lock` (`held`, `Lock.alive`). (b) EXI-02
+  dans le relais (A29 à A33) : sur un code 6 avec la variable, le relais lance une copie détachée de lui-même
+  (`--retry`) et rend tout de suite ; la copie prend le verrou de nouvel essai du projet, attend selon C05, relit
+  la passation à chaque essai et écrit la ligne G4, avec le message de A30 à la borne (Q2). La variable
+  `CLAUDE_HANDOFF_RETRY_MINUTES` entre dans `docs/sessions.md`.
 - **Ticket 5.** `hooks.json` : la PR va à l'humain. Le hook échoue ouvert (aucun `\|\| exit 2` ; la
-  documentation dit que `"onFailure"` est sans effet sur `Stop`). Son attente est bornée par le `timeout` de son
-  entrée (Q6).
+  documentation dit que `"onFailure"` est sans effet sur `Stop`). Il attend dans son processus, en relisant
+  `question_delay.py due` toutes les 30 secondes, jusqu'à l'échéance ou jusqu'à son `timeout` moins une marge,
+  puis rend `decision: block` avec la consigne (décideur, puis `route --apply`). Le `timeout` de son entrée est
+  fixe ; une échéance plus lointaine laisse passer l'arrêt, et c'est le tick, là où il tourne, qui reprend la
+  question due (partie 8c) (Q6). Le ticket
+  l'éprouve sur une vraie session.
 - **Ticket 6.** Le relevé compte les interventions de l'humain par ticket fusionné (spec, section 22) : il lit les
   événements d'étiquette (`needs-your-attention` posée) et l'auteur de la fusion, que `factory_slo` ne lit pas
   aujourd'hui. A85 et A86 se rendent aux dates de la spec (2026-12-16, 2027-01-15) par la même sous-commande.
-- **Ticket 7.** `--ticket` ne change rien sans l'argument (A50). Le traitement de l'étape 0.5 en mode épinglé
-  attend Q5.
+- **Ticket 7.** `--ticket` ne change rien sans l'argument (A50). En mode `--ticket`, l'étape 0.5 est remplacée
+  par le contrôle du verrou du ticket, qui doit être tenu par la session elle-même ; sans verrou, l'étape 0.5
+  actuelle s'applique. `.claude/PAUSED`, la porte et le budget restent lus (Q5).
 - **Ticket 8, trois PR**, chacune verte seule :
   - (8a) le tick en lecture seule : clés, `agent-autonomy` sur `origin/main`, `.claude/PAUSED`, tickets prêts
     dans l'ordre de `factory_slo.py queue`, places libres, ligne `tick`, codes de sortie. Couvre A41, A43, A44,
@@ -313,9 +346,13 @@ Précisions par ticket :
   - (8b) revendication à trois verrous, lancement par `dispatch-command` avec l'environnement de l'identité
     (ticket 2), défaire, relance depuis la branche et la PR, marqueur G6, plafond. Couvre A40 (lancement), A42,
     A46, A51 à A56. Environ 850 lignes.
-  - (8c) questions dues : `question_delay.py due`, lancement du décideur sans interface (Q7), `route --apply`,
-    ligne `question` émise par `question_delay.apply`. Couvre A58, A60 à A62. Environ 550 lignes.
-- **Ticket 9.** Un arbre de travail par agent (Q9), une zone par agent (C07), une relecture à la fois par projet
+  - (8c) questions dues : `question_delay.py due`, lancement du décideur par `claude -p --agent forge:<décideur>`
+    avec la question, le nom `forge-dispatch-q-<n>` et l'environnement de l'identité, sous `run-limits`, avec son
+    verrou hors des places (Q1, Q7), puis `route --apply` sur le verdict, ligne `question` émise par
+    `question_delay.apply`. Pas de clé nouvelle. La partie éprouve d'abord qu'une passe `-p --agent` charge
+    l'agent d'un plugin. Couvre A58, A60 à A62. Environ 550 lignes.
+- **Ticket 9.** Un arbre de travail par agent, créé par le tick (`git worktree add` depuis `origin/main`, nom hors
+  du préfixe `agent-*`), écrit dans le verrou et supprimé seulement proprement (Q9), une zone par agent (C07), une relecture à la fois par projet
   par un verrou de `forge:qc` du même module `agent_lock` (A65), `agent-slots` mal formée (A66).
 - **Ticket 10, trois PR.** (a) `ticket-size-max` et G8 dans `feature-design` (A72 à A75) ; l'entrée du
   `CHANGELOG.md` dit que ce projet perd la coupe à 1 000 lignes (A74). (b) `zones`, `zone-command`, étiquettes du
@@ -344,8 +381,20 @@ décisions prises par défaut) et dans le cadrage (section 7), et celles du desi
 
 ## 9. Décisions prises pendant la construction
 
+Les neuf premières lignes sont les réponses de `forge:staff-engineer` aux questions du design (séance du
+2026-11-28, tour 1). Les décisions prises pendant la construction s'ajoutent à la suite.
+
 | Ticket | Décision | Par | Source |
 |---|---|---|---|
+| 4, 8 | Q1 : une session est ignorée quand son `name` correspond à `ignored-session` et que son pid tient un verrou vivant du répartiteur, sans test sur `kind`. Écart à C04 et à A25 de la spec, qui n'est pas amendée : une passe `claude -p` porte `kind: interactive` (section 10), et le test sur `kind` empêcherait A24. A25 reste vrai pour une session sans verrou. Le décideur lancé par le tick prend aussi un verrou, hors des places. Veto de l'humain : la PR du design porte `needs-your-attention` | `forge:staff-engineer` (T9, veto) | séance, tour 1, Q1 |
+| 4 | Q2 : copie `--retry` détachée, verrou de nouvel essai par projet, passation relue à chaque essai, message de A30 dans la ligne G4 | `forge:staff-engineer` (T2) | séance, tour 1, Q2 |
+| 2 | Q3 : ni `gh` ni aide de crédit qui garde un jeton ; un fichier `CLAUDE_ENV_FILE` exporte un `GH_TOKEN` frais avant chaque commande `Bash`. Éprouvé dans le ticket ; repli : relance toutes les 55 minutes | `forge:staff-engineer` (T2) | séance, tour 1, Q3 |
+| 2 | Q4 : refus fermé des écritures par un outil MCP GitHub quand `agent-token-command` et `agent-login` sont présentes ; la lecture reste permise | `forge:staff-engineer` (T5, T2) | séance, tour 1, Q4 |
+| 7 | Q5 : en mode `--ticket`, contrôle du verrou du ticket ; sans verrou, l'étape 0.5 actuelle | `forge:staff-engineer` (T2) | séance, tour 1, Q5 |
+| 5 | Q6 : attente dans le hook `Stop`, `timeout` fixe ; une échéance plus lointaine laisse passer l'arrêt. Essai réel dans le ticket | `forge:staff-engineer` (T5, T2) | séance, tour 1, Q6 |
+| 8 | Q7 : le tick lance `claude -p --agent forge:<décideur>`, nommé `forge-dispatch-q-<n>`, sous `run-limits`, puis `route --apply` ; pas de clé nouvelle. Éprouvé dans la partie 8c | `forge:staff-engineer` (T2) | séance, tour 1, Q7 |
+| aucun | Q8 : mettre `plugins/forge/hooks/usine.py` sous `protected-path` et dans `CODEOWNERS`. Réservée à l'humain ; le trou existe déjà pour les clés de garde d'aujourd'hui : hors de ce design, commentée sur #340 | réservée (H1) | séance, tour 1, Q8 |
+| 9 | Q9 : le tick crée l'arbre par `git worktree add` depuis `origin/main`, sous un nom hors `agent-*`, et ne le supprime que proprement | `forge:staff-engineer` (T2) | séance, tour 1, Q9 |
 
 ## 10. Ce qui n'est pas vérifié
 
@@ -356,8 +405,8 @@ Questions de la section 21 de la spec, relevées le 2026-11-28 :
   valeur de `--name` (`nameSource: user`), `kind` vaut `interactive`, `entrypoint` vaut `sdk-cli`. Une session
   `--bg` porte `kind: bg` et `entrypoint: cli` ; la session interactive de l'humain `kind: interactive` et
   `entrypoint: cli`. C04 et A25 excluent toute session `interactive` : telle que la spec l'écrit, A24 ne peut pas
-  passer pour une passe `claude -p`. Deux textes acceptés se contredisent : la question va à
-  `forge:staff-engineer` (Q1). Non vérifié : les valeurs sous Windows, et celles de l'extension d'éditeur ou de
+  passer pour une passe `claude -p`. Deux textes acceptés se contredisent : `forge:staff-engineer` a tranché
+  (Q1, section 9), et le ticket 4 relève d'abord le `kind` d'une passe `-p` vivante. Non vérifié : les valeurs sous Windows, et celles de l'extension d'éditeur ou de
   l'application de bureau.
 - **`gh auth git-credential` et `git push` avec `GH_TOKEN`.** Vérifié sur le poste (gh 2.102.0, 2026-11-28) :
   `gh auth git-credential get`, appelé avec `GH_TOKEN=ghs_...` factice, rend `username=x-access-token` et ce
@@ -375,7 +424,11 @@ Questions de la section 21 de la spec, relevées le 2026-11-28 :
   2026-11-28) : délai par défaut de 600 secondes pour un hook `command`, réglable par `timeout`, sans maximum
   écrit ; `"onFailure"` est sans effet sur `Stop` ; plafond de 8 continuations successives, remis à zéro à chaque
   appel d'outil, réglable par `CLAUDE_CODE_STOP_HOOK_BLOCK_CAP` ; champ `stop_hook_active` dans l'entrée. Non
-  vérifié sur une vraie session : une attente longue dans le hook (Q6).
+  vérifié sur une vraie session : une attente longue dans le hook ; le ticket 5 l'éprouve (Q6).
+- **`CLAUDE_ENV_FILE`.** D'après la lecture de `forge:staff-engineer`
+  (https://code.claude.com/docs/en/env-vars, 2026-11-28), le fichier qu'elle nomme est exécuté avant chaque
+  commande `Bash`. Non relu dans ce design, et non vérifié sur une vraie passe `claude -p` lancée avec la
+  variable : le ticket 2 l'éprouve (Q3).
 - **Case H1 et clic de fusion.** Tranché par l'humain le 2026-11-28 (spec, section 20, points ouverts), aux conditions de la
   section 17.
 
@@ -395,7 +448,8 @@ Autres faits :
   un statut posé par une autre personne ou intégration bloque la fusion.
 - **Drapeaux de `claude`.** `claude --help` (2.1.332, 2026-11-28) liste `--agent`, `-n/--name`, `-w/--worktree`,
   `--bg`, `--permission-mode`, `-p/--print`. Non vérifié : qu'une passe `-p --agent forge:staff-engineer` charge
-  l'agent d'un plugin, et l'emplacement de l'arbre créé par `-w`.
+  l'agent d'un plugin (la partie 8c l'éprouve, Q7). L'emplacement de l'arbre créé par `-w` ne compte plus : le tick
+  crée l'arbre lui-même (Q9).
 - **Non vérifiés.** La forme du champ `author` de `gh pr list --json` pour une PR ouverte par une application
   (`app/<slug>` ou `<slug>[bot]`) ; l'identifiant numérique de l'adresse `noreply` du compte de l'application ;
   l'existence d'un champ `creator.login` dans la sortie de `commits/{sha}/status` pour un statut d'application ;
