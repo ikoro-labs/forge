@@ -18,6 +18,7 @@ from datetime import datetime, timedelta
 from usine import split_value
 
 KEY = "sla"
+SPEED_KEY = "speed-label"
 CLASSES = ("sev1", "sev2", "sev3")
 STAGES = ("prise en charge", "correctif fusionné", "correctif publié")
 DELAY = re.compile(r"^(\d+)\s*([hj])$")
@@ -90,17 +91,35 @@ def take_deadline(ticket: Ticket, rules: dict[str, Rule]) -> datetime | None:
     return ticket.opened + rule.take if rule else None
 
 
-def order(tickets: list[Ticket], rules: dict[str, Rule]) -> list[Ticket]:
-    """The tickets by severity, then by nearest deadline to take in charge, then in the order given.
+def speed_label(values: list[str] | None) -> tuple[str | None, list[str]]:
+    """The label of the `speed-label` key, None when the key is absent; one message when it is repeated."""
+    if not values:
+        return None, []
+    if len(values) > 1:
+        return None, [f"clé `{SPEED_KEY}` répétée : une seule étiquette est attendue ({', '.join(values)})"]
+    return values[0], []
 
-    A ticket without a severity comes after `sev3`, one without a deadline after those that have one
-    of the same class. The sort is stable: the order given (the sub-issues') settles the rest.
+
+def order(tickets: list[Ticket], rules: dict[str, Rule], speed: str | None = None) -> list[Ticket]:
+    """The tickets by class, then by nearest deadline to take in charge, then in the order given.
+
+    The classes: `sev1`, then a ticket carrying the `speed` label (the label of the key `speed-label`,
+    None when the key is absent: then no ticket is one), then `sev2`, `sev3`, then none. A ticket that
+    carries both `sev1` and the speed label stays in `sev1`. A ticket without a severity comes after
+    `sev3`, one without a deadline after those that have one of the same class. The sort is stable:
+    the order given (the sub-issues') settles the rest.
     """
-    def key(ticket: Ticket) -> tuple[int, bool, datetime]:
+    def rank(ticket: Ticket) -> int:
         severity = severity_of(ticket.labels)
-        rank = CLASSES.index(severity) if severity else len(CLASSES)
+        if severity == CLASSES[0]:
+            return 0
+        if speed is not None and speed in ticket.labels:
+            return 1
+        return CLASSES.index(severity) + 1 if severity else len(CLASSES) + 1
+
+    def key(ticket: Ticket) -> tuple[int, bool, datetime]:
         deadline = take_deadline(ticket, rules)
-        return rank, deadline is None, deadline or datetime.max.replace(tzinfo=ticket.opened.tzinfo)
+        return rank(ticket), deadline is None, deadline or datetime.max.replace(tzinfo=ticket.opened.tzinfo)
 
     return sorted(tickets, key=key)
 
