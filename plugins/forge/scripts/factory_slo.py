@@ -7,7 +7,7 @@
     python factory_slo.py changelog <project> --depuis DATE [--le DATE] [--reference FILE]
     python factory_slo.py queue <project> <ticket> [<ticket> ...] [--json]
     python factory_slo.py incidents <project> [--json]
-    python factory_slo.py baseline <project> [--depuis DATE] [--jusqua DATE] [--json]
+    python factory_slo.py baseline <project> [--depuis DATE] [--jusqua DATE] [--essai DATE [--le DATE]] [--json]
 
 `status` reads the `slo` key (`<sli> | <comparator> <target> | <window in days>`, one per line), computes
 each objective on its sliding window, its error budget and its state (`tenu`, `menacé`, `épuisé`),
@@ -53,6 +53,13 @@ merged in the window or on a PR that closed it, plus a merge by a login of the k
 short identifier of its line, else its whole value) of a PR that does not carry `agent-merged`: the agent
 merges under the human's account and labels what it merged. A key `accepting-human` absent leaves the merges
 "sans objet" and counts the labels only. The markdown output is the text of the comment to post.
+
+With `--essai DATE` (the first day of the trial) `baseline` reads a second window, [`--essai`, `--le`), `--le`
+now by default, the base window then ending on `--essai` unless `--jusqua` says otherwise, and applies the rule
+of the decision point: "oui" if and only if the p90 lead time of the trial is below the base's, the
+interventions per ticket of the trial do not exceed the base's, and the dispatcher's trace of this host
+(`~/.claude/hooks/state/dispatch/<day>.jsonl`, `event` `question`) holds no `post-default` on a case `H<n>` in
+the trial; else "non", with each reason. A measure a window cannot give is a reason, never a "oui".
 
 The data come from GitHub (`gh ... --json`, run from the project folder, so `gh` finds the
 repository itself), from git, from the logs `token_audit.py` reads, and from the journal of the
@@ -1423,28 +1430,112 @@ def measures_rows(found: dict[str, Sli]) -> list[str]:
     return rows
 
 
-def baseline_markdown(project: Path, since: datetime, until: datetime, found: dict[str, Sli]) -> str:
-    return "\n".join([
-        f"Relevé de base de l'usine pour `{project.resolve().name}` (F-0003, story 18).",
-        "",
-        f"Fenêtre : du {since:%Y-%m-%d} au {until:%Y-%m-%d} ({(until - since).days} jours), les fusions de la fenêtre.",
+def window_section(label: str, since: datetime, until: datetime, found: dict[str, Sli]) -> list[str]:
+    return [
+        f"{label} : du {since:%Y-%m-%d} au {until:%Y-%m-%d} ({(until - since).days} jours), les fusions de la fenêtre.",
         "",
         "| Mesure | Valeur | Dénominateur |",
         "|---|---|---|",
         *measures_rows(found),
-    ])
+        "",
+    ]
+
+
+DISPATCH_EVENT = "question"
+RESERVED_CASE = re.compile(r"H\d+")
+DEFAULT_POSTED = "post-default"
+
+
+def dispatch_dir() -> Path:
+    """The folder of the dispatcher's trace (spec, G3), on this host: `<day>.jsonl`, one JSON line per event."""
+    return Path.home() / ".claude" / "hooks" / "state" / "dispatch"
+
+
+def reserved_gestures(project: Path, since: datetime, until: datetime) -> dict:
+    """The default gestures the dispatcher took on a question of a reserved (`H`) case, in the window.
+
+    A line of the trace counts when its `event` is `question`, its `project` is this project (the name of
+    its repository, as `refusal_journal.repo_of` gives it, or its folder), its `date` is in the window, its
+    `case` is `H<n>` and its `action` is `post-default`: a `remind-human` took no gesture. The trace lives on
+    the host; a missing folder is said (`journal` false) and counts no gesture.
+    """
+    folder = dispatch_dir()
+    if not folder.is_dir():
+        return {"journal": False, "gestes": 0, "illisibles": 0}
+    ours = {refusal_journal.repo_of(str(project)), str(project.resolve())} - {""}
+    gestures = unreadable = 0
+    for path in sorted(folder.glob("*.jsonl")):
+        for raw in path.read_text(encoding="utf-8", errors="replace").splitlines():
+            if not raw.strip():
+                continue
+            try:
+                item = json.loads(raw)
+                moment = token_audit.parse_time(item["date"])
+            except (ValueError, KeyError, TypeError, AttributeError):
+                unreadable += 1
+                continue
+            if item.get("event") != DISPATCH_EVENT or str(item.get("project")) not in ours or not since <= moment < until:
+                continue
+            if RESERVED_CASE.fullmatch(str(item.get("case"))) and item.get("action") == DEFAULT_POSTED:
+                gestures += 1
+    return {"journal": True, "gestes": gestures, "illisibles": unreadable}
+
+
+def decide(base: dict[str, Sli], trial: dict[str, Sli], gestures: dict) -> dict:
+    """The rule of the decision point (spec C11): "oui" if and only if no reason says "non".
+
+    The p90 lead time must drop (strictly), the interventions per ticket must not rise, and the trace holds
+    no default gesture of a reserved case. A measure one of the windows cannot give is a reason: it proves
+    nothing.
+    """
+    reasons: list[str] = []
+    for key, label in (("delai", "délai p90"), ("interventions", "interventions par ticket")):
+        before, after = base[key], trial[key]
+        missing = [f"{name} : {item.reason}" for name, item in (("base", before), ("essai", after)) if item.reason is not None]
+        if missing:
+            reasons.append(f"{label} : mesure sans objet ({' ; '.join(missing)})")
+        elif key == "delai" and not after.data["p90_h"] < before.data["p90_h"]:
+            reasons.append(f"le délai p90 ne baisse pas ({number(before.data['p90_h'])} h à {number(after.data['p90_h'])} h)")
+        elif key == "interventions" and after.data["numerateur"] * before.data["denominateur"] > before.data["numerateur"] * after.data["denominateur"]:
+            reasons.append(f"les interventions par ticket montent ({before.data['valeur']} à {after.data['valeur']})")
+    if gestures["gestes"]:
+        reasons.append(f"{plural(gestures['gestes'], 'geste')} d'une case `H` au journal des questions appliquées")
+    return {"verdict": "non" if reasons else "oui", "raisons": reasons}
+
+
+def gestures_line(gestures: dict) -> str:
+    if not gestures["journal"]:
+        return f"Journal des questions appliquées : aucun dossier `{dispatch_dir()}` sur ce poste, aucun geste lu."
+    unread = f", {plural(gestures['illisibles'], 'ligne')} illisibles" if gestures["illisibles"] else ""
+    return f"Journal des questions appliquées, de ce poste : {plural(gestures['gestes'], 'geste')} d'une case `H` dans l'essai{unread}."
 
 
 def run_baseline(args: argparse.Namespace, run: Runner, now: datetime) -> int:
-    until = args.jusqua or now
+    trial_since, trial_until = args.essai, args.le or now
+    if args.le and not args.essai:
+        raise ValueError("`--le` ne va qu'avec `--essai`.")
+    if trial_since and trial_until <= trial_since:
+        raise ValueError("`--le` doit suivre `--essai`.")
+    until = args.jusqua or trial_since or now
     since = args.depuis or until - timedelta(days=BASELINE_DAYS)
     if until <= since:
         raise ValueError("`--jusqua` doit suivre `--depuis`.")
-    found = measure(args.projet, since, until, run)
-    if args.json:
-        print(json.dumps({"projet": str(args.projet), "base": measures_dict(since, until, found)}, ensure_ascii=False, indent=2))
+    base = measure(args.projet, since, until, run)
+    document: dict = {"projet": str(args.projet), "base": measures_dict(since, until, base)}
+    lines = [f"Relevé de l'usine pour `{args.projet.resolve().name}` (F-0003, story 18).", ""]
+    if trial_since is None:
+        lines += window_section("Fenêtre", since, until, base)
     else:
-        print(baseline_markdown(args.projet, since, until, found))
+        trial = measure(args.projet, trial_since, trial_until, run)
+        gestures = reserved_gestures(args.projet, trial_since, trial_until)
+        verdict = decide(base, trial, gestures)
+        document.update(essai=measures_dict(trial_since, trial_until, trial), journal_questions=gestures, verdict=verdict)
+        lines += window_section("Base", since, until, base) + window_section("Essai", trial_since, trial_until, trial)
+        lines += [gestures_line(gestures), "", f"Point de décision : {verdict['verdict']}"] + [f"- {reason}" for reason in verdict["raisons"]]
+    if args.json:
+        print(json.dumps(document, ensure_ascii=False, indent=2))
+    else:
+        print("\n".join(lines).rstrip())
     return 0
 
 
@@ -1484,8 +1575,10 @@ def main(argv: list[str] | None = None, run: Runner = run_command, now: datetime
     base.add_argument("projet", type=Path, help="le dossier du projet")
     base.add_argument("--depuis", type=_date, help=f"début de la fenêtre de base, inclus ({BASELINE_DAYS} jours avant `--jusqua` par défaut)")
     base.add_argument("--jusqua", type=_date, help="fin de la fenêtre de base, exclue (maintenant par défaut)")
+    base.add_argument("--essai", type=_date, help="début de l'essai, inclus : relève aussi l'essai et rend le verdict du point de décision (la base finit là par défaut)")
+    base.add_argument("--le", type=_date, help="fin de l'essai, exclue (maintenant par défaut), avec `--essai`")
     base.add_argument("--json", action="store_true", help="rend du JSON au lieu d'un tableau Markdown")
-    sli = commands.add_parser("sli", help="calcule les indicateurs de service")
+    sli =commands.add_parser("sli", help="calcule les indicateurs de service")
     sli.add_argument("projet", type=Path, help="le dossier du projet")
     sli.add_argument("--depuis", type=_date, required=True, help="début de la fenêtre, inclus")
     sli.add_argument("--jusqua", type=_date, help="fin de la fenêtre, exclue (maintenant par défaut)")

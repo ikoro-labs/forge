@@ -10,6 +10,7 @@ import json
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import support  # noqa: F401  met les scripts sur le chemin d'import
@@ -134,6 +135,118 @@ class BaseWindow(BaselineCase):
         code, _, err = self.run_baseline("--depuis", "2026-10-31", "--jusqua", "2026-10-01")
         self.assertEqual(code, 1)
         self.assertIn("--jusqua", err)
+
+
+class PointOfDecision(BaselineCase):
+    """A85 : la règle du point de décision, sur la base d'octobre (p90 de 48 h, 1,67 intervention par ticket)."""
+
+    def trial(self, lead_hours: int, attention: tuple[int, ...] = (1,)) -> None:
+        """Ajoute en novembre une PR fusionnée par ticket, `lead_hours` heures après la pose de `ready-for-agent`.
+
+        `attention` donne, pour chaque ticket, les étiquettes `needs-your-attention` posées ; les PR portent
+        `agent-merged`, la fusion n'est donc pas une intervention.
+        """
+        moment = datetime(2026, 11, 5, tzinfo=timezone.utc) + timedelta(hours=lead_hours)
+        for index, posed in enumerate(attention):
+            pr_number, ticket = 20 + index, 30 + index
+            self.world.answers["pr list"].append(
+                {
+                    "number": pr_number, "title": f"PR {pr_number}", "body": "", "state": "MERGED",
+                    "createdAt": "2026-11-04T00:00:00Z", "mergedAt": moment.isoformat(), "closedAt": None,
+                    "labels": [{"name": "agent-merged"}], "mergeCommit": None, "comments": [],
+                    "closingIssuesReferences": [{"number": ticket}], "mergedBy": HUMAN,
+                }
+            )
+            self.world.answers[f"api repos/{{owner}}/{{repo}}/issues/{ticket}/events"] = [
+                event("ready-for-agent", "2026-11-05T00:00:00Z"),
+                *[event(ATTENTION, "2026-11-05T01:00:00Z")] * posed,
+            ]
+            self.world.answers[f"api repos/{{owner}}/{{repo}}/issues/{pr_number}/events"] = []
+        logs = self.folder / "claude" / "projects" / "p" / "t.jsonl"
+        logs.write_text(line(self.world.root, "2026-11-06T10:00:00", message="essai", usage=(1, 10, 100, 5)), encoding="utf-8")
+
+    def journal(self, *entries: dict) -> None:
+        folder = self.folder / ".claude" / "hooks" / "state" / "dispatch"
+        folder.mkdir(parents=True)
+        (folder / "2026-11-10.jsonl").write_text("\n".join(json.dumps(item) for item in entries) + "\n", encoding="utf-8")
+
+    def decide(self) -> dict:
+        return self.document("--depuis", "2026-10-01", "--essai", "2026-11-01", "--le", "2026-11-30")
+
+    def test_a85_yes_when_the_p90_drops_the_interventions_do_not_rise_and_no_h_gesture(self) -> None:
+        """F-0003 A85 : p90 de 10 h contre 48 h, 1 intervention par ticket contre 1,67, aucun geste H : « oui »."""
+        self.trial(lead_hours=10)
+        self.journal({"date": "2026-11-10T10:00:00+00:00", "project": "projet", "event": "question", "case": "T2", "action": "post-default"})
+        found = self.decide()
+        self.assertEqual(found["verdict"], {"verdict": "oui", "raisons": []})
+        self.assertEqual(found["essai"]["delai"]["p90_h"], 10)
+        self.assertEqual(found["essai"]["interventions"]["valeur"], 1)
+        self.assertEqual(found["base"]["jusqua"][:10], "2026-11-01")
+
+    def test_a85_interventions_equal_to_the_base_do_not_rise(self) -> None:
+        """F-0003 A85 : « ne montent pas » : 5 interventions sur 3 tickets, comme la base, et un p90 qui baisse : « oui »."""
+        self.trial(lead_hours=10, attention=(2, 2, 1))
+        found = self.decide()
+        self.assertEqual(found["essai"]["interventions"]["valeur"], found["base"]["interventions"]["valeur"])
+        self.assertEqual(found["verdict"]["verdict"], "oui")
+
+    def test_a85_no_when_the_p90_does_not_drop(self) -> None:
+        """F-0003 A85 : un p90 égal à celui de la base ne « baisse » pas : « non », avec sa raison."""
+        self.trial(lead_hours=48)
+        verdict = self.decide()["verdict"]
+        self.assertEqual(verdict["verdict"], "non")
+        self.assertEqual(len(verdict["raisons"]), 1)
+        self.assertIn("délai p90", verdict["raisons"][0])
+
+    def test_a85_no_when_the_interventions_per_ticket_rise(self) -> None:
+        """F-0003 A85 : 2 interventions par ticket contre 1,67 : « non »."""
+        self.trial(lead_hours=10, attention=(2,))
+        verdict = self.decide()["verdict"]
+        self.assertEqual(verdict["verdict"], "non")
+        self.assertEqual(len(verdict["raisons"]), 1)
+        self.assertIn("interventions", verdict["raisons"][0])
+
+    def test_a85_no_when_an_h_case_gesture_is_in_the_question_journal(self) -> None:
+        """F-0003 A85 : un `post-default` d'une case `H4` au journal des questions de l'essai : « non »."""
+        self.trial(lead_hours=10)
+        self.journal(
+            {"date": "2026-11-10T10:00:00+00:00", "project": "projet", "event": "question", "case": "H4", "action": "post-default"},
+            {"date": "2026-11-10T11:00:00+00:00", "project": "projet", "event": "question", "case": "H1", "action": "remind-human"},
+        )
+        verdict = self.decide()["verdict"]
+        self.assertEqual(verdict["verdict"], "non")
+        self.assertEqual(len(verdict["raisons"]), 1)
+        self.assertIn("1 geste", verdict["raisons"][0])
+
+    def test_a85_a_gesture_of_another_project_or_outside_the_trial_does_not_count(self) -> None:
+        """F-0003 A85 : le journal est celui du poste : seules les lignes de ce projet et de la fenêtre de l'essai comptent."""
+        self.trial(lead_hours=10)
+        self.journal(
+            {"date": "2026-11-10T10:00:00+00:00", "project": "autre", "event": "question", "case": "H4", "action": "post-default"},
+            {"date": "2026-10-10T10:00:00+00:00", "project": "projet", "event": "question", "case": "H4", "action": "post-default"},
+            {"date": "2026-11-10T10:00:00+00:00", "project": "projet", "event": "tick", "ready": 2},
+        )
+        self.assertEqual(self.decide()["verdict"]["verdict"], "oui")
+
+    def test_a85_no_when_the_trial_has_no_measure(self) -> None:
+        """F-0003 A85 : un essai sans ticket fusionné ne prouve rien : « non », avec la mesure sans objet dite."""
+        verdict = self.decide()["verdict"]
+        self.assertEqual(verdict["verdict"], "non")
+        self.assertTrue(all("sans objet" in reason for reason in verdict["raisons"]))
+
+    def test_a85_the_markdown_gives_both_windows_and_the_verdict(self) -> None:
+        """F-0003 A85 : le texte donne la base, l'essai, le verdict."""
+        self.trial(lead_hours=10)
+        code, out, _ = self.run_baseline("--depuis", "2026-10-01", "--essai", "2026-11-01", "--le", "2026-11-30")
+        self.assertEqual(code, 0)
+        for text in ("Base : du 2026-10-01 au 2026-11-01", "Essai : du 2026-11-01 au 2026-11-30", "Point de décision : oui"):
+            self.assertIn(text, out)
+
+    def test_a85_the_trial_window_must_end_after_it_starts(self) -> None:
+        """F-0003 A85 : `--le` avant `--essai` est refusé."""
+        code, _, err = self.run_baseline("--essai", "2026-11-30", "--le", "2026-11-01")
+        self.assertEqual(code, 1)
+        self.assertIn("--le", err)
 
 
 if __name__ == "__main__":
