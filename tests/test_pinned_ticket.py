@@ -158,6 +158,50 @@ class OneTicket(unittest.TestCase):
         self.assertRegex(mode(), r"questions échues[^.]*répartiteur|répartiteur[^.]*questions échues")
 
 
+class WithoutTheOption(unittest.TestCase):
+    """A50: without `--ticket` the skill does what it did before."""
+
+    def before_the_section(self) -> str:
+        return skill().split(HEADING, 1)[0]
+
+    def test_the_option_is_named_in_three_places_before_the_section_and_nowhere_else(self) -> None:
+        """F-0003 A50: the hint, the paragraph of the arguments and the pointer of step 0.5; no other step changes."""
+        # `--ticket '#n'` is the option of the other scripts (ticket_budget, revue_boucle), not this one.
+        before = self.before_the_section()
+        head, rest = before.split("# Construire une feature", 1)
+        arguments, steps = rest.split("## 0. Avant le premier ticket", 1)
+        step_five, others = steps.split("6. **L'agent", 1)
+        own = re.compile(r"--ticket(?! '#)")
+        self.assertEqual(len(own.findall(head)), 1)
+        self.assertEqual(len(own.findall(arguments)), 2)
+        self.assertEqual(len(own.findall(step_five)), 2)
+        self.assertEqual(own.findall(others), [])
+
+    def test_the_section_says_it_does_not_apply_without_the_option(self) -> None:
+        """F-0003 A50: both the arguments and the section say the section is for `--ticket` only."""
+        self.assertRegex(self.before_the_section(), r"sans lui,\s*cette section ne s'applique pas")
+        self.assertRegex(mode(), r"Sans `--ticket`, rien de cette section ne s'applique")
+
+    def test_step_zero_five_still_holds_its_session_check(self) -> None:
+        """F-0003 A50: the one-session-per-project step keeps its command and its two branches."""
+        step = self.before_the_section().split("5. **Une seule session par projet.**", 1)[1].split("6. **L'agent", 1)[0]
+        self.assertIn('hooks/handoff_header.py" sessions .', step)
+        self.assertIn("code 6", step)
+        self.assertIn("`ListAgents`", step)
+        self.assertIn("**Sinon**", step)
+
+    def test_the_steps_keep_their_order(self) -> None:
+        """F-0003 A50: steps 0 to 6 are still there, in order, and the section of the pinned agent comes last."""
+        text = skill()
+        heads = [
+            "## 0. Avant le premier ticket", "## 1. L'état des tickets", "## 2. Lancer les coders",
+            "## 3. Relire et fusionner", "## 3 bis. La revue de bout en bout", "## 5. Après le dernier ticket",
+            "## 6. Rendre compte", HEADING,
+        ]  # fmt: skip
+        positions = [text.index(head) for head in heads]
+        self.assertEqual(positions, sorted(positions))
+
+
 class Resume(unittest.TestCase):
     """A49: a ticket with a branch or an open PR of a previous agent is resumed, not started again."""
 
