@@ -135,3 +135,13 @@ l'essai de bout en bout passe (`CHANGELOG.md:36`). Pas encore livré : les petit
 
 - Q12, identité d'approbation : réservée à l'humain (H3), recommandation ci-dessus.
 - Les dates d'arrêt de la section 8 du cadrage : proposées, l'acceptation les fixe.
+
+### Tour 3 : après la revue de la PR #387
+
+Le juge (`forge:qc-conf`, tour 1, ACCEPT avec deux `MINOR`) relève que le but approuvé par l'humain
+(#340, commentaire 7238993231 : la page de pilotage comme poste de commande, une question qui atteint
+l'humain comme défaut de règle, la mesure du taux d'automatisation) n'est pas repris, et que le
+cadrage ne dit pas ce que rend une clé nouvelle absente. La session les ajoute au cadrage. Les
+leviers de ce commentaire qui ne vivent pas dans forge (page, boutons, preuve d'une demande de la
+page, fil à deux voies, règles `autoMode.allow` du poste) restent hors périmètre, comme
+`forge:product-owner` l'a décidé au tour 2 (P2) ; aucune décision nouvelle.

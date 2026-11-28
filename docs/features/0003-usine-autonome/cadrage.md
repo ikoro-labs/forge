@@ -17,6 +17,10 @@ réponse. Elle augmente ensuite le débit, avec des tickets taillés pour le pla
 en parallèle sur des zones distinctes. Elle prouve qu'un projet avance sans saisie de l'humain dans
 la CLI, sauf pour les gestes qu'il s'est réservés.
 
+Le but approuvé par l'humain le 2026-11-28 (#340, commentaire 7238993231) : la page de pilotage est
+le poste de commande de l'usine, les sessions exécutent, et une question qui atteint l'humain est
+un défaut de règle, pas un message à relayer. Ce cadrage couvre la part de ce but qui vit dans forge.
+
 ## 1. Problème
 
 **Qui souffre, de quoi.** L'humain de la clé `accepting-human`, qui veut piloter depuis une page et
@@ -68,14 +72,24 @@ Deux lots, livrés dans l'ordre (section 7).
 | EXI-10 | Lot 2, en dernier. Une approbation humaine qui prouve l'humain : une identité que l'agent ne détient pas | `idee.md` ; séance Q12, réservée à l'humain (H3) |
 | EXI-11 | Documentation : chaque clé nouvelle dans le gabarit `plugins/forge/templates/usine.md`, la page de `docs/` qui en traite, la variable de passation dans `docs/sessions.md`, l'entrée du `CHANGELOG.md` | `.claude/rules/forge.md`, version et journal |
 
+**Les clés nouvelles.** EXI-01, EXI-06, EXI-07 et EXI-08 ajoutent chacune une clé de `usine.md`,
+EXI-02 une variable de passation, EXI-04 une clé d'en-tête de passation ; leurs noms se fixent dans
+la spec. Chaque clé est écrite par l'humain du projet (`usine-gardes.md` quand elle borne un garde),
+jamais par le plugin, et rend « sans objet (clé `<nom>` absente) » quand elle manque, sans valeur
+par défaut (`.claude/rules/forge.md`).
+
 **Déjà livré, hors de ce cadrage.** La cible `human-touch` à 1 % (#342), l'essai de bout en bout qui
 passe (`CHANGELOG.md`, 1.24.0), le délai `question-default-delay` en minutes (#380). Les petites PR
 hors plafond sont en cours (#381, PR #384 ouverte, en attente de la fusion humaine).
 
-**Hors périmètre.** La page de pilotage (boîte de réception, boutons) reste au projet qui la tient.
-La supervision qui relance une session par projet reste au poste ; forge n'en documente que le
-contrat de reprise. macOS reste dehors. La configuration d'un projet consommateur (clés, réglages
-du mode auto, épingle) reste à sa session. Les suites de ces points se commentent sur #340.
+**Hors périmètre.** Le commentaire 7238993231 de #340 range dans le but de F-0003 des leviers qui ne
+vivent pas dans forge ; `forge:product-owner` les a placés ailleurs (séance, Q3). La page de pilotage,
+ses boutons pour les gestes que l'humain garde, la preuve de bout en bout d'une demande de la page
+et le fil à deux voies par projet restent au projet qui tient la page. Les règles `autoMode.allow`
+pour les commandes courantes des agents sont un réglage du poste, que l'humain écrit. La supervision
+qui relance une session par projet reste au poste ; forge n'en documente que le contrat de reprise.
+macOS reste dehors. La configuration d'un projet consommateur (clés, épingle) reste à sa session.
+Les suites de ces points se commentent sur #340.
 
 ## 3. Condition d'entrée
 
@@ -87,7 +101,7 @@ Sans objet (clé `entry-gate` absente) : les besoins de ce dépôt viennent de s
 
 | Question | Réponse |
 |---|---|
-| Quelle métrique prouve que ça marche | Lot 1 : temps sans session au travail pendant qu'un ticket prêt existe, par projet ; questions appliquées au délai sur questions posées. Lot 2 : délai d'un ticket (objectif `lead-time p90` de `usine-gardes.md`), temps mort entre deux PR d'un même ticket, tickets qui atteignent le plafond de PR. Base : les chiffres de la section 1 |
+| Quelle métrique prouve que ça marche | Mesure du but : le taux d'automatisation, part des gestes de l'humain qui ne demandent plus de session CLI ; base d'environ 16 à 17 % sur environ 1 120 gestes du 14 au 28-11 (#340, commentaire 7238993231, tiré de l'audit privé, classement par mots-clés). Lot 1 : temps sans session au travail pendant qu'un ticket prêt existe, par projet ; questions appliquées au délai sur questions posées. Lot 2 : délai d'un ticket (objectif `lead-time p90` de `usine-gardes.md`), temps mort entre deux PR d'un même ticket, tickets qui atteignent le plafond de PR. Base : les chiffres de la section 1 |
 | Quelle alerte si ça casse | Les objectifs `lead-time p90` et `human-touch` et leur action `alert` (`budget-action`) ; une passation refusée par `check` s'affiche à la session qui l'écrit |
 | Que voit-on dans une trace | À ajouter : une ligne de journal par nouvel essai de relais (raison, essai, borne), une ligne par question appliquée au délai (question, recommandation, heure), la clé de suite dans l'en-tête de chaque passation |
 
