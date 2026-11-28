@@ -73,6 +73,8 @@ class RelayRetry(unittest.TestCase):
             "import os, sys\n"
             f"with open({str(self.log)!r}, 'a', encoding='utf-8') as log:\n"
             "    log.write(' '.join(sys.argv[1:]) + '\\n')\n"
+            "if os.environ.get('STUB_SILENT'):\n"
+            "    sys.exit(0)\n"
             "sys.stdout.reconfigure(encoding='utf-8')\n"
             "print('relais backgrounded · abcdef12 · claude attach abcdef12')\n",
             encoding="utf-8",
@@ -208,6 +210,69 @@ class RelayRetry(unittest.TestCase):
                 self.assertIn(f"after {len(clock.waits)} tries and 1800 s waited", err)
                 self.assertIn("CLAUDE_HANDOFF_RETRY_MINUTES=30", err)
 
+
+    def test_a_refusal_in_code_2_3_4_or_5_is_not_retried(self) -> None:
+        """F-0003 A31: the variable is set, the relay is refused for another reason than code 6."""
+        os.environ["CLAUDE_HANDOFF_RETRY_MINUTES"] = "30"
+        invalid = self.home / "invalid.md"
+        invalid.write_text("no front matter\n", encoding="utf-8")
+        in_flight = self.home / "in_flight.md"
+        in_flight.write_text(HANDOFF.replace("en_vol: []", "en_vol:\n  - coder #12"), encoding="utf-8")
+        capped = {"counter": "3\n"}
+        silent = {"STUB_SILENT": "1"}
+        cases = [
+            (2, invalid, {}), (3, self.handoff, capped), (4, self.handoff, silent), (5, in_flight, {}),
+        ]
+        for expected, path, extra in cases:
+            with self.subTest(code=expected):
+                self.counter.parent.mkdir(parents=True, exist_ok=True)
+                self.counter.unlink(missing_ok=True)
+                if "counter" in extra:
+                    self.counter.write_text(extra["counter"], encoding="utf-8")
+                with mock.patch.dict(os.environ, {k: v for k, v in extra.items() if k != "counter"}):
+                    out, err = io.StringIO(), io.StringIO()
+                    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                        code = relay_main([str(path)])
+                self.assertEqual(code, expected, err.getvalue())
+                self.assertEqual(self.spawned, [])
+                self.assertNotIn("retr", out.getvalue() + err.getvalue())
+
+    def test_without_the_variable_a_refusal_in_code_6_is_not_retried(self) -> None:
+        """F-0003 A32: the variable absent, the relay is refused as it is today."""
+        self.other_session()
+        code, out, err = self.relay()
+        self.assertEqual(code, 6, err)
+        self.assertEqual(self.spawned, [])
+        self.assertNotIn("CLAUDE_HANDOFF_RETRY_MINUTES", out + err)
+
+    def test_a_value_outside_1_to_1440_is_not_retried_and_is_reported_as_written(self) -> None:
+        """F-0003 A32: not a number, 0, 1441, a sign or a fraction: no retry, and the value is named."""
+        self.other_session()
+        for value in ("0", "1441", "abc", "-5", "30.5", "1e2", "30 minutes"):
+            with self.subTest(value=value):
+                os.environ["CLAUDE_HANDOFF_RETRY_MINUTES"] = value
+                code, out, err = self.relay()
+                self.assertEqual(code, 6, err)
+                self.assertEqual(self.spawned, [])
+                self.assertIn(f"CLAUDE_HANDOFF_RETRY_MINUTES={value} is not an integer from 1 to 1440", err)
+
+    def test_the_variable_set_but_empty_is_the_variable_absent(self) -> None:
+        """F-0003 A32: an empty value is not a bound and is not reported."""
+        self.other_session()
+        os.environ["CLAUDE_HANDOFF_RETRY_MINUTES"] = ""
+        code, out, err = self.relay()
+        self.assertEqual((code, self.spawned), (6, []))
+        self.assertNotIn("CLAUDE_HANDOFF_RETRY_MINUTES", out + err)
+
+    def test_the_bounds_1_and_1440_are_valid(self) -> None:
+        """F-0003 A32: the range is closed: 1 and 1440 start a copy."""
+        self.other_session()
+        for value in ("1", "1440"):
+            with self.subTest(value=value):
+                self.spawned.clear()
+                os.environ["CLAUDE_HANDOFF_RETRY_MINUTES"] = value
+                self.assertEqual(self.relay()[0], 6)
+                self.assertEqual(len(self.spawned), 1, self.spawned)
 
     def trace(self) -> list[dict[str, object]]:
         """The lines of the day's retry trace of the project, as written."""
