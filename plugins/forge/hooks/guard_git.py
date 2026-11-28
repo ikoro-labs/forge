@@ -2043,6 +2043,77 @@ def _location_reason(name: str) -> str:
     )
 
 
+# The groups of gh whose verbs, but these reads, write on GitHub; and the groups whose writing verbs
+# are listed. A verb outside both lists of a group is judged by the first kind: closed by default.
+GH_READ_VERBS = {
+    "pr": frozenset({"list", "view", "status", "diff", "checks", "checkout"}),
+    "issue": frozenset({"list", "view", "status"}),
+    "project": frozenset({"list", "view", "field-list", "item-list"}),
+}
+GH_WRITE_VERBS = {
+    "release": frozenset({"create", "delete", "edit", "upload", "delete-asset"}),
+    "label": frozenset({"create", "edit", "delete", "clone"}),
+    "run": frozenset({"rerun", "cancel", "delete"}),
+    "workflow": frozenset({"run", "enable", "disable"}),
+    "repo": frozenset({"create", "fork", "sync", "edit", "delete", "rename", "archive", "unarchive"}),
+    "gist": frozenset({"create", "edit", "delete", "rename"}),
+    "cache": frozenset({"delete"}),
+}
+MUTATION = re.compile(r"\bmutation\b", re.IGNORECASE)
+
+
+def _api_write(
+    args: list[str], here: str | None, bodies: str, read_text: Callable[[str], str | None]
+) -> str | None:
+    """The write a `gh api` call makes (the words after `api`), or None when it only reads.
+
+    Judged in every reading of its words (see `api_readings`). A GraphQL call writes when its query
+    holds a mutation, or cannot be read (a variable, a pipe): closed by default.
+    """
+    readings = api_readings(args)
+    if readings is None:
+        return "gh api (too many redirections to read)"
+    for words, redirections in readings:
+        call = parse_api(words)
+        endpoint = call.endpoint.split("?", 1)[0].strip("/")
+        if endpoint.lower() == "graphql":
+            texts, unread = _graphql_texts(args, words, redirections, here, bodies, read_text)
+            if unread or MUTATION.search("\n".join(texts)):
+                return "gh api graphql (mutation)"
+        elif not _reads(words):
+            return f"gh api {_api_method(call)} {endpoint}"
+    return None
+
+
+def github_write(
+    words: list[str],
+    here: str | None = None,
+    bodies: str = "",
+    read_text: Callable[[str], str | None] = read_text_or_none,
+) -> str | None:
+    """The gesture of a command that writes on GitHub, named as the agent typed it, or None.
+
+    A push (but a dry run), a `gh` verb that creates, edits, comments, closes or merges, a `gh api`
+    call in write: the gestures an agent makes under the identity of the agents (`agent_identity`).
+    """
+    if words and words[0] == "git":
+        args = _subcommand_and_args(words[1:])
+        pushes = bool(args) and args[0] == "push" and not {"--dry-run", "-n"} & set(args[1:])
+        return "git push" if pushes else None
+    call = gh_command(words)
+    if not call:
+        return None
+    if call[0] == "api":
+        return _api_write(call[1:], here, bodies, read_text)
+    act = gh_act(words)
+    if act is None:
+        return None
+    group, verb, _rest = act
+    if group in GH_READ_VERBS:
+        return None if verb in GH_READ_VERBS[group] else f"gh {group} {verb}"
+    return f"gh {group} {verb}" if verb in GH_WRITE_VERBS.get(group, ()) else None
+
+
 def refusal(
     command: str,
     branch: str | Callable[[str | None], str],
@@ -2064,6 +2135,7 @@ def refusal(
     branch_deletion_covered: Callable[[str | None, list[str]], bool] = lambda *_: False,
     autonomy: Callable[[str], str | None] | None = None,
     tag_exists: Callable[[str | None, str], bool | None] | None = None,
+    identity: Callable[[str], str | None] | None = None,
 ) -> str | None:
     """Why the command is refused, or None when it may run.
 
@@ -2085,6 +2157,9 @@ def refusal(
     the name), None when it cannot tell: a push of a bare name is a tag push when it is one, and is
     held, with `autonomy`, when it cannot be told (`autonomy_gesture`). A caller that passes none
     (None) does not ask for it: `main` always passes it.
+    `identity` says why a gesture that writes on GitHub is refused for the identity of the agents
+    (`agent_identity.write_refusal`), None when it may run; it is asked, with the gesture's name, only
+    for a command that writes (`github_write`), and a caller that passes none (None) does not ask.
     """
     declared = list(owner_gestures)
     api_allowed = None if gh_api_allow is None else list(gh_api_allow)
@@ -2160,6 +2235,9 @@ def refusal(
                     named = None if tag_exists is None else (lambda name, d=in_dir: tag_exists(d, name))
                     if (gesture := autonomy_gesture(args, named)) and (closed := autonomy(gesture)):
                         return closed, merges
+            if identity is not None and (written := github_write(words, here, bodies, read_text)):
+                if closed := identity(written):
+                    return closed, merges
             if gesture := owner_gesture(words, here, bodies, read_text):
                 return _owner_refusal(gesture), merges
             if declared_refusal := _declared_gesture(words, declared):
