@@ -1381,11 +1381,9 @@ def human_interventions(f: Factory) -> Sli:
             if str((item.get("mergedBy") or {}).get("login", "")).lower() in humans and AGENT_MERGED not in label_names(item)
         )
     total = labels + (merges if isinstance(merges, int) else 0)
-    data = {
-        "numerateur": total, "denominateur": len(tickets), "valeur": round(total / len(tickets), 2),
-        "etiquettes": labels, "fusions_humain": merges,
-    }
-    return Sli(name, data=data, text=f"{str(data['valeur']).replace('.', ',')} par ticket fusionné ({total}/{len(tickets)})")
+    value = round(total / len(tickets), 2)
+    data = {"numerateur": total, "denominateur": len(tickets), "valeur": value, "etiquettes": labels, "fusions_humain": merges}
+    return Sli(name, data=data, text=f"{decimal(value)} par ticket fusionné ({total}/{len(tickets)})")
 
 
 def measure(project: Path, since: datetime, until: datetime, run: Runner) -> dict[str, Sli]:
@@ -1399,6 +1397,11 @@ def measures_dict(since: datetime, until: datetime, found: dict[str, Sli]) -> di
         "depuis": since.isoformat(), "jusqua": until.isoformat(), "jours": (until - since).days,
         **{key: item.to_dict() for key, item in found.items()},
     }
+
+
+def decimal(value: float) -> str:
+    """A number as the French text writes it: a comma, no `.0` for a whole one."""
+    return number(value).replace(".", ",")
 
 
 def plural(count: int, word: str) -> str:
@@ -1415,7 +1418,7 @@ def measures_rows(found: dict[str, Sli]) -> list[str]:
     else:
         count, apart = delay.data["echantillons"], delay.data["sans_evenement"]
         rows.append(
-            f"| Délai p90 (`lead-time p90`) | p90 {number(delay.data['p90_h'])} h, médiane {number(delay.data['mediane_h'])} h"
+            f"| Délai p90 (`lead-time p90`) | p90 {decimal(delay.data['p90_h'])} h, médiane {decimal(delay.data['mediane_h'])} h"
             f" | {plural(count, 'ticket')} fusionnés avec une pose de `ready-for-agent` ({apart} sans pose, exclus) |"
         )
     if touches.reason is not None:
@@ -1575,9 +1578,9 @@ def decide(base: dict[str, Sli], trial: dict[str, Sli], gestures: dict) -> dict:
         if missing:
             reasons.append(f"{label} : mesure sans objet ({' ; '.join(missing)})")
         elif key == "delai" and not after.data["p90_h"] < before.data["p90_h"]:
-            reasons.append(f"le délai p90 ne baisse pas ({number(before.data['p90_h'])} h à {number(after.data['p90_h'])} h)")
+            reasons.append(f"le délai p90 ne baisse pas ({decimal(before.data['p90_h'])} h à {decimal(after.data['p90_h'])} h)")
         elif key == "interventions" and after.data["numerateur"] * before.data["denominateur"] > before.data["numerateur"] * after.data["denominateur"]:
-            reasons.append(f"les interventions par ticket montent ({before.data['valeur']} à {after.data['valeur']})")
+            reasons.append(f"les interventions par ticket montent ({decimal(before.data['valeur'])} à {decimal(after.data['valeur'])})")
     if gestures["gestes"]:
         reasons.append(f"{plural(gestures['gestes'], 'geste')} d'une case `H` au journal des questions appliquées")
     return {"verdict": "non" if reasons else "oui", "raisons": reasons}
@@ -1603,7 +1606,8 @@ def run_baseline(args: argparse.Namespace, run: Runner, now: datetime) -> int:
     base = measure(args.projet, since, until, run)
     size = tickets_at_cap(Factory(args.projet, since, until, run))
     document: dict = {"projet": str(args.projet), "base": measures_dict(since, until, base), "taille": size.to_dict()}
-    lines = [f"Relevé de l'usine pour `{args.projet.resolve().name}` (F-0003, story 18).", ""]
+    name = refusal_journal.repo_of(str(args.projet)) or args.projet.resolve().name
+    lines = [f"Relevé de l'usine pour `{name}` (F-0003, story 18).", ""]
     if trial_since is None:
         lines += window_section("Fenêtre", since, until, base) + [cap_line(size)]
     else:

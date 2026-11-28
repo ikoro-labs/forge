@@ -130,6 +130,22 @@ class BaseWindow(BaselineCase):
             self.assertEqual(base[name]["statut"], "sans objet", name)
             self.assertTrue(base[name]["raison"], name)
 
+    def test_a84_the_comment_names_the_repository_not_the_worktree_folder(self) -> None:
+        """F-0003 A84 : lancé depuis un arbre de travail, le relevé nomme le dépôt, pas le dossier de l'arbre."""
+        self.world.git("worktree", "add", "-q", "-b", "autre", str(self.folder / "arbre-jetable"))
+        out, err = io.StringIO(), io.StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
+            code = main(["baseline", str(self.folder / "arbre-jetable")], run=self.world.runner, now=datetime(2026, 10, 31, tzinfo=timezone.utc))
+        self.assertEqual((code, err.getvalue()), (0, ""))
+        self.assertIn("pour `projet`", out.getvalue())
+
+    def test_a84_decimals_are_written_with_a_comma(self) -> None:
+        """F-0003 A84 : le texte est en français : 1,5 et non 1.5, pour le délai comme pour les interventions."""
+        self.world.answers["pr list"][1]["mergedAt"] = "2026-10-03T10:30:00Z"  # le ticket 1 : 48 h 30
+        code, out, _ = self.run_baseline("--depuis", "2026-10-01", "--jusqua", "2026-10-31")
+        self.assertEqual(code, 0)
+        self.assertIn("p90 48,5 h", out)
+
     def test_a84_the_window_must_end_after_it_starts(self) -> None:
         """F-0003 A84 : `--depuis` après `--jusqua` est refusé, sans appel à GitHub."""
         code, _, err = self.run_baseline("--depuis", "2026-10-31", "--jusqua", "2026-10-01")
