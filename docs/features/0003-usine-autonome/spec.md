@@ -1,7 +1,10 @@
 ---
 feature: F-0003
 document: spec
-statut: en-revue
+statut: accepte
+accepte_par: ikoro-labs
+accepte_le: 2026-11-28
+accepte_via: agent-autonomy
 destinataires: ikoro-labs (humain de la clé `accepting-human`, relit au titre du métier ; acceptation par `/forge:feature-accept`, tapée par lui ou lancée par le modèle sous la clé `agent-autonomy`), puis l'agent qui implémente ; forge:qc relit
 base: b543993
 date: 2026-11-28
