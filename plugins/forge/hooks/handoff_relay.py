@@ -50,6 +50,7 @@ from __future__ import annotations
 import datetime
 import json
 import os
+import random
 import re
 import shlex
 import shutil
@@ -59,6 +60,7 @@ import time
 from pathlib import Path
 from typing import Any, cast
 
+import agent_lock
 import handoff_header
 import handoff_trigger
 from handoff_trigger import DEFAULT_LIMIT
@@ -72,6 +74,10 @@ BACKGROUNDED = re.compile(r"backgrounded\W+([0-9a-f]+)\b")
 COMM_LENGTH = 15
 # CLAUDE_HANDOFF_CLOSE_DRY_RUN values that leave the dry run off.
 OFF = ("", "0", "false", "no", "off")
+# CLAUDE_HANDOFF_RETRY_MINUTES: the accepted bound, in minutes; the first wait and the cap of a wait, in seconds.
+RETRY_RANGE = (1, 1440)
+BACKOFF_START = 30
+BACKOFF_CAP = 300
 
 
 def fail(message: str, code: int) -> int:
@@ -405,6 +411,17 @@ def relay(argv: list[str]) -> int:
     handoff = handoff.resolve()
     if hand_over_only:
         return hand_over(handoff, force)
+    code = attempt(handoff, force)
+    if code == 6:
+        schedule_retry(handoff, force)
+    return code
+
+
+def attempt(handoff: Path, force: bool, close_owner: bool = True) -> int:
+    """One try of the relay, from the checks to the successor: the exit code of the script.
+
+    `close_owner` false leaves the calling session (CLAUDE_PID) alone: a retry that outlives it must
+    not close a process that is no longer that session."""
     dry_run = os.environ.get("CLAUDE_HANDOFF_CLOSE_DRY_RUN", "").strip().lower() not in OFF
     cap = int(os.environ.get("CLAUDE_HANDOFF_RELAY_MAX", "200"))
     close_delay = int(os.environ.get("CLAUDE_HANDOFF_CLOSE_DELAY", "45"))
@@ -480,14 +497,146 @@ def relay(argv: list[str]) -> int:
     else:
         print(f"follow the relay with: claude attach {relay_id}")
     # CLAUDE_PID is the session that runs this script. The delay lets it finish its reply.
-    schedule_close(owner, close_delay, terminal, dry_run)
+    schedule_close(owner if close_owner else "", close_delay, terminal, dry_run)
     return 0
+
+
+def retry_minutes() -> tuple[int | None, str]:
+    """The bound CLAUDE_HANDOFF_RETRY_MINUTES sets, in minutes, and the problem with it.
+
+    Absent or empty: no bound, no problem. A value that is not an integer from 1 to 1440 is no bound
+    and a problem, worded with the value as it was written."""
+    raw = os.environ.get("CLAUDE_HANDOFF_RETRY_MINUTES")
+    if raw is None or not raw.strip():
+        return None, ""
+    text = raw.strip()
+    if re.fullmatch(r"[0-9]+", text) and RETRY_RANGE[0] <= int(text) <= RETRY_RANGE[1]:
+        return int(text), ""
+    return None, (
+        f"CLAUDE_HANDOFF_RETRY_MINUTES={raw} is not an integer from {RETRY_RANGE[0]} to {RETRY_RANGE[1]}: "
+        "the relay does not retry"
+    )
+
+
+def jitter() -> float:
+    """The factor C05 draws for one wait: uniform in [0.8, 1.2]."""
+    return random.uniform(0.8, 1.2)
+
+
+def backoff(tries: int, factor: float) -> int:
+    """Seconds to wait before retry `tries` (from 0): 30 s doubled each time and capped at 300 s, times
+    `factor`, and capped again, so that no wait lasts more than 300 s whatever the jitter draws."""
+    return min(round(min(BACKOFF_START * 2**min(tries, 16), BACKOFF_CAP) * factor), BACKOFF_CAP)
+
+
+def pause(seconds: float) -> None:
+    time.sleep(seconds)
+
+
+def retry_lock(state: Path, project: Path) -> Path:
+    name = re.sub(r"[\\/:]", "-", str(project))
+    return state / f"relay-retry-{name}.lock"
+
+
+def lock_holder(path: Path) -> int | None:
+    """The pid of the live copy that holds the lock at `path`; None when it is free or its holder is
+    dead. A lock that cannot be read counts as held (pid 0): a copy may be writing it."""
+    if not path.exists():
+        return None
+    lock = agent_lock.read(path)
+    if lock is None:
+        return 0
+    return lock.pid if lock.alive else None
+
+
+def take_retry_lock(path: Path) -> bool:
+    """Create the lock of the project's one waiting copy, atomically; a dead holder's lock is replaced."""
+    pid = os.getpid()
+    fields = {"ticket": "relay-retry", "pid": pid, "start": handoff_header.process_start(pid), "name": "relay-retry"}
+    for _ in range(2):
+        try:
+            descriptor = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except FileExistsError:
+            if lock_holder(path) is not None:
+                return False
+            path.unlink(missing_ok=True)
+            continue
+        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+            json.dump(fields, stream)
+        return True
+    return False
+
+
+def schedule_retry(handoff: Path, force: bool) -> None:
+    """After a refusal in code 6: start the detached copy that tries again, when the bound is set.
+
+    The copy runs `retry` in its own session, so this process returns at once with the refusal."""
+    minutes, problem = retry_minutes()
+    if problem:
+        print(problem, file=sys.stderr)
+    if minutes is None:
+        return
+    owner = os.environ.get("CLAUDE_PID", "")
+    spec = {
+        "minutes": minutes, "force": force, "handoff": str(handoff),
+        "owner": owner, "owner_start": handoff_header.process_start(int(owner)) if owner.isdigit() else "",
+    }
+    argv = [sys.executable, str(Path(__file__).resolve()), "--retry", json.dumps(spec)]
+    if os.environ.get("CLAUDE_HANDOFF_CLOSE_DRY_RUN", "").strip().lower() not in OFF:
+        print(f"dry run, would start a detached retry for up to {minutes} minutes: {shlex.join(argv)}")
+        return
+    state = Path.home() / ".claude" / "hooks" / "state"
+    holder = lock_holder(retry_lock(state, Path.cwd()))
+    if holder is not None:
+        who = f" (pid {holder})" if holder else ""
+        print(f"a retry already waits for this repository{who}: no second copy is started")
+        return
+    try:
+        spawn(argv)
+    except OSError as error:
+        print(f"could not start the retry: {error}", file=sys.stderr)
+        return
+    print(f"no successor yet: a copy of the relay retries in the background for up to {minutes} minutes")
+
+
+def owner_is_alive(owner: str, start: str) -> bool:
+    """CLAUDE_PID still runs the session that called the relay (a pid can be reused)."""
+    if not owner.isdigit() or not handoff_header.process_alive(int(owner)):
+        return False
+    return not start or handoff_header.process_start(int(owner)) == start
+
+
+def retry(spec: dict[str, Any]) -> int:
+    """The detached copy: wait, try the relay again, until it is not refused or the bound is reached.
+
+    One copy waits per project (the lock). The handoff is read again at each try, and the calling
+    session is closed, at a success, only when it still runs. Returns what the last try returned."""
+    handoff, force, limit = Path(spec["handoff"]), bool(spec["force"]), int(spec["minutes"]) * 60
+    state = Path.home() / ".claude" / "hooks" / "state"
+    state.mkdir(parents=True, exist_ok=True)
+    lock = retry_lock(state, Path.cwd())
+    if not take_retry_lock(lock):
+        return 6
+    try:
+        waited = tries = 0
+        while True:
+            wait = min(backoff(tries, jitter()), limit - waited)
+            pause(wait)
+            waited += wait
+            tries += 1
+            code = attempt(handoff, force, owner_is_alive(spec["owner"], spec["owner_start"]))
+            if code != 6 or waited >= limit:
+                return code
+    finally:
+        lock.unlink(missing_ok=True)
 
 
 def main(argv: list[str]) -> int:
     if len(argv) == 3 and argv[0] == "--close":
         close(int(argv[1]), json.loads(argv[2]))
         return 0
+    if len(argv) == 2 and argv[0] == "--retry":
+        return retry(json.loads(argv[1]))
     if len(argv) == 2 and argv[0] == "--exit-console":
         return exit_console(int(argv[1]))
     return relay(argv)
