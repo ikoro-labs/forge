@@ -158,6 +158,25 @@ class OneTicket(unittest.TestCase):
         self.assertRegex(mode(), r"questions échues[^.]*répartiteur|répartiteur[^.]*questions échues")
 
 
+class Page(unittest.TestCase):
+    """The page of the feature says what the pinned entry does, and what has not been tried."""
+
+    def page(self) -> str:
+        text = (support.REPO_ROOT / "docs" / "usine-autonome.md").read_text(encoding="utf-8")
+        return " ".join(text.split("## L'agent épinglé", 1)[1].split("\n## ", 1)[0].split())
+
+    def test_the_page_documents_the_commands_and_the_label(self) -> None:
+        """F-0003 A48, A57, A59: the lock check, the release, the G5 lines and the label `route` gives back."""
+        page = self.page()
+        for text in ("agent_lock.py check . <n>", "agent_lock.py release . <n>", "Décideur : staff-engineer"):
+            self.assertIn(text, page)
+        self.assertRegex(page, r"rend `ready-for-agent` à un ticket")
+
+    def test_the_page_says_what_was_not_tried(self) -> None:
+        """The page says the pinned entry was not run in a real `claude -p` session."""
+        self.assertRegex(self.page(), r"Pas éprouvé : une session `claude -p")
+
+
 class WithoutTheOption(unittest.TestCase):
     """A50: without `--ticket` the skill does what it did before."""
 
