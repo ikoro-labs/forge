@@ -173,7 +173,6 @@ second plugin reste hors dépôt. Les chiffres relevés par la session de pilota
 | 2026-11-28 | Forge garde tout ce qu'il fait et se sépare en un coeur neutre et des adaptateurs minces ; Claude Code reste le premier adaptateur, sans régression ; Codex est le deuxième candidat | ikoro-labs, demande relayée par sa session de pilotage (`idee.md`) | sans objet |
 | 2026-11-28 | Le cadrage s'écrit tout de suite ; la construction attend la fusion du lot 1 de F-0003 (#340), les deux touchant les hooks | ikoro-labs, même demande | sans objet |
 | 2026-11-28 | L'audit du second plugin de l'humain vit hors de ce dépôt ; rien ici ne le nomme ni ne décrit son contenu | ikoro-labs, même demande | sans objet |
-
 | 2026-11-28 | Q1 : une feature, deux lots, un point de décision entre eux, une issue (#395) ; lot A d'abord | `forge:product-owner` (P2) | tour 1 |
 | 2026-11-28 | Q3 : parité pour la chaîne des features, le coder, `forge:qc`, les décideurs et tous les gardes ; passation, audit des jetons et évaluations propres à Claude Code (section 2) | `forge:product-owner` (P3, P1) | tour 1 |
 | 2026-11-28 | Q4 : l'ordre posé par l'humain est gardé : toute la construction attend la fusion du lot 1 de F-0003, y compris ce qui ne touche pas les hooks | `forge:staff-engineer` (T2) | tour 1 |
