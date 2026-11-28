@@ -195,6 +195,7 @@ du front matter qu'un agent de plugin ignore : le détail est dans
 | [`docs/incidents.md`](docs/incidents.md) | la revue sans blâme d'un incident (clé `incident-dir`), la classe de son correctif (`mécanique` ou `jugement`), son refus sans correctif et le décompte par classe |
 | [`docs/correspondance-memoire.md`](docs/correspondance-memoire.md) | les 21 entrées de la mémoire du poste, chacune rangée en ligne du plugin et son test, en documentation du projet ou sans règle |
 | [`docs/regles-de-code.md`](docs/regles-de-code.md) | les règles de code que l'usine tient, clé par clé : `stack` (une dépendance que personne n'a décidée est refusée, et le refus dit la ligne à écrire ; le geste de l'humain qui accepte une dépendance), `lockfile`, `never-weaken` (`raised-entry`), `lint-on-write` et `format-on-write` (la fin de la sortie de l'outil relayée), `architecture-check`, `recurring-finding` avec `slo-issue`, et la base de règles du gabarit (ruff : complexité 10, paramètres 5, imbrication 5, sans plafond de lignes) |
+| [`docs/usine-autonome.md`](docs/usine-autonome.md) | la feature F-0003, ticket par ticket : l'identité GitHub des agents (clés `agent-token-command` et `agent-login`, le refus de `guard_git` sans jeton `ghs_`) |
 | [`docs/contribuer.md`](docs/contribuer.md) | modifier le plugin, publier une version, l'organisation du dépôt |
 | [`CHANGELOG.md`](CHANGELOG.md) | ce qui est entré dans chaque version, et ce qui en est resté dehors |
 

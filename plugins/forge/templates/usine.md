@@ -19,7 +19,7 @@ relatifs à la racine du dépôt.
 
 ## Clés protégées : `docs/agents/usine-gardes.md`
 
-Vingt-quatre clés bornent les pouvoirs de l'agent : `agent-autonomy`, `protected-path`,
+Vingt-six clés bornent les pouvoirs de l'agent : `agent-autonomy`, `agent-token-command`, `agent-login`, `protected-path`,
 `gh-api-allow`, `owner-gesture`, `never-weaken`, `infra-hosts`, `infra-verify`, `pr-cap-raiser`,
 `ticket-pr-cap`, `ticket-pr-cap-since`, `ticket-pr-cap-exempt`, `ticket-pr-cap-small`, `ticket-budget`, `run-limits`,
 `e2e-run-limits`, `run-budget`,
@@ -86,6 +86,25 @@ par la clé `release-trigger` pour savoir quand une version est due. La règle e
 `plugins/forge/autonomie.md`.
 
 - `agent-autonomy` : `on`
+
+L'identité GitHub des agents, que l'humain du projet installe et que le plugin ne pose jamais : une
+application GitHub dont les agents tiennent un jeton d'installation (préfixe `ghs_`, une heure de vie), et
+non le jeton de l'humain. Deux clés la décrivent, protégées toutes deux (elles bornent ce que l'agent peut
+écrire sur GitHub). `agent-token-command` : une commande, sur une ligne, qui imprime un jeton d'installation
+sur une ligne et sort en 0 ; le plugin ne signe rien lui-même (RS256 sort de la bibliothèque standard), c'est
+la commande du projet qui le fait, et le plugin la nomme par sa clé, jamais par son texte. `agent-login` : le
+login que portent les gestes de l'application (par exemple `mon-app[bot]`). Avec les deux clés, `guard_git`
+refuse tout geste qui écrit sur GitHub (`git push`, un verbe de `gh pr`, `gh issue`, `gh release`..., un `gh api`
+en écriture, une mutation GraphQL) tant que `GH_TOKEN` (sinon `GITHUB_TOKEN`) de la session ne commence pas par
+`ghs_`, et le refus le dit ; il refuse aussi, sans condition de jeton, toute écriture par un outil MCP GitHub,
+dont le serveur tient son propre jeton : les agents écrivent par `gh`. Le jeton de l'humain ne remplace jamais
+celui de l'application. Seul le préfixe se vérifie : le garde ne prouve ni de quelle application vient le jeton
+ni qu'une commande ne le change pas pour la sienne. Sans l'une des deux clés, rien ne change : « sans objet
+(clé `agent-login` absente) », sans valeur par défaut. Une ligne répétée, ou une valeur vide, ferme toute
+écriture et le refus la cite.
+
+- `agent-token-command` : `<commande qui imprime un jeton d'installation sur une ligne>`
+- `agent-login` : `<login de l'application, par exemple mon-app[bot]>`
 
 L'agent du projet qui tranche les questions de doctrine du métier (`DOMAIN`). Sans lui, elles vont à
 un humain.

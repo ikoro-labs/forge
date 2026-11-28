@@ -135,6 +135,9 @@ script de la 1.22.0, ou de la tête de `main` passé à `release.py` par `--essa
   l'agent détient le jeton, et aucun contrôle d'auteur ne les distingue ; sans la clé, personne ne relève le
   plafond par l'étiquette.
 - `readonly-agent`, `readonly-command` : aucun agent du dépôt en plus de ceux du plugin.
+- `agent-token-command`, `agent-login` : l'application GitHub des agents n'est pas encore installée sur ce
+  dépôt (geste de l'humain, ticket #401) ; sans les deux clés, `guard_git` ne refuse aucun geste au titre de
+  l'identité, et les agents agissent encore sous le jeton de l'humain.
 - `ticket-budget`, `owner-gesture`, `never-weaken`, `infra-hosts`, `infra-verify`, `validation-owner`,
   `validation-reviewer`, `pin-bump` : ce dépôt ne les déclare pas ; l'étape qui lit chacune est « sans
   objet (clé `<nom>` absente) », jamais `PASS`.

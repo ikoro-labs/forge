@@ -153,6 +153,8 @@ from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import NamedTuple
 
+from agent_identity import mcp_refusal as mcp_identity_refusal
+from agent_identity import write_refusal as identity_refusal
 from budget import KEY as BUDGET_KEY
 from budget import merge_refusal, state_path
 from refusal_journal import record
@@ -2827,6 +2829,7 @@ RULES = (
     ("merge with checks not green", "checks-not-green"),
     (f"the `{AUTONOMY_KEY}` key is not `on`", "agent-autonomy"),
     ("git finds the repository by it", "git-location"),
+    ("the identity of the agents", "agent-identity"),
 )
 GIT_VERBS = frozenset(
     {"add", "am", "apply", "bisect", "blame", "branch", "checkout", "cherry-pick", "clean", "clone"}
@@ -2889,6 +2892,18 @@ def mcp_merge(tool: object, tool_input: object) -> bool:
     return "merge" in action or (isinstance(method, str) and method.lower() == "merge")
 
 
+def mcp_github_write(tool: object) -> bool:
+    """Whether a tool call is a write by a GitHub MCP server, which `gh` never sees.
+
+    The tool is one of a server whose name holds `github`; a name that starts with `get_`, `list_` or
+    `search_`, or ends with `_read`, is a reading, and any other is a write: closed by default.
+    """
+    if not isinstance(tool, str) or not tool.startswith("mcp__") or "github" not in tool.lower():
+        return False
+    action = tool.rsplit("__", 1)[-1].lower()
+    return not (action.startswith(("get_", "list_", "search_")) or action.endswith("_read"))
+
+
 def main() -> int:
     event = json.load(sys.stdin)
     command = str(event.get("tool_input", {}).get("command", ""))
@@ -2898,6 +2913,10 @@ def main() -> int:
     config = loaded.config
     for notice in loaded.notices:
         sys.stderr.write(f"forge guard_git: {notice}.\n")
+    if mcp_github_write(tool := event.get("tool_name")) and (reason := mcp_identity_refusal(config, str(tool))):
+        record("guard_git", reason, RULES, event, lambda: "mcp write")
+        sys.stderr.write(f"Blocked by the forge plugin (guard_git): {reason}.\n")
+        return 2
     if mcp_merge(event.get("tool_name"), event.get("tool_input")):
         reason = autonomy_refusal(str(root), "merge")
         if reason is None:
@@ -2926,6 +2945,7 @@ def main() -> int:
         ),
         autonomy=lambda gesture: autonomy_refusal(str(root), gesture),
         tag_exists=lambda directory, name: local_tag_exists(directory or cwd, name),
+        identity=lambda gesture: identity_refusal(config, os.environ, gesture),
     )
     if reason is None:
         return 0
