@@ -192,5 +192,59 @@ class AnUnreadableLineClosesEveryWrite(Refuses):
                 self.refused(run(where, call("set", url="claude.ai/artifact/zzz999", collection="notes")), "oups")
 
 
+def refusals(where: Path) -> Path:
+    return where.parent / "home" / ".claude" / "hooks" / "state" / "refusals"
+
+
+def journal(where: Path) -> list[dict[str, str]]:
+    return [
+        json.loads(text)
+        for path in sorted(refusals(where).glob("*.jsonl"))
+        for text in path.read_text(encoding="utf-8").splitlines()
+    ]
+
+
+class ARefusalIsJournaled(unittest.TestCase):
+    FIELDS = ("guard", "rule", "agent", "repo", "branch", "verb")
+
+    def test_f_0003_a5_a_refusal_leaves_one_line_and_never_the_content(self) -> None:
+        """F-0003 A5: guard, rule `human-collection`, agent, repo, branch and verb; nothing of the written data."""
+        with project(KEYS) as where:
+            tool_input = call("set", doc_id="DOC-SECRET-7", data={"secret": "CONTENU-DU-CLIC"})
+            self.assertEqual(run(where, tool_input, "forge:coder").returncode, 2)
+            lines = journal(where)
+            self.assertEqual(len(lines), 1)
+            self.assertEqual(
+                {name: lines[0][name] for name in self.FIELDS},
+                {
+                    "guard": "guard_human_data",
+                    "rule": "human-collection",
+                    "agent": "forge:coder",
+                    "repo": "depot",
+                    "branch": "feat/x",
+                    "verb": "ArtifactData write",
+                },
+            )
+            written = "".join(path.read_text(encoding="utf-8") for path in refusals(where).glob("*.jsonl"))
+            for secret in ("CONTENU-DU-CLIC", "DOC-SECRET-7", PAGE):
+                self.assertNotIn(secret, written)
+
+    def test_f_0003_a5_a_batch_and_an_unreadable_line_are_journaled_under_their_own_rule(self) -> None:
+        """F-0003 A5: a refused batch is `human-collection`, a refusal on a line that cannot be read is `unreadable-key-line`."""
+        with project(KEYS) as where:
+            self.assertEqual(run(where, batch(operation("set", "decisions"))).returncode, 2)
+            self.assertEqual([line["rule"] for line in journal(where)], ["human-collection"])
+        with project(keys("oups")) as where:
+            self.assertEqual(run(where, call("set")).returncode, 2)
+            self.assertEqual([line["rule"] for line in journal(where)], ["unreadable-key-line"])
+
+    def test_f_0003_a5_a_call_that_passes_leaves_no_line(self) -> None:
+        """F-0003 A5: a read, and a write that spares the collection, leave no journal at all."""
+        with project(KEYS) as where:
+            self.assertEqual(run(where, call("get")).returncode, 0)
+            self.assertEqual(run(where, call("set", collection="notes")).returncode, 0)
+            self.assertEqual(journal(where), [])
+
+
 if __name__ == "__main__":
     unittest.main()

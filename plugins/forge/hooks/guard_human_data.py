@@ -20,12 +20,19 @@ import sys
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
+from refusal_journal import record
 from usine import CONFIG_PATH, GUARD_PATH, ConfigUnreadable, load_at, project_root, split_value
 from utf8_stdio import use_utf8
 
 KEY = "human-collections"
 GUARD = "guard_human_data"
 READS = frozenset({"get", "list", "query", "profiles"})
+
+# The refusals journal: the name of each rule, found by a fixed phrase of the reason.
+RULES = (
+    ("only from the human", "human-collection"),
+    ("is not `<artifact URL> | <collection>`", "unreadable-key-line"),
+)
 
 
 def _text(value: object) -> str | None:
@@ -126,6 +133,7 @@ def main() -> int:
     reason = refusal(event, lines)
     if reason is None:
         return 0
+    record(GUARD, reason, RULES, event, lambda: "ArtifactData write")
     sys.stderr.write(reason + ".\n")
     return 2
 
