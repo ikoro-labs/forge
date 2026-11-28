@@ -1,7 +1,10 @@
 ---
 feature: F-0003
 document: cadrage
-statut: en-revue
+statut: accepte
+accepte_par: ikoro-labs
+accepte_le: 2026-11-28
+accepte_via: agent-autonomy
 taille: L
 destinataires: ikoro-labs (humain de la clé `accepting-human`) ; acceptation par `/forge:feature-accept`, lancée par le modèle sous la clé `agent-autonomy` une fois les points ouverts tranchés ; forge:qc relit
 contexte: forge (plugin) ; touchés : un hook qui garde les données de l'humain, l'identité GitHub des agents, passation et relais (`handoff_header.py`, `handoff_relay.py`), un répartiteur nouveau sous `plugins/forge/scripts/`, `question_delay.py`, `forge:coder`, `forge:qc`, découpage en tickets, gabarit `usine.md`
