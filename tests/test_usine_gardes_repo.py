@@ -80,8 +80,18 @@ class TheGuardFileIsTheProtectedPath(unittest.TestCase):
         self.assertNotIn("docs/agents/usine.md", protected)
         self.assertEqual(
             sorted(set(protected) - {"docs/agents/usine-gardes.md"}),
-            [".github/CODEOWNERS", "plugins/forge/hooks/guard_", "plugins/forge/hooks/hooks.json"],
+            [
+                ".github/CODEOWNERS",
+                "plugins/forge/hooks/guard_",
+                "plugins/forge/hooks/hooks.json",
+                "plugins/forge/hooks/usine.py",
+            ],
         )
+
+    def test_q8_usine_py_is_protected_and_owned(self) -> None:
+        """#340 Q8: `usine.py` reads the guards' keys, so no agent may merge a change to it."""
+        self.assertIn("plugins/forge/hooks/usine.py", parse(read(GUARD_FILE)).get("protected-path", []))
+        self.assertEqual(owned_patterns().get("/plugins/forge/hooks/usine.py*"), ["@sunderland-labs"])
 
     def test_b6_codeowners_holds_the_guard_file_and_no_longer_usine_md(self) -> None:
         """#345 B6: one CODEOWNERS line for the guard file, none left for `usine.md`."""

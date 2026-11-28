@@ -3,4 +3,5 @@
 /.github/CODEOWNERS* @sunderland-labs
 /plugins/forge/hooks/hooks.json* @sunderland-labs
 /plugins/forge/hooks/guard_* @sunderland-labs
+/plugins/forge/hooks/usine.py* @sunderland-labs
 /docs/agents/usine-gardes.md* @sunderland-labs
