@@ -302,7 +302,7 @@ def count_prs(
                 continue
         if small is not None:
             added, removed = item.get("additions"), item.get("deletions")
-            if not all(type(lines) is int and lines >= 0 for lines in (added, removed)):
+            if not (type(added) is int and type(removed) is int and added >= 0 and removed >= 0):
                 return None
             if added + removed < small:
                 continue
