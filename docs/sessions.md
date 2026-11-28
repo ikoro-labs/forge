@@ -231,7 +231,46 @@ du jour bouge et avant `claude --bg`, sauf le code 4, qui suit le lancement.
 | 3 | plafond du jour atteint (`CLAUDE_HANDOFF_RELAY_MAX`) |
 | 4 | identifiant du successeur illisible dans la sortie de `claude --bg` |
 | 5 | agents de la session encore vivants, `en_vol` non vide, ou `--force` sans `sauvetage` |
-| 6 | une autre session du dépôt vit : aucun successeur, elle l'est de fait ; les sessions trouvées sont sur stderr |
+| 6 | une autre session du dépôt vit : aucun successeur, elle l'est de fait ; les sessions trouvées sont sur stderr ; avec `CLAUDE_HANDOFF_RETRY_MINUTES`, une copie détachée réessaie (voir plus bas) |
+
+### Le nouvel essai d'un relais refusé (code 6)
+
+Sans réglage, un relais refusé en code 6 ne se refait pas : la session le dit, laisse la passation à
+l'autre session et s'arrête. Avec `CLAUDE_HANDOFF_RETRY_MINUTES` (un entier de 1 à 1440), le relais
+refusé en code 6 rend toujours 6 tout de suite, mais lance d'abord une copie détachée de lui-même
+(`handoff_relay.py --retry`, réservée au relais) qui réessaie.
+
+- **Seul le code 6 réessaie.** Un refus en code 2, 3, 4 ou 5 ne lance rien, variable ou non.
+- **Un verrou par projet.** La copie pose `~/.claude/hooks/state/relay-retry-<projet>.lock` (le nom du
+  projet aplati comme celui du compteur du relais) : une seule attente par projet. Un relais refusé pendant
+  qu'une copie vivante attend ne lance pas de seconde copie et le dit. Le verrou d'une copie morte (le
+  processus a fini, ou son pid sert à un autre processus) est remplacé ; un verrou illisible compte pour tenu,
+  et supprimer le fichier libère le projet.
+- **Le recul.** Avant le premier nouvel essai, 30 s ; avant chacun des suivants, le double, plafonné à 300 s.
+  Chaque attente est multipliée par un tirage uniforme entre 0,8 et 1,2, puis plafonnée de nouveau à 300 s :
+  aucune attente ne dépasse 300 s, donc le successeur démarre au plus 300 s après la fin de l'autre session.
+- **Chaque essai relit la passation** et rejoue toutes les vérifications du relais, comme un relais lancé à la
+  main : l'autre session, les agents (code 5), le compteur du jour (code 3). Le compteur ne monte qu'à l'essai
+  qui lance le successeur, une seule fois. La copie s'arrête sur le premier code qui n'est pas 6.
+- **La borne.** La copie compte les secondes qu'elle a attendues ; la dernière attente est raccourcie pour que
+  le total atteigne la borne sans la dépasser. À la borne, si une autre session vit encore, elle s'arrête en
+  code 6 sans successeur, et son message dit le nombre d'essais et les secondes attendues.
+- **La session appelante.** Après un essai qui réussit, la copie ferme la session qui a appelé le relais
+  (`CLAUDE_HANDOFF_CLOSE_DELAY`, comme sans nouvel essai) seulement si son pid la fait encore tourner ; sinon
+  elle n'y touche pas.
+- **La trace.** Chaque essai ajoute une ligne JSON à
+  `~/.claude/hooks/state/relay-retry-<projet>-<AAAA-MM-JJ>.jsonl` : `date`, `project`, `attempt` (1 pour le
+  premier nouvel essai), `wait_s` (l'attente qui l'a précédé), `code`, et `message` sur l'essai qui arrête la
+  copie à la borne. Le refus qui a lancé la copie n'y figure pas : il est sur la sortie du relais.
+- **Une variable absente, vide ou hors de 1 à 1440** ne change rien : le relais se comporte comme avant.
+  Une valeur non vide invalide est signalée sur stderr telle qu'elle est écrite, avec le refus.
+- **Essai à blanc.** Avec `CLAUDE_HANDOFF_CLOSE_DRY_RUN`, le relais écrit la commande de la copie et ne la
+  lance pas.
+
+Éprouvé : par les tests, la copie rejouée dans le processus du test avec une horloge que le test avance, et un
+test Linux qui lance le relais en processus et vérifie que la copie a sa propre session. Pas éprouvé : sous
+Windows (le lancement détaché y suit celui de la fermeture de session, `CREATE_BREAKAWAY_FROM_JOB`
+compris), ni sur une vraie session de Claude Code qui attend plusieurs minutes une autre session.
 
 ### Céder la main à la session interactive
 
@@ -255,6 +294,7 @@ interactive ou un `CLAUDE_PID` inconnu, et (code 2) une passation qui ne nomme a
 | `CLAUDE_HANDOFF_RELAY_MAX` | 200 | relais par projet et par jour (code 3 au-delà) |
 | `CLAUDE_HANDOFF_CLOSE_DELAY` | 45 | secondes avant la fermeture de la session appelante, par le relais ou par `--yield`, 0 la garde ouverte |
 | `CLAUDE_HANDOFF_TERMINAL` | le terminal par défaut du bureau | commande de terminal (`ghostty -e`, `gnome-terminal --`, `wt.exe` sous Windows) où ouvrir `claude attach <id>` ; sans elle, le terminal par défaut du bureau par `xdg-terminal-exec` (spécification freedesktop) quand il est installé, aucune fenêtre sinon (Windows, macOS) ; `off`, `0`, `false`, `no` ou vide : aucune fenêtre |
+| `CLAUDE_HANDOFF_RETRY_MINUTES` | aucune | minutes (1 à 1440) pendant lesquelles une copie détachée du relais réessaie après un refus en code 6, avec un recul de 30 s doublé jusqu'à 300 s ; absente ou vide, aucun nouvel essai ; une autre valeur est signalée telle quelle et ignorée (voir [Le nouvel essai d'un relais refusé](#le-nouvel-essai-dun-relais-refusé-code-6)) |
 | `CLAUDE_HANDOFF_CLOSE_DRY_RUN` | aucune | affiche le lancement et la fermeture sans rien lancer, compteur et passation intacts ; `0`, `false`, `no`, `off` ou vide le laissent coupé |
 
 ### Sous Windows

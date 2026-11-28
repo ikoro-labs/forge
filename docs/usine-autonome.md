@@ -23,12 +23,42 @@ ligne de la clé, et son pid tient un verrou vivant du répartiteur
 
 Ce que la partie a ne fait pas : écrire le verrou. Le répartiteur le pose avec le ticket 8 ; tant que
 personne ne l'écrit, aucune session n'est ignorée, ce qui est le côté prudent. Le nouvel essai d'un relais
-refusé (`CLAUDE_HANDOFF_RETRY_MINUTES`) est la partie b du même ticket.
+refusé (`CLAUDE_HANDOFF_RETRY_MINUTES`) est la partie b du même ticket, décrite plus bas.
 
 Le nom d'une session ne prouve rien, une session de l'humain peut porter n'importe quel nom : c'est le
 verrou, qu'une session de l'humain ne tient jamais, qui la distingue. La spec disait « une session
 `interactive` n'est jamais ignorée », mais une passe `claude -p` s'inscrit `interactive` (relevé du
 2026-11-28, Claude Code 2.1.332) : le design (décision Q1, veto de l'humain) a remplacé ce test par le verrou.
+
+## Le nouvel essai d'un relais refusé (ticket 4, partie b)
+
+Un relais refusé en code 6 (une autre session vit sur le dépôt) ne réessayait jamais : la passation restait
+sans successeur tant que personne ne relançait. Avec la variable `CLAUDE_HANDOFF_RETRY_MINUTES`, il réessaie
+tout seul. C'est une variable de passation, pas une clé de `usine.md` : elle se pose dans l'environnement de
+la session, et le gabarit de `usine.md` n'a rien à dire d'elle. Sa ligne est dans le tableau de
+[`docs/sessions.md`](sessions.md#les-variables), qui décrit aussi le déroulé en entier.
+
+Ce qu'il faut retenir :
+
+- la variable vaut un entier de 1 à 1440 (minutes). Absente ou vide, rien ne change ; une autre valeur est
+  signalée telle quelle et ignorée ;
+- un refus en code 6 lance une copie détachée du relais et rend 6 aussitôt. La copie attend 30 s, puis le
+  double, jusqu'à 300 s, avec une gigue de plus ou moins 20 %, et rejoue le relais en relisant la passation ;
+- chaque attente reste sous 300 s : le successeur démarre au plus 300 s après la fin de l'autre session, et le
+  compteur du jour ne monte qu'une fois ;
+- quand les attentes ont atteint la borne, la copie s'arrête en code 6 et dit le nombre d'essais et le temps
+  attendu ;
+- une seule copie attend par projet ; un refus en code 2, 3, 4 ou 5 ne réessaie jamais ;
+- la trace est `~/.claude/hooks/state/relay-retry-<projet>-<jour>.jsonl`, une ligne par essai (`date`,
+  `project`, `attempt`, `wait_s`, `code`).
+
+Un point où le code s'écarte de la lettre de la spec : le contrôle C05 multiplie l'attente plafonnée à 300 s
+par un tirage de 0,8 à 1,2, ce qui peut donner 360 s, alors que le critère A29 veut au plus 300 s. Le code
+plafonne de nouveau après la gigue, et c'est le critère qui l'emporte. La borne est comptée en secondes
+attendues, pas en temps écoulé : la durée des essais eux-mêmes n'y entre pas.
+
+Le geste de l'humain : poser la variable dans l'environnement des sessions qui doivent réessayer (le bloc `env`
+de `~/.claude/settings.json`, par exemple). Rien d'autre.
 
 ## Les collections de l'humain : la clé `human-collections`
 

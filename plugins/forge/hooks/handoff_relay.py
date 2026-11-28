@@ -36,6 +36,12 @@ Code 6 is one session per repository (ikoro-labs/forge#4): another live session 
 repository, found by `handoff_header.py sessions`, is the successor in effect. The header gets
 the successor, its threshold and its author, the calling session (CLAUDE_CODE_SESSION_ID):
 the successor's own `sessions` leaves out its author, alive during its closing delay.
+With CLAUDE_HANDOFF_RETRY_MINUTES (an integer from 1 to 1440) a refusal in code 6, and only that one,
+starts a detached copy of this script (`--retry`, internal) and still returns 6 at once. The copy takes one
+lock per project, waits 30 s doubled up to 300 s with a jitter of 20 percent, reads the handoff and runs the
+relay again, appends one line per try to `relay-retry-<project>-<date>.jsonl` in the state folder, and ends
+with the code of its last try: the first that is not 6, or 6 once the waits add up to the bound. Unset or
+empty, the variable changes nothing; any other value is reported and ignored.
 Environment: CLAUDE_HANDOFF_RELAY_MAX (default 200), CLAUDE_HANDOFF_CLOSE_DELAY seconds
 before closing the old session (default 45, 0 keeps it open), CLAUDE_HANDOFF_TERMINAL (a
 terminal command that runs the words after it, such as `ghostty -e`, `gnome-terminal --` or
