@@ -53,6 +53,13 @@ Applique `${CLAUDE_PLUGIN_ROOT}/templates/features/protocole.md`, document `desi
      sans plafond ne borne rien. Un ticket qui en prendrait davantage est coupé avant d'être
      publié, en tickets du budget (`feature-tickets`), jamais en une quatrième partie. Le budget
      en PR de la feature est `feature-tickets` fois 3.
+   - **La taille.** Pour chaque ticket, estime la taille du diff qu'il demande, en lignes lisibles (le
+     code, les tests et les documents écrits à la main, sans fichier généré ni verrou), et écris
+     l'estimation dans le ticket. Un ticket de plus de 1 000 lignes lisibles est coupé en parties, chacune
+     livrant des points entiers du ticket en `Refs #n`, dans les PR que la clé `ticket-pr-cap` admet.
+     Les tickets pas commencés (sans PR ouverte ni fusionnée) sont redécoupés à cette règle ; ceux en
+     cours gardent les règles avec lesquelles ils ont commencé. Sans la clé `ticket-pr-cap`, l'étape est
+     « sans objet (clé `ticket-pr-cap` absente) » : aucun plafond n'est deviné pour décider de la coupe.
    - **Le prérefactoring d'abord.** Quand le changement demandé serait difficile dans le code tel
      qu'il est, rends-le facile d'abord (le prérefactoring), puis fais le changement facile. Le
      prérefactoring a son propre ticket, qui bloque ceux qui en dépendent, et ne change aucun
