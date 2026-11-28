@@ -16,7 +16,14 @@ from collections.abc import Mapping
 from pathlib import Path
 
 import support
-from test_usine_guard_file import GUARD_PATH, USINE, entry, environment, project
+from test_usine_guard_file import (
+    GUARD_PATH,
+    USINE,
+    entry,
+    environment,
+    lose_the_guard_file,
+    project,
+)
 
 HOOK = support.PLUGIN / "hooks" / "guard_human_data.py"
 PAGE = "claude.ai/artifact/abc123"
@@ -244,6 +251,83 @@ class ARefusalIsJournaled(unittest.TestCase):
             self.assertEqual(run(where, call("get")).returncode, 0)
             self.assertEqual(run(where, call("set", collection="notes")).returncode, 0)
             self.assertEqual(journal(where), [])
+
+
+def hook_entry() -> dict[str, object]:
+    """The `PreToolUse` entry of `hooks.json` that runs the guard, with its matcher."""
+    hooks = json.loads((support.PLUGIN / "hooks" / "hooks.json").read_text(encoding="utf-8"))
+    found = [
+        {**hook, "matcher": group["matcher"]}
+        for group in hooks["hooks"]["PreToolUse"]
+        for hook in group["hooks"]
+        if "guard_human_data.py" in hook["command"]
+    ]
+    assert len(found) == 1, found
+    return found[0]
+
+
+class AFailingGuardRefuses(Refuses):
+    def test_f_0003_a6_the_entry_filters_on_the_tool_and_turns_a_crash_or_a_timeout_into_a_refusal(self) -> None:
+        """F-0003 A6: matcher `ArtifactData`, `|| exit 2`, `"onFailure": "block"` and a `timeout`."""
+        found = hook_entry()
+        self.assertEqual(found["matcher"], "ArtifactData")
+        command = str(found["command"])
+        self.assertTrue(command.endswith("|| exit 2"), command)
+        self.assertIn("${CLAUDE_PLUGIN_ROOT}/hooks/guard_human_data.py", command)
+        self.assertEqual(found["onFailure"], "block")
+        self.assertEqual(found["timeout"], 60)
+
+    def test_f_0003_a6_a_missing_script_exits_2_through_the_command_of_the_entry(self) -> None:
+        """F-0003 A6: the command as `hooks.json` writes it, with the script absent, still refuses (exit 2)."""
+        with project(KEYS) as where:
+            env = {**environment(where.parent / "home"), "CLAUDE_PLUGIN_ROOT": str(where.parent / "empty")}
+            done = subprocess.run(  # noqa: S602 - the command line of hooks.json, as Claude Code runs it, in a shell
+                str(hook_entry()["command"]),
+                shell=True,
+                input=json.dumps({"tool_name": "ArtifactData", "tool_input": call("set"), "cwd": str(where)}),
+                env=env,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=60,
+            )
+            self.assertEqual(done.returncode, 2, done.stderr)
+
+    def test_f_0003_a6_an_event_the_guard_cannot_read_is_refused_when_the_key_is_there(self) -> None:
+        """F-0003 A6: not JSON, no `tool_input`, no readable action, not a mapping: exit 2 and a line in the journal."""
+        with project(KEYS) as where:
+            env = environment(where.parent / "home")
+            events = (
+                "not json",
+                json.dumps({"cwd": str(where)}),
+                json.dumps({"cwd": str(where), "tool_input": {}}),
+                json.dumps({"cwd": str(where), "tool_input": {"action": ["set"]}}),
+                json.dumps({"cwd": str(where), "tool_input": "set"}),
+            )
+            for text in events:
+                with self.subTest(event=text[:30]):
+                    done = subprocess.run(  # noqa: S603 - the interpreter running this suite, a fixed script
+                        [sys.executable, str(HOOK)],
+                        input=text,
+                        env={**env, "PWD": str(where)},
+                        cwd=where,
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                        timeout=60,
+                    )
+                    self.refused(done, "could not read the tool call")
+            self.assertEqual({line["rule"] for line in journal(where)}, {"unreadable-event"})
+            self.assertEqual(len(journal(where)), len(events))
+
+    def test_f_0003_a6_a_guard_file_that_cannot_be_read_refuses_a_write_and_lets_a_read_pass(self) -> None:
+        """F-0003 A6: the ref lists the guard file and it cannot be read: the key cannot be told, a write exits 2."""
+        with project(KEYS) as where:
+            lose_the_guard_file(where, where.parent / "home")
+            done = run(where, call("set", url="claude.ai/artifact/zzz999", collection="notes"))
+            self.refused(done, "cannot be read", "cannot be told")
+            self.assertEqual([line["rule"] for line in journal(where)], ["unreadable-key"])
+            self.assertEqual(run(where, call("get")).returncode, 0)
 
 
 if __name__ == "__main__":

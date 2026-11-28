@@ -32,11 +32,19 @@ READS = frozenset({"get", "list", "query", "profiles"})
 RULES = (
     ("only from the human", "human-collection"),
     ("is not `<artifact URL> | <collection>`", "unreadable-key-line"),
+    ("could not read the tool call", "unreadable-event"),
+    ("cannot be told", "unreadable-key"),
 )
 
 
 def _text(value: object) -> str | None:
     return value if isinstance(value, str) and value else None
+
+
+def _action(event: object) -> str | None:
+    call = event.get("tool_input") if isinstance(event, Mapping) else None
+    action = call.get("action") if isinstance(call, Mapping) else None
+    return action if isinstance(action, str) and action else None
 
 
 def _artifact(reference: str) -> str | None:
@@ -99,11 +107,13 @@ def key_lines(root: Path) -> tuple[list[str], str | None]:
 
 def refusal(event: object, lines: Sequence[str]) -> str | None:
     """Why the call is refused, None when it passes: `lines` are the values of the key."""
-    call = event.get("tool_input") if isinstance(event, Mapping) else None
-    if not lines or not isinstance(call, Mapping):
+    if not lines:
         return None
-    action = call.get("action")
-    if isinstance(action, str) and action in READS:
+    call = event.get("tool_input") if isinstance(event, Mapping) else None
+    action = _action(event)
+    if not isinstance(call, Mapping) or action is None:
+        return f"Blocked by the forge plugin ({GUARD}): the hook could not read the tool call it was given"
+    if action in READS:
         return None
     url = _text(call.get("url"))
     artifact = _artifact(url) if url else None
@@ -129,8 +139,12 @@ def main() -> int:
         event = json.load(sys.stdin)
     except json.JSONDecodeError:
         event = None
-    lines, _why = key_lines(project_root(event if isinstance(event, dict) else None))
-    reason = refusal(event, lines)
+    lines, why = key_lines(project_root(event if isinstance(event, dict) else None))
+    if why is None:
+        reason = refusal(event, lines)
+    else:
+        # A read cannot reach a collection: only a write, or a call that cannot be read, is refused.
+        reason = None if _action(event) in READS else f"Blocked by the forge plugin ({GUARD}): {why}"
     if reason is None:
         return 0
     record(GUARD, reason, RULES, event, lambda: "ArtifactData write")
