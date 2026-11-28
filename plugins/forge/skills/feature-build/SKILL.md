@@ -145,8 +145,8 @@ passage (étape 4). Par défaut : 5 tickets, 3 coders, 6 heures et 3 000 000 jet
    ```
 
    Le script lit le verdict, jamais toi. `post-default` : il poste la décision par défaut
-   (`Décision (<agent>, <case>)`, réversible, que l'humain défait d'un commentaire) et retire
-   `ready-for-human` et `needs-info` ; relance ensuite un `forge:coder` sur le ticket avec ce bloc,
+   (`Décision (<agent>, <case>)`, réversible, que l'humain défait d'un commentaire), retire
+   `ready-for-human` et `needs-info`, et rend `ready-for-agent` à un ticket (pas à une PR) ; relance ensuite un `forge:coder` sur le ticket avec ce bloc,
    comme pour un `DECIDED` de l'étape 2. `remind-human` (`RESERVED`, `DOMAIN`, `TECHNICAL`, une
    décision sans source ou irréversible) : il poste le rappel et pose `needs-your-attention`, la
    décision reste à l'humain, et tu ne la prends ni ne la contournes. Une ligne `NON DATEE` n'est pas

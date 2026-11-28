@@ -21,8 +21,10 @@ passes each due question to `forge:staff-engineer` or `forge:product-owner`.
       `REVERSIBLE: yes` line (`--agent staff-engineer` requires the line; `product-owner` writes none,
       and a line it does write must say `yes`). The comment `Décision (<agent>,
       <case>) par défaut (question-default-delay)` is posted, the labels `ready-for-human` and
-      `needs-info` the item holds are removed, and `needs-your-attention` is added when the cell
-      leaves the human a veto (`VETO: yes`);
+      `needs-info` the item holds are removed, `needs-your-attention` is added when the cell
+      leaves the human a veto (`VETO: yes`), and a ticket (an issue, not a pull request) that held one of
+      those two labels gets `ready-for-agent` back, so that the next agent resumes from its branch and
+      its pull request (F-0003 A59);
     - `remind-human`: any other verdict (`RESERVED`, `DOMAIN`, `TECHNICAL`), or a `DECIDED` that has no
       cell, no source, or is not reversible (a staff-engineer block without `REVERSIBLE:` included). No decision is invented: the comment `Rappel
       (question-default-delay)` says why and `needs-your-attention` is added where the item lacks it.
@@ -61,6 +63,7 @@ ABSENT = f"sans objet (clé `{KEY}` absente)"
 ATTENTION = "needs-your-attention"
 # Labels that say a human is awaited; the first two are answered by a default decision and removed.
 ANSWERABLE = ("ready-for-human", "needs-info")
+READY = "ready-for-agent"
 WAITING = (*ANSWERABLE, ATTENTION)
 # The first line of what `route` posts: it restarts the delay of the question.
 MARK = re.compile(rf"^(?:Rappel|Décision)\b[^\n]*\({re.escape(KEY)}\)")
@@ -291,6 +294,8 @@ def plan_for(fields: dict[str, str], item: dict, agent: str, delay_text: str) ->
         veto = fields.get("VETO", "").strip().lower().startswith("yes")
         add = [ATTENTION] if veto and ATTENTION not in held else []
         remove = [name for name in held if name in ANSWERABLE]
+        if remove and kind_of(item) == "issue" and READY not in held:
+            add.append(READY)
         return Plan("post-default", number, comment, "décision déléguée, posée par défaut", add, remove)
     comment = (
         f"Rappel ({KEY}) : cette question attend une réponse depuis plus de {delay_text} et ne se "
