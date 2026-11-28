@@ -17,7 +17,7 @@ INSTALLATION = support.REPO_ROOT / "docs" / "installation.md"
 CONTRIBUER = support.REPO_ROOT / "docs" / "contribuer.md"
 DECISIONS = support.REPO_ROOT / "docs" / "agents" / "decisions.md"
 
-COUNT = "Vingt-trois clés"
+COUNT = "Vingt-quatre clés"
 
 
 def section(path: Path, heading: str) -> str:
@@ -31,7 +31,7 @@ def section(path: Path, heading: str) -> str:
 
 class TheTemplateListsEverySensitiveKey(unittest.TestCase):
     def test_b6_the_section_of_the_protected_keys_names_each_one_and_counts_them(self) -> None:
-        """#345 B6: 23 keys, `e2e-run-limits` and `ticket-pr-cap-exempt` among them, each named in the template's section."""
+        """#345 B6: 24 keys, `e2e-run-limits`, `ticket-pr-cap-exempt` and `ticket-pr-cap-small` among them, each named in the template's section."""
         text = section(TEMPLATE, "Clés protégées")
         self.assertIn(COUNT, text)
         for key in sorted(SENSITIVE_KEYS):

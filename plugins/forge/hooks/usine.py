@@ -36,7 +36,8 @@ SENSITIVE_KEYS: frozenset[str] = frozenset(
         "accepting-human", "agent-autonomy", "budget-action", "e2e-run-limits", "gh-api-allow",
         "infra-hosts", "infra-verify", "never-weaken", "owner-gesture", "pin-bump", "pr-cap-raiser",
         "protected-path", "readonly-agent", "readonly-command", "run-budget", "run-limits",
-        "slo", "ticket-budget", "ticket-pr-cap", "ticket-pr-cap-exempt", "ticket-pr-cap-since",
+        "slo", "ticket-budget", "ticket-pr-cap", "ticket-pr-cap-exempt", "ticket-pr-cap-small",
+        "ticket-pr-cap-since",
         "validation-owner", "validation-reviewer",
     }
 )  # fmt: skip
