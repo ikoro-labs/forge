@@ -64,6 +64,14 @@ class WindowsJobIsFrozen(unittest.TestCase):
                 declared = context in jobs() or any(f"name: {context}" in text for text in jobs().values())
                 self.assertTrue(declared)
 
+    def test_a5_the_rules_and_claude_md_say_the_freeze_the_manual_run_and_the_compatibility(self) -> None:
+        """#376 A5: frozen since 2026-11-28, run by hand with `gh workflow run`, the code stays Windows-compatible."""
+        for name, text in {"CLAUDE.md": CLAUDE, "rules": RULES}.items():
+            with self.subTest(name):
+                self.assertIn("gelée sous Windows depuis le 2026-11-28", text)
+                self.assertIn("gh workflow run tests.yml", text)
+                self.assertIn("reste compatible Windows", text)
+
 
 if __name__ == "__main__":
     unittest.main()

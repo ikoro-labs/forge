@@ -21,3 +21,7 @@ développe avec sa propre usine : le plugin y est installé à la version éping
   claude plugin validate .
   claude plugin validate plugins/forge
   ```
+
+- **La suite est gelée sous Windows depuis le 2026-11-28** (décision de l'humain, ticket #376) : la CI
+  saute le job, dont le contexte `tests (windows-latest)` reste déclaré et passe. Pour la lancer à la
+  main : `gh workflow run tests.yml --ref <branche>`. Le code reste compatible Windows.
