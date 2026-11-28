@@ -15,13 +15,14 @@ import sys
 import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
+from io import StringIO
 from pathlib import Path
 from unittest import mock
 
 import support
 from handoff_header import process_start
 from question_delay import main as route_main
-from question_stop import POLL, decide
+from question_stop import HOOK_TIMEOUT, POLL, decide, main
 from test_question_delay import NOW, RESERVED, STAFF, Gh, issue, labeled
 
 HOOK = support.PLUGIN / "hooks" / "question_stop.py"
@@ -427,6 +428,96 @@ class OtherSessions(unittest.TestCase):
         session = self.ready(None)
         result = session.process(due_fixture(minutes=11), event=session.event(agent_id="a1b2c3", agent_type="forge:coder"))
         self.assertEqual((result.returncode, result.stdout), (0, ""), result.stderr)
+
+
+def stop_commands() -> list[dict]:
+    """The hooks the plugin registers on `Stop`, each as `hooks.json` declares it."""
+    text = (support.PLUGIN / "hooks" / "hooks.json").read_text(encoding="utf-8")
+    hooks = json.loads(text, object_pairs_hook=_unique)
+    return [hook for group in hooks["hooks"]["Stop"] for hook in group["hooks"]]
+
+
+def _unique(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    keys = [key for key, _ in pairs]
+    duplicated = sorted({key for key in keys if keys.count(key) > 1})
+    if duplicated:
+        raise ValueError(f"keys repeated in one object: {duplicated}")
+    return dict(pairs)
+
+
+class FailsOpen(unittest.TestCase):
+    def due_session(self, usine: str | None = DELAY_KEY) -> Session:
+        session = Session(self, usine=usine)
+        session.write(human(), tool_call(LABEL_COMMAND), tool_result())
+        return session
+
+    def assert_passes(self, result: subprocess.CompletedProcess) -> None:
+        self.assertEqual((result.returncode, result.stdout), (0, ""), result.stderr)
+
+    def test_without_the_key_the_stop_passes(self) -> None:
+        """F-0003 A39: the key `question-default-delay` absent is `sans objet`: no wait, no block."""
+        session = self.due_session(usine="")
+        self.assert_passes(session.process(due_fixture(minutes=11)))
+
+    def test_a_delay_that_cannot_be_read_lets_the_stop_pass(self) -> None:
+        """F-0003 A39: `ten minutes` is no delay the key admits; nothing is guessed."""
+        session = self.due_session(usine="- `question-default-delay` : `ten minutes`\n")
+        self.assert_passes(session.process(due_fixture(minutes=11)))
+
+    def test_a_gh_that_fails_lets_the_stop_pass(self) -> None:
+        """F-0003 A39: the hook cannot read the question; it does not hold the session for it."""
+        self.assert_passes(self.due_session().process(due_fixture(minutes=11), fails=True))
+
+    def test_a_missing_or_unreadable_transcript_lets_the_stop_pass(self) -> None:
+        """F-0003 A39: no transcript, or a file that is no JSON lines, names no question."""
+        session = self.due_session()
+        self.assert_passes(session.process(due_fixture(minutes=11), event=session.event(transcript_path="")))
+        self.assert_passes(
+            session.process(due_fixture(minutes=11), event=session.event(transcript_path=str(session.root / "none")))
+        )
+        session.transcript.write_text("not json\n\x00\x01", encoding="utf-8")
+        self.assert_passes(session.process(due_fixture(minutes=11)))
+
+    def test_an_event_that_is_no_json_lets_the_stop_pass(self) -> None:
+        """F-0003 A39: the hook sees garbage on its input: exit 0, nothing written."""
+        session = self.due_session()
+        with mock.patch("sys.stdin", StringIO("{oops")), mock.patch("sys.stdout", new=StringIO()) as out:
+            self.assertEqual(main(), 0)
+        self.assertEqual(out.getvalue(), "")
+
+    def test_an_error_of_its_own_lets_the_stop_pass(self) -> None:
+        """F-0003 A39: whatever `decide` raises, the hook exits 0 and writes nothing."""
+        with (
+            mock.patch("sys.stdin", StringIO("{}")),
+            mock.patch("sys.stdout", new=StringIO()) as out,
+            mock.patch("question_stop.decide", side_effect=RuntimeError("boom")),
+        ):
+            self.assertEqual(main(), 0)
+        self.assertEqual(out.getvalue(), "")
+
+    def test_the_entry_of_hooks_json_fails_open_and_has_the_fixed_timeout(self) -> None:
+        """F-0003 A39: the `Stop` entry runs the hook, never ends in `|| exit 2` (a Stop hook that exits 2
+        blocks), exits 0 after the hook, and carries the `timeout` the hook's wait is computed from."""
+        entries = [hook for hook in stop_commands() if "question_stop.py" in hook["command"]]
+        self.assertEqual(len(entries), 1, entries)
+        entry = entries[0]
+        self.assertEqual(entry["type"], "command")
+        self.assertEqual(entry["timeout"], HOOK_TIMEOUT)
+        self.assertNotIn("exit 2", entry["command"])
+        self.assertTrue(entry["command"].endswith("; exit 0"), entry["command"])
+
+    @unittest.skipUnless(os.name == "posix", "the command of hooks.json is written for a POSIX shell")
+    def test_a_launcher_that_cannot_start_the_script_still_exits_0(self) -> None:
+        """F-0003 A39: a script that is absent makes `python` exit 2, which on a Stop hook would hold the
+        session; the command ends in `exit 0`."""
+        entry = next(hook for hook in stop_commands() if "question_stop.py" in hook["command"])
+        with tempfile.TemporaryDirectory() as folder:
+            env = {**os.environ, "CLAUDE_PLUGIN_ROOT": folder, "HOME": folder, "USERPROFILE": folder}
+            result = subprocess.run(  # noqa: S602 - the command of hooks.json, as Claude Code runs it
+                entry["command"], shell=True, env=env, capture_output=True, text=True, timeout=120, check=False,
+            )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "")
 
 
 if __name__ == "__main__":

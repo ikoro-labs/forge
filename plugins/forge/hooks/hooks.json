@@ -1,5 +1,5 @@
 {
-  "description": "Forge factory guards: git and GitHub safety, the infrastructure gestures (asked in the main session, refused to a subagent), the coder's role, the judges' read-only rule, the ticket budget of a feature, the PRs of a ticket held to the cap of the key ticket-pr-cap, the agreed and frozen validation cases of a ticket, the coder's model and effort, the pause switch, the structure of every output (subagent returns, gh bodies, the session's reply), the em dash check after a write, the trimmed output of a named command that passes, the drained session handoff at the context limit, the completion table a question on progress is answered with, the cleanup after a finished agent (its clean worktree, its orphan branch, the caches and rescue bundles the project names), and, at the start of a session, the other live sessions of its repository, an installed plugin that lags the pinned one and, with the key pin-bump, a plugin tag newer than the pinned one.",
+  "description": "Forge factory guards: git and GitHub safety, the infrastructure gestures (asked in the main session, refused to a subagent), the coder's role, the judges' read-only rule, the ticket budget of a feature, the PRs of a ticket held to the cap of the key ticket-pr-cap, the agreed and frozen validation cases of a ticket, the coder's model and effort, the pause switch, the structure of every output (subagent returns, gh bodies, the session's reply), the em dash check after a write, the trimmed output of a named command that passes, the drained session handoff at the context limit, the completion table a question on progress is answered with, the question a session leaves at its stop handed to its decider at the delay of the key question-default-delay, the cleanup after a finished agent (its clean worktree, its orphan branch, the caches and rescue bundles the project names), and, at the start of a session, the other live sessions of its repository, an installed plugin that lags the pinned one and, with the key pin-bump, a plugin tag newer than the pinned one.",
   "hooks": {
     "SessionStart": [
       {
@@ -212,6 +212,15 @@
             "type": "command",
             "command": "uv run --no-project --quiet python \"${CLAUDE_PLUGIN_ROOT}/hooks/guard_completion.py\"",
             "timeout": 20
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run --no-project --quiet python \"${CLAUDE_PLUGIN_ROOT}/hooks/question_stop.py\"; exit 0",
+            "timeout": 780
           }
         ]
       }
