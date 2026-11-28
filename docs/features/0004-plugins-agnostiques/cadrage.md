@@ -78,16 +78,16 @@ comportement sous Claude Code ; le lot B n'entre que sur le « oui » du point d
 | Exigence | Contenu | Preuve |
 |---|---|---|
 | EXI-01 | Lot A. L'audit de l'annexe A, recompté sur la base de la spec, devient la carte du coeur et des adaptateurs : chaque fichier rangé coeur, adaptateur ou propre à un outil | demande de l'humain du 2026-11-28 ; annexe A |
-| EXI-02 | Lot A. Un manifeste Agent Plugins 1.0 (`plugin.json` à la racine du plugin, `$schema` épinglé) à côté de `.claude-plugin/plugin.json` ; la version reste dans `.claude-plugin/plugin.json` seul ou passe au manifeste racine, et un test garde qu'elle ne vit qu'à un endroit | spécification Agent Plugins 1.0, section 4.1 ; `.claude/rules/forge.md`, version et journal |
+| EXI-02 | Lot A. Un manifeste Agent Plugins 1.0 (`plugin.json` à la racine du plugin, `$schema` épinglé) à côté de `.claude-plugin/plugin.json`, sans `version` : la version reste dans `.claude-plugin/plugin.json` seul, et un test garde qu'elle ne vit qu'à un endroit (Q12). Le manifeste racine n'entre pas sans une valeur Codex explicite pour les hooks, pour que Codex ne charge pas `hooks/hooks.json` par défaut (Q5) | spécification Agent Plugins 1.0, section 4.1 ; `.claude/rules/forge.md`, version et journal |
 | EXI-03 | Lot A. Les 21 skills restent conformes à la spécification Agent Skills, et un test le garde : `name` égal au dossier, `description` de 1 024 caractères au plus (vrai aujourd'hui), corps sous 500 lignes (`feature-build` en a 561), références à un niveau de `SKILL.md` | agentskills.io/specification ; annexe A |
-| EXI-04 | Lot A. Un fichier partagé (`autonomie.md`, `protocole.md`, gabarits, scripts) se trouve sans dépendre de la substitution de `${CLAUDE_PLUGIN_ROOT}` dans le Markdown, propre à Claude Code ; le mécanisme se fixe dans la spec (point ouvert Q8) | doc Claude Code, variables d'environnement des plugins ; Agent Plugins 1.0, section des variables de chemin |
-| EXI-05 | Lot A. Le coeur des hooks lit un événement neutre (événement, nature de l'outil, commande, chemins, rôle de l'agent, session) et rend une décision neutre ; un adaptateur par outil traduit l'entrée et la sortie. Un garde qui reçoit une charge qu'il ne sait pas lire refuse | `.claude/rules/forge.md`, hooks et scripts (un garde vaut refus quand il échoue) ; doc des hooks de Codex |
+| EXI-04 | Lot A. Un fichier partagé (`autonomie.md`, `protocole.md`, gabarits, scripts) se trouve sans dépendre de la substitution de `${CLAUDE_PLUGIN_ROOT}` dans le Markdown, propre à Claude Code. Décidé (Q8) : sous Claude Code, la substitution reste ; sous Codex, la sonde dit si elle a lieu ; à défaut, une copie produite par adaptateur, gardée par un test, une seule source dans le dépôt | doc Claude Code, variables d'environnement des plugins ; Agent Plugins 1.0, section des variables de chemin |
+| EXI-05 | Lot A. Le coeur des hooks lit un événement neutre (événement, nature de l'outil, commande, chemins, rôle de l'agent, session) et rend une décision neutre ; un adaptateur par outil traduit l'entrée et la sortie. Un garde de rôle ou de commande qui reçoit une charge qu'il ne sait pas lire refuse et l'écrit au journal des refus ; un hook qui avertit ou observe laisse passer (Q7). `guard_ticket_budget.py`, qui admet aujourd'hui un `tool_input` qui n'est pas un dictionnaire, s'aligne | `.claude/rules/forge.md`, hooks et scripts (un garde vaut refus quand il échoue) ; doc des hooks de Codex |
 | EXI-06 | Lot A. Adaptateur Claude Code par extraction pure : `hooks.json`, les sorties et les refus inchangés ; les 127 fichiers de tests (2 778 méthodes `test_`) passent sans changement d'attente sous Linux et Windows, `claude plugin validate` passe sur le dépôt et le plugin | `CLAUDE.md`, vérifier avant toute PR ; demande (« sans régression ») |
-| EXI-07 | Lot A. Les rôles en source neutre : le corps de chaque agent ne cite aucun outil propre ; ce qui l'est (modèle, effort, outils permis) vit dans un en-tête par outil, produit depuis une table unique et gardé par un test | doc Claude Code des plugins ; doc des sous-agents de Codex (fichiers TOML) |
+| EXI-07 | Lot A. Les rôles en source neutre : le corps de chaque agent ne cite aucun outil propre ; ce qui l'est (modèle, effort, outils permis) vit dans un en-tête par outil, produit depuis une table unique et gardé par un test ; les en-têtes produits pour Claude Code sont identiques octet pour octet à ceux d'aujourd'hui (Q9). Le modèle d'un rôle sous un autre outil vient d'une clé de `usine.md` par outil ; absente, l'en-tête ne fixe pas de modèle (Q10) | doc Claude Code des plugins ; doc des sous-agents de Codex (fichiers TOML) |
 | EXI-08 | Lot A. Le contrat d'orchestration en verbes neutres (lancer un rôle dans un contexte neuf et isolé, attendre son retour, reprendre plus tard), avec une table par outil chargée à la demande ; le lanceur sans interface du répartiteur de F-0003 devient une commande de l'adaptateur | `skills/feature-build/SKILL.md` ; F-0003, EXI-12 |
 | EXI-09 | Lot B, sur le « oui ». Adaptateur Codex : manifeste Codex (`extensions.com.openai` ou `.codex-plugin/plugin.json`), hooks branchés par l'adaptateur, correspondance des outils (`Bash`, `apply_patch`, `spawn_agent`, MCP), rôles en fichiers d'agent Codex, entrée de marketplace Codex | doc Codex des plugins, des hooks et des sous-agents, lue le 2026-11-28 ; rien d'éprouvé |
 | EXI-10 | Lot B. L'essai de bout en bout (`e2e_trial.py`, dépôt d'essai de la clé `e2e-repo`) passe sous Codex, avec un défaut planté que les gardes refusent | `docs/agents/usine.md`, essai de bout en bout |
-| EXI-11 | Lots A et B. Les instructions d'un projet : le gabarit `usine.md` et `docs/installation.md` disent comment tenir un `AGENTS.md` lu par tous les outils et un `CLAUDE.md` qui l'importe ; la page dit ce qui marche sous chaque outil, et ce qui reste propre à Claude Code | agents.md ; doc Claude Code de la mémoire (lecture d'`AGENTS.md` dès 2.1.277) |
+| EXI-11 | Lots A et B. Les instructions d'un projet : le gabarit `usine.md` et `docs/installation.md` disent comment tenir un `AGENTS.md` lu par tous les outils et un `CLAUDE.md` qui importe `@AGENTS.md` puis ajoute les règles propres à Claude Code, sans lien symbolique ; ce dépôt garde son `CLAUDE.md` (Q13) ; la page dit ce qui marche sous chaque outil, et ce qui reste propre à Claude Code | agents.md ; doc Claude Code de la mémoire (lecture d'`AGENTS.md` dès 2.1.277) |
 | EXI-12 | Lots A et B. Documentation : chaque clé nouvelle dans le gabarit `plugins/forge/templates/usine.md`, la page de `docs/` qui en traite, `docs/sessions.md` pour la passation, l'entrée du `CHANGELOG.md` | `.claude/rules/forge.md`, version et journal |
 
 **La stratégie d'adaptateur, pour ce qu'aucun standard ne couvre.** Elle se fixe dans la spec ; le
@@ -98,7 +98,10 @@ cadrage en pose la forme.
   de hooks (filtres aux noms de son outil, commande pour son shell) et un traducteur d'entrée et de
   sortie. Le coeur de chaque garde ne voit que l'événement neutre. Le transport étant commun à Claude
   Code et à Codex, le traducteur porte la charge : `apply_patch` contre `Edit` et `Write`, l'identité
-  du rôle appelant, les outils propres (`SubagentHandback`, `SendMessage`, `Skill`). Q5 à Q7.
+  du rôle appelant, les outils propres (`SubagentHandback`, `SendMessage`, `Skill`). Décidé : un fichier de
+  hooks par adaptateur, et au lot A `hooks/hooks.json` de Claude Code reste inchangé (Q5, fusion par
+  l'humain, H1) ; l'adaptateur passe l'outil en argument de la commande du hook (`--outil codex`), sans
+  argument le comportement de Claude Code (Q6) ; charge illisible : voir EXI-05 (Q7).
 - *Orchestration.* Les skills décrivent les gestes en verbes neutres ; une table par outil, chargée
   à la demande comme une référence, dit l'outil qui les fait (sous Claude Code l'outil `Agent` avec
   isolation en arbre de travail, sous Codex `spawn_agent` et les fichiers d'agent). Le répartiteur
@@ -111,15 +114,17 @@ cadrage en pose la forme.
 dans un fichier local non suivi. Son adaptation, s'il y en a une, se fait dans son propre dépôt. Rien
 ici ne le nomme ni ne décrit son contenu.
 
-**Ce qui reste propre à Claude Code, sauf décision contraire (point ouvert Q3).** La passation drainée
-d'une session à sa limite de contexte (registre des sessions, relance d'un terminal, seuil lu dans
-le transcript), l'audit des jetons et les objectifs de service tirés des transcripts, dont le format
-n'est pas stable sous Codex selon sa documentation.
+**La parité attendue sous Codex (Q3, décidé).** La chaîne des features, le coder, `forge:qc`, les
+décideurs et tous les gardes. Restent propres à Claude Code, et listés comme tels dans
+`docs/installation.md` : la passation drainée d'une session à sa limite de contexte (registre des
+sessions, relance d'un terminal, seuil lu dans le transcript), l'audit des jetons, les objectifs de
+service tirés des transcripts, dont le format n'est pas stable sous Codex selon sa documentation, et les
+évaluations. Si les gardes ne se chargent pas sous un outil, son adaptateur le dit.
 
 **Hors périmètre.** Un adaptateur Gemini CLI : ses événements ont d'autres noms (`BeforeTool`,
 `AfterTool`...), le modèle neutre doit seulement ne pas l'exclure (annexe B). Cursor, Copilot et les
 autres clients d'Agent Plugins 1.0 : ils n'ont que les skills, sans gardes. Un serveur MCP pour les
-scripts déterministes, sauf décision contraire (Q11). La traduction du contenu en anglais, chantier à
+scripts déterministes (Q11, décidé : les deux outils lancent des commandes). La traduction du contenu en anglais, chantier à
 part (`.claude/rules/forge.md`, prose). La configuration des projets consommateurs, qui reste à leur
 session. macOS. Les suites de ces points se commentent sur l'issue de suivi #395.
 
@@ -143,7 +148,8 @@ Sans objet (clé `entry-gate` absente) : les besoins de ce dépôt viennent de s
 | Risque | Mitigation | Signal |
 |---|---|---|
 | Les gardes ne se chargent pas sous Codex : la page Codex de construction des plugins dit les hooks de cycle de vie réservés aux plugins installés à la main dans l'application de bureau, hors de l'annuaire public ; la page des hooks dit qu'un plugin activé peut en livrer | Sonde sur une vraie installation de Codex avant la spec du lot B ; si les gardes ne se chargent pas, l'adaptateur Codex se déclare sans gardes et la clé `agent-autonomy` y est refusée | L'essai sous Codex laisse passer le défaut planté |
-| Aujourd'hui déjà, les gardes de forge tournent sous Codex sur une charge mal lue et laissent passer | EXI-05 : charge illisible vaut refus ; une fixture de charge Codex par garde | Un test de fixture Codex qui rend « admis » |
+| Aujourd'hui déjà, les gardes de forge tournent sous Codex sur une charge mal lue et laissent passer (risque non prouvé, aucun essai) | EXI-05 : charge illisible vaut refus ; une fixture de charge Codex par garde ; une ligne « non pris en charge sous Codex » dans `docs/installation.md` | Un test de fixture Codex qui rend « admis » |
+| Sans `agent_type` dans la charge de Codex, deux filtres de garde par rôle seraient inertes, en silence | La sonde Codex relève la charge réelle ; un filtre qui ne peut pas s'appliquer est dit par l'adaptateur | Un test de filtre de rôle qui passe sous Claude Code et pas sur une fixture Codex |
 | Régression sous Claude Code pendant l'extraction | Lot A par extraction pure, derrière les tests existants, attentes inchangées ; une PR par garde | Une méthode de test rouge, un essai de bout en bout en `FAIL` |
 | Collision avec le lot 1 de F-0003, qui touche aussi les hooks et le lancement des agents | Construction après sa fusion (décision de la section 7) ; la spec relit `hooks/` à sa tête | Un conflit de fusion sur `hooks/` |
 | Beaucoup de PR de chemins protégés, donc de fusions humaines (H1) | Grouper par garde ; dire dans la spec combien de PR touchent `hooks.json` | Plus de PR en attente de l'humain que de PR fusionnées sur une semaine |
@@ -168,14 +174,33 @@ second plugin reste hors dépôt. Les chiffres relevés par la session de pilota
 | 2026-11-28 | Le cadrage s'écrit tout de suite ; la construction attend la fusion du lot 1 de F-0003 (#340), les deux touchant les hooks | ikoro-labs, même demande | sans objet |
 | 2026-11-28 | L'audit du second plugin de l'humain vit hors de ce dépôt ; rien ici ne le nomme ni ne décrit son contenu | ikoro-labs, même demande | sans objet |
 
-**Points ouverts.** Les questions Q1 à Q14 de la séance
-`seances/2026-11-28-ikoro-labs-cadrage.md`, tour 1, attendent `forge:product-owner` (P) et
-`forge:staff-engineer` (T) : Q1 lots ou deux features (P), Q2 utilisateur Codex réel (P), Q3 parité
-attendue (P), Q4 portée de la contrainte d'ordre (T), Q5 fichier de hooks par adaptateur (T), Q6 choix
-de l'adaptateur dans la commande du hook (T), Q7 charge illisible (T), Q8 fichiers partagés (T), Q9
-rôles générés (T), Q10 modèle par rôle et par outil (T), Q11 serveur MCP (T), Q12 disposition du
-dossier (T), Q13 `AGENTS.md` des projets (P), Q14 accès à Codex (T, sans doute H3). Tant qu'un point
-reste ouvert, l'acceptation par le modèle n'est pas permise.
+| 2026-11-28 | Q1 : une feature, deux lots, un point de décision entre eux, une issue (#395) ; lot A d'abord | `forge:product-owner` (P2) | tour 1 |
+| 2026-11-28 | Q3 : parité pour la chaîne des features, le coder, `forge:qc`, les décideurs et tous les gardes ; passation, audit des jetons et évaluations propres à Claude Code (section 2) | `forge:product-owner` (P3, P1) | tour 1 |
+| 2026-11-28 | Q4 : l'ordre posé par l'humain est gardé : toute la construction attend la fusion du lot 1 de F-0003, y compris ce qui ne touche pas les hooks | `forge:staff-engineer` (T2) | tour 1 |
+| 2026-11-28 | Q5 : un fichier de hooks par adaptateur ; au lot A, `hooks/hooks.json` inchangé ; pas de manifeste racine sans valeur Codex explicite | `forge:staff-engineer` (T5, fusion H1) | tour 1 |
+| 2026-11-28 | Q6 : l'outil passé en argument `--outil` dans la commande du hook ; sans argument, Claude Code | `forge:staff-engineer` (T2) | tour 1 |
+| 2026-11-28 | Q7 : charge illisible vaut refus pour un garde ; `guard_ticket_budget.py` s'aligne | `forge:staff-engineer` (T2) | tour 1 |
+| 2026-11-28 | Q8 : substitution de Claude Code gardée ; Codex à sonder ; repli par copie produite | `forge:staff-engineer` (T2) | tour 1 |
+| 2026-11-28 | Q9 : en-têtes des rôles produits depuis une table ; Claude Code identique octet pour octet | `forge:staff-engineer` (T2) | tour 1 |
+| 2026-11-28 | Q10 : une clé de modèle par outil dans `usine.md` | `forge:staff-engineer` (T4) | tour 1 |
+| 2026-11-28 | Q11 : serveur MCP hors périmètre | `forge:staff-engineer` (T2) | tour 1 |
+| 2026-11-28 | Q12 : coeur en place sous `plugins/forge/`, `skills/` à la racine du plugin, adaptateurs sous `plugins/forge/adapters/<outil>/`, manifeste racine sans `version` | `forge:staff-engineer` (T2) | tour 1 |
+| 2026-11-28 | Q13 : un `AGENTS.md` commun, un `CLAUDE.md` qui importe `@AGENTS.md`, sans lien symbolique ; ce dépôt garde son `CLAUDE.md` | `forge:product-owner` (P1) | tour 1 |
+
+Les réponses de la séance `seances/2026-11-28-ikoro-labs-cadrage.md`, tour 1, sont reportées ci-dessus.
+Sources des décideurs, lues le 2026-11-28 : https://learn.chatgpt.com/docs/hooks,
+https://developers.openai.com/codex/plugins/build.md, https://code.claude.com/docs/en/plugins-reference,
+https://code.claude.com/docs/en/memory.
+
+**Points ouverts, réservés à l'humain.**
+
+- **Q2, entrée du lot B (veto ; aucune case ne la délègue, clé `entry-gate` absente).** Recommandation de
+  `forge:product-owner` : le lot B n'entre que si un projet nommé travaille sous Codex à la date du point de
+  décision et si la sonde Codex a passé ; sinon la feature se clôt sur le lot A.
+- **Q14, accès à Codex (H3).** Le compte, l'installation de Codex sur le poste et un plafond de dépense,
+  pour la sonde et l'essai de bout en bout, sont des gestes de l'humain.
+
+Tant qu'un de ces deux points reste ouvert, l'acceptation par le modèle n'est pas permise.
 
 ## 8. Critères d'arrêt
 
