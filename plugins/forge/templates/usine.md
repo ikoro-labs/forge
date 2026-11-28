@@ -600,6 +600,18 @@ n'est listée ni tranchée, et aucun délai n'est deviné. Une valeur illisible,
 
 - `question-default-delay` : `<24 h>`
 
+Les passes sans interface que lance un répartiteur, une par ligne : un nom de session exact, ou un
+préfixe qui finit par `*` (`forge-dispatch-*`). `handoff_header.py sessions`, donc le refus du relais
+(code 6) et l'avis de `sessions_notice.py`, laissent de côté une session dont le `name` du registre
+correspond à une ligne et dont le pid tient un verrou vivant du répartiteur
+(`~/.claude/hooks/state/dispatch/locks/<projet>/<ticket>.json`). Le nom seul ne suffit jamais : une session
+de l'humain ne tient aucun de ces verrous, et le mode de lancement (`kind`) ne compte pas, car une passe
+`claude -p` s'inscrit `interactive`. Un verrou mort ou illisible, un pid réutilisé, une entrée illisible du
+registre laissent la session listée. Sans la clé, « sans objet (clé `ignored-session` absente) » : aucune
+session n'est écartée, la sortie est celle d'avant.
+
+- `ignored-session` : `<nom de session ou préfixe*>`
+
 Les sessions voisines à consulter avant de proposer un levier (une amélioration, une optimisation, une
 suite), une par ligne. `guard_ticket_budget` refuse un ticket dont le corps porte une ligne `Lever:` sans
 ligne `Peers:` qui nomme chacune de ces sessions (un nom entier, pas un morceau de mot), ou sans ligne

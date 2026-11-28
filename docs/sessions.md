@@ -54,6 +54,15 @@ Ce qu'elle compte :
   (`CLAUDE_HANDOFF_CLOSE_DELAY`) : sans cette exclusion, le successeur se rangerait derrière une
   session qui va mourir. Seule cette session est laissée de côté ; une passation illisible, ou sans
   `auteur` (écrite avant cette règle), n'en exclut aucune.
+- avec la clé `ignored-session` de `usine.md` (un nom de session exact, ou un préfixe qui finit par `*`,
+  une ligne chacun), elle laisse de côté une session dont le `name` du registre correspond **et** dont
+  le pid tient un verrou vivant du répartiteur (`~/.claude/hooks/state/dispatch/locks/<projet>/<ticket>.json`) :
+  c'est un agent lancé par le répartiteur, pas une session au travail. Le relais ne la compte pas en
+  code 6 et `sessions_notice.py` ne la signale pas. Le nom seul ne suffit pas : une session de l'humain
+  ne tient aucun verrou, donc elle reste listée même si son nom correspond. Le mode de lancement
+  (`kind`) ne compte pas : une passe `claude -p` s'inscrit `interactive`. Un verrou mort (le processus a
+  fini, ou son pid sert à un autre processus), un verrou illisible et une entrée illisible du registre
+  laissent la session listée. Sans la clé, la sortie est celle d'avant (F-0003, A24 à A28).
 
 ### Le hook `SessionStart`
 
@@ -115,6 +124,14 @@ d'une consigne en prose : `feature-build`, étape 0, point 5, et la sortie de `y
 - Les types du registre ont été lus sous Linux, sur trois entrées réelles écrites par Claude Code
   2.1.305, toutes `"kind": "bg"` (des relais), et dans le code de 2.1.306, qui écrit
   `interactive` par défaut ; aucune entrée interactive vivante n'a été relue cette fois.
+- Une passe `claude -p --name <nom>` lancée le 2026-11-28 sous Linux (Claude Code 2.1.332, modèle
+  `haiku`, depuis un dossier hors du dépôt) a écrit son entrée du registre pendant qu'elle vivait :
+  `name` égal à la valeur de `--name` (`nameSource: user`), `kind` égal à `interactive`, `entrypoint`
+  égal à `sdk-cli`, aucun champ `status`. C'est pourquoi la clé `ignored-session` ne lit pas `kind`.
+  Les valeurs sous Windows, dans l'extension d'éditeur et dans l'application de bureau n'ont pas été
+  relevées. Que le pid du verrou du répartiteur soit celui que le registre inscrit pour son agent
+  n'a pas été éprouvé : le verrou lui-même (écriture, par le ticket 8) n'existe pas encore, et la
+  lecture n'a tourné que sur des verrous écrits par la suite de tests.
 - Le refus du relais en code 6, `self`, `yield` et l'exclusion de l'`auteur` d'une passation n'ont
   tourné que dans la suite de tests, sous Linux et dans la CI Windows. La fermeture par `--yield`
   n'y a tourné que contre un faux `claude`, dont le `rm` retire l'entrée du registre ; qu'un vrai
