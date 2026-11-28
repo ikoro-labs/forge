@@ -209,5 +209,45 @@ class RelayRetry(unittest.TestCase):
                 self.assertIn("CLAUDE_HANDOFF_RETRY_MINUTES=30", err)
 
 
+    def trace(self) -> list[dict[str, object]]:
+        """The lines of the day's retry trace of the project, as written."""
+        flat = re.sub(r"[\\/:]", "-", str(self.repo))
+        path = self.state / f"relay-retry-{flat}-{datetime.date.today().isoformat()}.jsonl"
+        return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+
+    def test_each_try_writes_one_trace_line_with_its_wait_and_its_code(self) -> None:
+        """F-0003 A33: date, project, attempt number, wait and code, one line per try."""
+        other = self.other_session()
+        os.environ["CLAUDE_HANDOFF_RETRY_MINUTES"] = "30"
+        self.assertEqual(self.relay()[0], 6)
+        clock = Clock(other)
+        self.assertEqual(self.copy(clock)[0], 0)
+        lines = self.trace()
+        self.assertEqual(len(lines), len(clock.waits))
+        self.assertEqual([line["attempt"] for line in lines], list(range(1, len(lines) + 1)))
+        self.assertEqual([line["wait_s"] for line in lines], clock.waits)
+        self.assertEqual([line["code"] for line in lines], [6] * (len(lines) - 1) + [0])
+        for line in lines:
+            self.assertEqual(set(line), {"date", "project", "attempt", "wait_s", "code"})
+            self.assertEqual(line["project"], str(self.repo))
+            self.assertEqual(datetime.datetime.fromisoformat(str(line["date"])).date(), datetime.date.today())
+
+    def test_the_last_trace_line_at_the_bound_carries_the_message(self) -> None:
+        """F-0003 A33 and A30: the line of the try that reaches the bound says the tries and the time waited."""
+        self.other_session()
+        os.environ["CLAUDE_HANDOFF_RETRY_MINUTES"] = "30"
+        self.assertEqual(self.relay()[0], 6)
+        clock = Clock()
+        code, out, err = self.copy(clock)
+        self.assertEqual(code, 6)
+        lines = self.trace()
+        self.assertEqual(len(lines), len(clock.waits))
+        self.assertEqual([line["code"] for line in lines], [6] * len(lines))
+        message = str(lines[-1]["message"])
+        self.assertIn(f"after {len(lines)} tries and 1800 s waited", message)
+        self.assertTrue(all("message" not in line for line in lines[:-1]))
+        self.assertIn(message, err)
+
+
 if __name__ == "__main__":
     unittest.main()

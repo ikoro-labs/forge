@@ -606,6 +606,27 @@ def owner_is_alive(owner: str, start: str) -> bool:
     return not start or handoff_header.process_start(int(owner)) == start
 
 
+def trace_try(state: Path, attempt_number: int, wait_s: int, code: int, message: str = "") -> None:
+    """Append the line of one try to the day's trace, `relay-retry-<project>-<date>.jsonl` next to the
+    relay's counters: `date`, `project`, `attempt`, `wait_s`, `code`, and `message` on the try that ends
+    the retry at the bound. A trace that cannot be written never stops the relay."""
+    project = Path.cwd()
+    line: dict[str, Any] = {
+        "date": datetime.datetime.now().astimezone().isoformat(timespec="seconds"), "project": str(project),
+        "attempt": attempt_number, "wait_s": wait_s, "code": code,
+    }
+    if message:
+        line["message"] = message
+    name = re.sub(r"[\\/:]", "-", str(project))
+    try:
+        with (state / f"relay-retry-{name}-{datetime.date.today().isoformat()}.jsonl").open(
+            "a", encoding="utf-8",
+        ) as stream:
+            stream.write(json.dumps(line, ensure_ascii=False) + "\n")
+    except OSError:
+        pass
+
+
 def retry(spec: dict[str, Any]) -> int:
     """The detached copy: wait, try the relay again, until it is not refused or the bound is reached.
 
@@ -625,13 +646,15 @@ def retry(spec: dict[str, Any]) -> int:
             waited += wait
             tries += 1
             code = attempt(handoff, force, owner_is_alive(spec["owner"], spec["owner_start"]))
+            message = ""
             if code == 6 and waited >= limit:
-                print(
+                message = (
                     f"relay retry stopped: another session is still live on {Path.cwd()} after {tries} tries "
                     f"and {waited} s waited (CLAUDE_HANDOFF_RETRY_MINUTES={spec['minutes']}); "
-                    "no successor is started",
-                    file=sys.stderr,
+                    "no successor is started"
                 )
+                print(message, file=sys.stderr)
+            trace_try(state, tries, wait, code, message)
             if code != 6 or waited >= limit:
                 return code
     finally:
