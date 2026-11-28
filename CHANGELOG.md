@@ -9,6 +9,46 @@ Ce dépôt a été recréé le 2026-10-23 ; l'ancien est `ikoro-labs/forge-archi
 numéros de PR et de ticket nus (`#38`) renvoient à l'ancien dépôt ; un renvoi au nouveau dépôt
 porte son nom (`ikoro-labs/forge#7`).
 
+## [1.25.0] - 2026-11-28
+
+Le plafond de PR d'un ticket laisse dehors les petites PR, et le design d'une feature estime la taille de chaque
+ticket à la coupe. Version mineure : une clé protégée nouvelle (`ticket-pr-cap-small`), comme la 1.24.0 pour ses
+clés libres. Déclencheur de la clé `release-trigger` atteint (4 fusions en attente pour 1 demandée, mesuré le
+2026-11-28 sur `ccf8cfb`).
+
+- Hooks : la clé protégée `ticket-pr-cap-small` (un nombre entier de lignes, au-dessus de 0) laisse hors du compte
+  de `guard_pr_cap` toute PR dont le diff change moins de lignes que ce nombre, ouverte ou fusionnée ; `usine.py`
+  la range parmi les clés de `docs/agents/usine-gardes.md`. Sans la clé, « sans objet (clé `ticket-pr-cap-small`
+  absente) » : chaque PR compte ; une valeur illisible, une clé répétée ou une PR dont la taille ne se lit pas
+  ferment le compte (ikoro-labs/forge#381, PR ikoro-labs/forge#384).
+- Skills : `forge:feature-design` estime la taille de chaque ticket en lignes lisibles et coupe en parties
+  (`Refs #n`) un ticket de plus de 1 000 lignes ; un ticket déjà commencé garde ses règles (ikoro-labs/forge#384).
+- Tests : la suite passe à 2772 tests sous Linux, 6 ignorés (mesuré le 2026-11-28 sur cette PR, tête `ccf8cfb`
+  plus la version et le journal).
+- Gestes humains : ce dépôt déclare `ticket-pr-cap` à 6 et `ticket-pr-cap-small` à 50 dans
+  `docs/agents/usine-gardes.md`. Un projet qui veut la clé l'écrit dans le sien, chemin protégé : l'humain fusionne.
+- Resté dehors : le cadrage de F-0003 (ikoro-labs/forge#387, ikoro-labs/forge#388) n'est qu'un document, rien du
+  plugin. Rien de cette version n'a été vu en marche sur un projet consommateur ; l'essai de bout en bout passe sur
+  `ccf8cfb`, tête de `main`, le 2026-11-28.
+
+### Objectifs de service
+
+État de chaque objectif au 2026-11-28.
+
+| Objectif | Cible | Fenêtre | Valeur | Budget restant | État |
+|---|---|---|---|---|---|
+| `accept-round-1` | >= 99 % | 30 j | 66.19 % | 0 % sur 1 % | épuisé |
+| `lead-time p90` | <= 1 h | 30 j | 544.1 h | 0 h sur 1 h | épuisé |
+| `release-lag p90` | <= 1 h | 30 j | 36.3 h | 0 h sur 1 h | épuisé |
+| `escaped-defects` | <= 1 % | 30 j | 0 % | 1 % sur 1 % | tenu |
+| `change-failure` | <= 1 % | 30 j | 0 % | 1 % sur 1 % | tenu |
+| `human-touch` | <= 1 % | 30 j | 31.07 % | 0 % sur 1 % | épuisé |
+| `main-green` | >= 100 % | 30 j | 96.86 % | 0 % sur 0 % | épuisé |
+| `judge-recall` | >= 99 % | 30 j | sans objet | aucun résultat du jeu de référence (option `--reference` absente) | sans objet |
+| `false-accept` | <= 0 % | 30 j | sans objet | aucun résultat du jeu de référence (option `--reference` absente) | sans objet |
+
+Aucun `escaped-defect` ouvert depuis le 2026-11-28.
+
 ## [1.24.0] - 2026-11-28
 
 Un ticket qui accélère l'usine passe devant la file, et le délai par défaut d'une question se dit aussi en
