@@ -24,6 +24,7 @@ from test_usine_guard_file import (
     lose_the_guard_file,
     project,
 )
+from usine import SENSITIVE_KEYS, load
 
 HOOK = support.PLUGIN / "hooks" / "guard_human_data.py"
 PAGE = "claude.ai/artifact/abc123"
@@ -328,6 +329,38 @@ class AFailingGuardRefuses(Refuses):
             self.refused(done, "cannot be read", "cannot be told")
             self.assertEqual([line["rule"] for line in journal(where)], ["unreadable-key"])
             self.assertEqual(run(where, call("get")).returncode, 0)
+
+
+class TheKeyIsReadOnOriginMain(Refuses):
+    def test_f_0003_a7_a_line_removed_in_the_working_tree_still_refuses(self) -> None:
+        """F-0003 A7: the line is gone from the guard file on disk (the PR), still on `origin/main`: refused with its message."""
+        with project(KEYS, in_tree={GUARD_PATH: "# Gardes\n"}) as where:
+            self.refused(run(where, call("set")))
+        with project(KEYS, in_tree={GUARD_PATH: ""}) as where:
+            (where / GUARD_PATH).unlink()
+            self.refused(run(where, call("set")))
+
+    def test_f_0003_a7_a_line_added_in_the_working_tree_is_not_read(self) -> None:
+        """F-0003 A7: a line only on disk, in either file, is not read: another collection passes."""
+        line = entry("human-collections", f"{PAGE} | notes")
+        with project(KEYS, in_tree={GUARD_PATH: line, USINE: line}) as where:
+            self.assertEqual(run(where, call("set", collection="notes")).returncode, 0)
+
+    def test_f_0003_a7_while_the_guard_file_is_absent_the_key_is_read_in_usine_md_on_origin_main(self) -> None:
+        """F-0003 A7: no guard file on `origin/main` yet: `usine.md` as `origin/main` holds it speaks, not the disk."""
+        on_main = {USINE: entry("human-collections", LINE)}
+        with project(on_main, in_tree={USINE: "# Usine\n"}) as where:
+            self.refused(run(where, call("set")))
+        with project({USINE: "# Usine\n"}, in_tree={USINE: entry("human-collections", LINE)}) as where:
+            self.assertEqual(run(where, call("set")).returncode, 0)
+
+    def test_f_0003_a7_the_key_is_sensitive_so_usine_md_cannot_carry_it(self) -> None:
+        """F-0003 A7: `human-collections` is in `SENSITIVE_KEYS`: with a guard file on `origin/main`, `usine.md` cannot add it."""
+        self.assertIn("human-collections", SENSITIVE_KEYS)
+        on_main = {GUARD_PATH: "# Gardes\n", USINE: entry("human-collections", LINE)}
+        with project(on_main) as where:
+            self.assertEqual(run(where, call("set")).returncode, 0)
+            self.assertNotIn("human-collections", load(where))
 
 
 if __name__ == "__main__":
