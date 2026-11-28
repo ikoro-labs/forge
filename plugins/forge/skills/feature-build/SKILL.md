@@ -603,6 +603,19 @@ jetons (étape 4), `.claude/PAUSED` et les contrôles du budget et du poste avan
 de l'étape 2. Le tour 0, le coder et la lecture de sa sortie suivent l'étape 2, la relecture et la fusion de
 sa PR l'étape 3, sur ce ticket seulement, sans les lignes `due` ni les remises à jour d'autres PR.
 
+**La reprise.** Un agent précédent a pu laisser du travail sur ce ticket : cherche-le avant de lancer un coder.
+Une PR ouverte qui cite le ticket (`gh pr list --state open --search "<n> in:body"`, puis `Closes #<n>` ou
+`Refs #<n>` vérifié dans le corps) donne aussi sa branche ; à défaut, une branche que le ticket nomme dans un
+commentaire, que `git ls-remote --heads origin <branche>` trouve.
+
+- **Une PR ouverte** : elle entre dans l'étape 3, sans recoder, et tu n'ouvres aucune nouvelle PR.
+- **Une branche sans PR** : lance le coder avec son brief de l'étape 2 et cette consigne en plus : « la branche
+  `<b>` porte déjà le travail d'un agent précédent : pars d'elle (`git fetch origin`,
+  `git switch --detach origin/<b>`, puis l'installation), complète sans refaire ce qui est fait, pousse par
+  `git push origin HEAD:<b>` et ouvre la PR de cette branche, sans en créer une autre ». Le plafond de PR du
+  ticket compte comme à l'étape 2 celles qui sont déjà ouvertes ou fusionnées.
+- **Ni l'une ni l'autre** : sans branche ni PR, le coder part de la base, comme à l'étape 2.
+
 **L'arrêt.** Quand la PR est fusionnée, ou que son verdict est posté (un `ACCEPT` sur un chemin protégé qui
 attend l'humain, l'arrêt du tour 3, `needs-your-attention`), ou sur un arrêt sur incident, tu rends compte en
 une ligne du tableau de l'étape 6 et tu t'arrêtes : tu ne lances aucun autre ticket, ni la revue de bout en

@@ -158,6 +158,36 @@ class OneTicket(unittest.TestCase):
         self.assertRegex(mode(), r"questions échues[^.]*répartiteur|répartiteur[^.]*questions échues")
 
 
+class Resume(unittest.TestCase):
+    """A49: a ticket with a branch or an open PR of a previous agent is resumed, not started again."""
+
+    def resume(self) -> str:
+        return mode().split("**La reprise.**", 1)[1].split("**L'arrêt.**", 1)[0]
+
+    def test_the_section_exists(self) -> None:
+        """F-0003 A49: the pinned mode has a paragraph for the resumption."""
+        self.assertIn("**La reprise.**", mode())
+
+    def test_an_open_pr_goes_to_the_review_without_a_new_coder_or_pr(self) -> None:
+        """F-0003 A49: the open PR that cites the ticket enters step 3; nobody recodes, no PR is opened."""
+        text = self.resume()
+        self.assertRegex(text, r"gh pr list --state open --search \"<n> in:body\"")
+        self.assertRegex(text, r"étape 3[^.]*sans recoder")
+        self.assertRegex(text, r"n'ouvres? (aucune|pas de) (nouvelle )?PR")
+
+    def test_a_branch_without_a_pr_is_resumed_by_the_coder_from_that_branch(self) -> None:
+        """F-0003 A49: the coder is told to start from the existing branch, to push on it and to open its PR."""
+        text = self.resume()
+        self.assertIn("git ls-remote --heads origin", text)
+        self.assertIn("git switch --detach origin/<b>", text)
+        self.assertIn("git push origin HEAD:<b>", text)
+        self.assertRegex(text, r"sans en créer une autre")
+
+    def test_without_branch_or_pr_the_coder_starts_from_the_base(self) -> None:
+        """F-0003 A49: nothing left by a previous agent, the coder starts as step 2 says."""
+        self.assertRegex(self.resume(), r"[Ss]ans (branche ni PR|l'une ni l'autre)[^.]*(base|étape 2)")
+
+
 class Locked(unittest.TestCase):
     """A48, A57: the pinned agent runs only on a ticket whose lock it holds itself, and frees it to ask."""
 
