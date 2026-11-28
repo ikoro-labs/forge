@@ -15,14 +15,18 @@ import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
+from collections.abc import Callable
 from pathlib import Path
 from unittest import mock
 
 import support
+from agent_lock import read as read_lock
 from handoff_header import process_start
 from handoff_relay import WINDOWS, backoff
 from handoff_relay import main as relay_main
@@ -41,15 +45,21 @@ class Clock:
     """Replaces `handoff_relay.pause`: time only moves when the copy waits, and the other session ends
     during the first wait that reaches `end_at`."""
 
-    def __init__(self, victim: subprocess.Popen | None = None, end_at: int = OTHER_ENDS) -> None:
+    def __init__(
+        self, victim: subprocess.Popen | None = None, end_at: int = OTHER_ENDS,
+        during: Callable[[int], None] | None = None,
+    ) -> None:
         self.now: float = 0
         self.waits: list[int] = []
         self.victim = victim
         self.end_at = end_at
+        self.during = during
 
     def pause(self, seconds: float) -> None:
         self.waits.append(int(seconds))
         self.now += seconds
+        if self.during is not None:
+            self.during(len(self.waits))
         if self.victim is not None and self.now >= self.end_at:
             self.victim.kill()
             self.victim.wait()
@@ -312,6 +322,135 @@ class RelayRetry(unittest.TestCase):
         self.assertIn(f"after {len(lines)} tries and 1800 s waited", message)
         self.assertTrue(all("message" not in line for line in lines[:-1]))
         self.assertIn(message, err)
+
+
+    def lock_path(self) -> Path:
+        flat = re.sub(r"[\\/:]", "-", str(self.repo))
+        return self.state / f"relay-retry-{flat}.lock"
+
+    def write_lock(self, pid: int, start: str) -> None:
+        self.state.mkdir(parents=True, exist_ok=True)
+        fields = {"ticket": "relay-retry", "pid": pid, "start": start, "name": "relay-retry"}
+        self.lock_path().write_text(json.dumps(fields), encoding="utf-8")
+
+    def test_the_handoff_is_read_again_at_each_try(self) -> None:
+        """F-0003 A29 (design Q2): a handoff that changes between two tries is the one the next try reads."""
+        self.other_session()
+        os.environ["CLAUDE_HANDOFF_RETRY_MINUTES"] = "30"
+        self.assertEqual(self.relay()[0], 6)
+
+        def spoil(wait_number: int) -> None:
+            if wait_number == 2:
+                self.handoff.write_text("no front matter\n", encoding="utf-8")
+
+        code, out, err = self.copy(Clock(during=spoil))
+        self.assertEqual(code, 2)
+        self.assertEqual([line["code"] for line in self.trace()], [6, 2])
+
+    def test_one_copy_waits_per_project(self) -> None:
+        """F-0003 A29 (design Q2): while a live copy holds the project's lock, a refused relay starts no
+        second one, and a second copy that is started anyway leaves without waiting."""
+        holder = self.other_session()
+        self.write_lock(holder.pid, process_start(holder.pid))
+        os.environ["CLAUDE_HANDOFF_RETRY_MINUTES"] = "30"
+        code, out, err = self.relay()
+        self.assertEqual((code, self.spawned), (6, []))
+        self.assertIn("a retry already waits for this repository", out)
+        self.spawned.append([sys.executable, str(RELAY), "--retry", json.dumps({
+            "minutes": 30, "force": False, "handoff": str(self.handoff), "owner": "", "owner_start": "",
+        })])
+        clock = Clock()
+        self.assertEqual(self.copy(clock)[0], 6)
+        self.assertEqual(clock.waits, [])
+        self.assertTrue(self.lock_path().exists())
+
+    def test_the_lock_of_a_dead_copy_is_replaced_and_the_lock_is_released_at_the_end(self) -> None:
+        """F-0003 A29 (design Q2): a lock whose holder is gone does not stop the retry; the copy frees it."""
+        gone = subprocess.Popen([sys.executable, "-c", "pass"])
+        gone.wait()
+        self.write_lock(gone.pid, "1")
+        other = self.other_session()
+        os.environ["CLAUDE_HANDOFF_RETRY_MINUTES"] = "30"
+        self.assertEqual(self.relay()[0], 6)
+        self.assertEqual(len(self.spawned), 1)
+        self.assertEqual(self.copy(Clock(other))[0], 0)
+        self.assertFalse(self.lock_path().exists())
+
+    def test_the_lock_of_an_unreadable_copy_counts_as_held(self) -> None:
+        """F-0003 A29 (design Q2): the prudent side, as for an unreadable agent lock."""
+        self.other_session()
+        self.state.mkdir(parents=True, exist_ok=True)
+        self.lock_path().write_text("{pas du json", encoding="utf-8")
+        os.environ["CLAUDE_HANDOFF_RETRY_MINUTES"] = "30"
+        code, out, err = self.relay()
+        self.assertEqual((code, self.spawned), (6, []))
+
+    def test_a_dry_run_starts_no_copy_and_says_what_it_would_start(self) -> None:
+        """F-0003 A29: CLAUDE_HANDOFF_CLOSE_DRY_RUN prints the retry instead of starting it."""
+        self.other_session()
+        os.environ["CLAUDE_HANDOFF_RETRY_MINUTES"] = "30"
+        os.environ["CLAUDE_HANDOFF_CLOSE_DRY_RUN"] = "1"
+        code, out, err = self.relay()
+        self.assertEqual((code, self.spawned), (6, []))
+        self.assertIn("dry run, would start a detached retry for up to 30 minutes", out)
+
+    def test_the_calling_session_is_closed_at_a_success_only_while_it_still_runs(self) -> None:
+        """F-0003 A29: the copy outlives the session that called the relay; it closes that session only
+        when the pid still runs it."""
+        for alive in (True, False):
+            with self.subTest(session_alive=alive):
+                self.spawned.clear()
+                os.environ.pop("CLAUDE_HANDOFF_CLOSE_DRY_RUN", None)
+                caller, other = self.other_session(), self.other_session()
+                os.environ.update(
+                    CLAUDE_PID=str(caller.pid), CLAUDE_HANDOFF_RETRY_MINUTES="30",
+                    CLAUDE_HANDOFF_CLOSE_DELAY="45",
+                )
+                self.assertEqual(self.relay()[0], 6)
+                if not alive:
+                    caller.kill()
+                    caller.wait()
+                # The copy only prints the closing it would run: no session is stopped by the test.
+                os.environ["CLAUDE_HANDOFF_CLOSE_DRY_RUN"] = "1"
+                code, out, err = self.copy(Clock(other))
+                self.assertEqual(code, 0, err)
+                self.assertEqual("would run in 45s" in out, alive, out)
+                self.handoff.write_text(HANDOFF, encoding="utf-8")
+                caller.kill()
+                caller.wait()
+
+    @unittest.skipIf(WINDOWS, "the copy is checked with os.getsid, which Windows has not")
+    def test_the_relay_really_detaches_the_copy_and_returns_at_once(self) -> None:
+        """F-0003 A29: run as a process, the refused relay returns code 6 without waiting, and the copy it
+        started lives in a session of its own. The test ends the copy."""
+        self.other_session()
+        env = {key: value for key, value in os.environ.items() if not key.startswith(("CLAUDE_", "GIT_"))}
+        env.update(CLAUDE_HANDOFF_RETRY_MINUTES="1", CLAUDE_HANDOFF_CLOSE_DELAY="0", CLAUDE_HANDOFF_TERMINAL="off")
+        self.addCleanup(self.end_copy)
+        result = subprocess.run(
+            [sys.executable, str(RELAY), str(self.handoff)],
+            cwd=self.repo, capture_output=True, encoding="utf-8", env=env, timeout=60, check=False,
+        )
+        self.assertEqual(result.returncode, 6, result.stderr)
+        self.assertIn("no successor yet", result.stdout)
+        pid = self.copy_pid(wait=10)
+        self.assertIsNotNone(pid, "the copy took no lock")
+        self.assertNotEqual(os.getsid(pid or 0), os.getsid(0))
+
+    def copy_pid(self, wait: float = 0) -> int | None:
+        """The pid in the project's lock, once the copy has written it."""
+        deadline = time.monotonic() + wait
+        while True:
+            lock = read_lock(self.lock_path()) if self.lock_path().exists() else None
+            if lock is not None or time.monotonic() >= deadline:
+                return lock.pid if lock else None
+            time.sleep(0.1)
+
+    def end_copy(self) -> None:
+        pid = self.copy_pid(wait=2)
+        if pid:
+            with contextlib.suppress(OSError):
+                os.kill(pid, signal.SIGKILL)
 
 
 if __name__ == "__main__":
