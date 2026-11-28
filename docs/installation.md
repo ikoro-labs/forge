@@ -721,10 +721,11 @@ le refus. Essayé sur Linux seulement, par les tests ; pas encore sur un vrai po
 ## Les questions restées sans réponse
 
 Une question qui attend un humain trop longtemps bloque l'usine. La clé `question-default-delay` de
-`usine.md` (une ligne, un nombre suivi de `h` ou de `j`) en fixe le délai ; `scripts/question_delay.py due`
+`usine.md` (une ligne, un nombre suivi de `min`, de `h` ou de `j`) en fixe le délai ; `scripts/question_delay.py due`
 liste les tickets et les PR ouverts qui portent `ready-for-human`, `needs-info` ou `needs-your-attention`
 depuis plus que ce délai (depuis la dernière pose de l'étiquette, ou depuis la dernière décision par défaut
-ou le dernier rappel), et `forge:feature-build` les passe à `forge:staff-engineer` ou à
+ou le dernier rappel). `forge:feature-build` la lance au début du passage, avant chaque lancement d'un coder et
+après chaque fusion, et passe les questions échues à `forge:staff-engineer` ou à
 `forge:product-owner`. `question_delay.py route ... --apply` lit leur verdict, pas l'agent qui orchestre :
 
 - `DECIDED`, avec une case de la matrice, une source et un `REVERSIBLE: yes` (exigé du `staff-engineer` ; `product-owner` n'écrit pas la ligne) : la

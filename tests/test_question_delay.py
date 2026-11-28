@@ -371,6 +371,86 @@ class Absent(unittest.TestCase):
                 self.assertIn("question-default-delay", out)
 
 
+class Minutes(unittest.TestCase):
+    """#380: `question-default-delay` reads minutes, so the floor is no longer one hour."""
+
+    def minutes(self, usine: str, waited: float) -> list[int]:
+        code, out = Project(self, usine=usine).due(waiting(["ready-for-human"], waited / 60), "--json")
+        self.assertEqual(code, 0, out)
+        return [item["number"] for item in json.loads(out)["echues"]]
+
+    def test_ten_minutes_is_due_at_ten_and_not_at_nine(self) -> None:
+        """#380 A1: with `10 min`, a question waiting 10 minutes is due (the bound included), 9 is not."""
+        usine = "- `question-default-delay` : `10 min`\n"
+        self.assertEqual(self.minutes(usine, 10), [12])
+        self.assertEqual(self.minutes(usine, 9), [])
+
+    def test_the_minute_unit_is_read_with_or_without_a_space(self) -> None:
+        """#380 A1: `10min` and `10 min` are the same delay."""
+        self.assertEqual(self.minutes("- `question-default-delay` : `10min`\n", 10), [12])
+
+    def test_hours_and_days_still_work(self) -> None:
+        """#380 A1: `h` and `j` keep their meaning next to `min`."""
+        self.assertEqual(self.minutes("- `question-default-delay` : `2 h`\n", 119), [])
+        self.assertEqual(self.minutes("- `question-default-delay` : `2 h`\n", 120), [12])
+        self.assertEqual(self.minutes("- `question-default-delay` : `1 j`\n", 24 * 60 - 1), [])
+        self.assertEqual(self.minutes("- `question-default-delay` : `1 j`\n", 24 * 60), [12])
+
+    def test_the_text_output_names_the_minutes_delay(self) -> None:
+        """#380 A1: the line says the delay as declared."""
+        code, out = Project(self, usine="- `question-default-delay` : `10 min`\n").due(
+            waiting(["ready-for-human"], 0.5)
+        )
+        self.assertEqual(code, 0, out)
+        self.assertRegex(out, r"ECHUE: #12 \(issue\) ready-for-human depuis .* \(délai 10 min\)")
+
+    def test_the_shared_reader_of_the_other_keys_stays_without_minutes(self) -> None:
+        """#380 A1: `min` is the delay's alone; `sla` and `release-trigger` keep `h` and `j`."""
+        import sla
+
+        self.assertIsNone(sla.parse_delay("10 min"))
+        self.assertIsNotNone(sla.parse_delay("10 h"))
+
+    def test_an_unreadable_unit_still_fails_with_code_2(self) -> None:
+        """#380 A2: seconds, zero minutes or a word are not delays; nothing is guessed."""
+        gh = waiting(["ready-for-human"], 1)
+        for value in ("10 s", "0 min", "min", "10 mins", "10 minutes", "-5 min"):
+            with self.subTest(value=value):
+                code, out = Project(self, usine=f"- `question-default-delay` : `{value}`\n").due(gh)
+                self.assertEqual(code, 2, out)
+                self.assertIn("question-default-delay", out)
+                self.assertIn("min", out)
+
+
+class Cadence(unittest.TestCase):
+    """#380 A3, A4: `due` runs before each coder and after each merge, and the key says `min`."""
+
+    def skill(self) -> str:
+        return (support.PLUGIN / "skills" / "feature-build" / "SKILL.md").read_text(encoding="utf-8")
+
+    def test_feature_build_runs_due_before_each_coder_launch(self) -> None:
+        """#380 A3: step 2 asks for `due` before each launch, not only at the start of the pass."""
+        step = self.skill().split("## 2. Lancer les coders", 1)[1].split("\nAlors :", 1)[0]
+        self.assertIn("question_delay.py\" due", " ".join(step.split()))
+
+    def test_feature_build_runs_due_after_each_merge(self) -> None:
+        """#380 A3: the block that follows `/forge:qc` asks for `due` once a PR is merged."""
+        after = self.skill().split("Après `/forge:qc` :", 1)[1].split("\n## ", 1)[0]
+        self.assertIn("question_delay.py\" due", " ".join(after.split()))
+
+    def test_the_template_documents_minutes_and_the_cadence(self) -> None:
+        """#380 A3: `usine.md`'s template says `min` is a unit and when `due` runs."""
+        template = " ".join((support.PLUGIN / "templates" / "usine.md").read_text(encoding="utf-8").split())
+        self.assertIn("`min` (minutes), `h` (heures) ou `j` (jours)", template)
+        self.assertIn("avant chaque lancement d'un coder et après chaque fusion", template)
+
+    def test_this_repository_declares_ten_minutes(self) -> None:
+        """#380 A4: this repository's `docs/agents/usine.md` declares `question-default-delay` at `10 min`."""
+        text = (support.REPO_ROOT / "docs" / "agents" / "usine.md").read_text(encoding="utf-8")
+        self.assertIn("- `question-default-delay` : `10 min`\n", text)
+        self.assertEqual(text.count("`question-default-delay` :"), 1)
+
+
 class Docs(unittest.TestCase):
     def test_the_template_documents_the_key_without_a_default(self) -> None:
         """#260 A1: the template of `usine.md` documents `question-default-delay` and its absence."""

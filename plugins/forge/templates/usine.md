@@ -582,11 +582,14 @@ aucun jeton ; sinon, ne la déclare pas : on relève le plafond en changeant `ti
 - `pr-cap-raiser` : `<login GitHub d'un humain>`
 
 Le délai après lequel une question restée sans réponse d'un humain reçoit une décision par défaut, une
-seule ligne : un nombre au-dessus de 0 suivi de `h` ou de `j`, comme dans la clé `sla`. Une question est
+seule ligne : un nombre au-dessus de 0 suivi de `min` (minutes), `h` (heures) ou `j` (jours), comme
+`10 min`, `24 h` ou `2 j`. `h` et `j` se lisent comme dans la clé `sla` ; `min` n'existe que pour cette clé,
+`sla` et `release-trigger` gardent les heures et les jours. Une question est
 un ticket ou une PR ouverts qui portent `ready-for-human`, `needs-info` ou `needs-your-attention` ;
 elle attend depuis la dernière pose d'une de ces étiquettes, et `scripts/question_delay.py due` liste
-celles qui dépassent le délai. `forge:feature-build` les passe à `forge:staff-engineer` ou à
-`forge:product-owner`, puis `scripts/question_delay.py route` agit sur leur verdict : une décision
+celles qui dépassent le délai. `forge:feature-build` la lance au début du passage, avant chaque lancement
+d'un coder et après chaque fusion, pour qu'un délai court (`10 min`) soit tenu entre deux tickets, et passe
+chaque question échue à `forge:staff-engineer` ou à `forge:product-owner`, puis `scripts/question_delay.py route` agit sur leur verdict : une décision
 `DECIDED` que la matrice donne, avec sa source et `REVERSIBLE: yes`, est postée comme décision par
 défaut (`Décision (<agent>, <case>)`), que l'humain peut défaire d'un commentaire ; tout autre verdict
 (`RESERVED`, `DOMAIN`, `TECHNICAL`, une décision sans source ou irréversible) laisse la question à
