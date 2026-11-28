@@ -598,6 +598,10 @@ relance le délai. Sans la clé, « sans objet (clé `question-default-delay` ab
 n'est listée ni tranchée, et aucun délai n'est deviné. Une valeur illisible, ou une clé répétée, fait
 échouer la commande (code 2).
 
+Le hook `question_stop` (Stop) lit la même clé pour une session longue qui a posé elle-même l'une de ces
+étiquettes d'attente : il garde la session ouverte jusqu'à l'échéance, puis lui fait passer la question au
+décideur et appliquer `route`. Sans la clé, il laisse passer l'arrêt.
+
 - `question-default-delay` : `<24 h>`
 
 Les passes sans interface que lance un répartiteur, une par ligne : un nom de session exact, ou un

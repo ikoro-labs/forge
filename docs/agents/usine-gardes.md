@@ -100,7 +100,8 @@ cible n'est pas fixée.
 
 ## Revue
 
-Ce qu'aucun agent ne fusionne, même sur ACCEPT : les gardes (`guard_*`, `hooks.json`), `CODEOWNERS` et
+Ce qu'aucun agent ne fusionne, même sur ACCEPT : les gardes (`guard_*`, `hooks.json`), `usine.py`, qui leur lit
+les clés de ce fichier (réponse de l'humain du 2026-11-28 à la question Q8 du design de F-0003, #340), `CODEOWNERS` et
 ce fichier : `guard_git` lit la clé `agent-autonomy` dans `origin/main`, et une PR est la seule façon
 d'y changer une ligne. Ce périmètre ne dit pas que les gardes sont hors d'atteinte d'un agent : l'épingle de ce dépôt
 (`.claude/settings.json`), qui choisit la version du plugin et donc les gardes que la session charge,
@@ -114,6 +115,7 @@ que des clés libres (`merge-method`, `required-contexts`, `release-trigger`, `o
 - `protected-path` : `.github/CODEOWNERS`
 - `protected-path` : `plugins/forge/hooks/hooks.json`
 - `protected-path` : `plugins/forge/hooks/guard_`
+- `protected-path` : `plugins/forge/hooks/usine.py`
 - `protected-path` : `docs/agents/usine-gardes.md`
 
 ## Essai de bout en bout

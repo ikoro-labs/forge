@@ -64,6 +64,7 @@ ANSWERABLE = ("ready-for-human", "needs-info")
 WAITING = (*ANSWERABLE, ATTENTION)
 # The first line of what `route` posts: it restarts the delay of the question.
 MARK = re.compile(rf"^(?:Rappel|Décision)\b[^\n]*\({re.escape(KEY)}\)")
+REMINDER = re.compile(rf"^Rappel\b[^\n]*\({re.escape(KEY)}\)")
 WRONG_CALL = 2
 GH_FAILED = 1
 ISSUES = "repos/{owner}/{repo}/issues"
@@ -125,11 +126,17 @@ class Question:
     labels: list[str]
     since: datetime | None = None
     reminded: datetime | None = None
+    reminder: bool = False
 
     def clock(self) -> datetime | None:
         """When the wait last started: the later of the label and the last default or reminder."""
         moments = [m for m in (self.since, self.reminded) if m is not None]
         return max(moments) if moments else None
+
+    def due_at(self, delay: timedelta) -> datetime | None:
+        """When the wait reaches `delay` (the bound itself included); None for an item no date can be read for."""
+        start = self.clock()
+        return None if start is None else start + delay
 
     def to_dict(self, now: datetime) -> dict:
         start = self.clock()
@@ -143,8 +150,12 @@ class Question:
         }
 
 
-def questions(project: Path, run: Runner) -> list[Question]:
-    """The open tickets and pull requests that carry a waiting label, with the wait that applies."""
+def questions(project: Path, run: Runner, only: set[int] | None = None) -> list[Question]:
+    """The open tickets and pull requests that carry a waiting label, with the wait that applies.
+
+    With `only`, the events and comments of those numbers alone are read: the `Stop` hook asks about the
+    items its session labeled, and does not pay two `gh` calls for every other question of the project.
+    """
     items: dict[int, dict] = {}
     for label in WAITING:
         for item in gh_list(run, project, f"{ISSUES}?state=open&labels={label}&per_page=100"):
@@ -152,6 +163,8 @@ def questions(project: Path, run: Runner) -> list[Question]:
                 items[item["number"]] = item
     found = []
     for number in sorted(items):
+        if only is not None and number not in only:
+            continue
         held = [name for name in label_names(items[number]) if name in WAITING]
         question = Question(number, kind_of(items[number]), held)
         events = gh_list(run, project, f"{ISSUES}/{number}/events?per_page=100")
@@ -172,6 +185,7 @@ def questions(project: Path, run: Runner) -> list[Question]:
             and (when := instant(comment.get("created_at"))) is not None
         ]
         question.reminded = max(marks) if marks else None
+        question.reminder = any(REMINDER.match(str(comment.get("body") or "")) for comment in comments)
         found.append(question)
     return found
 
@@ -191,10 +205,10 @@ def run_due(args: argparse.Namespace, run: Runner, now: datetime) -> int:
     delay, text = loaded
     due, undated = [], []
     for question in questions(args.projet, run):
-        start = question.clock()
-        if start is None:
+        moment = question.due_at(delay)
+        if moment is None:
             undated.append(question)
-        elif now - start >= delay:
+        elif now >= moment:
             due.append(question)
     if args.json:
         document = {
