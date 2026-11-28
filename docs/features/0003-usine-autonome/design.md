@@ -1,7 +1,10 @@
 ---
 feature: F-0003
 document: design
-statut: en-revue
+statut: accepte
+accepte_par: ikoro-labs
+accepte_le: 2026-11-28
+accepte_via: agent-autonomy
 destinataires: l'agent qui implémente (un forge:coder par ticket) ; forge:qc relit ; ikoro-labs (humain de la clé `accepting-human`) accepte par `/forge:feature-accept`, que le modèle peut lancer sous la clé `agent-autonomy`
 adr: aucun
 feature-tickets: 12
