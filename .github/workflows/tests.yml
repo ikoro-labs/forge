@@ -4,18 +4,32 @@ on:
   pull_request:
   push:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
   tests:
-    name: tests (${{ matrix.os }})
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
+    name: tests (ubuntu-latest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          # La suite ne s'installe que par `uv run --no-project --with` (pytest épinglé, pour lancer
+          # les tests seulement) : le dépôt n'a ni uv.lock ni requirements, et le cache n'aurait rien
+          # à garder.
+          enable-cache: false
+      - run: uv run --no-project --quiet --with pytest==9.2.0 python -m pytest tests -v
+
+  # Gelé depuis le 2026-11-28 (décision de l'humain, ticket #376) : le job reste déclaré et garde son nom,
+  # contexte obligatoire de la base. Sauté par ce `if` de job, GitHub le rapporte réussi ; seul un
+  # lancement à la main (`workflow_dispatch`) l'exécute. Les étapes sont celles du job Linux.
+  tests-windows:
+    name: tests (windows-latest)
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
