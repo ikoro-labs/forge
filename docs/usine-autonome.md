@@ -44,6 +44,13 @@ Un geste d'écriture est :
 - `git push`, hors `--dry-run` et `-n` ;
 - un verbe de `gh pr`, `gh issue` ou `gh project` qui n'est pas une lecture, et les verbes qui écrivent de
   `gh release`, `gh label`, `gh run`, `gh workflow`, `gh repo`, `gh gist` et `gh cache` ;
+- un verbe d'un autre groupe de `gh` que ces listes ne nomment pas, sauf une lecture (`gh secret list`,
+  `gh variable get`, `gh ssh-key list`, `gh codespace view`, `gh discussion view`...) : `gh secret set`,
+  `gh ssh-key add` ou `gh codespace create` écrivent sous le jeton de l'humain comme un `gh pr create`. Un groupe
+  que le garde ne connaît pas (la commande d'une extension, un groupe que `gh` ajoute) est fermé de la même
+  façon. Ne sont jamais des écritures sur GitHub, chacun pour sa raison écrite dans `GH_NEVER_WRITE` : `help`,
+  `version`, `completion`, `config`, `alias`, `auth`, `browse`, `extension`, `preview`, `search`, `status`,
+  `licenses`, `attestation`, `org` et `ruleset` ;
 - un appel `gh api` d'une autre méthode que GET ou HEAD ;
 - un appel GraphQL dont la requête porte `mutation`, ou que le garde ne peut pas lire (une variable, un tube) ;
 - n'importe quelle écriture par un outil MCP d'un serveur GitHub, avec ou sans jeton : ce serveur tient son

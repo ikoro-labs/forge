@@ -2045,12 +2045,27 @@ def _location_reason(name: str) -> str:
     )
 
 
-# The groups of gh whose verbs, but these reads, write on GitHub; and the groups whose writing verbs
-# are listed. A verb outside both lists of a group is judged by the first kind: closed by default.
+# What the identity check knows of the groups gh runs itself (`GH_GROUPS`), each in one place:
+# - `GH_READ_VERBS`: the groups whose verbs write on GitHub but these readings;
+# - `GH_WRITE_VERBS`: the groups whose writing verbs are listed, any other verb being no write;
+# - `GH_NEVER_WRITE`: the groups that write nothing on GitHub, each with its reason.
+# A group no table names (a command of an extension, one gh adds later) is judged by the first kind:
+# every verb is a write, closed by default.
+_CODESPACE_READS = frozenset({"list", "view", "logs"})
 GH_READ_VERBS = {
     "pr": frozenset({"list", "view", "status", "diff", "checks", "checkout"}),
     "issue": frozenset({"list", "view", "status"}),
     "project": frozenset({"list", "view", "field-list", "item-list"}),
+    "secret": frozenset({"list"}),
+    "variable": frozenset({"list", "get"}),
+    "ssh-key": frozenset({"list"}),
+    "gpg-key": frozenset({"list"}),
+    "codespace": _CODESPACE_READS,
+    "cs": _CODESPACE_READS,
+    "agent-task": frozenset({"list", "view"}),
+    "discussion": frozenset({"list", "view"}),
+    "skill": frozenset({"list", "search", "preview"}),
+    "copilot": frozenset(),
 }
 GH_WRITE_VERBS = {
     "release": frozenset({"create", "delete", "edit", "upload", "delete-asset"}),
@@ -2060,6 +2075,28 @@ GH_WRITE_VERBS = {
     "repo": frozenset({"create", "fork", "sync", "edit", "delete", "rename", "archive", "unarchive"}),
     "gist": frozenset({"create", "edit", "delete", "rename"}),
     "cache": frozenset({"delete"}),
+}
+_LOCAL = "acts on this machine (its files, its binaries, a browser), never on GitHub"
+_ONLY_READS = "has no verb that writes on GitHub"
+GH_NEVER_WRITE = {
+    "help": "prints the help",
+    "version": "prints the version",
+    "completion": "prints a shell script",
+    "config": f"{_LOCAL}: the settings of gh",
+    "alias": f"{_LOCAL}: the aliases of gh",
+    "auth": f"{_LOCAL}: the credentials gh keeps, and a reading of the state",
+    "browse": f"{_LOCAL}: opens a page",
+    "extension": f"{_LOCAL}: installs, runs and removes the binaries of gh",
+    "extensions": f"{_LOCAL}: installs, runs and removes the binaries of gh",
+    "ext": f"{_LOCAL}: installs, runs and removes the binaries of gh",
+    "preview": "runs a test program of gh, which calls nothing",
+    "search": "only searches",
+    "status": "only reads the notifications and the assigned work",
+    "licenses": "prints the licenses of gh",
+    "attestation": "verifies and downloads attestations, which it never creates",
+    "org": _ONLY_READS,
+    "ruleset": _ONLY_READS,
+    "rs": _ONLY_READS,
 }
 MUTATION = re.compile(r"\bmutation\b", re.IGNORECASE)
 
@@ -2111,9 +2148,11 @@ def github_write(
     if act is None:
         return None
     group, verb, _rest = act
-    if group in GH_READ_VERBS:
-        return None if verb in GH_READ_VERBS[group] else f"gh {group} {verb}"
-    return f"gh {group} {verb}" if verb in GH_WRITE_VERBS.get(group, ()) else None
+    if group in GH_NEVER_WRITE:
+        return None
+    if group in GH_WRITE_VERBS:
+        return f"gh {group} {verb}" if verb in GH_WRITE_VERBS[group] else None
+    return None if verb in GH_READ_VERBS.get(group, ()) else f"gh {group} {verb}"
 
 
 def refusal(
