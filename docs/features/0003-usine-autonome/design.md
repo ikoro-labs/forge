@@ -64,7 +64,7 @@ voient ; le reste est caché.
 
 | Module | Interface | Ce qu'il cache |
 |---|---|---|
-| `guard_human_data` | `refusal(event, lines) -> str \| None` ; `main()` | la forme de l'appel `ArtifactData` (action simple ou `batch`, `writes[].collection`), la lecture des lignes `<page> \| <collection>`, le côté prudent sur une ligne ou un événement illisible |
+| `guard_human_data` | `refusal(event, lines) -> str \| None` ; `main()` | la forme de l'appel `ArtifactData` (action simple ou `batch`, `writes[].collection`), la lecture des lignes `<adresse de l'artefact> \| <collection>`, l'identifiant tiré de `url`, le côté prudent sur une ligne ou un événement illisible |
 | `agent_identity` | `is_agent_token(env) -> bool` ; `fresh_token(command) -> str` (lève `IdentityError`) ; `git_identity(login, user_id) -> dict[str, str]` ; `env_file(project) -> str` (Q3) | le préfixe `ghs_`, la commande que le fichier `CLAUDE_ENV_FILE` lance avant chaque commande `Bash`, `GH_TOKEN` avant `GITHUB_TOKEN`, l'appel de la commande et son délai, l'adresse `noreply` |
 | `agent_lock` | `claim(project, ticket, pid, name, zones) -> Path` (lève `LockHeld`) ; `held(project) -> list[Lock]` ; `release(project, ticket)` ; `Lock.alive` | l'emplacement, la création atomique (`O_CREAT \| O_EXCL`), la réutilisation d'un pid (par `process_start`), Linux et Windows |
 | `dispatch_trace` | `write(event, project, **fields)` | le dossier du jour, la liste blanche des champs, l'échec silencieux (une trace qui échoue ne casse pas un tick, comme `refusal_journal.record`) |
@@ -105,7 +105,7 @@ répétée là où une seule est attendue fait échouer la commande qui la lit.
 
 | Clé | Fichier | Forme | Lue par |
 |---|---|---|---|
-| `human-collections` | `docs/agents/usine-gardes.md` | `<page> \| <collection>`, plusieurs lignes | `guard_human_data`, `merge_grant` |
+| `human-collections` | `docs/agents/usine-gardes.md` | `<adresse de l'artefact> \| <collection>`, plusieurs lignes | `guard_human_data`, `merge_grant` |
 | `agent-token-command` | `docs/agents/usine-gardes.md` | `<commande>`, une ligne | `agent_identity`, `guard_git`, `dispatch`, `merge_grant` |
 | `agent-login` | `docs/agents/usine-gardes.md` | `<login>`, une ligne | `guard_git`, `dispatch`, `merge_grant`, `factory_slo` |
 | `merge-grant` | `docs/agents/usine-gardes.md` | `<contexte> \| <commande>` avec `{pr}` et `{sha}`, une ligne | `merge_grant`, `guard_git` |
@@ -181,7 +181,7 @@ protection de `main` qui l'exige, avec l'application comme source attendue, est 
 
 | Entrée | Validée par | Côté prudent |
 |---|---|---|
-| événement d'outil `ArtifactData` (page, collection, `writes`) | `guard_human_data.refusal`, avant l'appel | événement illisible, ligne de clé illisible : refus (A4, A6) |
+| événement d'outil `ArtifactData` (`url`, collection, `writes`) | `guard_human_data.refusal`, avant l'appel | événement illisible, ligne de clé illisible : refus (A4, A6) |
 | événement d'outil `Bash` ou MCP GitHub | `guard_git`, comme aujourd'hui | échec du garde : refus (`\|\| exit 2`, `"onFailure": "block"`) |
 | sortie de `gh` (étiquettes, assignés, statuts, commentaires) | le script qui la lit, en JSON, champs typés | `gh` en échec : le tick sort en 1 et défait la revendication commencée (A46) |
 | sortie de la commande de `merge-grant` | `merge_grant` : seul le code compte, 0 ou 1 ; la sortie n'est ni lue comme une instruction ni recopiée | autre code ou délai : `NOT RUN` (A20) |
