@@ -34,7 +34,7 @@ FREE_KEYS = frozenset(
         "report-host-probe", "report-main-workflow", "report-repo", "required-contexts",
         "rescue-bundle-dir", "review-grid", "screenshot-command", "security-rules", "shared-doc",
         "shared-resource", "size-check", "sla", "slo-issue", "slo-review-date", "source-author",
-        "stack", "test-path", "test-skill", "ticket-skill", "trace-check", "trace-replay",
+        "speed-label", "stack", "test-path", "test-skill", "ticket-skill", "trace-check", "trace-replay",
         "trimmed-command", "ui-forbidden-word", "ui-labels", "validation-cases",
     }
 )  # fmt: skip

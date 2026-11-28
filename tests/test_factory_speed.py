@@ -13,6 +13,7 @@ from factory_slo import main
 from sla import Ticket, order, parse
 from test_factory_slo import USINE, World, isolate
 from test_factory_slo_sla import ticket as issue_view
+from usine import SENSITIVE_KEYS
 
 NOW = datetime(2026, 10, 20, 12, 0, tzinfo=timezone.utc)
 OPENED = datetime(2026, 10, 1, 8, 0, tzinfo=timezone.utc)
@@ -85,6 +86,23 @@ class Queue(unittest.TestCase):
         code, _, err = self.run_main("1")
         self.assertEqual(code, 1)
         self.assertIn("`speed-label`", err)
+
+
+class Declaration(unittest.TestCase):
+    def test_the_template_documents_the_key_and_says_absent_is_sans_objet(self) -> None:
+        """Ticket #377, A1 : le gabarit porte la ligne de la clé `speed-label` et sa règle de clé absente."""
+        text = " ".join((support.PLUGIN / "templates" / "usine.md").read_text(encoding="utf-8").split())
+        self.assertIn("- `speed-label` : `<", text)
+        self.assertIn("sans objet (clé `speed-label` absente)", text)
+        self.assertIn("après `sev1` et avant tout autre", text)
+
+    def test_the_key_is_free_not_a_guard_key(self) -> None:
+        """Ticket #377, A1 : l'étiquette ne borne aucun pouvoir de l'agent, elle se règle dans `usine.md`."""
+        self.assertNotIn("speed-label", SENSITIVE_KEYS)
+
+    def test_this_repository_declares_the_key(self) -> None:
+        """Ticket #377, A4 : `docs/agents/usine.md` déclare l'étiquette de vitesse de l'usine."""
+        self.assertEqual(support.repo_usine().get("speed-label"), [LABEL])
 
 
 if __name__ == "__main__":

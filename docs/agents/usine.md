@@ -84,6 +84,12 @@ ne fixait pas, est une proposition de l'agent que l'humain a acceptée. Ils mesu
 - `sla` : `sev2 | 1 j | 3 j | 7 j`
 - `sla` : `sev3 | 7 j | 30 j | 30 j`
 
+L'étiquette d'un ticket dont le but est le délai de l'usine elle-même (décision de l'humain du 2026-11-28,
+ticket #377) : `factory_slo.py queue` la range après `sev1` et avant tout autre ticket, sans geste de
+l'humain. Elle doit exister sur le dépôt, l'agent ne la crée pas.
+
+- `speed-label` : `factory-speed`
+
 ## Incidents
 
 Les revues sans blâme que `/forge:incident` écrit (ticket #61), une par incident `sev1`, `sev2` ou
