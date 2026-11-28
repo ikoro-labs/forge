@@ -35,7 +35,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
+import agent_lock  # noqa: E402  the dispatcher's locks
 import factory_slo  # noqa: E402  its `gh` runner
+import handoff_header  # noqa: E402  the registry of live sessions and the key `ignored-session`
 import question_delay  # noqa: E402  the delay, the due date and the questions, shared with `route`
 from guard_completion import human_text  # noqa: E402  what a person typed, in a transcript
 from usine import project_root  # noqa: E402
@@ -198,6 +200,26 @@ def instruction(question: question_delay.Question, delay_text: str, project: Pat
     )
 
 
+def dispatcher_agent(event: Mapping[str, object], project: Path) -> bool:
+    """Whether the stopping session is an agent of the dispatcher: the registry names it, the key
+    `ignored-session` lists that name, and its pid holds a live lock (the form of design Q1: the name alone
+    proves nothing, a session of the human holds no lock)."""
+    session = event.get("session_id")
+    target = handoff_header.main_checkout(project)
+    patterns = handoff_header.ignored_names(target)
+    if not isinstance(session, str) or not session or not patterns:
+        return False
+    for entry in sorted((Path.home() / ".claude" / "sessions").glob("*.json")):
+        try:
+            fields = json.loads(entry.read_text(encoding="utf-8"))
+            pid = int(fields["pid"])
+        except (OSError, ValueError, KeyError, TypeError):
+            continue
+        if fields.get("sessionId") == session and handoff_header.name_ignored(fields.get("name"), patterns):
+            return pid in {lock.pid for lock in agent_lock.held(Path(target))}
+    return False
+
+
 def decide(
     event: Mapping[str, object],
     run: Runner | None = None,
@@ -209,9 +231,11 @@ def decide(
     now = now or (lambda: datetime.now(timezone.utc))
     sleep = sleep or time.sleep
     path = event.get("transcript_path")
-    if not isinstance(path, str) or not path:
+    if not isinstance(path, str) or not path or event.get("agent_id"):
         return None
     project = project_root(event)
+    if dispatcher_agent(event, project):
+        return None
     loaded = question_delay.load_delay(project)
     if loaded is None:
         return None

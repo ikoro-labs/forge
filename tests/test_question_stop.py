@@ -9,6 +9,7 @@ test moves: a real minute never passes. `gh` is never the real one, the transcri
 
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -18,6 +19,7 @@ from pathlib import Path
 from unittest import mock
 
 import support
+from handoff_header import process_start
 from question_delay import main as route_main
 from question_stop import POLL, decide
 from test_question_delay import NOW, RESERVED, STAFF, Gh, issue, labeled
@@ -369,6 +371,62 @@ class StopCap(unittest.TestCase):
         self.stop_after(session, blocks=8)
         gh = Gh({12: issue(12, ["ready-for-human"])}, {12: [labeled("ready-for-human", 1 / 60)]})
         self.assertIsNone(decide(session.event(), run=gh, now=Clock().now, sleep=Clock().sleep))
+
+
+class OtherSessions(unittest.TestCase):
+    """The sessions the hook leaves to story 10 (the dispatcher's tick): its agents, and subagents."""
+
+    def sleeper(self) -> int:
+        """A running process that is neither this one nor one of its ancestors."""
+        process = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+        self.addCleanup(process.wait)
+        self.addCleanup(process.kill)
+        return process.pid
+
+    def register(self, session: Session, pid: int, name: str, lock: bool = True) -> None:
+        """The registry entry of the session that stops, and, with `lock`, the dispatcher's lock of its pid."""
+        entry = {
+            "pid": pid, "sessionId": "0801df0e-3c3b", "cwd": str(session.project), "kind": "interactive",
+            "name": name, "procStart": process_start(pid),
+        }
+        (session.registry / f"{pid}.json").write_text(json.dumps(entry), encoding="utf-8")
+        if lock:
+            project = re.sub(r"[\\/:]", "-", str(session.project))
+            folder = session.home / ".claude" / "hooks" / "state" / "dispatch" / "locks" / project
+            folder.mkdir(parents=True)
+            fields = {"ticket": "q-12", "pid": pid, "start": process_start(pid), "name": name}
+            (folder / "q-12.json").write_text(json.dumps(fields), encoding="utf-8")
+
+    def ready(self, ignored: str | None) -> Session:
+        usine = DELAY_KEY + (f"- `ignored-session` : `{ignored}`\n" if ignored else "")
+        session = Session(self, usine=usine)
+        session.write(human(), tool_call(LABEL_COMMAND), tool_result())
+        return session
+
+    def test_an_agent_of_the_dispatcher_is_left_to_the_tick(self) -> None:
+        """F-0003 A38: its `name` matches `ignored-session` and its pid holds a live lock: the stop passes."""
+        session = self.ready("forge-dispatch-*")
+        self.register(session, self.sleeper(), "forge-dispatch-q-12")
+        result = session.process(due_fixture(minutes=11))
+        self.assertEqual((result.returncode, result.stdout), (0, ""), result.stderr)
+
+    def test_a_session_of_the_human_with_such_a_name_but_no_lock_is_still_held(self) -> None:
+        """F-0003 A38 (design Q1): the name proves nothing, the lock does; without it the hook acts."""
+        session = self.ready("forge-dispatch-*")
+        self.register(session, self.sleeper(), "forge-dispatch-q-12", lock=False)
+        self.assertEqual(json.loads(session.process(due_fixture(minutes=11)).stdout)["decision"], "block")
+
+    def test_a_locked_session_whose_name_the_key_does_not_list_is_still_held(self) -> None:
+        """F-0003 A38: both facts are needed, the lock alone does not exempt a session."""
+        session = self.ready("other-*")
+        self.register(session, self.sleeper(), "forge-dispatch-q-12")
+        self.assertEqual(json.loads(session.process(due_fixture(minutes=11)).stdout)["decision"], "block")
+
+    def test_a_subagent_stop_passes(self) -> None:
+        """F-0003 A38: an event that carries an `agent_id` comes from a subagent: the stop passes."""
+        session = self.ready(None)
+        result = session.process(due_fixture(minutes=11), event=session.event(agent_id="a1b2c3", agent_type="forge:coder"))
+        self.assertEqual((result.returncode, result.stdout), (0, ""), result.stderr)
 
 
 if __name__ == "__main__":
