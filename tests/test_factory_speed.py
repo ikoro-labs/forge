@@ -13,6 +13,7 @@ from factory_slo import main
 from sla import Ticket, order, parse
 from test_factory_slo import USINE, World, isolate
 from test_factory_slo_sla import ticket as issue_view
+from test_usine_keys_classified import FREE_KEYS
 from usine import SENSITIVE_KEYS
 
 NOW = datetime(2026, 10, 20, 12, 0, tzinfo=timezone.utc)
@@ -97,7 +98,11 @@ class Declaration(unittest.TestCase):
         self.assertIn("après `sev1` et avant tout autre", text)
 
     def test_the_key_is_free_not_a_guard_key(self) -> None:
-        """Ticket #377, A1 : l'étiquette ne borne aucun pouvoir de l'agent, elle se règle dans `usine.md`."""
+        """Ticket #377, A1 : l'étiquette ne borne aucun pouvoir de l'agent, elle se règle dans `usine.md`.
+
+        Rouge sur la base : la clé n'y est pas encore rangée parmi les clés libres.
+        """
+        self.assertIn("speed-label", FREE_KEYS)
         self.assertNotIn("speed-label", SENSITIVE_KEYS)
 
     def test_this_repository_declares_the_key(self) -> None:
