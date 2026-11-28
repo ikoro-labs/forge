@@ -7,6 +7,7 @@
     python factory_slo.py changelog <project> --depuis DATE [--le DATE] [--reference FILE]
     python factory_slo.py queue <project> <ticket> [<ticket> ...] [--json]
     python factory_slo.py incidents <project> [--json]
+    python factory_slo.py baseline <project> [--depuis DATE] [--jusqua DATE] [--essai DATE [--le DATE]] [--json]
 
 `status` reads the `slo` key (`<sli> | <comparator> <target> | <window in days>`, one per line), computes
 each objective on its sliding window, its error budget and its state (`tenu`, `menacé`, `épuisé`),
@@ -43,6 +44,27 @@ by class of fix, `mécanique` and `jugement`, a class with no review counting 0.
 refuses (no fix, a fix that does not match its class, a path that does not exist) is counted in no
 class, listed with its faults, and the command exits 1. It reads the folder only, never GitHub. A key
 `incident-dir` absent is "sans objet": no count, never 0; a folder not created yet holds no review.
+
+`baseline` is the reading of story 18 of the autonomous factory, taken before the dispatcher: on one window
+(30 days before `--jusqua`, now by default, unless `--depuis` says otherwise) the p90 lead time (the `lead-time`
+indicator), the human's interventions per merged ticket and the tokens per merged PR (`tokens-per-merge`), each
+with its window and its denominator. An intervention is a `needs-your-attention` label posed on a ticket
+merged in the window or on a PR that closed it, plus a merge by a login of the key `accepting-human` (the
+short identifier of its line, else its whole value) of a PR that does not carry `agent-merged`: the agent
+merges under the human's account and labels what it merged. A key `accepting-human` absent leaves the merges
+"sans objet" and counts the labels only. The markdown output is the text of the comment to post.
+
+With `--essai DATE` (the first day of the trial) `baseline` reads a second window, [`--essai`, `--le`), `--le`
+now by default, the base window then ending on `--essai` unless `--jusqua` says otherwise, and applies the rule
+of the decision point: "oui" if and only if the p90 lead time of the trial is below the base's, the
+interventions per ticket of the trial do not exceed the base's, and the dispatcher's trace of this host
+(`~/.claude/hooks/state/dispatch/<day>.jsonl`, `event` `question`) holds no `post-default` on a case `H<n>` in
+the trial; else "non", with each reason. A measure a window cannot give is a reason, never a "oui".
+
+`baseline` also counts, whatever the windows, the tickets published after the key `ticket-size-max` entered
+`docs/agents/usine.md` on the base branch (the date of the first commit that holds its line) that reached the
+cap of the key `ticket-pr-cap`, the PRs of a ticket counted as `guard_pr_cap.py` counts them (target 0). A key
+`ticket-size-max` or `ticket-pr-cap` absent, or a key line no commit of the base holds, is "sans objet".
 
 The data come from GitHub (`gh ... --json`, run from the project folder, so `gh` finds the
 repository itself), from git, from the logs `token_audit.py` reads, and from the journal of the
@@ -84,6 +106,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "hooks"))
 
 import budget  # noqa: E402  the hooks' reader of the `budget-action` key
+import guard_pr_cap  # noqa: E402  the hooks' reader of the PR cap keys, and its way of citing a ticket
 import incident  # noqa: E402  the reader of a blameless review and of the key `incident-dir`
 import refusal_journal  # noqa: E402  the journal of the guards' refusals
 import revue_boucle  # noqa: E402  the journal of the end-to-end review loop
@@ -1316,6 +1339,292 @@ def run_incidents(args: argparse.Namespace, run: Runner, now: datetime) -> int:
     return 1 if document["refusees"] else 0
 
 
+BASELINE_DAYS = 30
+AGENT_MERGED = "agent-merged"
+HUMAN_KEY = "accepting-human"
+ABSENT_HUMAN = f"sans objet (clé `{HUMAN_KEY}` absente)"
+
+
+def merged_ledger(f: Factory) -> list[dict]:
+    """The PRs merged in the window, with who merged them (`mergedBy`), which `prs` does not fetch."""
+    fields = "number,state,labels,mergedAt,mergedBy,closingIssuesReferences"
+    listed = cast("list[dict]", f.cached("ledger", lambda: f.gh("pr", "list", "--state", "merged", "--limit", "1000", "--json", fields)))
+    return [item for item in listed if f.inside(when(item, "mergedAt"))]
+
+
+def human_logins(f: Factory) -> set[str] | None:
+    """The GitHub logins of the key `accepting-human`, None when the key is absent."""
+    values = f.required(HUMAN_KEY)
+    if not values:
+        return None
+    return {value.rpartition(" | ")[2].strip().lower() for value in values if value.strip()}
+
+
+def attention_posed(f: Factory, number: int) -> int:
+    """How many times `needs-your-attention` was posed on the ticket or the PR `number`."""
+    return sum(1 for e in f.events(number) if e.get("event") == "labeled" and (e.get("label") or {}).get("name") == ATTENTION)
+
+
+def human_interventions(f: Factory) -> Sli:
+    """The human's interventions per ticket merged in the window (spec, section 22)."""
+    name = "interventions"
+    closing = [item for item in merged_ledger(f) if closed_tickets_of(item)]
+    tickets = {ticket for item in closing for ticket in closed_tickets_of(item)}
+    if not tickets:
+        return Sli(name, reason="aucun ticket fermé par une PR fusionnée dans la fenêtre")
+    labels = sum(attention_posed(f, n) for n in sorted(tickets | {int(item["number"]) for item in closing}))
+    humans = human_logins(f)
+    merges: int | str = ABSENT_HUMAN
+    if humans is not None:
+        merges = sum(
+            1 for item in closing
+            if str((item.get("mergedBy") or {}).get("login", "")).lower() in humans and AGENT_MERGED not in label_names(item)
+        )
+    total = labels + (merges if isinstance(merges, int) else 0)
+    value = round(total / len(tickets), 2)
+    data = {"numerateur": total, "denominateur": len(tickets), "valeur": value, "etiquettes": labels, "fusions_humain": merges}
+    return Sli(name, data=data, text=f"{decimal(value)} par ticket fusionné ({total}/{len(tickets)})")
+
+
+def measure(project: Path, since: datetime, until: datetime, run: Runner) -> dict[str, Sli]:
+    """The three measures of the baseline on the window [since, until)."""
+    f = Factory(project, since, until, run)
+    return {"delai": lead_time(f), "interventions": human_interventions(f), "jetons": tokens_per_merge(f)}
+
+
+def measures_dict(since: datetime, until: datetime, found: dict[str, Sli]) -> dict:
+    return {
+        "depuis": since.isoformat(), "jusqua": until.isoformat(), "jours": (until - since).days,
+        **{key: item.to_dict() for key, item in found.items()},
+    }
+
+
+def decimal(value: float) -> str:
+    """A number as the French text writes it: a comma, no `.0` for a whole one."""
+    return number(value).replace(".", ",")
+
+
+def plural(count: int, word: str) -> str:
+    """`count` and its noun, which takes an `s` above one, except the invariable `PR`."""
+    return f"{count} {word}{'s' if count > 1 and word != 'PR' else ''}"
+
+
+def measures_rows(found: dict[str, Sli]) -> list[str]:
+    """The table rows of one window: the measure, its value, its denominator."""
+    rows = []
+    delay, touches, tokens = found["delai"], found["interventions"], found["jetons"]
+    if delay.reason is not None:
+        rows.append(f"| Délai p90 (`lead-time p90`) | sans objet | {delay.reason} |")
+    else:
+        count, apart = delay.data["echantillons"], delay.data["sans_evenement"]
+        rows.append(
+            f"| Délai p90 (`lead-time p90`) | p90 {decimal(delay.data['p90_h'])} h, médiane {decimal(delay.data['mediane_h'])} h"
+            f" | {plural(count, 'ticket')} fusionnés avec une pose de `ready-for-agent` ({apart} sans pose, exclus) |"
+        )
+    if touches.reason is not None:
+        rows.append(f"| Interventions de l'humain par ticket fusionné | sans objet | {touches.reason} |")
+    else:
+        merges = touches.data["fusions_humain"]
+        said = plural(merges, "fusion") + " par l'humain" if isinstance(merges, int) else f"fusions par l'humain : {merges}"
+        rows.append(
+            f"| Interventions de l'humain par ticket fusionné | {touches.text}"
+            f" | {plural(touches.data['denominateur'], 'ticket')} fusionnés ; {plural(touches.data['etiquettes'], 'étiquette')} `{ATTENTION}`, {said} |"
+        )
+    if tokens.reason is not None:
+        rows.append(f"| Jetons par PR | sans objet | {tokens.reason} |")
+    else:
+        rows.append(
+            f"| Jetons par PR | {tokens.data['valeur']} jetons par PR fusionnée ({tokens.data['jetons']}/{tokens.data['denominateur']})"
+            f" | {plural(tokens.data['denominateur'], 'PR')} fusionnées, journaux de ce poste seulement |"
+        )
+    return rows
+
+
+SIZE_KEY = "ticket-size-max"
+
+
+def size_key_day(f: Factory) -> datetime | None:
+    """When the line of the key `ticket-size-max` first entered `usine.md` on the base branch, None if never."""
+    line = f"- `{SIZE_KEY}` : `"
+    out = f.git("log", f.base_ref(), "--reverse", "--format=%cI", "-S", line, "--", usine.CONFIG_PATH.as_posix())
+    first = (out or "").split()
+    return token_audit.parse_time(first[0]) if first else None
+
+
+def tickets_at_cap(f: Factory) -> Sli:
+    """The tickets published after the key `ticket-size-max` that reached the PR cap (target 0).
+
+    The PRs of a ticket are counted as `guard_pr_cap` counts them: open or merged, citing it by `Closes` or
+    `Refs`, leaving out the exempt titles, those under `ticket-pr-cap-small` lines and those created before
+    `ticket-pr-cap-since`. It does not apply the guard's one last PR for a ticket started before that day.
+    """
+    name = "ticket-pr-cap-reached"
+    if not f.required(SIZE_KEY):
+        return Sli(name, reason=f"clé `{SIZE_KEY}` absente")
+    cap, cap_fault = guard_pr_cap.cap_of(f.config)
+    since_day, since_fault = guard_pr_cap.since_of(f.config)
+    exempt, exempt_fault = guard_pr_cap.exempt_of(f.config)
+    small, small_fault = guard_pr_cap.small_of(f.config)
+    for key, fault in ((guard_pr_cap.KEY, cap_fault), (guard_pr_cap.SINCE_KEY, since_fault), (guard_pr_cap.EXEMPT_KEY, exempt_fault), (guard_pr_cap.SMALL_KEY, small_fault)):
+        if fault:
+            raise ValueError(f"la clé `{key}` est illisible")
+    if cap is None:
+        return Sli(name, reason=f"clé `{guard_pr_cap.KEY}` absente")
+    started = size_key_day(f)
+    if started is None:
+        return Sli(name, reason=f"aucun commit de `{f.base_ref()}` ne porte la clé `{SIZE_KEY}` : pas de date de départ")
+    tickets = f.gh("issue", "list", "--state", "all", "--limit", "1000", "--json", "number,createdAt")
+    published = {int(item["number"]) for item in tickets if (created := when(item, "createdAt")) is not None and created >= started}
+    fields = "number,title,body,state,createdAt,additions,deletions"
+    counts: Counter[int] = Counter()
+    for item in f.gh("pr", "list", "--state", "all", "--limit", "1000", "--json", fields):
+        if str(item.get("state")).upper() not in guard_pr_cap.COUNTED_STATES or str(item.get("title") or "").startswith(tuple(exempt)):
+            continue
+        if small is not None:
+            added, removed = item.get("additions"), item.get("deletions")
+            if type(added) is not int or type(removed) is not int:
+                raise ValueError(f"PR #{item.get('number')} : `additions` ou `deletions` illisible")
+            if added + removed < small:
+                continue
+        if since_day is not None:
+            created_day = guard_pr_cap.created_on(item.get("createdAt"))
+            if created_day is None:
+                raise ValueError(f"PR #{item.get('number')} : `createdAt` illisible")
+            if created_day < since_day:
+                continue
+        counts.update(int(ticket) for ticket in guard_pr_cap.cited(str(item.get("body") or "")))
+    reached = sorted(ticket for ticket, count in counts.items() if ticket in published and count >= cap)
+    data = {
+        "numerateur": len(reached), "denominateur": sum(1 for ticket in counts if ticket in published),
+        "tickets": reached, "cap": cap, "depuis": started.isoformat(),
+    }
+    return Sli(name, data=data, text=f"{len(reached)} (cible 0)")
+
+
+def cap_line(found: Sli) -> str:
+    head = f"Tickets publiés après `{SIZE_KEY}` au plafond de PR"
+    if found.reason is not None:
+        return f"{head} : sans objet ({found.reason})."
+    data = found.data
+    listed = "".join(f", #{ticket}" for ticket in data["tickets"])
+    return (
+        f"Tickets publiés après `{SIZE_KEY}` au plafond de {data['cap']} PR : {found.text}{listed} ;"
+        f" sur {plural(data['denominateur'], 'ticket')} publiés depuis le {data['depuis'][:10]} qui ont une PR comptée."
+    )
+
+
+def window_section(label: str, since: datetime, until: datetime, found: dict[str, Sli]) -> list[str]:
+    return [
+        f"{label} : du {since:%Y-%m-%d} au {until:%Y-%m-%d} ({(until - since).days} jours), les fusions de la fenêtre.",
+        "",
+        "| Mesure | Valeur | Dénominateur |",
+        "|---|---|---|",
+        *measures_rows(found),
+        "",
+    ]
+
+
+DISPATCH_EVENT = "question"
+RESERVED_CASE = re.compile(r"H\d+")
+DEFAULT_POSTED = "post-default"
+
+
+def dispatch_dir() -> Path:
+    """The folder of the dispatcher's trace (spec, G3), on this host: `<day>.jsonl`, one JSON line per event."""
+    return Path.home() / ".claude" / "hooks" / "state" / "dispatch"
+
+
+def reserved_gestures(project: Path, since: datetime, until: datetime) -> dict:
+    """The default gestures the dispatcher took on a question of a reserved (`H`) case, in the window.
+
+    A line of the trace counts when its `event` is `question`, its `project` is this project (the name of
+    its repository, as `refusal_journal.repo_of` gives it, or its folder), its `date` is in the window, its
+    `case` is `H<n>` and its `action` is `post-default`: a `remind-human` took no gesture. The trace lives on
+    the host; a missing folder is said (`journal` false) and counts no gesture.
+    """
+    folder = dispatch_dir()
+    if not folder.is_dir():
+        return {"journal": False, "gestes": 0, "illisibles": 0}
+    ours = {refusal_journal.repo_of(str(project)), str(project.resolve())} - {""}
+    gestures = unreadable = 0
+    for path in sorted(folder.glob("*.jsonl")):
+        for raw in path.read_text(encoding="utf-8", errors="replace").splitlines():
+            if not raw.strip():
+                continue
+            try:
+                item = json.loads(raw)
+                moment = token_audit.parse_time(item["date"])
+            except (ValueError, KeyError, TypeError, AttributeError):
+                unreadable += 1
+                continue
+            if item.get("event") != DISPATCH_EVENT or str(item.get("project")) not in ours or not since <= moment < until:
+                continue
+            if RESERVED_CASE.fullmatch(str(item.get("case"))) and item.get("action") == DEFAULT_POSTED:
+                gestures += 1
+    return {"journal": True, "gestes": gestures, "illisibles": unreadable}
+
+
+def decide(base: dict[str, Sli], trial: dict[str, Sli], gestures: dict) -> dict:
+    """The rule of the decision point (spec C11): "oui" if and only if no reason says "non".
+
+    The p90 lead time must drop (strictly), the interventions per ticket must not rise, and the trace holds
+    no default gesture of a reserved case. A measure one of the windows cannot give is a reason: it proves
+    nothing.
+    """
+    reasons: list[str] = []
+    for key, label in (("delai", "délai p90"), ("interventions", "interventions par ticket")):
+        before, after = base[key], trial[key]
+        missing = [f"{name} : {item.reason}" for name, item in (("base", before), ("essai", after)) if item.reason is not None]
+        if missing:
+            reasons.append(f"{label} : mesure sans objet ({' ; '.join(missing)})")
+        elif key == "delai" and not after.data["p90_h"] < before.data["p90_h"]:
+            reasons.append(f"le délai p90 ne baisse pas ({decimal(before.data['p90_h'])} h à {decimal(after.data['p90_h'])} h)")
+        elif key == "interventions" and after.data["numerateur"] * before.data["denominateur"] > before.data["numerateur"] * after.data["denominateur"]:
+            reasons.append(f"les interventions par ticket montent ({decimal(before.data['valeur'])} à {decimal(after.data['valeur'])})")
+    if gestures["gestes"]:
+        reasons.append(f"{plural(gestures['gestes'], 'geste')} d'une case `H` au journal des questions appliquées")
+    return {"verdict": "non" if reasons else "oui", "raisons": reasons}
+
+
+def gestures_line(gestures: dict) -> str:
+    if not gestures["journal"]:
+        return f"Journal des questions appliquées : aucun dossier `{dispatch_dir()}` sur ce poste, aucun geste lu."
+    unread = f", {plural(gestures['illisibles'], 'ligne')} illisibles" if gestures["illisibles"] else ""
+    return f"Journal des questions appliquées, de ce poste : {plural(gestures['gestes'], 'geste')} d'une case `H` dans l'essai{unread}."
+
+
+def run_baseline(args: argparse.Namespace, run: Runner, now: datetime) -> int:
+    trial_since, trial_until = args.essai, args.le or now
+    if args.le and not args.essai:
+        raise ValueError("`--le` ne va qu'avec `--essai`.")
+    if trial_since and trial_until <= trial_since:
+        raise ValueError("`--le` doit suivre `--essai`.")
+    until = args.jusqua or trial_since or now
+    since = args.depuis or until - timedelta(days=BASELINE_DAYS)
+    if until <= since:
+        raise ValueError("`--jusqua` doit suivre `--depuis`.")
+    base = measure(args.projet, since, until, run)
+    size = tickets_at_cap(Factory(args.projet, since, until, run))
+    document: dict = {"projet": str(args.projet), "base": measures_dict(since, until, base), "taille": size.to_dict()}
+    name = refusal_journal.repo_of(str(args.projet)) or args.projet.resolve().name
+    lines = [f"Relevé de l'usine pour `{name}` (F-0003, story 18).", ""]
+    if trial_since is None:
+        lines += window_section("Fenêtre", since, until, base) + [cap_line(size)]
+    else:
+        trial = measure(args.projet, trial_since, trial_until, run)
+        gestures = reserved_gestures(args.projet, trial_since, trial_until)
+        verdict = decide(base, trial, gestures)
+        document.update(essai=measures_dict(trial_since, trial_until, trial), journal_questions=gestures, verdict=verdict)
+        lines += window_section("Base", since, until, base) + window_section("Essai", trial_since, trial_until, trial)
+        lines += [gestures_line(gestures), "", cap_line(size), "", f"Point de décision : {verdict['verdict']}"]
+        lines += [f"- {reason}" for reason in verdict["raisons"]]
+    if args.json:
+        print(json.dumps(document, ensure_ascii=False, indent=2))
+    else:
+        print("\n".join(lines).rstrip())
+    return 0
+
+
 def main(argv: list[str] | None = None, run: Runner = run_command, now: datetime | None = None) -> int:
     parser = argparse.ArgumentParser(prog="factory_slo.py", description=__doc__.splitlines()[0])
     commands = parser.add_subparsers(dest="commande", required=True)
@@ -1348,7 +1657,14 @@ def main(argv: list[str] | None = None, run: Runner = run_command, now: datetime
     count = commands.add_parser("incidents", help="compte les revues d'incident du dossier de la clé `incident-dir`, par classe de correctif")
     count.add_argument("projet", type=Path, help="le dossier du projet")
     count.add_argument("--json", action="store_true", help="rend du JSON au lieu d'un tableau Markdown")
-    sli = commands.add_parser("sli", help="calcule les indicateurs de service")
+    base = commands.add_parser("baseline", help="relève le délai p90, les interventions de l'humain par ticket et les jetons par PR")
+    base.add_argument("projet", type=Path, help="le dossier du projet")
+    base.add_argument("--depuis", type=_date, help=f"début de la fenêtre de base, inclus ({BASELINE_DAYS} jours avant `--jusqua` par défaut)")
+    base.add_argument("--jusqua", type=_date, help="fin de la fenêtre de base, exclue (maintenant par défaut)")
+    base.add_argument("--essai", type=_date, help="début de l'essai, inclus : relève aussi l'essai et rend le verdict du point de décision (la base finit là par défaut)")
+    base.add_argument("--le", type=_date, help="fin de l'essai, exclue (maintenant par défaut), avec `--essai`")
+    base.add_argument("--json", action="store_true", help="rend du JSON au lieu d'un tableau Markdown")
+    sli =commands.add_parser("sli", help="calcule les indicateurs de service")
     sli.add_argument("projet", type=Path, help="le dossier du projet")
     sli.add_argument("--depuis", type=_date, required=True, help="début de la fenêtre, inclus")
     sli.add_argument("--jusqua", type=_date, help="fin de la fenêtre, exclue (maintenant par défaut)")
@@ -1356,11 +1672,11 @@ def main(argv: list[str] | None = None, run: Runner = run_command, now: datetime
     sli.add_argument("--reference", type=Path, help="le dernier résultat du jeu de référence (JSON)")
     args = parser.parse_args(argv)
 
-    if args.commande in ("status", "budget", "report", "changelog", "queue", "sla", "incidents"):
+    if args.commande in ("status", "budget", "report", "changelog", "queue", "sla", "incidents", "baseline"):
         try:
             handler = {
                 "status": run_status, "budget": run_budget, "report": run_report, "changelog": run_changelog,
-                "queue": run_queue, "sla": run_sla, "incidents": run_incidents,
+                "queue": run_queue, "sla": run_sla, "incidents": run_incidents, "baseline": run_baseline,
             }[args.commande]
             return handler(args, run, now or datetime.now(tz=timezone.utc))
         except (RuntimeError, ValueError, KeyError, IndexError, OSError) as error:
