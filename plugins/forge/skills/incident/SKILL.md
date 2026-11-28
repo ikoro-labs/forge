@@ -42,6 +42,10 @@ rejouera l'incident sans l'avoir lue.
      projet : sa ligne `Motif :` est un cas que le projet admet, et un ticket que le projet n'admet pas
      n'est pas ouvert. Dans ce cas, cherche un ticket existant qui porte déjà ce contrôle et cite-le ;
      sans lui, arrête-toi et dis à l'humain le correctif qui manque, sans écrire la revue comme close.
+     Quand le but de ce ticket est le délai de l'usine elle-même (le temps de la CI, des gardes, des
+     relais), il porte aussi l'étiquette de la clé `speed-label` (`--label`) et passe devant la file,
+     après `sev1` ; un autre but ne la reçoit jamais. Clé absente : « sans objet (clé `speed-label`
+     absente) », aucune étiquette n'est devinée ; l'étiquette doit exister sur le dépôt, tu ne la crées pas.
    - `jugement` : non, seul un agent le voit. Le correctif est un cas ajouté au jeu de référence du
      projet, que le juge rejoue ; la revue cite le dossier du cas (`cas : <dossier>`).
    Une revue a une classe. Un incident qui demande les deux s'écrit en deux revues.

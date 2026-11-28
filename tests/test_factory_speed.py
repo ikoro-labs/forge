@@ -105,5 +105,35 @@ class Declaration(unittest.TestCase):
         self.assertEqual(support.repo_usine().get("speed-label"), [LABEL])
 
 
+def prose(*parts: str) -> str:
+    """A file of the repository on one line, so a sentence wrapped by the editor still matches."""
+    return " ".join(support.REPO_ROOT.joinpath(*parts).read_text(encoding="utf-8").split())
+
+
+class Skills(unittest.TestCase):
+    def test_the_skills_that_open_a_ticket_add_the_label_for_a_lead_time_goal(self) -> None:
+        """Ticket #377, A3 : `feature-build`, `qc` et `incident` posent l'étiquette de la clé quand le but du ticket est le délai de l'usine."""
+        for skill in ("feature-build", "qc", "incident"):
+            with self.subTest(skill=skill):
+                text = prose("plugins", "forge", "skills", skill, "SKILL.md")
+                self.assertRegex(
+                    text,
+                    r"(label of the key `speed-label`|étiquette de la clé `speed-label`)[^|]{0,200}\(`--label`\)"
+                    r"|`speed-label` \(`--label`\)",
+                )
+                self.assertRegex(text, r"délai de l'usine elle-même|lead time of the factory itself")
+                self.assertIn("sans objet (clé `speed-label` absente)", text)
+                self.assertRegex(text, r"ne la crée pas|ne la crées pas")
+
+    def test_the_frontier_order_names_the_speed_class(self) -> None:
+        """Ticket #377, A2 : la frontière de `feature-build` se prend `sev1`, puis la vitesse, puis `sev2`."""
+        text = prose("plugins", "forge", "skills", "feature-build", "SKILL.md")
+        self.assertRegex(text, r"classes `sev1`, les tickets de la clé `speed-label`, `sev2`, `sev3`")
+
+    def test_the_severity_page_says_where_the_speed_class_sits(self) -> None:
+        """Ticket #377, A2 : la page de la file de `docs/gravite-et-sla.md` nomme la classe de vitesse."""
+        self.assertRegex(prose("docs", "gravite-et-sla.md"), r"`sev1`, puis[^.]{0,80}`speed-label`[^.]{0,80}`sev2`")
+
+
 if __name__ == "__main__":
     unittest.main()

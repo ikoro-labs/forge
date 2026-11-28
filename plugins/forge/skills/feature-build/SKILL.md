@@ -171,10 +171,14 @@ Dans cet ordre de priorité :
 3. **La frontière** : ouvert, `ready-for-agent`, aucun bloqueur ouvert, personne d'assigné, aucun
    coder en vol. **Par gravité, puis par échéance**, puis dans l'ordre des sous-issues : lance
    `uv run --no-project --quiet python "${CLAUDE_PLUGIN_ROOT}/scripts/factory_slo.py" queue <projet> <tickets de la frontière, dans l'ordre des sous-issues>`
-   et prends-les dans l'ordre qu'il rend (classes `sev1`, `sev2`, `sev3`, puis sans classe, et à
-   classe égale l'échéance de prise en charge la plus proche, d'après la clé `sla`). Un `sev1` passe
-   devant tout ticket qui n'est pas encore confié ; il ne passe ni devant un coder en vol, ni devant
-   un bloqueur ouvert (il n'est pas dans la frontière), et le compte rendu le dit. Sans la clé `sla`,
+   et prends-les dans l'ordre qu'il rend (classes `sev1`, les tickets de la clé `speed-label`, `sev2`, `sev3`,
+   puis sans classe, et à classe égale l'échéance de prise en charge la plus proche, d'après la clé `sla`).
+   Un `sev1` passe devant tout ticket qui n'est pas encore confié, puis un ticket qui porte l'étiquette de
+   la clé `speed-label` (celle d'un ticket dont le but est le délai de l'usine) devant tout autre ; ni l'un
+   ni l'autre ne passe devant un coder en vol, ni devant
+   un bloqueur ouvert (il n'est pas dans la frontière), et le compte rendu le dit. Sans la clé
+   `speed-label`, la commande répond « sans objet (clé `speed-label` absente) » : l'ordre est celui des
+   gravités seules, et tu le dis. Sans la clé `sla`,
    la commande répond « sans objet (clé `sla` absente) » pour les échéances : la gravité trie quand
    même, l'ordre des sous-issues départage, et tu le dis dans le compte rendu. Une sortie non nulle
    (clé `sla` mal formée) : arrête-toi et rends son message. Sous un `feature-freeze` actif (étape 0, point 8),
@@ -412,7 +416,12 @@ Ni minuterie, ni geste humain : la fusion déclenche, ou rien ne se lance.
    (`Refs #n`), like any ticket (coder at step 2, `forge:qc` at step 3), and its merge triggers again
    the review of step 1 of this section, which replays the journey (rejoue le parcours). The only
    exception: a defect that prevents a merge opens a ticket (`gh issue create`) whose body carries
-   `Motif : fusion-bloquee #<pr>` and `Feature: F-NNNN`.
+   `Motif : fusion-bloquee #<pr>` and `Feature: F-NNNN`. When the goal of that ticket is the lead time
+   of the factory itself (CI time, gates, relays), add the label of the key `speed-label` to it
+   (`--label`), so it jumps the queue after `sev1`; it replaces no severity. The key absent is
+   « sans objet (clé `speed-label` absente) » and no label is guessed; the label must exist on the
+   repository, the agent does not create it (`ne la crée pas`). A ticket whose goal is something else
+   never gets it.
 4. **Le journal et l'arrêt.** Le journal de la feature (`revue/boucle.tsv`, dans le dossier de la
    feature) est écrit sur la branche de la revue et livré dans sa PR, avec la matrice et le compte
    rendu. Quand un ticket qui porte une ligne `Couvre :` fusionne, avant la revue qu'il déclenche,
