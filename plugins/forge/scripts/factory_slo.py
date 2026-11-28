@@ -61,6 +61,11 @@ interventions per ticket of the trial do not exceed the base's, and the dispatch
 (`~/.claude/hooks/state/dispatch/<day>.jsonl`, `event` `question`) holds no `post-default` on a case `H<n>` in
 the trial; else "non", with each reason. A measure a window cannot give is a reason, never a "oui".
 
+`baseline` also counts, whatever the windows, the tickets published after the key `ticket-size-max` entered
+`docs/agents/usine.md` on the base branch (the date of the first commit that holds its line) that reached the
+cap of the key `ticket-pr-cap`, the PRs of a ticket counted as `guard_pr_cap.py` counts them (target 0). A key
+`ticket-size-max` or `ticket-pr-cap` absent, or a key line no commit of the base holds, is "sans objet".
+
 The data come from GitHub (`gh ... --json`, run from the project folder, so `gh` finds the
 repository itself), from git, from the logs `token_audit.py` reads, and from the journal of the
 guards' refusals (`refusal_journal.py`), which lives on the host: `guard-refusals` is "sans objet"
@@ -101,6 +106,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "hooks"))
 
 import budget  # noqa: E402  the hooks' reader of the `budget-action` key
+import guard_pr_cap  # noqa: E402  the hooks' reader of the PR cap keys, and its way of citing a ticket
 import incident  # noqa: E402  the reader of a blameless review and of the key `incident-dir`
 import refusal_journal  # noqa: E402  the journal of the guards' refusals
 import revue_boucle  # noqa: E402  the journal of the end-to-end review loop
@@ -1396,7 +1402,8 @@ def measures_dict(since: datetime, until: datetime, found: dict[str, Sli]) -> di
 
 
 def plural(count: int, word: str) -> str:
-    return f"{count} {word}{'s' if count > 1 else ''}"
+    """`count` and its noun, which takes an `s` above one, except the invariable `PR`."""
+    return f"{count} {word}{'s' if count > 1 and word != 'PR' else ''}"
 
 
 def measures_rows(found: dict[str, Sli]) -> list[str]:
@@ -1415,10 +1422,10 @@ def measures_rows(found: dict[str, Sli]) -> list[str]:
         rows.append(f"| Interventions de l'humain par ticket fusionné | sans objet | {touches.reason} |")
     else:
         merges = touches.data["fusions_humain"]
-        said = f"{merges} fusions par l'humain" if isinstance(merges, int) else f"fusions par l'humain : {merges}"
+        said = plural(merges, "fusion") + " par l'humain" if isinstance(merges, int) else f"fusions par l'humain : {merges}"
         rows.append(
             f"| Interventions de l'humain par ticket fusionné | {touches.text}"
-            f" | {plural(touches.data['denominateur'], 'ticket')} fusionnés ; {touches.data['etiquettes']} étiquettes `{ATTENTION}`, {said} |"
+            f" | {plural(touches.data['denominateur'], 'ticket')} fusionnés ; {plural(touches.data['etiquettes'], 'étiquette')} `{ATTENTION}`, {said} |"
         )
     if tokens.reason is not None:
         rows.append(f"| Jetons par PR | sans objet | {tokens.reason} |")
@@ -1428,6 +1435,79 @@ def measures_rows(found: dict[str, Sli]) -> list[str]:
             f" | {plural(tokens.data['denominateur'], 'PR')} fusionnées, journaux de ce poste seulement |"
         )
     return rows
+
+
+SIZE_KEY = "ticket-size-max"
+
+
+def size_key_day(f: Factory) -> datetime | None:
+    """When the line of the key `ticket-size-max` first entered `usine.md` on the base branch, None if never."""
+    line = f"- `{SIZE_KEY}` : `"
+    out = f.git("log", f.base_ref(), "--reverse", "--format=%cI", "-S", line, "--", usine.CONFIG_PATH.as_posix())
+    first = (out or "").split()
+    return token_audit.parse_time(first[0]) if first else None
+
+
+def tickets_at_cap(f: Factory) -> Sli:
+    """The tickets published after the key `ticket-size-max` that reached the PR cap (target 0).
+
+    The PRs of a ticket are counted as `guard_pr_cap` counts them: open or merged, citing it by `Closes` or
+    `Refs`, leaving out the exempt titles, those under `ticket-pr-cap-small` lines and those created before
+    `ticket-pr-cap-since`. It does not apply the guard's one last PR for a ticket started before that day.
+    """
+    name = "ticket-pr-cap-reached"
+    if not f.required(SIZE_KEY):
+        return Sli(name, reason=f"clé `{SIZE_KEY}` absente")
+    cap, cap_fault = guard_pr_cap.cap_of(f.config)
+    since_day, since_fault = guard_pr_cap.since_of(f.config)
+    exempt, exempt_fault = guard_pr_cap.exempt_of(f.config)
+    small, small_fault = guard_pr_cap.small_of(f.config)
+    for key, fault in ((guard_pr_cap.KEY, cap_fault), (guard_pr_cap.SINCE_KEY, since_fault), (guard_pr_cap.EXEMPT_KEY, exempt_fault), (guard_pr_cap.SMALL_KEY, small_fault)):
+        if fault:
+            raise ValueError(f"la clé `{key}` est illisible")
+    if cap is None:
+        return Sli(name, reason=f"clé `{guard_pr_cap.KEY}` absente")
+    started = size_key_day(f)
+    if started is None:
+        return Sli(name, reason=f"aucun commit de `{f.base_ref()}` ne porte la clé `{SIZE_KEY}` : pas de date de départ")
+    tickets = f.gh("issue", "list", "--state", "all", "--limit", "1000", "--json", "number,createdAt")
+    published = {int(item["number"]) for item in tickets if (created := when(item, "createdAt")) is not None and created >= started}
+    fields = "number,title,body,state,createdAt,additions,deletions"
+    counts: Counter[int] = Counter()
+    for item in f.gh("pr", "list", "--state", "all", "--limit", "1000", "--json", fields):
+        if str(item.get("state")).upper() not in guard_pr_cap.COUNTED_STATES or str(item.get("title") or "").startswith(tuple(exempt)):
+            continue
+        if small is not None:
+            added, removed = item.get("additions"), item.get("deletions")
+            if type(added) is not int or type(removed) is not int:
+                raise ValueError(f"PR #{item.get('number')} : `additions` ou `deletions` illisible")
+            if added + removed < small:
+                continue
+        if since_day is not None:
+            created_day = guard_pr_cap.created_on(item.get("createdAt"))
+            if created_day is None:
+                raise ValueError(f"PR #{item.get('number')} : `createdAt` illisible")
+            if created_day < since_day:
+                continue
+        counts.update(int(ticket) for ticket in guard_pr_cap.cited(str(item.get("body") or "")))
+    reached = sorted(ticket for ticket, count in counts.items() if ticket in published and count >= cap)
+    data = {
+        "numerateur": len(reached), "denominateur": sum(1 for ticket in counts if ticket in published),
+        "tickets": reached, "cap": cap, "depuis": started.isoformat(),
+    }
+    return Sli(name, data=data, text=f"{len(reached)} (cible 0)")
+
+
+def cap_line(found: Sli) -> str:
+    head = f"Tickets publiés après `{SIZE_KEY}` au plafond de PR"
+    if found.reason is not None:
+        return f"{head} : sans objet ({found.reason})."
+    data = found.data
+    listed = "".join(f", #{ticket}" for ticket in data["tickets"])
+    return (
+        f"Tickets publiés après `{SIZE_KEY}` au plafond de {data['cap']} PR : {found.text}{listed} ;"
+        f" sur {plural(data['denominateur'], 'ticket')} publiés depuis le {data['depuis'][:10]} qui ont une PR comptée."
+    )
 
 
 def window_section(label: str, since: datetime, until: datetime, found: dict[str, Sli]) -> list[str]:
@@ -1521,17 +1601,19 @@ def run_baseline(args: argparse.Namespace, run: Runner, now: datetime) -> int:
     if until <= since:
         raise ValueError("`--jusqua` doit suivre `--depuis`.")
     base = measure(args.projet, since, until, run)
-    document: dict = {"projet": str(args.projet), "base": measures_dict(since, until, base)}
+    size = tickets_at_cap(Factory(args.projet, since, until, run))
+    document: dict = {"projet": str(args.projet), "base": measures_dict(since, until, base), "taille": size.to_dict()}
     lines = [f"Relevé de l'usine pour `{args.projet.resolve().name}` (F-0003, story 18).", ""]
     if trial_since is None:
-        lines += window_section("Fenêtre", since, until, base)
+        lines += window_section("Fenêtre", since, until, base) + [cap_line(size)]
     else:
         trial = measure(args.projet, trial_since, trial_until, run)
         gestures = reserved_gestures(args.projet, trial_since, trial_until)
         verdict = decide(base, trial, gestures)
         document.update(essai=measures_dict(trial_since, trial_until, trial), journal_questions=gestures, verdict=verdict)
         lines += window_section("Base", since, until, base) + window_section("Essai", trial_since, trial_until, trial)
-        lines += [gestures_line(gestures), "", f"Point de décision : {verdict['verdict']}"] + [f"- {reason}" for reason in verdict["raisons"]]
+        lines += [gestures_line(gestures), "", cap_line(size), "", f"Point de décision : {verdict['verdict']}"]
+        lines += [f"- {reason}" for reason in verdict["raisons"]]
     if args.json:
         print(json.dumps(document, ensure_ascii=False, indent=2))
     else:

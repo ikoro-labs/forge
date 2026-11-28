@@ -15,7 +15,7 @@ from pathlib import Path
 
 import support  # noqa: F401  met les scripts sur le chemin d'import
 from factory_slo import main
-from test_factory_slo import World, build, event, isolate
+from test_factory_slo import USINE, World, build, event, isolate, issue
 from test_token_audit import line
 
 ATTENTION = "needs-your-attention"
@@ -247,6 +247,103 @@ class PointOfDecision(BaselineCase):
         code, _, err = self.run_baseline("--essai", "2026-11-30", "--le", "2026-11-01")
         self.assertEqual(code, 1)
         self.assertIn("--le", err)
+
+
+KEYS = """- `ticket-pr-cap` : `3`
+- `ticket-pr-cap-small` : `50`
+- `ticket-pr-cap-exempt` : `chore(pin)`
+"""
+SIZE_KEY = "- `ticket-size-max` : `1000`\n"
+
+
+def cited_pr(number: int, body: str, state: str = "MERGED", title: str = "feat(x): y", lines: int = 200) -> dict:
+    return {
+        "number": number, "title": title, "body": body, "state": state, "createdAt": "2026-10-21T00:00:00Z",
+        "mergedAt": None, "closedAt": None, "labels": [], "mergeCommit": None, "comments": [],
+        "closingIssuesReferences": [], "additions": lines, "deletions": 0,
+    }
+
+
+def configure(world: World, keys: str) -> None:
+    """Réécrit `usine.md` : la base du monde, la clé de l'humain, puis `keys` (rien n'est commité)."""
+    usine = world.root / "docs" / "agents" / "usine.md"
+    usine.write_text(USINE + "- `accepting-human` : `Kevin | kevin-h`\n" + keys, encoding="utf-8")
+
+
+class UncommittedKey(BaselineCase):
+    def test_a86_a_key_in_no_commit_has_no_date_so_it_is_not_applicable(self) -> None:
+        """F-0003 A86 : une clé écrite mais jamais commitée n'a pas de date : « sans objet », pas un compte faux."""
+        configure(self.world, KEYS + SIZE_KEY)
+        found = self.document("--depuis", "2026-10-01", "--jusqua", "2026-10-31")["taille"]
+        self.assertEqual(found["statut"], "sans objet")
+        self.assertIn("aucun commit", found["raison"])
+
+
+class SizeCap(BaselineCase):
+    """A86 : les tickets publiés après la clé `ticket-size-max` qui ont atteint le plafond de PR (cible 0)."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.configure(KEYS + SIZE_KEY)
+        self.world.commit("chore: ticket-size-max", "2026-10-15T00:00:00Z")
+        after, before = "2026-10-20T00:00:00Z", "2026-10-01T00:00:00Z"
+        self.world.answers["issue list"] = [issue(number, after) for number in (50, 60, 80, 90, 100)] + [issue(70, before)]
+        for item in self.world.answers["pr list"]:
+            item.update(additions=100, deletions=0)
+        self.world.answers["pr list"] += [
+            *[cited_pr(n, "Refs #50") for n in (51, 52, 53)],  # trois PR comptées : le plafond
+            *[cited_pr(n, "Refs #60") for n in (61, 62)],  # deux : sous le plafond
+            *[cited_pr(n, "Refs #70") for n in (71, 72, 73)],  # ticket publié avant la clé
+            *[cited_pr(n, "Refs #80") for n in (81, 82)], cited_pr(83, "Refs #80", title="chore(pin): bump forge"),
+            *[cited_pr(n, "Refs #90") for n in (91, 92)], cited_pr(93, "Refs #90", lines=10),
+            *[cited_pr(n, "Refs #100") for n in (101, 102)], cited_pr(103, "Refs #100", state="CLOSED"),
+        ]
+
+    def configure(self, keys: str) -> None:
+        configure(self.world, keys)
+
+    def size(self) -> dict:
+        return self.document("--depuis", "2026-10-01", "--jusqua", "2026-10-31")["taille"]
+
+    def test_a86_counts_the_tickets_published_after_the_key_that_reached_the_cap(self) -> None:
+        """F-0003 A86 : seul le ticket 50, publié après la clé, a trois PR : un ticket au plafond, cible 0."""
+        found = self.size()
+        self.assertEqual((found["numerateur"], found["tickets"], found["cap"]), (1, [50], 3))
+        self.assertEqual(found["depuis"][:10], "2026-10-15")
+
+    def test_a86_the_denominator_is_the_tickets_published_since_with_a_counted_pr(self) -> None:
+        """F-0003 A86 : 50, 60, 80, 90 et 100 sont publiés après la clé et ont une PR comptée ; 70 est antérieur."""
+        self.assertEqual(self.size()["denominateur"], 5)
+
+    def test_a86_an_exempt_title_a_small_pr_and_a_closed_pr_do_not_count_toward_the_cap(self) -> None:
+        """F-0003 A86 : comme `guard_pr_cap` : `chore(pin)`, une PR sous 50 lignes et une PR fermée sans fusion ne comptent pas."""
+        self.assertNotIn(80, self.size()["tickets"])
+        self.assertNotIn(90, self.size()["tickets"])
+        self.assertNotIn(100, self.size()["tickets"])
+
+    def test_a86_zero_tickets_at_the_cap_is_a_count_not_a_missing_measure(self) -> None:
+        """F-0003 A86 : sans ticket au plafond, le relevé rend 0 sur son dénominateur, la cible tenue."""
+        self.configure(KEYS.replace("`3`", "`4`") + SIZE_KEY)
+        found = self.size()
+        self.assertEqual((found["statut"], found["numerateur"], found["tickets"]), ("calculé", 0, []))
+
+    def test_a86_without_the_size_key_it_is_not_applicable_never_zero(self) -> None:
+        """F-0003 A86 : sans la clé `ticket-size-max`, « sans objet (clé `ticket-size-max` absente) »."""
+        self.configure(KEYS)
+        found = self.size()
+        self.assertEqual(found["statut"], "sans objet")
+        self.assertIn("clé `ticket-size-max` absente", found["raison"])
+
+    def test_a86_without_the_cap_key_it_is_not_applicable(self) -> None:
+        """F-0003 A86 : sans la clé `ticket-pr-cap`, « sans objet (clé `ticket-pr-cap` absente) »."""
+        self.configure(SIZE_KEY)
+        self.assertIn("clé `ticket-pr-cap` absente", self.size()["raison"])
+
+    def test_a86_the_markdown_says_the_count_and_the_target(self) -> None:
+        """F-0003 A86 : le texte du relevé dit le compte, le plafond et la cible 0."""
+        code, out, _ = self.run_baseline("--depuis", "2026-10-01", "--jusqua", "2026-10-31")
+        self.assertEqual(code, 0)
+        self.assertIn("Tickets publiés après `ticket-size-max` au plafond de 3 PR : 1 (cible 0), #50", out)
 
 
 if __name__ == "__main__":
