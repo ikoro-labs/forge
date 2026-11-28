@@ -13,11 +13,12 @@ Le pourquoi est dans `cadrage.md` (accepté le 2026-11-28, `accepte_via: agent-a
 **ce qui se construit**, et comment on saura que c'est fait. Les décisions des deux agents décideurs et de
 l'humain sont dans `seances/2026-11-28-ikoro-labs-cadrage.md` et dans la section 7 du cadrage ; la spec les
 reprend sans les redire. Les choix que ni le cadrage ni la séance ne tranchent sont à la section 18, tranchés
-le 2026-11-28 par `forge:staff-engineer` et `forge:product-owner`, sauf le point 5, réservé à l'humain
-(section 20).
+le 2026-11-28 par `forge:staff-engineer` et `forge:product-owner`, sauf le point 5, tranché par l'humain
+(sections 17 et 20).
 
 Clés lues dans `docs/agents/usine.md` (base `b543993`) : `product-source`, `source-author`, `glossary` et
-`domain-skill` sont absentes (lignes 126 et 127). La source de la spec est donc le cadrage accepté, dont la
+`domain-skill` sont absentes (les lignes 126 et 127 disent l'absence des trois premières, `source-author`
+n'y figure pas). La source de la spec est donc le cadrage accepté, dont la
 section 3 reprend chaque élément.
 
 ## 1. Stories
@@ -102,6 +103,7 @@ de scripts et de variables sont ceux de la section 18 (décisions par défaut), 
 | A20 | 3 | la commande qui échoue autrement (code autre que 0 ou 1, délai) | `merge_grant.py` tourne | aucun `success` ; la sortie dit `NOT RUN` et la raison |
 | A21 | 3 | `merge-grant` présente et `human-collections` absente | `merge_grant.py` tourne | il ne poste jamais `success` et dit que le clic ne peut pas être prouvé sans la clé `human-collections` |
 | A22 | 3 | le statut `<contexte>` à `success` sur la tête | un agent fusionne la PR qui touche un `protected-path` | `guard_git` laisse passer ; sans ce statut sur la tête, il refuse comme aujourd'hui |
+| A89 | 3 | `merge-grant` présente et `agent-token-command` ou `agent-login` absente (les agents agissent sous le jeton de l'humain) | `merge_grant.py` tourne | il ne poste jamais `success` et dit que le clic ne peut pas être prouvé tant que les agents tiennent le jeton de l'humain |
 | A23 | 3 | la clé `merge-grant` absente | une PR touche un `protected-path` | sa fusion reste à l'humain, comme aujourd'hui ; `merge_grant.py` rend « sans objet (clé `merge-grant` absente) » |
 | A24 | 4 | la clé `ignored-session` de `usine.md` (un nom par ligne, exact, ou préfixe fini par `*`) et une autre session vivante du dépôt dont le `name` du registre correspond | `handoff_header.py sessions` tourne | elle n'est pas listée ; `handoff_relay.py` ne refuse pas en code 6 pour elle, et `sessions_notice.py` ne la signale pas |
 | A25 | 4 | une session au `name` qui correspond, mais dont le registre dit `kind` `interactive` | `sessions` tourne | elle est listée : le mode de lancement ne peut qu'ajouter un refus |
@@ -180,7 +182,7 @@ source qu'ils désignent ; le cadrage n'est pas modifié.
 | Identifiant | Élément (résumé) | Tenu par |
 |---|---|---|
 | EXI-17 | un hook refuse à tout agent l'écriture dans les collections de l'humain nommées par une clé | story 1, A1 à A8 ; C01 |
-| EXI-18 | identité GitHub des agents par une application, sans le jeton de l'humain ; fusion autorisée d'un clic par une vérification obligatoire ; installation par l'humain | story 2, A9 à A16 ; story 3, A17 à A23 ; C02, C03 |
+| EXI-18 | identité GitHub des agents par une application, sans le jeton de l'humain ; fusion autorisée d'un clic par une vérification obligatoire ; installation par l'humain | story 2, A9 à A16 ; story 3, A17 à A23 et A89 ; C02, C03 |
 | EXI-01 | une passe sans interface nommée par une clé ne compte pas comme session vivante ; le mode de lancement en complément | story 4, A24 à A28 ; C04 |
 | EXI-02 | nouvel essai d'un relais refusé, recul plafonné et gigue, borne par une variable de passation | story 5, A29 à A33 ; C05 |
 | EXI-03 | pont : un hook `Stop` fait trancher la question de la session au délai, gestes réservés exclus | story 6, A34 à A39 |
@@ -350,6 +352,7 @@ l'humain). Les sources de chaque fait sont dans le cadrage (sections 1, 2 et 7).
 | 2026-11-28 | décisions par défaut de la spec : 1 à 4, 6 à 9, 12 à 14, 17 à 19 confirmées ; 10 changée (trois clés du répartiteur dans `usine-gardes.md`) | `forge:staff-engineer`, T2, T4, T5 |
 | 2026-11-28 | décisions par défaut de la spec : 11, 15, 18 (nom de la page) confirmées ; 16 changée (interventions comptées par étiquette et par fusion) | `forge:product-owner`, P1, P3 |
 | 2026-11-28 | point 5 (fusion d'un chemin protégé sur un clic vérifié) réservé à l'humain | `forge:staff-engineer`, H1, H3, H4 |
+| 2026-11-28 | point 5 : oui, actif aux deux conditions de la section 17 | ikoro-labs (réponse relayée par une autre de ses sessions) |
 
 ## 10. Critères transverses
 
@@ -369,7 +372,7 @@ l'humain). Les sources de chaque fait sont dans le cadrage (sections 1, 2 et 7).
 - **T8.** Chaque alerte du cadrage a sa ligne lisible : écriture refusée (A5), PR d'agent sous un autre compte
   (A15), ticket au plafond de relances (A53), ticket revendiqué sans agent vivant (A52).
 - **T9.** Un changement de `hooks.json` ou d'un `guard_` est un chemin protégé : sa fusion revient à l'humain
-  (H1), ou au clic de la story 3 une fois celle-ci livrée.
+  (H1), ou au clic de la story 3 une fois celle-ci livrée et activée aux conditions de la section 17.
 - **T10.** Aucun jeton, aucune clé privée ni aucune commande complète n'entre dans un journal, une trace, un
   commentaire ou une sortie.
 
@@ -491,11 +494,23 @@ de métier propre), et la feature n'engage ni un chiffre de métier ni une oblig
 en revanche la gouvernance de l'usine : le clic de la story 3 change qui fusionne un chemin protégé, ce que la
 matrice des droits de décision (case `H1`) devra dire par un geste de l'humain (`H4`).
 
+Décision de l'humain du 2026-11-28 (point 5, réponse relayée par une autre de ses sessions) : un clic vérifié
+sur sa page peut laisser les agents fusionner une PR qui touche un chemin protégé. La case `H1` ne devient
+active qu'à deux conditions, qui ne sont pas encore remplies :
+
+- **les agents ne tiennent plus le jeton GitHub de l'humain.** Tant qu'ils agissent sous son compte, un clic
+  sur la page ne prouve pas que l'humain a décidé : un agent pourrait écrire la même ligne. Le clic ne vaut
+  qu'une fois les gestes des agents passés par l'identité de l'application (story 2), dont ils ne tiennent
+  pas la clé, et la collection du clic fermée aux agents (story 1) ; A21 et A89 le tiennent ;
+- **un clic a été traité de bout en bout.** Aucun ne l'a été à ce jour. L'humain n'exige le contexte de
+  `merge-grant` dans la protection de `main` (H3), et ne change la case `H1` (H4), qu'après un essai où un
+  clic réel a produit le statut puis la fusion d'une PR d'essai.
+
 ## 18. Décisions prises par défaut
 
 Celles de l'agent qui écrit la spec, là où le cadrage et la séance ne tranchent pas. Chacune a été soumise le
 2026-11-28 à l'agent décideur de sa nature ; la dernière colonne dit son verdict et la case de la matrice
-(`MATRIX_CELL`). Deux sont changées (10, 16), une est réservée à l'humain (5, section 20).
+(`MATRIX_CELL`). Deux sont changées (10, 16), une a été réservée à l'humain, qui l'a tranchée (5).
 
 | # | Décision | Fondement | Si le relecteur lit autrement | Tranché le 2026-11-28 |
 |---|---|---|---|---|
@@ -503,7 +518,7 @@ Celles de l'agent qui écrit la spec, là où le cadrage et la séance ne tranch
 | 2 | identité par une commande `agent-token-command` qui imprime le jeton, plutôt qu'une signature dans forge (technique) | signer un jeton d'application demande RS256, hors de la bibliothèque standard | forge signe lui-même avec un outil du poste ; contrat de la section 16 à revoir | confirmé, `forge:staff-engineer`, T4, T2 |
 | 3 | `guard_git` reconnaît l'identité des agents au préfixe `ghs_` du jeton (technique) | préfixe des jetons d'installation de GitHub ; contrôle sans appel réseau | un appel `gh api user` comparé à `agent-login` ; A11 à relire | confirmé, `forge:staff-engineer`, T5, T2 ; seul le préfixe se vérifie, jamais la longueur ni la forme du reste (format allongé par GitHub, rapporté par le décideur, non revérifié ici) |
 | 4 | les commits des agents prennent l'identité git de l'application (technique) | sépare aussi l'auteur des commits ; l'adresse `noreply` du compte de l'humain n'est plus nécessaire | garder l'identité git de l'humain, le jeton seul changeant ; A14 à retirer | confirmé, `forge:staff-engineer`, T4, T2 |
-| 5 | la vérification du clic est un statut de commit `<contexte>` posté par l'application quand la commande de `merge-grant` confirme le clic pour la tête ; `guard_git` accepte la fusion d'un chemin protégé sur ce statut ; pas de `success` sans `human-collections` (technique) | un statut requis peut être restreint à une application dans la protection de branche ; forge ne lit pas la base d'une page depuis un script, le projet fournit la commande | une vérification dans un workflow du projet ; A17 à A22 à revoir | **réservé à l'humain**, H1, H4, H3 : recommandation de ne l'activer qu'après son accord (section 20) |
+| 5 | la vérification du clic est un statut de commit `<contexte>` posté par l'application quand la commande de `merge-grant` confirme le clic pour la tête ; `guard_git` accepte la fusion d'un chemin protégé sur ce statut ; pas de `success` sans `human-collections` (technique) | un statut requis peut être restreint à une application dans la protection de branche ; forge ne lit pas la base d'une page depuis un script, le projet fournit la commande | une vérification dans un workflow du projet ; A17 à A22 à revoir | **réservé à l'humain**, H1, H4, H3 ; tranché par lui : oui, actif aux deux conditions de la section 17 |
 | 6 | `ignored-session` : nom exact ou préfixe fini par `*` ; une session `interactive` n'est jamais ignorée (technique) | « le mode de lancement ne sert que de complément » (séance, Q4) : il ne peut qu'ajouter un refus | le mode seul suffit pour certains noms ; A25 à relire | confirmé, `forge:staff-engineer`, T4, T2 |
 | 7 | `CLAUDE_HANDOFF_RETRY_MINUTES`, de 1 à 1440 ; absente, aucun nouvel essai ; recul de 30 s doublé, plafond 300 s, gigue 20 % (technique) | sans la variable, le comportement d'aujourd'hui ; chiffres usuels d'un recul exponentiel | une valeur par défaut, comme `CLAUDE_HANDOFF_RELAY_MAX` ; A32 à relire | confirmé, `forge:staff-engineer`, T4, T2 |
 | 8 | le hook `Stop` attribue à la session les questions où elle a posé une étiquette d'attente dans ce passage, et passe par le décideur puis `route` au lieu d'appliquer la recommandation brute (technique) | `route` est le seul chemin qui exclut les gestes réservés ; le transcript est la seule trace de ce passage | appliquer la recommandation de la session ; A34, A35 à revoir | confirmé, `forge:staff-engineer`, T5, T2 |
@@ -529,14 +544,10 @@ Celles de l'agent qui écrit la spec, là où le cadrage et la séance ne tranch
 
 ## 20. Points ouverts
 
-Un point, réservé à l'humain : tant qu'il est ouvert, la spec ne s'accepte pas par le modèle.
-
-- **Point 5 (section 18) : fusion d'un chemin protégé sur un clic vérifié.** RESERVED, cases H1, H4 et H3
-  (`forge:staff-engineer`, 2026-11-28). Le statut posté par l'application sur un clic laisserait `guard_git`
-  fusionner un `protected-path` sans que l'humain fusionne lui-même : cela change qui fusionne ces chemins
-  (H1), donc la matrice (H4), et l'humain doit protéger la branche par ce contexte (H3). Recommandation :
-  livrer la story 3 (A17 à A22) inactive, et ne l'activer qu'après l'accord écrit de l'humain. S'il refuse,
-  la story 3 sort de la spec et un chemin protégé reste fusionné par lui.
+Aucun. Le point 5 (fusion d'un chemin protégé sur un clic vérifié), réservé à l'humain (cases H1, H4 et H3,
+`forge:staff-engineer`, 2026-11-28), a été tranché par lui le même jour : oui. Sa réponse a été relayée par
+une autre de ses sessions, pas tapée dans celle qui écrit la spec. La story 3 se construit, et ne s'active
+qu'aux deux conditions de la section 17.
 
 ## 21. Questions pour les entretiens
 
@@ -549,7 +560,7 @@ design ou pendant la construction :
 - si l'outil de base des pages est le seul canal par lequel un agent peut écrire une collection de la page ;
 - le délai d'exécution maximal d'un hook `Stop`, qui borne une attente dans le hook ;
 - l'humain accepte-t-il de changer la case `H1` de la matrice pour que le clic vaille fusion (geste `H4`) ?
-  C'est le point ouvert de la section 20.
+  Tranché : oui, aux conditions de la section 17.
 
 ## 22. Glossaire
 
