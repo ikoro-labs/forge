@@ -108,5 +108,45 @@ class AnUnreadableLineClosesEveryWrite(unittest.TestCase):
             self.assertEqual(run(where, call("set", collection="decisions")).returncode, 2)
 
 
+def journal(where: Path) -> list[dict[str, str]]:
+    folder = where.parent / "home" / ".claude" / "hooks" / "state" / "refusals"
+    return [
+        json.loads(text)
+        for path in sorted(folder.glob("*.jsonl"))
+        for text in path.read_text(encoding="utf-8").splitlines()
+    ]
+
+
+class ARefusalIsJournaled(unittest.TestCase):
+    def test_f_0003_a5_a_refusal_leaves_one_line_and_never_the_content(self) -> None:
+        """F-0003 A5: guard, rule `human-collection`, agent, repo, branch and verb; nothing of the written data."""
+        with project(KEYS) as where:
+            done = run(where, call("set", doc="d1", data={"secret": "CONTENU-DU-CLIC"}), "forge:coder")
+            self.assertEqual(done.returncode, 2, done.stderr)
+            lines = journal(where)
+            self.assertEqual(len(lines), 1)
+            self.assertEqual(
+                {name: lines[0][name] for name in ("guard", "rule", "agent", "repo", "branch", "verb")},
+                {
+                    "guard": "guard_human_data",
+                    "rule": "human-collection",
+                    "agent": "forge:coder",
+                    "repo": "depot",
+                    "branch": "feat/x",
+                    "verb": "ArtifactData write",
+                },
+            )
+            folder = where.parent / "home" / ".claude" / "hooks" / "state" / "refusals"
+            written = "".join(path.read_text(encoding="utf-8") for path in folder.glob("*.jsonl"))
+            self.assertNotIn("CONTENU-DU-CLIC", written)
+            self.assertNotIn("d1", written)
+
+    def test_f_0003_a5_a_call_that_passes_leaves_no_line(self) -> None:
+        """F-0003 A5: a read leaves no journal at all."""
+        with project(KEYS) as where:
+            self.assertEqual(run(where, call("get")).returncode, 0)
+            self.assertEqual(journal(where), [])
+
+
 if __name__ == "__main__":
     unittest.main()
