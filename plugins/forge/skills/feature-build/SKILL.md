@@ -208,6 +208,11 @@ lance. Code 120 (`MemAvailable` ou charge hors seuil de la clé `run-budget`, ap
 aucun agent ne part, rapporte la raison de stderr et attends qu'un travail en vol se termine avant de
 relire. Sortie « sans objet (clé `run-budget` absente) » : aucun seuil, dis-le avec le nom de la clé.
 Un autre code est un appel faux (121) : arrête-toi et rends le message.
+Avant chaque lancement encore, relance la commande `due` de l'étape 0.9 :
+`uv run --no-project --quiet python "${CLAUDE_PLUGIN_ROOT}/scripts/question_delay.py" due <projet>`.
+Un délai court (`10 min`) échoit entre deux coders, que la seule lecture du début du passage ne verrait
+pas ; traite chaque ligne `ECHUE:` comme à l'étape 0.9, puis lance. Sans la clé, « sans objet » : rien
+à faire, dis-le une fois dans le compte rendu.
 Alors :
 
 1. `gh issue edit <n> --add-assignee @me --add-label agent-claimed` : le ticket est pris, et
@@ -371,6 +376,10 @@ Après `/forge:qc` :
 - **Stopped in round 3** (`needs-your-attention`, PR open): the ticket leaves the queue of this
   pass; the human decides, and only their grant (`GRANTED:`) opens a round 4.
 - **`needs-your-attention` sans fusion**, ou fusion refusée : **arrêt sur incident**.
+- **Après chaque fusion**, relance
+  `uv run --no-project --quiet python "${CLAUDE_PLUGIN_ROOT}/scripts/question_delay.py" due <projet>`
+  (l'étape 0.9) et traite chaque ligne `ECHUE:` comme là : la revue et la fusion ont pris du temps, et une question a pu
+  passer le délai pendant ce temps.
 
 Une fusion déplace la base : les autres PR de la file passeront par 3.1. Elle peut aussi débloquer
 des tickets : passe par l'étape 3 bis (la revue de bout en bout), relis l'étape 1, puis retourne à

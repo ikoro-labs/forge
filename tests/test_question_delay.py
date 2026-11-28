@@ -422,6 +422,35 @@ class Minutes(unittest.TestCase):
                 self.assertIn("min", out)
 
 
+class Cadence(unittest.TestCase):
+    """#380 A3, A4: `due` runs before each coder and after each merge, and the key says `min`."""
+
+    def skill(self) -> str:
+        return (support.PLUGIN / "skills" / "feature-build" / "SKILL.md").read_text(encoding="utf-8")
+
+    def test_feature_build_runs_due_before_each_coder_launch(self) -> None:
+        """#380 A3: step 2 asks for `due` before each launch, not only at the start of the pass."""
+        step = self.skill().split("## 2. Lancer les coders", 1)[1].split("\nAlors :", 1)[0]
+        self.assertIn("question_delay.py\" due", " ".join(step.split()))
+
+    def test_feature_build_runs_due_after_each_merge(self) -> None:
+        """#380 A3: the block that follows `/forge:qc` asks for `due` once a PR is merged."""
+        after = self.skill().split("Après `/forge:qc` :", 1)[1].split("\n## ", 1)[0]
+        self.assertIn("question_delay.py\" due", " ".join(after.split()))
+
+    def test_the_template_documents_minutes_and_the_cadence(self) -> None:
+        """#380 A3: `usine.md`'s template says `min` is a unit and when `due` runs."""
+        template = " ".join((support.PLUGIN / "templates" / "usine.md").read_text(encoding="utf-8").split())
+        self.assertIn("`min` (minutes), `h` (heures) ou `j` (jours)", template)
+        self.assertIn("avant chaque lancement d'un coder et après chaque fusion", template)
+
+    def test_this_repository_declares_ten_minutes(self) -> None:
+        """#380 A4: this repository's `docs/agents/usine.md` declares `question-default-delay` at `10 min`."""
+        text = (support.REPO_ROOT / "docs" / "agents" / "usine.md").read_text(encoding="utf-8")
+        self.assertIn("- `question-default-delay` : `10 min`\n", text)
+        self.assertEqual(text.count("`question-default-delay` :"), 1)
+
+
 class Docs(unittest.TestCase):
     def test_the_template_documents_the_key_without_a_default(self) -> None:
         """#260 A1: the template of `usine.md` documents `question-default-delay` and its absence."""
