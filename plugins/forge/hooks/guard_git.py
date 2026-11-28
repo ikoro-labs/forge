@@ -153,6 +153,8 @@ from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import NamedTuple
 
+from agent_identity import mcp_refusal as mcp_identity_refusal
+from agent_identity import write_refusal as identity_refusal
 from budget import KEY as BUDGET_KEY
 from budget import merge_refusal, state_path
 from refusal_journal import record
@@ -2043,6 +2045,116 @@ def _location_reason(name: str) -> str:
     )
 
 
+# What the identity check knows of the groups gh runs itself (`GH_GROUPS`), each in one place:
+# - `GH_READ_VERBS`: the groups whose verbs write on GitHub but these readings;
+# - `GH_WRITE_VERBS`: the groups whose writing verbs are listed, any other verb being no write;
+# - `GH_NEVER_WRITE`: the groups that write nothing on GitHub, each with its reason.
+# A group no table names (a command of an extension, one gh adds later) is judged by the first kind:
+# every verb is a write, closed by default.
+_CODESPACE_READS = frozenset({"list", "view", "logs"})
+GH_READ_VERBS = {
+    "pr": frozenset({"list", "view", "status", "diff", "checks", "checkout"}),
+    "issue": frozenset({"list", "view", "status"}),
+    "project": frozenset({"list", "view", "field-list", "item-list"}),
+    "secret": frozenset({"list"}),
+    "variable": frozenset({"list", "get"}),
+    "ssh-key": frozenset({"list"}),
+    "gpg-key": frozenset({"list"}),
+    "codespace": _CODESPACE_READS,
+    "cs": _CODESPACE_READS,
+    "agent-task": frozenset({"list", "view"}),
+    "discussion": frozenset({"list", "view"}),
+    "skill": frozenset({"list", "search", "preview"}),
+    "copilot": frozenset(),
+}
+GH_WRITE_VERBS = {
+    "release": frozenset({"create", "delete", "edit", "upload", "delete-asset"}),
+    "label": frozenset({"create", "edit", "delete", "clone"}),
+    "run": frozenset({"rerun", "cancel", "delete"}),
+    "workflow": frozenset({"run", "enable", "disable"}),
+    "repo": frozenset({"create", "fork", "sync", "edit", "delete", "rename", "archive", "unarchive"}),
+    "gist": frozenset({"create", "edit", "delete", "rename"}),
+    "cache": frozenset({"delete"}),
+}
+_LOCAL = "acts on this machine (its files, its binaries, a browser), never on GitHub"
+_ONLY_READS = "has no verb that writes on GitHub"
+GH_NEVER_WRITE = {
+    "help": "prints the help",
+    "version": "prints the version",
+    "completion": "prints a shell script",
+    "config": f"{_LOCAL}: the settings of gh",
+    "alias": f"{_LOCAL}: the aliases of gh",
+    "auth": f"{_LOCAL}: the credentials gh keeps, and a reading of the state",
+    "browse": f"{_LOCAL}: opens a page",
+    "extension": f"{_LOCAL}: installs, runs and removes the binaries of gh",
+    "extensions": f"{_LOCAL}: installs, runs and removes the binaries of gh",
+    "ext": f"{_LOCAL}: installs, runs and removes the binaries of gh",
+    "preview": "runs a test program of gh, which calls nothing",
+    "search": "only searches",
+    "status": "only reads the notifications and the assigned work",
+    "licenses": "prints the licenses of gh",
+    "attestation": "verifies and downloads attestations, which it never creates",
+    "org": _ONLY_READS,
+    "ruleset": _ONLY_READS,
+    "rs": _ONLY_READS,
+}
+MUTATION = re.compile(r"\bmutation\b", re.IGNORECASE)
+
+
+def _api_write(
+    args: list[str], here: str | None, bodies: str, read_text: Callable[[str], str | None]
+) -> str | None:
+    """The write a `gh api` call makes (the words after `api`), or None when it only reads.
+
+    Judged in every reading of its words (see `api_readings`). A GraphQL call writes when its query
+    holds a mutation, or cannot be read (a variable, a pipe): closed by default.
+    """
+    readings = api_readings(args)
+    if readings is None:
+        return "gh api (too many redirections to read)"
+    for words, redirections in readings:
+        call = parse_api(words)
+        endpoint = call.endpoint.split("?", 1)[0].strip("/")
+        if endpoint.lower() == "graphql":
+            texts, unread = _graphql_texts(args, words, redirections, here, bodies, read_text)
+            if unread or MUTATION.search("\n".join(texts)):
+                return "gh api graphql (mutation)"
+        elif not _reads(words):
+            return f"gh api {_api_method(call)} {endpoint}"
+    return None
+
+
+def github_write(
+    words: list[str],
+    here: str | None = None,
+    bodies: str = "",
+    read_text: Callable[[str], str | None] = read_text_or_none,
+) -> str | None:
+    """The gesture of a command that writes on GitHub, named as the agent typed it, or None.
+
+    A push (but a dry run), a `gh` verb that creates, edits, comments, closes or merges, a `gh api`
+    call in write: the gestures an agent makes under the identity of the agents (`agent_identity`).
+    """
+    if words and words[0] == "git":
+        args = _subcommand_and_args(words[1:])
+        pushes = bool(args) and args[0] == "push" and not {"--dry-run", "-n"} & set(args[1:])
+        return "git push" if pushes else None
+    call = gh_command(words)
+    if not call:
+        return None
+    if call[0] == "api":
+        return _api_write(call[1:], here, bodies, read_text)
+    act = gh_act(words)
+    if act is None:
+        return None
+    group, verb, _rest = act
+    if group in GH_NEVER_WRITE:
+        return None
+    if group in GH_WRITE_VERBS:
+        return f"gh {group} {verb}" if verb in GH_WRITE_VERBS[group] else None
+    return None if verb in GH_READ_VERBS.get(group, ()) else f"gh {group} {verb}"
+
+
 def refusal(
     command: str,
     branch: str | Callable[[str | None], str],
@@ -2064,6 +2176,7 @@ def refusal(
     branch_deletion_covered: Callable[[str | None, list[str]], bool] = lambda *_: False,
     autonomy: Callable[[str], str | None] | None = None,
     tag_exists: Callable[[str | None, str], bool | None] | None = None,
+    identity: Callable[[str], str | None] | None = None,
 ) -> str | None:
     """Why the command is refused, or None when it may run.
 
@@ -2085,6 +2198,9 @@ def refusal(
     the name), None when it cannot tell: a push of a bare name is a tag push when it is one, and is
     held, with `autonomy`, when it cannot be told (`autonomy_gesture`). A caller that passes none
     (None) does not ask for it: `main` always passes it.
+    `identity` says why a gesture that writes on GitHub is refused for the identity of the agents
+    (`agent_identity.write_refusal`), None when it may run; it is asked, with the gesture's name, only
+    for a command that writes (`github_write`), and a caller that passes none (None) does not ask.
     """
     declared = list(owner_gestures)
     api_allowed = None if gh_api_allow is None else list(gh_api_allow)
@@ -2160,6 +2276,9 @@ def refusal(
                     named = None if tag_exists is None else (lambda name, d=in_dir: tag_exists(d, name))
                     if (gesture := autonomy_gesture(args, named)) and (closed := autonomy(gesture)):
                         return closed, merges
+            if identity is not None and (written := github_write(words, here, bodies, read_text)):
+                if closed := identity(written):
+                    return closed, merges
             if gesture := owner_gesture(words, here, bodies, read_text):
                 return _owner_refusal(gesture), merges
             if declared_refusal := _declared_gesture(words, declared):
@@ -2749,6 +2868,7 @@ RULES = (
     ("merge with checks not green", "checks-not-green"),
     (f"the `{AUTONOMY_KEY}` key is not `on`", "agent-autonomy"),
     ("git finds the repository by it", "git-location"),
+    ("the identity of the agents", "agent-identity"),
 )
 GIT_VERBS = frozenset(
     {"add", "am", "apply", "bisect", "blame", "branch", "checkout", "cherry-pick", "clean", "clone"}
@@ -2811,6 +2931,18 @@ def mcp_merge(tool: object, tool_input: object) -> bool:
     return "merge" in action or (isinstance(method, str) and method.lower() == "merge")
 
 
+def mcp_github_write(tool: object) -> bool:
+    """Whether a tool call is a write by a GitHub MCP server, which `gh` never sees.
+
+    The tool is one of a server whose name holds `github`; a name that starts with `get_`, `list_` or
+    `search_`, or ends with `_read`, is a reading, and any other is a write: closed by default.
+    """
+    if not isinstance(tool, str) or not tool.startswith("mcp__") or "github" not in tool.lower():
+        return False
+    action = tool.rsplit("__", 1)[-1].lower()
+    return not (action.startswith(("get_", "list_", "search_")) or action.endswith("_read"))
+
+
 def main() -> int:
     event = json.load(sys.stdin)
     command = str(event.get("tool_input", {}).get("command", ""))
@@ -2820,6 +2952,10 @@ def main() -> int:
     config = loaded.config
     for notice in loaded.notices:
         sys.stderr.write(f"forge guard_git: {notice}.\n")
+    if mcp_github_write(tool := event.get("tool_name")) and (reason := mcp_identity_refusal(config, str(tool))):
+        record("guard_git", reason, RULES, event, lambda: "mcp write")
+        sys.stderr.write(f"Blocked by the forge plugin (guard_git): {reason}.\n")
+        return 2
     if mcp_merge(event.get("tool_name"), event.get("tool_input")):
         reason = autonomy_refusal(str(root), "merge")
         if reason is None:
@@ -2848,6 +2984,7 @@ def main() -> int:
         ),
         autonomy=lambda gesture: autonomy_refusal(str(root), gesture),
         tag_exists=lambda directory, name: local_tag_exists(directory or cwd, name),
+        identity=lambda gesture: identity_refusal(config, os.environ, gesture),
     )
     if reason is None:
         return 0

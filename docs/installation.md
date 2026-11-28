@@ -546,16 +546,17 @@ Windows, le chemin du dépôt lu par `git show` n'a pas été essayé.
 
 ## Le fichier des clés protégées : `docs/agents/usine-gardes.md`
 
-Vingt-cinq clés de `usine.md` bornent les pouvoirs de l'agent (ikoro-labs/forge#345 ; `e2e-run-limits`,
+Vingt-sept clés de `usine.md` bornent les pouvoirs de l'agent (ikoro-labs/forge#345 ; `e2e-run-limits`,
 `ticket-pr-cap-exempt`, `ticket-pr-cap-small` et `human-collections` s'y sont ajoutées, avec ikoro-labs/forge#359, ikoro-labs/forge#314,
-ikoro-labs/forge#381 et ikoro-labs/forge#400) : `agent-autonomy`,
+ikoro-labs/forge#381 et ikoro-labs/forge#400, puis `agent-token-command` et `agent-login` avec ikoro-labs/forge#401) : `agent-autonomy`,
+`agent-token-command`, `agent-login`,
 `protected-path`, `gh-api-allow`, `owner-gesture`, `never-weaken`, `infra-hosts`, `infra-verify`,
 `pr-cap-raiser`, `ticket-pr-cap`, `ticket-pr-cap-since`, `ticket-pr-cap-exempt`, `ticket-pr-cap-small`, `ticket-budget`, `run-limits`,
 `e2e-run-limits`, `run-budget`,
 `budget-action`, `slo`, `accepting-human`, `validation-owner`, `validation-reviewer`, `pin-bump`,
 `readonly-agent`, `readonly-command` et `human-collections`. Les lire dans l'arbre de travail ne tenait que parce que `usine.md`
 était un `protected-path` : chaque réglage libre (`merge-method`, `release-trigger`, `output-words-*`...)
-attendait donc l'humain avec elles. Le plugin lit désormais ces vingt-cinq clés dans un second fichier,
+attendait donc l'humain avec elles. Le plugin lit désormais ces vingt-sept clés dans un second fichier,
 `docs/agents/usine-gardes.md`, tel que `origin/main` le tient (`git ls-tree` puis `git cat-file` sur
 `refs/remotes/origin/main`), et `usine.load` fusionne les deux fichiers. Les autres clés restent dans
 `usine.md`. Le chemin du fichier est une constante de `plugins/forge/hooks/usine.py`, jamais une clé, et
