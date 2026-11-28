@@ -625,6 +625,13 @@ def retry(spec: dict[str, Any]) -> int:
             waited += wait
             tries += 1
             code = attempt(handoff, force, owner_is_alive(spec["owner"], spec["owner_start"]))
+            if code == 6 and waited >= limit:
+                print(
+                    f"relay retry stopped: another session is still live on {Path.cwd()} after {tries} tries "
+                    f"and {waited} s waited (CLAUDE_HANDOFF_RETRY_MINUTES={spec['minutes']}); "
+                    "no successor is started",
+                    file=sys.stderr,
+                )
             if code != 6 or waited >= limit:
                 return code
     finally:

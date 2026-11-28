@@ -190,5 +190,24 @@ class RelayRetry(unittest.TestCase):
                 self.assertEqual(backoff(9, jitter), min(round(300 * jitter), 300))
 
 
+    def test_the_copy_stops_at_the_bound_in_code_6_and_says_how_many_tries_and_how_long(self) -> None:
+        """F-0003 A30: another session that never ends, 30 minutes: code 6, no successor, and the message
+        names the number of tries and the time waited."""
+        for jitter in (0.8, 1.0, 1.2):
+            with self.subTest(jitter=jitter):
+                self.spawned.clear()
+                self.other_session()
+                os.environ["CLAUDE_HANDOFF_RETRY_MINUTES"] = "30"
+                self.assertEqual(self.relay()[0], 6)
+                clock = Clock()
+                code, out, err = self.copy(clock, jitter)
+                self.assertEqual(code, 6, err)
+                self.assertEqual(clock.now, 30 * 60)
+                self.assertEqual(self.launched(), [])
+                self.assertFalse(self.counter.exists())
+                self.assertIn(f"after {len(clock.waits)} tries and 1800 s waited", err)
+                self.assertIn("CLAUDE_HANDOFF_RETRY_MINUTES=30", err)
+
+
 if __name__ == "__main__":
     unittest.main()
