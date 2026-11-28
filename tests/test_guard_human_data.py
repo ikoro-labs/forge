@@ -96,5 +96,44 @@ class AWriteIntoAHumanCollectionIsRefused(Refuses):
                     self.assertEqual(run(where, call("set", collection=collection, doc_id="x")).returncode, 0)
 
 
+def batch(*writes: object, url: str = PAGE) -> dict[str, object]:
+    """A `batch` call: the artifact once at the top, each write with its own `op`, `collection` and `doc_id`."""
+    return {"action": "batch", "url": url, "writes": list(writes)}
+
+
+def operation(op: str, collection: str, doc_id: str = "d1", **more: object) -> dict[str, object]:
+    return {"op": op, "collection": collection, "doc_id": doc_id, **more}
+
+
+class ABatchIsRefusedWhole(Refuses):
+    def test_f_0003_a2_one_operation_on_the_listed_collection_refuses_the_whole_call_in_any_order(self) -> None:
+        """F-0003 A2: a `batch` with one operation on the collection or under it exits 2, first or last."""
+        with project(KEYS) as where:
+            for bad in (operation("update", "decisions"), operation("delete", "decisions/d1/notes")):
+                writes = [operation("set", "notes", data={"secret": "CONTENU-DU-CLIC"}), bad]
+                for order in (writes, writes[::-1]):
+                    with self.subTest(bad=bad["collection"], first=order[0]["collection"]):
+                        done = run(where, batch(*order))
+                        self.refused(done, SHOWN)
+                        self.assertNotIn("CONTENU-DU-CLIC", done.stderr)
+
+    def test_f_0003_a2_a_batch_that_spares_the_collection_passes(self) -> None:
+        """F-0003 A2: every operation on another collection, or on the same collection of another artifact, exits 0."""
+        with project(KEYS) as where:
+            self.assertEqual(run(where, batch(operation("set", "notes"), operation("delete", "decisions2"))).returncode, 0)
+            self.assertEqual(
+                run(where, batch(operation("set", "decisions"), url="claude.ai/artifact/zzz999")).returncode, 0
+            )
+
+    def test_f_0003_a2_an_operation_that_names_no_readable_collection_refuses_the_call(self) -> None:
+        """F-0003 A2: an operation the guard cannot read could be a write into the collection: refused whole."""
+        with project(KEYS) as where:
+            for unreadable in ({"op": "set", "doc_id": "d1"}, {"op": "set", "collection": 7}, "set", None):
+                with self.subTest(operation=repr(unreadable)):
+                    self.refused(run(where, batch(operation("set", "notes"), unreadable)))
+            self.refused(run(where, {"action": "batch", "url": PAGE, "writes": "?"}))
+            self.refused(run(where, {"action": "batch", "url": PAGE}))
+
+
 if __name__ == "__main__":
     unittest.main()

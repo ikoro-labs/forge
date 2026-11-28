@@ -48,6 +48,21 @@ def _segments(path: str) -> list[str]:
     return [segment for segment in path.split("/") if segment]
 
 
+def _collections(call: Mapping[str, object]) -> list[str | None]:
+    """The collection each write of the call aims at, None for one the call does not name.
+
+    One for a single write; one per entry of `writes` for a `batch`, each entry carrying its own `op`,
+    `collection` and `doc_id`. An entry the guard cannot read is `None`, and so is a `writes` that is
+    no list: nothing says the call spares the collection.
+    """
+    if call.get("action") != "batch":
+        return [_text(call.get("collection"))]
+    operations = call.get("writes")
+    if not isinstance(operations, list):
+        return [None]
+    return [_text(entry.get("collection")) if isinstance(entry, Mapping) else None for entry in operations]
+
+
 def _under(collection: str | None, listed: str) -> bool:
     """Whether a write on `collection` reaches `listed`: the collection or something under it.
 
@@ -81,13 +96,13 @@ def refusal(event: object, lines: Sequence[str]) -> str | None:
         return None
     url = _text(call.get("url"))
     artifact = _artifact(url) if url else None
-    collection = _text(call.get("collection"))
+    collections = _collections(call)
     for line in lines:
         pieces = split_value(line, 2)
         if pieces is None:
             continue
         page, listed = pieces
-        if artifact in (None, _artifact(page)) and _under(collection, listed):
+        if artifact in (None, _artifact(page)) and any(_under(found, listed) for found in collections):
             return (
                 f"Blocked by the forge plugin ({GUARD}): {page} | {listed} is a collection that"
                 " a row comes into only from the human, from their page: an agent does not write it"
