@@ -148,5 +148,66 @@ class ARefusalIsJournaled(unittest.TestCase):
             self.assertEqual(journal(where), [])
 
 
+def hook_entry() -> dict[str, object]:
+    """The `PreToolUse` entry of `hooks.json` that runs the guard, with its matcher."""
+    hooks = json.loads((support.PLUGIN / "hooks" / "hooks.json").read_text(encoding="utf-8"))
+    found = [
+        {**hook, "matcher": group["matcher"]}
+        for group in hooks["hooks"]["PreToolUse"]
+        for hook in group["hooks"]
+        if "guard_human_data.py" in hook["command"]
+    ]
+    assert len(found) == 1, found
+    return found[0]
+
+
+class AFailingGuardRefuses(unittest.TestCase):
+    def test_f_0003_a6_the_entry_filters_on_the_tool_and_turns_a_crash_or_a_timeout_into_a_refusal(self) -> None:
+        """F-0003 A6: matcher `ArtifactData`, `|| exit 2`, `"onFailure": "block"` and a `timeout`."""
+        entry_ = hook_entry()
+        self.assertEqual(entry_["matcher"], "ArtifactData")
+        command = str(entry_["command"])
+        self.assertTrue(command.endswith("|| exit 2"), command)
+        self.assertIn("${CLAUDE_PLUGIN_ROOT}/hooks/guard_human_data.py", command)
+        self.assertEqual(entry_["onFailure"], "block")
+        self.assertEqual(entry_["timeout"], 60)
+
+    def test_f_0003_a6_a_missing_script_exits_2_through_the_command_of_the_entry(self) -> None:
+        """F-0003 A6: the command as `hooks.json` writes it, with the script absent, still refuses (exit 2)."""
+        with project(KEYS) as where:
+            env = {**environment(where.parent / "home"), "CLAUDE_PLUGIN_ROOT": str(where.parent / "empty")}
+            done = subprocess.run(  # noqa: S602 - the command line of hooks.json, as Claude Code runs it, in a shell
+                str(hook_entry()["command"]),
+                shell=True,
+                input=json.dumps({"tool_name": "ArtifactData", "tool_input": call("set"), "cwd": str(where)}),
+                env=env,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=60,
+            )
+            self.assertEqual(done.returncode, 2, done.stderr)
+
+    def test_f_0003_a6_an_event_the_guard_cannot_read_is_refused_when_the_key_is_there(self) -> None:
+        """F-0003 A6: not JSON, no `tool_input`, or no readable action: exit 2 and a line in the journal."""
+        with project(KEYS) as where:
+            env = environment(where.parent / "home")
+            for text in ("not json", json.dumps({"cwd": str(where)}), json.dumps({"cwd": str(where), "tool_input": {}})):
+                with self.subTest(event=text[:20]):
+                    done = subprocess.run(  # noqa: S603 - the interpreter running this suite, a fixed script
+                        [sys.executable, str(HOOK)],
+                        input=text,
+                        env={**env, "PWD": str(where)},
+                        cwd=where,
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                        timeout=60,
+                    )
+                    self.assertEqual(done.returncode, 2, done.stderr)
+                    self.assertIn("guard_human_data", done.stderr)
+            self.assertEqual(len(journal(where)), 3)
+
+
 if __name__ == "__main__":
     unittest.main()
