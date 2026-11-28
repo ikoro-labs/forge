@@ -7,6 +7,7 @@
     python factory_slo.py changelog <project> --depuis DATE [--le DATE] [--reference FILE]
     python factory_slo.py queue <project> <ticket> [<ticket> ...] [--json]
     python factory_slo.py incidents <project> [--json]
+    python factory_slo.py baseline <project> [--depuis DATE] [--jusqua DATE] [--json]
 
 `status` reads the `slo` key (`<sli> | <comparator> <target> | <window in days>`, one per line), computes
 each objective on its sliding window, its error budget and its state (`tenu`, `menacé`, `épuisé`),
@@ -43,6 +44,15 @@ by class of fix, `mécanique` and `jugement`, a class with no review counting 0.
 refuses (no fix, a fix that does not match its class, a path that does not exist) is counted in no
 class, listed with its faults, and the command exits 1. It reads the folder only, never GitHub. A key
 `incident-dir` absent is "sans objet": no count, never 0; a folder not created yet holds no review.
+
+`baseline` is the reading of story 18 of the autonomous factory, taken before the dispatcher: on one window
+(30 days before `--jusqua`, now by default, unless `--depuis` says otherwise) the p90 lead time (the `lead-time`
+indicator), the human's interventions per merged ticket and the tokens per merged PR (`tokens-per-merge`), each
+with its window and its denominator. An intervention is a `needs-your-attention` label posed on a ticket
+merged in the window or on a PR that closed it, plus a merge by a login of the key `accepting-human` (the
+short identifier of its line, else its whole value) of a PR that does not carry `agent-merged`: the agent
+merges under the human's account and labels what it merged. A key `accepting-human` absent leaves the merges
+"sans objet" and counts the labels only. The markdown output is the text of the comment to post.
 
 The data come from GitHub (`gh ... --json`, run from the project folder, so `gh` finds the
 repository itself), from git, from the logs `token_audit.py` reads, and from the journal of the
@@ -1316,6 +1326,128 @@ def run_incidents(args: argparse.Namespace, run: Runner, now: datetime) -> int:
     return 1 if document["refusees"] else 0
 
 
+BASELINE_DAYS = 30
+AGENT_MERGED = "agent-merged"
+HUMAN_KEY = "accepting-human"
+ABSENT_HUMAN = f"sans objet (clé `{HUMAN_KEY}` absente)"
+
+
+def merged_ledger(f: Factory) -> list[dict]:
+    """The PRs merged in the window, with who merged them (`mergedBy`), which `prs` does not fetch."""
+    fields = "number,state,labels,mergedAt,mergedBy,closingIssuesReferences"
+    listed = cast("list[dict]", f.cached("ledger", lambda: f.gh("pr", "list", "--state", "merged", "--limit", "1000", "--json", fields)))
+    return [item for item in listed if f.inside(when(item, "mergedAt"))]
+
+
+def human_logins(f: Factory) -> set[str] | None:
+    """The GitHub logins of the key `accepting-human`, None when the key is absent."""
+    values = f.required(HUMAN_KEY)
+    if not values:
+        return None
+    return {value.rpartition(" | ")[2].strip().lower() for value in values if value.strip()}
+
+
+def attention_posed(f: Factory, number: int) -> int:
+    """How many times `needs-your-attention` was posed on the ticket or the PR `number`."""
+    return sum(1 for e in f.events(number) if e.get("event") == "labeled" and (e.get("label") or {}).get("name") == ATTENTION)
+
+
+def human_interventions(f: Factory) -> Sli:
+    """The human's interventions per ticket merged in the window (spec, section 22)."""
+    name = "interventions"
+    closing = [item for item in merged_ledger(f) if closed_tickets_of(item)]
+    tickets = {ticket for item in closing for ticket in closed_tickets_of(item)}
+    if not tickets:
+        return Sli(name, reason="aucun ticket fermé par une PR fusionnée dans la fenêtre")
+    labels = sum(attention_posed(f, n) for n in sorted(tickets | {int(item["number"]) for item in closing}))
+    humans = human_logins(f)
+    merges: int | str = ABSENT_HUMAN
+    if humans is not None:
+        merges = sum(
+            1 for item in closing
+            if str((item.get("mergedBy") or {}).get("login", "")).lower() in humans and AGENT_MERGED not in label_names(item)
+        )
+    total = labels + (merges if isinstance(merges, int) else 0)
+    data = {
+        "numerateur": total, "denominateur": len(tickets), "valeur": round(total / len(tickets), 2),
+        "etiquettes": labels, "fusions_humain": merges,
+    }
+    return Sli(name, data=data, text=f"{str(data['valeur']).replace('.', ',')} par ticket fusionné ({total}/{len(tickets)})")
+
+
+def measure(project: Path, since: datetime, until: datetime, run: Runner) -> dict[str, Sli]:
+    """The three measures of the baseline on the window [since, until)."""
+    f = Factory(project, since, until, run)
+    return {"delai": lead_time(f), "interventions": human_interventions(f), "jetons": tokens_per_merge(f)}
+
+
+def measures_dict(since: datetime, until: datetime, found: dict[str, Sli]) -> dict:
+    return {
+        "depuis": since.isoformat(), "jusqua": until.isoformat(), "jours": (until - since).days,
+        **{key: item.to_dict() for key, item in found.items()},
+    }
+
+
+def plural(count: int, word: str) -> str:
+    return f"{count} {word}{'s' if count > 1 else ''}"
+
+
+def measures_rows(found: dict[str, Sli]) -> list[str]:
+    """The table rows of one window: the measure, its value, its denominator."""
+    rows = []
+    delay, touches, tokens = found["delai"], found["interventions"], found["jetons"]
+    if delay.reason is not None:
+        rows.append(f"| Délai p90 (`lead-time p90`) | sans objet | {delay.reason} |")
+    else:
+        count, apart = delay.data["echantillons"], delay.data["sans_evenement"]
+        rows.append(
+            f"| Délai p90 (`lead-time p90`) | p90 {number(delay.data['p90_h'])} h, médiane {number(delay.data['mediane_h'])} h"
+            f" | {plural(count, 'ticket')} fusionnés avec une pose de `ready-for-agent` ({apart} sans pose, exclus) |"
+        )
+    if touches.reason is not None:
+        rows.append(f"| Interventions de l'humain par ticket fusionné | sans objet | {touches.reason} |")
+    else:
+        merges = touches.data["fusions_humain"]
+        said = f"{merges} fusions par l'humain" if isinstance(merges, int) else f"fusions par l'humain : {merges}"
+        rows.append(
+            f"| Interventions de l'humain par ticket fusionné | {touches.text}"
+            f" | {plural(touches.data['denominateur'], 'ticket')} fusionnés ; {touches.data['etiquettes']} étiquettes `{ATTENTION}`, {said} |"
+        )
+    if tokens.reason is not None:
+        rows.append(f"| Jetons par PR | sans objet | {tokens.reason} |")
+    else:
+        rows.append(
+            f"| Jetons par PR | {tokens.data['valeur']} jetons par PR fusionnée ({tokens.data['jetons']}/{tokens.data['denominateur']})"
+            f" | {plural(tokens.data['denominateur'], 'PR')} fusionnées, journaux de ce poste seulement |"
+        )
+    return rows
+
+
+def baseline_markdown(project: Path, since: datetime, until: datetime, found: dict[str, Sli]) -> str:
+    return "\n".join([
+        f"Relevé de base de l'usine pour `{project.resolve().name}` (F-0003, story 18).",
+        "",
+        f"Fenêtre : du {since:%Y-%m-%d} au {until:%Y-%m-%d} ({(until - since).days} jours), les fusions de la fenêtre.",
+        "",
+        "| Mesure | Valeur | Dénominateur |",
+        "|---|---|---|",
+        *measures_rows(found),
+    ])
+
+
+def run_baseline(args: argparse.Namespace, run: Runner, now: datetime) -> int:
+    until = args.jusqua or now
+    since = args.depuis or until - timedelta(days=BASELINE_DAYS)
+    if until <= since:
+        raise ValueError("`--jusqua` doit suivre `--depuis`.")
+    found = measure(args.projet, since, until, run)
+    if args.json:
+        print(json.dumps({"projet": str(args.projet), "base": measures_dict(since, until, found)}, ensure_ascii=False, indent=2))
+    else:
+        print(baseline_markdown(args.projet, since, until, found))
+    return 0
+
+
 def main(argv: list[str] | None = None, run: Runner = run_command, now: datetime | None = None) -> int:
     parser = argparse.ArgumentParser(prog="factory_slo.py", description=__doc__.splitlines()[0])
     commands = parser.add_subparsers(dest="commande", required=True)
@@ -1348,6 +1480,11 @@ def main(argv: list[str] | None = None, run: Runner = run_command, now: datetime
     count = commands.add_parser("incidents", help="compte les revues d'incident du dossier de la clé `incident-dir`, par classe de correctif")
     count.add_argument("projet", type=Path, help="le dossier du projet")
     count.add_argument("--json", action="store_true", help="rend du JSON au lieu d'un tableau Markdown")
+    base = commands.add_parser("baseline", help="relève le délai p90, les interventions de l'humain par ticket et les jetons par PR")
+    base.add_argument("projet", type=Path, help="le dossier du projet")
+    base.add_argument("--depuis", type=_date, help=f"début de la fenêtre de base, inclus ({BASELINE_DAYS} jours avant `--jusqua` par défaut)")
+    base.add_argument("--jusqua", type=_date, help="fin de la fenêtre de base, exclue (maintenant par défaut)")
+    base.add_argument("--json", action="store_true", help="rend du JSON au lieu d'un tableau Markdown")
     sli = commands.add_parser("sli", help="calcule les indicateurs de service")
     sli.add_argument("projet", type=Path, help="le dossier du projet")
     sli.add_argument("--depuis", type=_date, required=True, help="début de la fenêtre, inclus")
@@ -1356,11 +1493,11 @@ def main(argv: list[str] | None = None, run: Runner = run_command, now: datetime
     sli.add_argument("--reference", type=Path, help="le dernier résultat du jeu de référence (JSON)")
     args = parser.parse_args(argv)
 
-    if args.commande in ("status", "budget", "report", "changelog", "queue", "sla", "incidents"):
+    if args.commande in ("status", "budget", "report", "changelog", "queue", "sla", "incidents", "baseline"):
         try:
             handler = {
                 "status": run_status, "budget": run_budget, "report": run_report, "changelog": run_changelog,
-                "queue": run_queue, "sla": run_sla, "incidents": run_incidents,
+                "queue": run_queue, "sla": run_sla, "incidents": run_incidents, "baseline": run_baseline,
             }[args.commande]
             return handler(args, run, now or datetime.now(tz=timezone.utc))
         except (RuntimeError, ValueError, KeyError, IndexError, OSError) as error:
