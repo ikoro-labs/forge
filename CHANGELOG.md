@@ -9,6 +9,50 @@ Ce dépôt a été recréé le 2026-10-23 ; l'ancien est `ikoro-labs/forge-archi
 numéros de PR et de ticket nus (`#38`) renvoient à l'ancien dépôt ; un renvoi au nouveau dépôt
 porte son nom (`ikoro-labs/forge#7`).
 
+## [1.24.0] - 2026-11-28
+
+Un ticket qui accélère l'usine passe devant la file, et le délai par défaut d'une question se dit aussi en
+minutes. Version mineure : deux clés libres nouvelles ou élargies (`speed-label`, `question-default-delay` en
+`<n> min`), comme la 1.23.0 pour un script et un refus nouveaux. Déclencheur de la clé `release-trigger` atteint
+(5 fusions en attente pour 1 demandée, mesuré le 2026-11-28 sur `c2912c1`).
+
+- Hooks : la clé libre `speed-label` nomme une étiquette ; `sla.order` range un ticket qui la porte après `sev1`
+  et avant `sev2`, et `factory_slo.py queue` suit cet ordre. Sans la clé, « sans objet (clé `speed-label`
+  absente) », l'ordre ne change pas ; une clé répétée fait échouer `queue` (ikoro-labs/forge#377, PR
+  ikoro-labs/forge#379).
+- Skills : `forge:feature-build`, `forge:qc` et `forge:incident` posent l'étiquette de `speed-label` quand le but
+  d'un ticket est le délai de l'usine (ikoro-labs/forge#379). `question_delay.py` lit `question-default-delay` en
+  `<n> min` à côté de `h` et `j`, et `forge:feature-build` lance `due` avant chaque coder et après chaque fusion ;
+  `sla` et `release-trigger` gardent les heures et les jours (ikoro-labs/forge#380, PR ikoro-labs/forge#382).
+- Tests : le job `tests (windows-latest)` est gelé : il reste un contexte obligatoire, mais ne tourne qu'à la
+  main (`workflow_dispatch`), et un job sauté par son `if` passe le contrôle requis (ikoro-labs/forge#376, PR
+  ikoro-labs/forge#378). La suite passe à 2758 tests sous Linux, 6 ignorés (mesuré le 2026-11-28 sur cette PR, tête `c2912c1` plus la
+  version et le journal).
+- Gestes humains : ce dépôt déclare `speed-label` à `factory-speed` et `question-default-delay` à `10 min`. Un
+  projet qui veut l'un ou l'autre l'écrit dans son `docs/agents/usine.md`. Sur ce dépôt, les tests Windows ne
+  tournent plus qu'à la main (`gh workflow run tests.yml --ref <branche>`) ; le code reste compatible Windows.
+- Resté dehors : le plafond de PR qui laisse dehors les petites PR (ikoro-labs/forge#381, PR ikoro-labs/forge#384)
+  attend la fusion de l'humain, chemins protégés. Rien de cette version n'a été vu en marche sur un projet
+  consommateur ; l'essai de bout en bout passe sur `c2912c1`, tête de `main`, le 2026-11-28.
+
+### Objectifs de service
+
+État de chaque objectif au 2026-11-28.
+
+| Objectif | Cible | Fenêtre | Valeur | Budget restant | État |
+|---|---|---|---|---|---|
+| `accept-round-1` | >= 99 % | 30 j | 65.93 % | 0 % sur 1 % | épuisé |
+| `lead-time p90` | <= 1 h | 30 j | 544.1 h | 0 h sur 1 h | épuisé |
+| `release-lag p90` | <= 1 h | 30 j | 36.8 h | 0 h sur 1 h | épuisé |
+| `escaped-defects` | <= 1 % | 30 j | 0 % | 1 % sur 1 % | tenu |
+| `change-failure` | <= 1 % | 30 j | 0 % | 1 % sur 1 % | tenu |
+| `human-touch` | <= 1 % | 30 j | 30.64 % | 0 % sur 1 % | épuisé |
+| `main-green` | >= 100 % | 30 j | 96.86 % | 0 % sur 0 % | épuisé |
+| `judge-recall` | >= 99 % | 30 j | sans objet | aucun résultat du jeu de référence (option `--reference` absente) | sans objet |
+| `false-accept` | <= 0 % | 30 j | sans objet | aucun résultat du jeu de référence (option `--reference` absente) | sans objet |
+
+Aucun `escaped-defect` ouvert depuis le 2026-11-28.
+
 ## [1.23.1] - 2026-11-28
 
 Ce dépôt range ses clés protégées dans `docs/agents/usine-gardes.md`, et `docs/agents/usine.md` redevient un
