@@ -5,7 +5,7 @@ statut: en-revue
 taille: L
 destinataires: ikoro-labs (humain de la clé `accepting-human`) ; acceptation par `/forge:feature-accept`, lancée par le modèle sous la clé `agent-autonomy` une fois les points ouverts tranchés ; forge:qc relit
 contexte: forge (plugin) ; touchés : un hook qui garde les données de l'humain, l'identité GitHub des agents, passation et relais (`handoff_header.py`, `handoff_relay.py`), un répartiteur nouveau sous `plugins/forge/scripts/`, `question_delay.py`, `forge:coder`, `forge:qc`, découpage en tickets, gabarit `usine.md`
-base: ac21e13
+base: 80ce163
 date: 2026-11-28
 ---
 
@@ -120,8 +120,9 @@ supervision, le minuteur et les règles `autoMode.allow`. Installer l'applicatio
 sont des gestes de l'humain (H3).
 
 **Déjà livré, hors de ce cadrage.** La cible `human-touch` à 1 % (#342), l'essai de bout en bout qui
-passe (`CHANGELOG.md`, 1.24.0), le délai `question-default-delay` en minutes (#380). Les petites PR
-hors plafond sont en cours (#381, PR #384 ouverte, en attente de la fusion humaine).
+passe (`CHANGELOG.md`, 1.24.0), le délai `question-default-delay` en minutes (#380), les petites PR
+hors plafond et le plafond de PR relevé à 6 pendant la transition (#381, PR #384 fusionnée le
+2026-11-28 en `80ce163`, après 1.24.0 : la version suivante les apporte aux projets).
 
 **Hors périmètre.** La page de pilotage, ses boutons pour les gestes que l'humain garde, la preuve de
 bout en bout d'une demande de la page et le fil à deux voies par projet restent au projet qui tient
