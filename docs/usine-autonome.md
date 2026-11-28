@@ -46,6 +46,15 @@ règle `agent-identity`.
 Une ligne répétée ou une valeur vide dans l'une des deux clés ferme toute écriture, et le refus cite la
 ligne : le garde échoue fermé, comme les autres clés protégées.
 
+### Le jeton, tiré de la commande
+
+`agent_identity.fresh_token` lance la commande de `agent-token-command` et rend la ligne qu'elle imprime. Une
+commande qui échoue, qui n'imprime rien, qui imprime deux lignes ou un jeton d'un autre préfixe que `ghs_`,
+qui dépasse son délai (30 secondes) ou qui ne peut pas démarrer lève une erreur qui nomme la clé, jamais la
+commande, sa sortie ni un jeton. Rien ne prend alors le jeton de l'humain à la place : le répartiteur d'un
+ticket suivant ne lance aucun agent sur cette erreur. Aucun jeton n'est écrit dans un fichier ni dans un
+journal.
+
 ### Sans les clés
 
 Avec l'une des deux clés absente, rien ne change : `guard_git` ne refuse aucun geste au titre de l'identité,
@@ -64,7 +73,8 @@ pas encore.
 ### Ce qui a été éprouvé
 
 Par les tests de `tests/test_guard_git_identity.py` (la détection d'un geste), de `tests/test_agent_identity.py`
-(le jeton et les messages) et de `tests/test_guard_git_identity_keys.py` (le hook joué comme un processus,
-dépôts jetables, `HOME` jeté), sous Linux seulement. Pas encore avec une vraie application GitHub ni dans une
+(le jeton et les messages), de `tests/test_agent_identity_token.py` (la commande, lancée pour de vrai) et de
+`tests/test_guard_git_identity_keys.py` (le hook joué comme un processus, dépôts jetables, `HOME` jeté), sous
+Linux seulement. Pas encore avec une vraie application GitHub ni dans une
 vraie session de Claude Code : les noms des outils MCP des serveurs GitHub sont supposés d'après ceux qu'on
 voit dans les tests de fusion, et le comportement d'un vrai serveur n'a pas été joué.
