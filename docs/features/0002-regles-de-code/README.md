@@ -1,7 +1,10 @@
 ---
 feature: F-0002
 document: livree
-statut: en-revue
+statut: accepte
+accepte_par: ikoro-labs
+accepte_le: 2026-11-28
+accepte_via: agent-autonomy
 destinataires: ikoro-labs, un nouvel arrivant, un auditeur
 version: a1058a5 (tête de main, non publiée ; la dernière version publiée est forge 1.21.0)
 base: a1058a5
