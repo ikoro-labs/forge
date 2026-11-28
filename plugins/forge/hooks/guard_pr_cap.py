@@ -40,6 +40,16 @@ the `gh pr list --json` call the count already makes. Without the key the step i
 and every PR counts: no value is guessed. A value that is not one `type(scope)`, or a listed PR whose `title`
 cannot be read, fails closed like the rest of the count. The key is protected (`usine.SENSITIVE_KEYS`).
 
+With the key `ticket-pr-cap-small` (one whole number of lines above 0) a PR whose diff changes fewer lines than
+that number, its `additions` plus its `deletions` as `gh pr list --json` gives them (two more fields of the
+call the count already makes), is left out of the count of every ticket, open or merged alike, and it starts
+no ticket (the day of `ticket-pr-cap-since` is not read for it). A PR of exactly that many lines counts. A PR
+being created has no diff to read before gh runs, so it counts until it is listed. Without the key the step is
+not applicable (sans objet) and every PR counts, whatever its size: no value is guessed, and the fields are not
+asked. A value that is not one whole number above 0, a repeated key, or a counted PR whose `additions` or
+`deletions` is not a whole number, fails closed like the rest of the count. The key loosens the cap, so it is
+protected (`usine.SENSITIVE_KEYS`).
+
 A PR being created is exempt only through its `--title` or `-t` argument (the last one, as gh reads it): a
 `gh pr create` whose title starts with a listed `type(scope):` is let through and reserves no place. With no
 title argument, or one the shell fills in (a variable, a substitution, a PowerShell backtick escape) that the
@@ -91,6 +101,7 @@ from utf8_stdio import use_utf8
 KEY = "ticket-pr-cap"
 SINCE_KEY = "ticket-pr-cap-since"
 EXEMPT_KEY = "ticket-pr-cap-exempt"
+SMALL_KEY = "ticket-pr-cap-small"
 RAISER_KEY = "pr-cap-raiser"
 RAISE_LABEL = "pr-cap-raised"
 RAISED_CAP = 6
@@ -190,6 +201,22 @@ def exempt_of(config: Mapping[str, list[str]]) -> tuple[frozenset[str], str | No
     return frozenset(value.strip() + ":" for value in values), None
 
 
+def small_of(config: Mapping[str, list[str]]) -> tuple[int | None, str | None]:
+    """`(lines, None)`, `(None, None)` when the key is absent, `(None, reason)` when it cannot be read.
+
+    A PR whose diff changes fewer than `lines` lines is not counted.
+    """
+    values = config.get(SMALL_KEY)
+    if not values:
+        return None, None
+    if len(values) != 1 or not re.fullmatch(r"[1-9]\d*", values[0].strip()):
+        return None, (
+            f"the key `{SMALL_KEY}` of docs/agents/usine.md is not one whole number of lines above 0: the PR"
+            " is refused as a precaution until it is fixed"
+        )
+    return int(values[0].strip()), None
+
+
 def created_on(stamp: object) -> date | None:
     """The UTC day of a `createdAt` timestamp, None when it is not one."""
     match = TIMESTAMP.fullmatch(stamp) if isinstance(stamp, str) else None
@@ -240,16 +267,19 @@ def count_prs(
     run: Runner,
     since: date | None = None,
     exempt: frozenset[str] = frozenset(),
+    small: int | None = None,
 ) -> tuple[int, bool] | None:
     """`(count, started)` for ticket `number`, None when gh cannot say.
 
     `count` is the PRs, open or merged, that cite it (`own`, a PR being edited, left out), created on the
     day `since` or after it when it is given; `started` is whether at least one such PR was created before
     `since` (always False without `since`). A PR whose title starts with one of the `exempt` prefixes
-    (`type(scope):`) is left out, whatever its date; it does not start a ticket either.
+    (`type(scope):`) is left out, whatever its date; it does not start a ticket either. So is a PR whose
+    `additions` plus `deletions` is below `small` when it is given.
     """
     argv = ["pr", "list", "--state", "all", "--search", f"{number} in:body"]
-    argv += ["--json", "number,state,body,createdAt,title", "--limit", SEARCH_LIMIT]
+    fields = "number,state,body,createdAt,title" + (",additions,deletions" if small is not None else "")
+    argv += ["--json", fields, "--limit", SEARCH_LIMIT]
     if repo:
         argv += ["--repo", repo]
     listed = _json(run(argv, cwd))
@@ -269,6 +299,12 @@ def count_prs(
             if not isinstance(title, str):
                 return None
             if title.startswith(tuple(exempt)):
+                continue
+        if small is not None:
+            added, removed = item.get("additions"), item.get("deletions")
+            if not (type(added) is int and type(removed) is int and added >= 0 and removed >= 0):
+                return None
+            if added + removed < small:
                 continue
         if since is not None:
             day = created_on(item.get("createdAt"))
@@ -350,9 +386,10 @@ class Check:
         state: State,
         since: date | None = None,
         exempt: frozenset[str] = frozenset(),
+        small: int | None = None,
     ) -> None:
         self.root, self.cap, self.config, self.run, self.state, self.since = root, cap, config, run, state, since
-        self.exempt = exempt
+        self.exempt, self.small = exempt, small
 
     def raisers(self) -> set[str]:
         """The logins of the key `pr-cap-raiser`: the short identifier of each line, else its value."""
@@ -399,7 +436,7 @@ class Check:
 
     def ticket(self, number: str, own: int | None, repo: str | None, cwd: str | None, token: str) -> str | None:
         """Why one more PR may not cite ticket `number`, or None (the PR is then reserved)."""
-        counted = count_prs(number, own, repo, cwd, self.run, self.since, self.exempt)
+        counted = count_prs(number, own, repo, cwd, self.run, self.since, self.exempt, self.small)
         if counted is None:
             return (
                 f"the PRs of #{number} cannot be counted (gh absent, the network, or a gh error): the"
@@ -606,11 +643,13 @@ def refusal(event: Mapping[str, object], run: Runner = run_gh) -> str | None:
     cap, bad = cap_of(config)
     if bad is None and cap is None:
         return None  # sans objet (key `ticket-pr-cap` absent): nothing is read
-    since, exempt = None, frozenset[str]()
+    since, exempt, small = None, frozenset[str](), None
     if bad is None:
         since, bad = since_of(config)  # key `ticket-pr-cap-since` absent: no date step, every PR counts
     if bad is None:
         exempt, bad = exempt_of(config)  # key `ticket-pr-cap-exempt` absent: no title is read, every PR counts
+    if bad is None:
+        small, bad = small_of(config)  # key `ticket-pr-cap-small` absent: no size is read, every PR counts
     where = event.get("cwd")
     cwd = where if isinstance(where, str) else None
     try:
@@ -629,7 +668,7 @@ def refusal(event: Mapping[str, object], run: Runner = run_gh) -> str | None:
         return bad if any(cited(item.body) for item, _ in found) else None
     assert cap is not None
     with state_file() as state:
-        check = Check(root, cap, config, run, state, since, exempt)
+        check = Check(root, cap, config, run, state, since, exempt, small)
         for item, where in found:
             if reason := check.publication(item, where):
                 state.changed = False  # the call is refused: nothing it would open is reserved

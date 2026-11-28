@@ -39,18 +39,26 @@ le choix de ce dépôt, que le ticket ne fixait pas.
 
 ## Plafond de PR par ticket
 
-Un ticket tient en quatre PR au plus, ouvertes ou fusionnées (ticket #314, demandé par l'humain ; trois
-jusqu'au 2026-11-27, puis quatre sur décision de l'humain, ticket #367). Le garde `guard_pr_cap` refuse la
-cinquième, que le coder rend en `BLOCKED` ; seule l'étiquette `pr-cap-raised`,
-posée par un compte de la clé `pr-cap-raiser`, relève le plafond à 6. Cette clé est absente ici (voir
-« Clés absentes ») : on relève le plafond en changeant `ticket-pr-cap` par une PR. Le garde agit une fois
-l'épingle montée à la version qui le publie.
+Un ticket tient en six PR au plus, ouvertes ou fusionnées (ticket #314, demandé par l'humain ; trois
+jusqu'au 2026-11-27, quatre sur décision de l'humain, ticket #367, puis six le 2026-11-28, ticket #381). Le
+garde `guard_pr_cap` refuse la septième, que le coder rend en `BLOCKED` ; l'étiquette `pr-cap-raised`, posée par
+un compte de la clé `pr-cap-raiser`, relève le plafond à 6, ce qui ne change plus rien ici. Cette clé est absente
+ici (voir « Clés absentes ») : on change le plafond par une PR. Le garde agit une fois l'épingle montée à la
+version qui le publie.
+
+Le plafond passe à six pendant la transition, parce que les tickets déjà publiés ne sont pas dimensionnés à la
+découpe : sur MeridianRe depuis le 2026-11-23, 10 tickets sur 19 ont atteint trois PR et 4 relèvements ont été
+demandés et tous accordés (ticket #340), un geste humain qui ne filtre rien. Il redescendra à trois quand les
+tickets seront dimensionnés à la découpe, ce que `forge:feature-design` fait désormais pour ceux qu'il publie
+(ticket #381). Une PR de moins de 50 lignes (ajouts plus suppressions) ne compte
+pas : c'est la clé `ticket-pr-cap-small`.
 
 Le plafond ne compte que les PR créées à partir du 2026-11-23 (demande de l'humain du 2026-11-23) : des
 tickets en cours dans des projets de l'humain avaient déjà dépassé trois PR avant le plafond, et les PR
 d'avant cette date ne comptent pas.
 
-- `ticket-pr-cap` : `4`
+- `ticket-pr-cap` : `6`
+- `ticket-pr-cap-small` : `50`
 - `ticket-pr-cap-since` : `2026-11-23`
 
 Les PR d'entretien de l'usine (la montée de l'épingle, la PR de version) n'ont rien à voir avec le ticket
