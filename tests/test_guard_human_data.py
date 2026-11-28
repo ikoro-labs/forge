@@ -135,5 +135,62 @@ class ABatchIsRefusedWhole(Refuses):
             self.refused(run(where, {"action": "batch", "url": PAGE}))
 
 
+class OtherCallsPass(unittest.TestCase):
+    def test_f_0003_a3_every_read_of_the_collection_passes(self) -> None:
+        """F-0003 A3: `get`, `list`, `query` and `profiles` on the listed collection, and under it, exit 0."""
+        with project(KEYS) as where:
+            for action in ("get", "list", "query", "profiles"):
+                for collection in ("decisions", "decisions/d1/notes"):
+                    with self.subTest(read=action, collection=collection):
+                        self.assertEqual(run(where, call(action, collection=collection)).returncode, 0)
+
+    def test_f_0003_a3_another_collection_and_another_artifact_pass(self) -> None:
+        """F-0003 A3: a write into `notes`, into `decisions2` (not under `decisions`), or into `decisions` of another artifact exits 0."""
+        with project(KEYS) as where:
+            for name, tool_input in (
+                ("another collection", call("set", collection="notes")),
+                ("a name that starts the same", call("set", collection="decisions2")),
+                ("a name that starts the same, deeper", call("set", collection="decisions-old/d1/notes")),
+                ("the parent of the listed collection", call("set", collection="boards")),
+                ("the same collection of another artifact", call("set", url="claude.ai/artifact/zzz999")),
+                ("an id that only starts the same", call("set", url="claude.ai/artifact/abc1234")),
+            ):
+                with self.subTest(write=name):
+                    self.assertEqual(run(where, tool_input).returncode, 0)
+
+
+def keys(*values: str) -> dict[Path, str]:
+    return {GUARD_PATH: "".join(entry("human-collections", value) for value in values), USINE: "# Usine\n"}
+
+
+class AnUnreadableLineClosesEveryWrite(Refuses):
+    BAD = (
+        f"{PAGE} decisions",
+        f"{PAGE} | ",
+        " | decisions",
+        "Tableau | decisions",
+        f"{PAGE} | /",
+    )
+
+    def test_f_0003_a4_a_line_that_cannot_be_read_refuses_any_write_and_is_cited(self) -> None:
+        """F-0003 A4: no separator, an empty part, a page that is no artifact URL: every write refused, the line cited."""
+        for bad in self.BAD:
+            with self.subTest(line=bad), project(keys(bad)) as where:
+                done = run(where, call("set", url="claude.ai/artifact/zzz999", collection="notes"))
+                self.refused(done, bad.strip(), "human-collections")
+                self.assertEqual(run(where, batch(operation("set", "notes"), url="claude.ai/artifact/zzz999")).returncode, 2)
+
+    def test_f_0003_a4_the_reads_still_pass(self) -> None:
+        """F-0003 A4: with a line that cannot be read, a read of any artifact exits 0."""
+        with project(keys("Tableau | decisions")) as where:
+            self.assertEqual(run(where, call("get", url="claude.ai/artifact/zzz999", collection="notes")).returncode, 0)
+
+    def test_f_0003_a4_one_good_line_does_not_hide_a_bad_one(self) -> None:
+        """F-0003 A4: with a good line then a bad one, or the reverse, a write on another artifact is refused and cites the bad line."""
+        for lines in ((LINE, "oups"), ("oups", LINE)):
+            with self.subTest(lines=lines), project(keys(*lines)) as where:
+                self.refused(run(where, call("set", url="claude.ai/artifact/zzz999", collection="notes")), "oups")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -25,6 +25,7 @@ from utf8_stdio import use_utf8
 
 KEY = "human-collections"
 GUARD = "guard_human_data"
+READS = frozenset({"get", "list", "query", "profiles"})
 
 
 def _text(value: object) -> str | None:
@@ -94,13 +95,19 @@ def refusal(event: object, lines: Sequence[str]) -> str | None:
     call = event.get("tool_input") if isinstance(event, Mapping) else None
     if not lines or not isinstance(call, Mapping):
         return None
+    action = call.get("action")
+    if isinstance(action, str) and action in READS:
+        return None
     url = _text(call.get("url"))
     artifact = _artifact(url) if url else None
     collections = _collections(call)
     for line in lines:
         pieces = split_value(line, 2)
-        if pieces is None:
-            continue
+        if pieces is None or _artifact(pieces[0]) is None or not _segments(pieces[1]):
+            return (
+                f"Blocked by the forge plugin ({GUARD}): the line `{line}` of the key `{KEY}` is not"
+                " `<artifact URL> | <collection>`, so no write into a page database is cleared until it is fixed"
+            )
         page, listed = pieces
         if artifact in (None, _artifact(page)) and any(_under(found, listed) for found in collections):
             return (
