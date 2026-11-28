@@ -5,7 +5,8 @@ with the verdict of the decider that was asked.
     python question_delay.py route <project> <verdict-file> --item <n> --agent <name> [--apply] [--json]
 
 `due` reads the key `question-default-delay` of `docs/agents/usine.md`, one line: a number above zero
-followed by `h` or `j`, as in the key `sla`. A question is an open ticket or pull request that carries
+followed by `min`, `h` or `j`. `h` and `j` are read as in the key `sla`; `min` is read here only, so the
+key `sla` and the other keys that share its reader keep their two units. A question is an open ticket or pull request that carries
 `ready-for-human`, `needs-info` or `needs-your-attention`. It waits since the latest `labeled` event of
 one of the waiting labels it still carries, or since the latest default decision or reminder this
 script's `route` posted (a comment whose first line says `(question-default-delay)`), whichever is
@@ -48,13 +49,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "hooks"))
 
 import factory_slo  # noqa: E402  its `gh` runner and its reader of paginated JSON
 import parse_output  # noqa: E402  the reader of the deciders' block
-import sla  # noqa: E402  the hooks' reader of a delay (`24 h`, `3 j`)
+import sla  # noqa: E402  the hooks' reader of a delay (`24 h`, `3 j`), which `min` extends here
 import token_audit  # noqa: E402  the reader of an ISO date
 import usine  # noqa: E402  the reader of `usine.md`
 
 Runner = Callable[[list[str], Path], str]
 
 KEY = "question-default-delay"
+MINUTES = re.compile(r"^(\d+)\s*min$")
 ABSENT = f"sans objet (clé `{KEY}` absente)"
 ATTENTION = "needs-your-attention"
 # Labels that say a human is awaited; the first two are answered by a default decision and removed.
@@ -71,6 +73,14 @@ class DelayError(ValueError):
     """A key or a verdict the script cannot read: the command fails and guesses nothing."""
 
 
+def parse_delay(text: str) -> timedelta | None:
+    """`10 min` as a delay, else `2 h` or `3 j` as the key `sla` reads them; None when unreadable."""
+    match = MINUTES.match(text.strip())
+    if match is None:
+        return sla.parse_delay(text)
+    return timedelta(minutes=int(match.group(1))) if int(match.group(1)) > 0 else None
+
+
 def load_delay(project: Path) -> tuple[timedelta, str] | None:
     """The delay the key declares and its text, None when the key is absent."""
     values = usine.load(project).get(KEY)
@@ -78,11 +88,11 @@ def load_delay(project: Path) -> tuple[timedelta, str] | None:
         return None
     if len(values) > 1:
         raise DelayError(f"`{KEY}` : une seule ligne attendue, {len(values)} lignes déclarées")
-    delay = sla.parse_delay(values[0])
+    delay = parse_delay(values[0])
     if delay is None:
         raise DelayError(
             f"`{KEY}` : délai illisible `{values[0]}` "
-            "(attendu un nombre au-dessus de 0 suivi de `h` ou `j`, comme `24 h` ou `2 j`)"
+            "(attendu un nombre au-dessus de 0 suivi de `min`, `h` ou `j`, comme `10 min`, `24 h` ou `2 j`)"
         )
     return delay, values[0].strip()
 

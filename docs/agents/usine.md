@@ -25,6 +25,11 @@ conditions de `.claude/rules/git.md` tiennent ; sinon il ouvre la PR de version 
 
 - `release-trigger` : `1 | 2 j`
 
+Le délai après lequel une question restée sans réponse de l'humain reçoit une décision par défaut, si la
+matrice la donne à un agent, sinon un rappel. Choisi par l'humain le 2026-11-28 : dix minutes au plus.
+
+- `question-default-delay` : `10 min`
+
 ## Domaines et règles du dépôt
 
 - `domain-rules` : `.claude/rules/forge.md`
