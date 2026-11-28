@@ -18,8 +18,8 @@ from pathlib import Path
 from unittest import mock
 
 import support
-from question_stop import POLL, decide
 from question_delay import main as route_main
+from question_stop import POLL, decide
 from test_question_delay import NOW, RESERVED, STAFF, Gh, issue, labeled
 
 HOOK = support.PLUGIN / "hooks" / "question_stop.py"
@@ -307,6 +307,68 @@ class ExcludedQuestion(unittest.TestCase):
         fixture = due_fixture(minutes=30, comments=[decision])
         answer = json.loads(session.process(fixture).stdout)
         self.assertEqual(answer["decision"], "block")
+
+
+class StopCap(unittest.TestCase):
+    def due_gh(self) -> Gh:
+        return Gh({12: issue(12, ["ready-for-human"])}, {12: [labeled("ready-for-human", 11 / 60)]})
+
+    def stop_after(self, session: Session, *between: dict, blocks: int) -> Gh:
+        session.write(human(), tool_call(LABEL_COMMAND), tool_result(), *between, *([said("..."), feedback()] * blocks))
+        return self.due_gh()
+
+    def test_the_ninth_stop_in_a_row_passes_and_says_the_cap_of_8_is_reached(self) -> None:
+        """F-0003 A37: after 8 blocks in a row the stop passes, and the output says the cap of 8 is reached."""
+        session = Session(self)
+        gh = self.stop_after(session, blocks=8)
+        clock = Clock()
+        answer = decide(session.event(), run=gh, now=clock.now, sleep=clock.sleep)
+        self.assertIsNotNone(answer)
+        assert answer is not None
+        self.assertNotIn("decision", answer)
+        self.assertIn("8", answer["systemMessage"])
+        self.assertIn("cap", answer["systemMessage"])
+        self.assertEqual(clock.slept, [])
+
+    def test_the_cap_reached_is_said_by_the_hook_process_on_its_standard_output(self) -> None:
+        """F-0003 A37: the output of the process is one JSON document with the message, exit code 0."""
+        session = Session(self)
+        self.stop_after(session, blocks=8)
+        result = session.process(due_fixture(minutes=11))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("8", json.loads(result.stdout)["systemMessage"])
+
+    def test_seven_blocks_in_a_row_still_block_the_eighth_time(self) -> None:
+        """F-0003 A37: the cap is 8 blocks, the eighth stop is still held."""
+        session = Session(self)
+        gh = self.stop_after(session, blocks=7)
+        answer = decide(session.event(), run=gh, now=Clock().now, sleep=Clock().sleep)
+        self.assertEqual(answer and answer["decision"], "block")
+
+    def test_a_tool_call_resets_the_count_as_it_does_for_claude_code(self) -> None:
+        """F-0003 A37: Claude Code resets its cap at each tool call; so does the count of the hook."""
+        session = Session(self)
+        gh = self.stop_after(session, blocks=0)
+        entries = [human(), tool_call(LABEL_COMMAND), tool_result(), *([said("..."), feedback()] * 8)]
+        entries += [tool_call("ls"), tool_result(), said("one more"), feedback()]
+        session.write(*entries)
+        answer = decide(session.event(), run=gh, now=Clock().now, sleep=Clock().sleep)
+        self.assertEqual(answer and answer["decision"], "block")
+
+    def test_a_stop_blocked_by_another_hook_counts_toward_the_cap(self) -> None:
+        """F-0003 A37: Claude Code's cap counts every Stop hook block of the turn, not this hook's alone."""
+        session = Session(self)
+        entries = [human(), tool_call(LABEL_COMMAND), tool_result(), *([said("..."), feedback("guard_output")] * 8)]
+        session.write(*entries)
+        answer = decide(session.event(), run=self.due_gh(), now=Clock().now, sleep=Clock().sleep)
+        self.assertIn("systemMessage", answer or {})
+
+    def test_a_question_not_held_by_the_hook_does_not_get_the_cap_message(self) -> None:
+        """F-0003 A37: the message is for a stop the hook would have held; a question due far away passes quietly."""
+        session = Session(self, usine="- `question-default-delay` : `24 h`\n")
+        self.stop_after(session, blocks=8)
+        gh = Gh({12: issue(12, ["ready-for-human"])}, {12: [labeled("ready-for-human", 1 / 60)]})
+        self.assertIsNone(decide(session.event(), run=gh, now=Clock().now, sleep=Clock().sleep))
 
 
 if __name__ == "__main__":

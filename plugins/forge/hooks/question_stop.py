@@ -45,12 +45,17 @@ HOOK_TIMEOUT = 780  # seconds; the `timeout` of the entry in `hooks.json`
 MARGIN = 60  # seconds kept free before the hook's timeout
 POLL = 30  # seconds between two readings of the question
 STOP_CAP = 8  # blocks in a row Claude Code admits before it lets the session stop
+FEEDBACK = "Stop hook feedback:"  # the first line of a Stop hook block, as the transcript keeps it
 TRANSCRIPT_LIMIT = 16 * 1024 * 1024
+CAP_MESSAGE = (
+    f"question_stop: the cap of {STOP_CAP} Stop hook blocks in a row is reached; the stop passes with a question"
+    " still unanswered. The dispatcher's tick, or the next session, takes it."
+)
 SCRIPT = Path(question_delay.__file__).resolve()
 OPERATORS = {";", "&&", "||", "|", "&", "(", ")"}
 
 Runner = question_delay.Runner
-Answer = dict[str, str]
+Answer = dict[str, str]  # `decision` and `reason`, or `systemMessage`
 
 
 def transcript_tail(path: Path) -> Iterator[dict]:
@@ -137,6 +142,23 @@ def labels_added(command: str) -> dict[int, set[str]]:
     return found
 
 
+def feedback_text(entry: Mapping[str, object]) -> bool:
+    """Whether `entry` is what Claude Code writes after a Stop hook blocked the stop."""
+    message = entry.get("message")
+    content = message.get("content") if isinstance(message, dict) else None
+    return entry.get("type") == "user" and isinstance(content, str) and content.startswith(FEEDBACK)
+
+
+def blocks_in_a_row(entries: list[dict]) -> int:
+    """The Stop hook blocks since the session's last tool call, which resets Claude Code's cap."""
+    count = 0
+    for entry in reversed(entries):
+        if tool_uses(entry):
+            break
+        count += feedback_text(entry)
+    return count
+
+
 def asked(entries: list[dict]) -> set[int]:
     """The tickets and pull requests the session labeled with a label a human answers, in these entries."""
     numbers: set[int] = set()
@@ -194,9 +216,11 @@ def decide(
     if loaded is None:
         return None
     delay, delay_text = loaded
-    numbers = asked(passage(Path(path).expanduser()))
+    entries = passage(Path(path).expanduser())
+    numbers = asked(entries)
     if not numbers:
         return None
+    capped = blocks_in_a_row(entries) >= STOP_CAP
     deadline = now() + timedelta(seconds=HOOK_TIMEOUT - MARGIN)
     while True:
         dated = [
@@ -208,11 +232,13 @@ def decide(
             return None
         current = now()
         due = [question for moment, question in dated if current >= moment]
+        soonest = min(moment for moment, _ in dated)
+        if not due and soonest > deadline:
+            return None
+        if capped:
+            return {"systemMessage": CAP_MESSAGE}
         if due:
             return {"decision": "block", "reason": instruction(due[0], delay_text, project)}
-        soonest = min(moment for moment, _ in dated)
-        if soonest > deadline:
-            return None
         sleep(max(0.0, min(POLL, (soonest - current).total_seconds())))
 
 
