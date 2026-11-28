@@ -170,7 +170,7 @@ class Delegated(unittest.TestCase):
         self.assertIn("24 h", body)
         self.assertIn("humain peut y revenir par un commentaire", body)
         self.assertEqual(gh.removed(), ["ready-for-human"])
-        self.assertEqual(gh.added(), [])
+        self.assertEqual(gh.added(), ["labels[]=ready-for-agent"])  # F-0003 A59: a ticket is ready again
 
     def test_the_product_owner_block_has_no_reversible_line_and_still_posts(self) -> None:
         """#260 A1: `forge:product-owner` writes no `REVERSIBLE:`; the matrix makes its decisions reversible."""
@@ -191,7 +191,7 @@ class Delegated(unittest.TestCase):
         code, out = project.route(gh, STAFF.replace("VETO: no", "VETO: yes"), "--apply")
         self.assertEqual(code, 0, out)
         self.assertTrue(gh.bodies()[0].startswith("Décision (staff-engineer, P1)"))
-        self.assertEqual(gh.added(), ["labels[]=needs-your-attention"])
+        self.assertEqual(gh.added(), ["labels[]=needs-your-attention", "labels[]=ready-for-agent"])  # F-0003 A59
 
     def test_without_apply_nothing_is_written_and_the_plan_is_printed(self) -> None:
         """#260 A1: the plan is one JSON document, and `gh` receives no write."""

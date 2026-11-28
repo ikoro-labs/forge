@@ -141,6 +141,72 @@ vraie session : une attente de plusieurs minutes dans un hook `Stop`, la prise e
 secondes et le blocage qui relance la session n'ont pas été vus de bout en bout. La question de la décision Q6
 du design reste donc à éprouver sur un vrai poste, avant que le tick (ticket 8) n'en dépende. Linux seulement.
 
+## L'agent épinglé : `forge:feature-build F-NNNN --ticket <n>` (ticket 7)
+
+Un agent court mène un seul ticket, au lieu de la feature entière : le répartiteur (ticket 8) le lance sans
+interface une fois le ticket revendiqué. Ce ticket livre l'entrée, pas le répartiteur : tant que personne ne
+pose le verrou (ticket 8, partie b), l'agent épinglé s'arrête toujours à son premier contrôle, ce qui est le
+côté prudent. Aucune clé nouvelle.
+
+**Sans `--ticket`, rien ne change.** Le skill `feature-build` ne nomme l'option qu'à trois endroits avant sa
+section dédiée (l'en-tête, le paragraphe des arguments, un renvoi à l'étape 0.5), et un test les compte.
+
+**Le contrôle, à la place de l'étape 0.5.** L'étape 0.5 (une seule session par projet) vaut pour une session
+qui mène un dépôt ; un agent épinglé est l'une des sessions du répartiteur, pas la session du projet. Il lit le
+ticket, puis le verrou :
+
+```sh
+uv run --no-project --quiet python plugins/forge/hooks/agent_lock.py check . <n>
+```
+
+Le verrou est le fichier du ticket sous `~/.claude/hooks/state/dispatch/locks/<projet>/<n>.json`. La commande
+sort en 0 quand ce fichier nomme un pid vivant qui est le processus de la session, l'un de ses ancêtres ou
+`CLAUDE_PID`, en 1 sinon (aucun fichier, fichier illisible, pid mort, pid d'un autre agent), en 2 pour un appel
+faux (un ticket qui n'est pas un nombre). Lancée depuis un arbre de travail, elle lit les verrous de son dépôt
+principal, où le répartiteur les range.
+
+L'agent s'arrête sans rien écrire (ni commentaire, ni étiquette, ni verrou, ni branche), et dit pourquoi, quand le
+ticket est fermé, a un bloqueur ouvert, ne porte ni `ready-for-agent` ni `agent-claimed`, n'a pas son verrou, ou
+quand `.claude/PAUSED`, la porte ou le budget d'erreur l'arrêtent comme ils arrêtent une session de feature.
+Les questions échues (étape 0.9) ne sont pas les siennes : le répartiteur les fait trancher.
+
+**Ce qu'il mène.** Le ticket seul : `forge:coder` (tour 0 compris), puis `forge:qc` sur sa PR, sans frontière, sans
+revendication (elle est faite) et sans autre ticket. Il s'arrête quand la PR est fusionnée, ou quand son verdict
+est posté (un `ACCEPT` qui attend l'humain sur un chemin protégé, l'arrêt du tour 3), ou sur un incident. La revue
+de bout en bout et la clôture (étapes 3 bis et 5) restent à la session qui mène la feature sans `--ticket`.
+
+**La reprise.** Une PR ouverte qui cite le ticket entre directement dans la relecture : aucun coder, aucune
+nouvelle PR. Une branche sans PR, que le ticket nomme dans un commentaire et que `git ls-remote` trouve, est
+confiée au coder par son brief, qui lui dit de partir d'elle et d'y pousser. La définition du coder n'est pas
+changée : la reprise d'une branche sans PR tient au brief, et n'a pas été jouée avec un vrai coder.
+
+**Une question.** L'agent commente le ticket en trois lignes (G5), un commentaire par question :
+
+```text
+Question : <la question>
+Recommandation : <la recommandation>
+Décideur : staff-engineer
+```
+
+`Décideur : product-owner` pour une question produit ou UX ; une ligne absente vaut `staff-engineer`. Puis il pose
+`needs-info`, retire `ready-for-agent`, `agent-claimed` et l'assignation, libère son verrou
+(`agent_lock.py release . <n>`, qui ne retire que le verrou de sa propre session) et s'arrête. Il ne lance aucun
+décideur : le lancer au délai est la partie c du ticket 8.
+
+**Le ticket redevient prêt.** `question_delay.py route --apply` rend `ready-for-agent` à un ticket (une issue,
+jamais une PR) qui portait `needs-info` ou `ready-for-human` quand le verdict est `post-default`, sauf s'il
+l'a déjà. Un rappel (`remind-human`) ne le rend pas. C'est un changement pour tout appelant de `route`, la
+session de feature comprise : le skill y relançait déjà un coder. Une cellule qui laisse un veto à l'humain
+pose en plus `needs-your-attention`, et le ticket redevient prêt quand même : la décision par défaut est
+réversible d'un commentaire.
+
+**Éprouvé et pas éprouvé.** Éprouvé par des tests : `route` sur des `gh` simulés, `agent_lock.py` en
+processus sous un `HOME` isolé (verrou propre, absent, mort, d'un autre pid, illisible, chemin d'un arbre de
+travail), et le contenu du skill (ses phrases, leur ordre, ses mentions de l'option). Pas éprouvé : une
+session `claude -p ... --ticket` réelle. Le contrôle suppose que `CLAUDE_PID` ou les ancêtres du processus
+atteignent le pid que le répartiteur écrira dans le verrou ; la forme de ce pid est le choix du ticket 8,
+partie b.
+
 ## Le relevé de base (ticket 6, story 18)
 
 `factory_slo.py baseline` donne les chiffres qui fondent le point de décision du 2026-12-16, avant le
