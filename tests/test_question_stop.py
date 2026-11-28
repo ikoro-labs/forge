@@ -19,7 +19,8 @@ from unittest import mock
 
 import support
 from question_stop import POLL, decide
-from test_question_delay import NOW, Gh, issue, labeled
+from question_delay import main as route_main
+from test_question_delay import NOW, RESERVED, STAFF, Gh, issue, labeled
 
 HOOK = support.PLUGIN / "hooks" / "question_stop.py"
 DELAY_KEY = "- `question-default-delay` : `10 min`\n"
@@ -238,6 +239,74 @@ class DueQuestion(unittest.TestCase):
         self.assertEqual(labels_added("gh issue comment 12 --body 'ready-for-human'"), {})
         self.assertEqual(labels_added("gh issue edit 12 --remove-label ready-for-human"), {})
         self.assertEqual(labels_added("echo 'unterminated"), {})
+
+
+class ReservedGesture(unittest.TestCase):
+    def test_a_reserved_verdict_posts_the_reminder_and_the_next_stop_passes(self) -> None:
+        """F-0003 A35: the hook blocks a due question, `route --apply` on a `RESERVED` verdict posts the
+        reminder, and the stop that follows passes: a reserved gesture is never taken by default."""
+        session = Session(self)
+        session.write(human(), tool_call(LABEL_COMMAND), tool_result())
+        gh = Gh({12: issue(12, ["ready-for-human"])}, {12: [labeled("ready-for-human", 11 / 60)]})
+        clock = Clock()
+        first = decide(session.event(), run=gh, now=clock.now, sleep=clock.sleep)
+        self.assertEqual(first and first["decision"], "block")
+        verdict = session.root / "verdict.txt"
+        verdict.write_text(RESERVED, encoding="utf-8")
+        code = route_main(
+            ["route", str(session.project), str(verdict), "--item", "12", "--agent", "staff-engineer", "--apply"],
+            run=gh, now=NOW,
+        )  # fmt: skip
+        self.assertEqual(code, 0)
+        self.assertTrue(gh.bodies()[0].startswith("Rappel (question-default-delay)"))
+        # What GitHub holds after the reminder: its comment, and the label that flags the human.
+        gh.comments[12] = [{"body": gh.bodies()[0], "created_at": NOW.strftime("%Y-%m-%dT%H:%M:%SZ")}]
+        gh.items[12] = issue(12, ["ready-for-human", "needs-your-attention"])
+        self.assertIsNone(decide(session.event(), run=gh, now=clock.now, sleep=clock.sleep))
+        self.assertEqual(clock.slept, [])
+
+    def test_a_default_decision_removes_the_label_and_the_next_stop_passes(self) -> None:
+        """F-0003 A34: a `DECIDED` reversible verdict posts the default and clears `ready-for-human`."""
+        session = Session(self)
+        session.write(human(), tool_call(LABEL_COMMAND), tool_result())
+        gh = Gh({12: issue(12, ["ready-for-human"])}, {12: [labeled("ready-for-human", 11 / 60)]})
+        verdict = session.root / "verdict.txt"
+        verdict.write_text(STAFF, encoding="utf-8")
+        code = route_main(
+            ["route", str(session.project), str(verdict), "--item", "12", "--agent", "staff-engineer", "--apply"],
+            run=gh, now=NOW,
+        )  # fmt: skip
+        self.assertEqual(code, 0)
+        self.assertEqual(gh.removed(), ["ready-for-human"])
+        gh.items[12] = issue(12, [])
+        clock = Clock()
+        self.assertIsNone(decide(session.event(), run=gh, now=clock.now, sleep=clock.sleep))
+
+
+class ExcludedQuestion(unittest.TestCase):
+    def test_a_question_that_already_carries_a_reminder_lets_the_stop_pass(self) -> None:
+        """F-0003 A36: a `Rappel (question-default-delay)` on the question excludes it."""
+        session = Session(self)
+        session.write(human(), tool_call(LABEL_COMMAND), tool_result())
+        reminder = {
+            "body": "Rappel (question-default-delay) : cette question attend une réponse.",
+            "created_at": real_hours_ago(1 / 60),
+        }
+        fixture = due_fixture(minutes=11, comments=[reminder])
+        result = session.process(fixture)
+        self.assertEqual((result.returncode, result.stdout), (0, ""), result.stderr)
+
+    def test_a_default_decision_comment_does_not_exclude_a_question_that_was_asked_again(self) -> None:
+        """F-0003 A36: only the reminder excludes; a default decision restarts the delay, nothing more."""
+        session = Session(self)
+        session.write(human(), tool_call(LABEL_COMMAND), tool_result())
+        decision = {
+            "body": "Décision (staff-engineer, P1) par défaut (question-default-delay) : x",
+            "created_at": real_hours_ago(11 / 60),
+        }
+        fixture = due_fixture(minutes=30, comments=[decision])
+        answer = json.loads(session.process(fixture).stdout)
+        self.assertEqual(answer["decision"], "block")
 
 
 if __name__ == "__main__":

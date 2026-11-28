@@ -156,7 +156,7 @@ def open_questions(project: Path, run: Runner, numbers: set[int]) -> list[questi
     return [
         question
         for question in question_delay.questions(project, run, only=numbers)
-        if set(question.labels) & set(question_delay.ANSWERABLE)
+        if set(question.labels) & set(question_delay.ANSWERABLE) and not question.reminder
     ]
 
 
