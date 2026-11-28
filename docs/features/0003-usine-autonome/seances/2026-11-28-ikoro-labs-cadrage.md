@@ -145,3 +145,53 @@ cadrage ne dit pas ce que rend une clé nouvelle absente. La session les ajoute 
 leviers de ce commentaire qui ne vivent pas dans forge (page, boutons, preuve d'une demande de la
 page, fil à deux voies, règles `autoMode.allow` du poste) restent hors périmètre, comme
 `forge:product-owner` l'a décidé au tour 2 (P2) ; aucune décision nouvelle.
+
+### Tour 4 : l'architecture cible « un agent court par ticket » (relais 10)
+
+L'humain approuve une architecture cible (#340, commentaire 7239304262) : un agent par ticket, qui
+démarre, mène la PR et s'arrête ; un répartiteur local d'abord, sur un projet consommateur ; des
+runners auto-hébergés seulement ensuite, sans GitHub Actions payant. Il demande qu'elle devienne
+l'option principale du cadrage, après discussion avec les agents. La session pose les questions
+suivantes aux deux décideurs.
+
+**P1 à P5** (`forge:product-owner`, DECIDED sauf mention) : la cible est l'option principale (P1) ;
+ordre : défauts de relais, répartiteur, taille et zones, runners sur le « oui » d'un point de
+décision ; EXI-04 et EXI-05 deviennent conditionnelles, abandonnées si le répartiteur tient ; EXI-03
+reste comme pont pour les sessions longues ; le cas d'usage est réécrit. Une seule feature, une seule
+issue de suivi (P2) ; une feature nouvelle serait réservée à l'humain, la clé `entry-gate` étant
+absente. Forge tient la boucle, le contrat de l'agent, `question_delay route`, les clés ; le projet et
+le poste gardent la page, la supervision, `autoMode` et le premier essai ; les runners sont un lot
+sous condition, pas un hors périmètre (P3, T4, verdict TECHNICAL sur la frontière). Mesure
+principale : délai p90 et interventions de l'humain, taux d'automatisation secondaire (P1). EXI-10
+reste réservée à l'humain (H3).
+
+**T1 à T7** (`forge:staff-engineer`, DECIDED sauf mention) : un tick sans état sous
+`plugins/forge/scripts/`, lancé par un minuteur du poste dont l'installation revient à l'humain (H3) ;
+une entrée épinglée à un ticket manque, `forge:feature-build` ne sait pas épingler (T4, T2). Garder
+EXI-01, prérequis puisque les agents du répartiteur sont des passes sans interface, et EXI-02 ;
+remplacer EXI-03 par la boucle du répartiteur, `question_delay.py route` ne rendant pas l'étiquette
+du ticket prêt (T2). Point de reprise : la branche, la PR et le commentaire du ticket ; revendication
+par assigné, étiquette `agent-claimed` et verrou local par processus ; relances plafonnées (T2).
+Places par une clé, un arbre de travail par agent, relecture `forge:qc` en série ; la note d'un
+`push -u` qui changerait la configuration partagée ne vaut plus pour le coder (`guard_coder.py`) (T4,
+T6). Runners et secrets : gestes réservés (H3). Coupe : verdict DOMAIN, rendu à `forge:product-owner`.
+Dates proposées : 12-05, 12-12, 12-16 (point de décision). Non vérifiés par l'agent : les 375 relais,
+les 56 k jetons.
+
+**Écart entre les deux décideurs, tranché par la case.** Sur EXI-03, le maintien comme pont relève de
+la priorité dans le périmètre (P1, `forge:product-owner`) : il reste au lot 1, et la boucle du
+répartiteur (EXI-15) le remplace pour les agents courts, comme le propose `forge:staff-engineer`.
+
+### Tour 5 : deux correctifs d'identité en tête du lot 1
+
+L'humain place deux correctifs en tête du lot 1 (#340, commentaire 7239359496, relayé par une autre
+session) : un hook de forge qui refuse aux agents l'écriture dans les collections de données de sa
+page ; une application GitHub qui donne aux agents leur propre identité, son jeton n'étant plus donné
+aux agents, puis un bouton « Fusionner » dont le clic autorise la fusion par une vérification
+obligatoire. Ordre du lot 1 : ces deux correctifs, les défauts de relais, puis le répartiteur.
+Installer l'application est un geste unique de l'humain.
+
+La session en tire : EXI-17 et EXI-18 en tête du lot 1 ; le répartiteur rejoint le lot 1 ; les lots
+deviennent trois (identité, relais et répartiteur ; taille et zones ; runners sur le « oui »). EXI-18
+tranche EXI-10 : l'identité qui prouve l'humain est son compte, une fois que les agents ont la leur.
+Aucun point de décision ne reste ouvert ; les installations restent des gestes de l'humain (H3).
