@@ -15,7 +15,6 @@ The seam is `guard_pr_cap.refusal` with `gh` answered from lists (the network is
 
 from __future__ import annotations
 
-import json
 import re
 import unittest
 from collections.abc import Sequence
@@ -28,29 +27,14 @@ SMALL = "- `ticket-pr-cap-small` : `50`\n"
 TEMPLATE = support.PLUGIN / "templates" / "usine.md"
 
 
-class SizedGh(FakeGh):
-    """A `FakeGh` whose listed PRs carry `additions` and `deletions`; None leaves a field out."""
-
-    def __init__(self, prs: Sequence[tuple[str, str]], sizes: Sequence[tuple[object, object]], **kwargs: object) -> None:
-        super().__init__(prs, **kwargs)  # type: ignore[arg-type]
-        self.sizes = sizes
-
-    def __call__(self, argv: list[str], cwd: str | None) -> str | None:
-        answer = super().__call__(argv, cwd)
-        if argv[:2] != ["pr", "list"] or answer is None:
-            return answer
-        listed = json.loads(answer)
-        for item, (added, removed) in zip(listed, self.sizes):
-            if added is not None:
-                item["additions"] = added
-            if removed is not None:
-                item["deletions"] = removed
-        return json.dumps(listed)
+def sized(prs: Sequence[tuple[str, str]], sizes: Sequence[tuple[object, object]], **kwargs: Sequence[str | None]) -> FakeGh:
+    """gh lists `prs` with their `(additions, deletions)`; None leaves a field out."""
+    return FakeGh(prs, sizes=sizes, **kwargs)  # type: ignore[arg-type]
 
 
-def listed(*sizes: tuple[object, object], ticket: int = 5) -> SizedGh:
+def listed(*sizes: tuple[object, object], ticket: int = 5) -> FakeGh:
     """gh lists one merged PR per `(additions, deletions)`, each citing `ticket`."""
-    return SizedGh([("MERGED", pr_body(f"Refs #{ticket}")) for _ in sizes], sizes)
+    return sized([("MERGED", pr_body(f"Refs #{ticket}")) for _ in sizes], sizes)
 
 
 class SmallPrsAreNotCounted(unittest.TestCase):
@@ -122,15 +106,15 @@ class SmallPrsAreNotCounted(unittest.TestCase):
         """Ticket #381, A1: a small PR created before `ticket-pr-cap-since` is left out and starts no ticket (no cap of 1)."""
         project = Project(self, USINE + SINCE + SMALL)
         old, new = "2026-11-20T08:00:00Z", "2026-11-24T08:00:00Z"
-        small_old = SizedGh([("MERGED", pr_body("Refs #5"))] * 2, [(3, 4), (300, 4)], created=[old, new])
+        small_old = sized([("MERGED", pr_body("Refs #5"))] * 2, [(3, 4), (300, 4)], created=[old, new])
         self.assertIsNone(project.create(pr_body("Closes #5"), small_old))
-        big_old = SizedGh([("MERGED", pr_body("Refs #5"))] * 2, [(300, 4), (300, 4)], created=[old, new])
+        big_old = sized([("MERGED", pr_body("Refs #5"))] * 2, [(300, 4), (300, 4)], created=[old, new])
         self.assertIn("for a cap of 1", project.create(pr_body("Closes #5"), big_old) or "")
 
     def test_a1_a_big_open_or_merged_pr_counts_as_before(self) -> None:
         """Ticket #381, A1: the key changes nothing for a PR it does not leave out: open and merged big PRs still count."""
         project = Project(self, USINE + SMALL)
-        gh = SizedGh(
+        gh = sized(
             [("OPEN", pr_body("Refs #5")), ("MERGED", pr_body("Refs #5")), ("MERGED", pr_body("Refs #5"))],
             [(100, 0), (100, 0), (100, 0)],
         )

@@ -546,15 +546,16 @@ Windows, le chemin du dépôt lu par `git show` n'a pas été essayé.
 
 ## Le fichier des clés protégées : `docs/agents/usine-gardes.md`
 
-Vingt-trois clés de `usine.md` bornent les pouvoirs de l'agent (ikoro-labs/forge#345 ; `e2e-run-limits` et
-`ticket-pr-cap-exempt` s'y sont ajoutées, avec ikoro-labs/forge#359 et ikoro-labs/forge#314) : `agent-autonomy`,
+Vingt-quatre clés de `usine.md` bornent les pouvoirs de l'agent (ikoro-labs/forge#345 ; `e2e-run-limits`,
+`ticket-pr-cap-exempt` et `ticket-pr-cap-small` s'y sont ajoutées, avec ikoro-labs/forge#359, ikoro-labs/forge#314
+et ikoro-labs/forge#381) : `agent-autonomy`,
 `protected-path`, `gh-api-allow`, `owner-gesture`, `never-weaken`, `infra-hosts`, `infra-verify`,
-`pr-cap-raiser`, `ticket-pr-cap`, `ticket-pr-cap-since`, `ticket-pr-cap-exempt`, `ticket-budget`, `run-limits`,
+`pr-cap-raiser`, `ticket-pr-cap`, `ticket-pr-cap-since`, `ticket-pr-cap-exempt`, `ticket-pr-cap-small`, `ticket-budget`, `run-limits`,
 `e2e-run-limits`, `run-budget`,
 `budget-action`, `slo`, `accepting-human`, `validation-owner`, `validation-reviewer`, `pin-bump`,
 `readonly-agent` et `readonly-command`. Les lire dans l'arbre de travail ne tenait que parce que `usine.md`
 était un `protected-path` : chaque réglage libre (`merge-method`, `release-trigger`, `output-words-*`...)
-attendait donc l'humain avec elles. Le plugin lit désormais ces vingt-trois clés dans un second fichier,
+attendait donc l'humain avec elles. Le plugin lit désormais ces vingt-quatre clés dans un second fichier,
 `docs/agents/usine-gardes.md`, tel que `origin/main` le tient (`git ls-tree` puis `git cat-file` sur
 `refs/remotes/origin/main`), et `usine.load` fusionne les deux fichiers. Les autres clés restent dans
 `usine.md`. Le chemin du fichier est une constante de `plugins/forge/hooks/usine.py`, jamais une clé, et
@@ -597,8 +598,8 @@ l'ensemble des clés protégées est `SENSITIVE_KEYS`, au même endroit.
 `tests/test_usine_read_config.py`, `tests/test_usine_readers_guard_file.py`, `tests/test_usine_base.py` et
 `tests/test_never_weaken.py` (dépôts jetables, `HOME` jeté, les scripts joués comme des processus), sous Linux
 seulement. Ce dépôt a déplacé ses clés (partie 3 du plan, une fois la version qui porte ces lecteurs épinglée) :
-les onze qu'il déclare (`accepting-human`, `agent-autonomy`, `run-limits`, `run-budget`, `ticket-pr-cap`,
-`ticket-pr-cap-since`, `ticket-pr-cap-exempt`, `slo`, `budget-action`, `e2e-run-limits` et `protected-path`) sont
+les douze qu'il déclare (`accepting-human`, `agent-autonomy`, `run-limits`, `run-budget`, `ticket-pr-cap`,
+`ticket-pr-cap-since`, `ticket-pr-cap-exempt`, `ticket-pr-cap-small`, `slo`, `budget-action`, `e2e-run-limits` et `protected-path`) sont
 dans son `docs/agents/usine-gardes.md`, qui est son `protected-path` et sa ligne de `.github/CODEOWNERS`, et
 `usine.md` ne porte plus que des clés libres (une PR ordinaire le change). Non tenu ici : `--usine-tete` de
 `preuves_ecran.py` (le `usine.md` de la tête, pour un `journey-replay` que la PR introduit) reste lu tel quel,
@@ -1017,6 +1018,16 @@ a nested shell and behind a wrapper (the reader is `hooks/gh_bodies.py`, shared 
   whose `title` cannot be read, fails closed like the rest of the count. `gh pr edit`, `gh api` and the MCP
   tools are not exempted by a title: an edit adds tickets to a PR already open, and the other doors are read as
   before. This repository lists `chore(pin)` and `chore(release)`.
+- **Small PRs.** The key `ticket-pr-cap-small` (protected, one whole number of lines above 0) leaves out of
+  the count every PR whose diff changes fewer lines than that number, open or merged alike: the guard asks the
+  same `gh pr list --json` call for `additions` and `deletions` and adds them, so a PR of exactly that many
+  lines counts. A PR left out starts no ticket, whatever its date. A PR being created has no diff to read
+  before gh runs, so it counts until it is listed. Without the key the step is
+  « sans objet (clé `ticket-pr-cap-small` absente) »: every PR counts, whatever its size, no value is
+  guessed, and the two fields are not asked. A value that is not one whole number above 0, a repeated key, and
+  a counted PR whose `additions` or `deletions` cannot be read, fail closed like the rest of the count. A cap of
+  `6` suits a project whose tickets are not sized at the cut, `3` once they are (`forge:feature-design`
+  estimates each ticket's size). This repository sets `ticket-pr-cap` to 6 and `ticket-pr-cap-small` to 50.
 - **A ticket started before that day.** A ticket with at least one open or merged PR that cites it, created
   before the day of the key, is a started ticket: it finishes the PR in flight (a PR from before the day is
   never counted, so editing it, the `forge:qc` report included, is not refused), then admits one last PR, as a

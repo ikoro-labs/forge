@@ -72,8 +72,8 @@ class TheInstallationPageSaysWhatMoved(unittest.TestCase):
         for key in sorted(DECLARED):
             with self.subTest(key=key):
                 self.assertIn(f"`{key}`", moved)
-        self.assertIn("les onze qu'il déclare", moved)
-        self.assertEqual(len(DECLARED), 11)
+        self.assertIn("les douze qu'il déclare", moved)
+        self.assertEqual(len(DECLARED), 12)
 
     def test_b6_the_protected_path_paragraph_names_the_guard_file(self) -> None:
         """#345 B6: the paragraph on this repository's `protected-path` names `usine-gardes.md`, not `usine.md`."""
