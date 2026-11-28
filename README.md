@@ -188,6 +188,7 @@ du front matter qu'un agent de plugin ignore : le détail est dans
 | --- | --- |
 | [`docs/installation.md`](docs/installation.md) | l'installation pas à pas, les montées de version, les gestes humains, les limites connues |
 | [`docs/sessions.md`](docs/sessions.md) | une session par dépôt, la passation drainée, les variables et les codes du relais |
+| [`docs/usine-autonome.md`](docs/usine-autonome.md) | la feature F-0003 telle qu'elle entre ticket par ticket : les clés nouvelles de `usine.md` (`ignored-session`), les gestes de l'humain |
 | [`docs/modeles-et-jetons.md`](docs/modeles-et-jetons.md) | le modèle et l'effort de chaque rôle, un autre fournisseur, l'audit des jetons, les sorties raccourcies |
 | [`docs/indicateurs-de-service.md`](docs/indicateurs-de-service.md) | les indicateurs de service de l'usine (SLI), calculés sans modèle (revue de bout en bout comprise : écarts, délai, couverture de la matrice, retours), et leurs objectifs (SLO) avec leur budget d'erreur et les actions quand il est épuisé |
 | [`docs/jeu-de-reference.md`](docs/jeu-de-reference.md) | le jeu de référence du juge `forge:qc-conf` (`plugins/forge/evals/`) : les onze revues rejouées, les neuf cas piégés, les trois mesures `judge-recall`, `false-accept` et `false-reject`, le lancement à la main sous un plafond de coût |
