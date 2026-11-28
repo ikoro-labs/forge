@@ -84,10 +84,10 @@ de scripts et de variables sont ceux de la section 18 (décisions par défaut), 
 
 | # | Story | Étant donné | Quand | Alors |
 |---|---|---|---|---|
-| A1 | 1 | la clé `human-collections` de `usine-gardes.md` sur `origin/main`, une ligne `<page> \| <collection>` | un agent (session principale ou sous-agent) appelle l'outil qui écrit la base d'une page publiée (`ArtifactData`, action `set`, `update`, `delete` ou `batch`) sur cette page et cette collection | l'appel est refusé (code 2) ; le message nomme la page et la collection et dit qu'une ligne de cette collection ne vient que de l'humain |
+| A1 | 1 | la clé `human-collections` de `usine-gardes.md` sur `origin/main`, une ligne `<adresse de l'artefact> \| <collection>` | un agent (session principale ou sous-agent) appelle l'outil qui écrit la base d'une page publiée (`ArtifactData`, action `set`, `update`, `delete` ou `batch`) sur cet artefact, dans cette collection ou sous elle | l'appel est refusé (code 2) ; le message nomme l'adresse de l'artefact et la collection et dit qu'une ligne de cette collection ne vient que de l'humain |
 | A2 | 1 | la même ligne, un appel `batch` dont une seule opération vise la collection nommée | l'agent l'envoie | tout l'appel est refusé, aucune opération ne passe |
 | A3 | 1 | la même ligne | un agent lit la collection (`get`, `list`, `query`) ou écrit une autre collection de la page | l'appel passe |
-| A4 | 1 | une ligne de la clé sans ` \| ` ou avec une partie vide | un agent écrit dans une page quelconque | l'écriture est refusée et le message cite la ligne fautive (côté prudent) |
+| A4 | 1 | une ligne de la clé sans ` \| `, avec une partie vide, ou dont la page n'est pas une adresse d'artefact | un agent écrit dans une page quelconque | l'écriture est refusée et le message cite la ligne fautive (côté prudent) |
 | A5 | 1 | un refus du garde | il refuse | une ligne entre au journal des refus : `guard` `guard_human_data`, `rule` `human-collection`, les champs des autres gardes, jamais le contenu de l'écriture |
 | A6 | 1 | le garde qui échoue (erreur, script absent) ou qui dépasse son `timeout` | un agent écrit dans la base d'une page | l'écriture est refusée (`\|\| exit 2` et `"onFailure": "block"`) |
 | A7 | 1 | une PR qui retire une ligne de `human-collections` dans l'arbre de travail | un agent écrit la collection avant la fusion | le refus tient : la clé se lit sur `origin/main` |
@@ -260,7 +260,7 @@ l'humain). Les sources de chaque fait sont dans le cadrage (sections 1, 2 et 7).
 
 | Identifiant | Calcul exact | Tolérance par défaut | Effet |
 |---|---|---|---|
-| C01 | garde `human-collections` : pour un appel d'écriture de l'outil de base d'une page, la page de l'appel égale à la partie gauche d'une ligne et une collection visée (une opération d'un `batch` suffit) égale à sa partie droite, comparaisons exactes | aucune | refus (code 2), ligne au journal des refus |
+| C01 | garde `human-collections` : pour un appel d'écriture de l'outil de base d'une page, l'identifiant de l'artefact tiré du champ `url` de l'appel égal à celui de l'adresse qui est la partie gauche d'une ligne, et une collection visée (une opération d'un `batch` suffit) égale à la collection listée ou sous elle, par segments entiers du chemin | aucune | refus (code 2), ligne au journal des refus |
 | C02 | identité d'un geste d'écriture GitHub d'un agent : un jeton `GH_TOKEN` ou `GITHUB_TOKEN` présent qui commence par `ghs_` | aucune | sans lui, refus de `guard_git` |
 | C03 | clic valable : la commande de `merge-grant` sort 0 pour `{pr}` et `{sha}`, `{sha}` étant la tête de la PR au moment du calcul, et la clé `human-collections` est présente | aucune | statut `success` posté sur `{sha}` ; sinon aucun `success` |
 | C04 | session ignorée : `name` du registre égal à une ligne de `ignored-session`, ou commençant par la partie avant `*` d'une ligne finie par `*`, et `kind` différent de `interactive` | aucune | la session n'est pas listée par `sessions` |
@@ -276,7 +276,7 @@ l'humain). Les sources de chaque fait sont dans le cadrage (sections 1, 2 et 7).
 
 | Identifiant | Structure | Règles |
 |---|---|---|
-| G1 | clés nouvelles : dans `usine-gardes.md`, `human-collections` (`<page> \| <collection>`), `agent-token-command` (`<commande>`), `agent-login` (`<login>`), `merge-grant` (`<contexte> \| <commande>`), `dispatch-command` (gabarit avec `{feature}`, `{ticket}`, `{name}`), `dispatch-relaunch-cap` (`<entier>`), `agent-slots` (`<entier>`) ; dans `usine.md`, `ignored-session` (`<nom>` ou `<préfixe>*`), `dispatch-tick` (`<délai>`, unités de `question-default-delay`), `ticket-size-max` (`<lignes>`), `zones` (`<zone>`), `zone-command` (gabarit avec `{path}`) | chacune écrite par l'humain du projet, documentée dans le gabarit ; une clé qui borne un garde, ou ce que le répartiteur lance sans l'humain et combien de fois, va dans `usine-gardes.md` ; absente : « sans objet » ; une ligne répétée là où une seule est attendue fait échouer la commande qui la lit |
+| G1 | clés nouvelles : dans `usine-gardes.md`, `human-collections` (`<adresse de l'artefact> \| <collection>`), `agent-token-command` (`<commande>`), `agent-login` (`<login>`), `merge-grant` (`<contexte> \| <commande>`), `dispatch-command` (gabarit avec `{feature}`, `{ticket}`, `{name}`), `dispatch-relaunch-cap` (`<entier>`), `agent-slots` (`<entier>`) ; dans `usine.md`, `ignored-session` (`<nom>` ou `<préfixe>*`), `dispatch-tick` (`<délai>`, unités de `question-default-delay`), `ticket-size-max` (`<lignes>`), `zones` (`<zone>`), `zone-command` (gabarit avec `{path}`) | chacune écrite par l'humain du projet, documentée dans le gabarit ; une clé qui borne un garde, ou ce que le répartiteur lance sans l'humain et combien de fois, va dans `usine-gardes.md` ; absente : « sans objet » ; une ligne répétée là où une seule est attendue fait échouer la commande qui la lit |
 | G2 | message de refus de `guard_human_data` : `Blocked by the forge plugin (guard_human_data): <page> \| <collection> ...`, puis la raison | dit que la collection ne s'écrit que depuis la page de l'humain ; jamais le contenu de l'écriture |
 | G3 | ligne de trace du répartiteur, une ligne JSON par événement dans `~/.claude/hooks/state/dispatch/<AAAA-MM-JJ>.jsonl` : `date`, `project`, `event` (`tick`, `claim`, `relaunch`, `cap`, `question`, `merge-grant`), puis les champs de l'événement | jamais un jeton, une commande complète ni le corps d'un commentaire ; l'écriture du journal ne change aucune décision |
 | G4 | ligne de trace d'un essai de relais : `date`, `project`, `attempt`, `wait_s`, `code` | même dossier d'état que les compteurs du relais |
@@ -579,7 +579,7 @@ La clé `glossary` est absente de `usine.md` (ligne 126) : ces termes restent da
 | verrou local | fichier du poste qui tient le pid et l'heure de départ de l'agent d'un ticket |
 | relance | nouvel agent lancé sur un ticket dont l'agent est mort, compté par un marqueur de commentaire |
 | passe ignorée | session sans interface que nomme `ignored-session`, qui ne compte pas comme session vivante |
-| collections de l'humain | collections de la base de sa page que nomme `human-collections`, où seul l'humain écrit |
+| collections de l'humain | collections de la base de sa page (désignée par l'adresse de son artefact) que nomme `human-collections`, où seul l'humain écrit |
 | identité des agents | le compte de l'application GitHub des agents (`agent-login`), distinct de celui de l'humain |
 | clic de fusion | ligne écrite par l'humain depuis sa page pour une PR et un SHA, que confirme la commande de `merge-grant` |
 | point de décision | la vérification du 2026-12-16 qui ouvre le lot 3 ou le lot conditionnel (C11) |

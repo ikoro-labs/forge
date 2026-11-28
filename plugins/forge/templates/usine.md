@@ -19,12 +19,12 @@ relatifs à la racine du dépôt.
 
 ## Clés protégées : `docs/agents/usine-gardes.md`
 
-Vingt-six clés bornent les pouvoirs de l'agent : `agent-autonomy`, `agent-token-command`, `agent-login`, `protected-path`,
+Vingt-sept clés bornent les pouvoirs de l'agent : `agent-autonomy`, `agent-token-command`, `agent-login`, `protected-path`,
 `gh-api-allow`, `owner-gesture`, `never-weaken`, `infra-hosts`, `infra-verify`, `pr-cap-raiser`,
 `ticket-pr-cap`, `ticket-pr-cap-since`, `ticket-pr-cap-exempt`, `ticket-pr-cap-small`, `ticket-budget`, `run-limits`,
 `e2e-run-limits`, `run-budget`,
 `budget-action`, `slo`, `accepting-human`, `validation-owner`, `validation-reviewer`, `pin-bump`,
-`readonly-agent` et `readonly-command`. Elles gardent ici leur forme et leur section d'exemple, mais
+`readonly-agent`, `readonly-command` et `human-collections`. Elles gardent ici leur forme et leur section d'exemple, mais
 un projet les écrit dans un second fichier, `docs/agents/usine-gardes.md`, protégé comme les gardes
 (clé `protected-path`, `CODEOWNERS`) : un agent qui modifie `usine.md` ne change donc aucune de ces
 bornes. Les autres clés, dites libres, restent dans `usine.md`.
@@ -617,6 +617,10 @@ relance le délai. Sans la clé, « sans objet (clé `question-default-delay` ab
 n'est listée ni tranchée, et aucun délai n'est deviné. Une valeur illisible, ou une clé répétée, fait
 échouer la commande (code 2).
 
+Le hook `question_stop` (Stop) lit la même clé pour une session longue qui a posé elle-même l'une de ces
+étiquettes d'attente : il garde la session ouverte jusqu'à l'échéance, puis lui fait passer la question au
+décideur et appliquer `route`. Sans la clé, il laisse passer l'arrêt.
+
 - `question-default-delay` : `<24 h>`
 
 Les passes sans interface que lance un répartiteur, une par ligne : un nom de session exact, ou un
@@ -1035,6 +1039,19 @@ Les commandes que ces agents en lecture seule peuvent lancer en plus des lecture
 calculateur du projet, par exemple), chacune comme un préfixe. Une par ligne.
 
 - `readonly-command` : `<uv run python -m scripts.calcul>`
+
+Les collections de la base d'une page publiée où seul l'humain écrit (un clic d'autorisation, par
+exemple), une ligne `<page> | <collection>` chacune. La page est l'adresse de l'artefact, telle que
+l'outil de base des pages la nomme (`claude.ai/artifact/<id>`) : deux adresses de même identifiant
+valent une seule page. La collection est un chemin à barres : une collection listée ferme aussi ses
+sous-collections. `guard_human_data` refuse à tout agent `set`, `update`, `str_replace`, `delete` et
+`batch` (une seule opération visée refuse l'appel entier) sur une collection listée ; une lecture,
+une autre collection et la même collection d'une autre page passent. Une ligne sans ` | `, à partie
+vide ou dont la page n'est pas l'adresse d'un artefact ferme toute écriture de base de page, et le
+refus la cite. La clé se lit sur `origin/main`, jamais dans l'arbre de travail. Sans la clé, « sans
+objet (clé `human-collections` absente) » : aucune écriture n'est refusée.
+
+- `human-collections` : `<claude.ai/artifact/abc123 | decisions>`
 
 The hosts of the project's infrastructure (a CI server, an LXD instance), by address, DNS name, ssh
 alias or `lxc` instance name, one per line: `guard_infra` admits only its read list on them, by

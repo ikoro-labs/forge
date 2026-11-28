@@ -14,6 +14,7 @@ gabarit `plugins/forge/templates/usine.md` donne la forme de chacune.
 | `agent-token-command` | `docs/agents/usine-gardes.md` | une commande qui imprime un jeton d'installation de l'application GitHub des agents |
 | `agent-login` | `docs/agents/usine-gardes.md` | le login que portent les gestes de l'application |
 | `ignored-session` | `docs/agents/usine.md` | les noms de session (exact, ou préfixe fini par `*`) des agents d'un répartiteur, que `handoff_header.py sessions` ne compte pas comme sessions au travail |
+| `human-collections` | `docs/agents/usine-gardes.md` | les collections de pages (`<adresse de l'artefact> \| <collection>`) que le garde `guard_human_data` ferme aux écritures d'un agent |
 
 ## L'identité GitHub des agents
 
@@ -112,6 +113,117 @@ Le nom d'une session ne prouve rien, une session de l'humain peut porter n'impor
 verrou, qu'une session de l'humain ne tient jamais, qui la distingue. La spec disait « une session
 `interactive` n'est jamais ignorée », mais une passe `claude -p` s'inscrit `interactive` (relevé du
 2026-11-28, Claude Code 2.1.332) : le design (décision Q1, veto de l'humain) a remplacé ce test par le verrou.
+
+## Les collections de l'humain : la clé `human-collections`
+
+**Le problème.** Un agent peut écrire dans la base d'une page publiée. Un clic de l'humain dans sa page ne
+prouve donc rien tant que rien n'empêche l'agent d'écrire la même ligne : un projet consommateur a refusé
+le clic comme autorisation pour cette raison (ticket #340). Le hook `guard_human_data` ferme ces écritures.
+
+**Le geste de l'humain.** Il écrit, dans `docs/agents/usine-gardes.md` (un chemin protégé : la PR qui
+change ce fichier se fusionne par lui), une ligne par collection :
+
+```
+- `human-collections` : `<adresse de l'artefact> | <collection>`
+```
+
+- La page est l'adresse de l'artefact telle que l'outil `ArtifactData` la nomme dans son champ `url`
+  (`claude.ai/artifact/<id>`, ou `claude.ai/code/artifact/<uuid>`) : l'outil n'a pas de titre de page. Deux
+  adresses valent la même page quand elles portent le même identifiant, sans égard au schéma, à la casse,
+  à la barre finale ni à la requête ; les deux formes de l'adresse, `artifact/` et `code/artifact/`, valent
+  la même page quand l'identifiant est le même (le côté prudent : on ne sait pas si un même identifiant peut
+  désigner deux artefacts selon la forme).
+- La collection est un chemin à barres, dont les segments alternent collection et document
+  (`boards/b1/columns`). Une collection listée ferme aussi tout ce qui est dessous (`decisions/d1/notes` pour
+  `decisions`), segment entier par segment entier : `decisions2` n'est pas sous `decisions`.
+- Une ligne sans ` | `, dont une partie est vide, dont la page n'est pas une adresse d'artefact (un titre
+  comme `Tableau`) ou dont la collection n'a aucun segment est illisible.
+- La clé se lit comme `origin/main` tient le fichier, jamais dans l'arbre de travail : une PR qui retire une
+  ligne n'ouvre rien avant sa fusion. Tant que `usine-gardes.md` est absent de `origin/main`, la clé se lit
+  dans `usine.md`, comme `origin/main` le tient.
+
+**Ce que le garde refuse.** À tout agent, session principale ou sous-agent, sur l'outil `ArtifactData` :
+
+- une écriture simple (`set`, `update`, `str_replace`, `delete`) sur l'artefact et la collection listés, ou
+  sous elle ;
+- un appel `batch` dont une seule entrée de `writes` (chacune porte son `op`, sa `collection` et son
+  `doc_id`) vise une collection listée : l'appel entier est refusé, aucune entrée ne passe. Une entrée que le
+  garde ne sait pas lire compte comme visant la collection ;
+- toute écriture, quel que soit l'artefact, quand une ligne de la clé est illisible : le refus cite la ligne.
+
+Le message commence par `Blocked by the forge plugin (guard_human_data): <page> | <collection>` et dit que
+la collection ne s'écrit que depuis la page de l'humain. Il ne contient jamais ce qui était écrit.
+
+**Ce qui passe.** Une lecture (`get`, `list`, `query`, `profiles`), l'écriture d'une autre collection du
+même artefact, celle d'une collection au nom qui commence pareil, et celle d'une collection du même nom sur
+un autre artefact.
+
+**Sans la clé.** L'étape est « sans objet (clé `human-collections` absente) » : aucune écriture n'est refusée. Il n'y a pas
+de valeur par défaut.
+
+**Le garde échoue fermé.** Son entrée de `hooks.json` porte `|| exit 2`, `"onFailure": "block"` et un
+`timeout` de 60 secondes : une erreur, un script absent ou un dépassement refuse l'écriture. Avec la clé, un
+appel que le garde ne sait pas lire (événement illisible, action absente) est refusé, de même qu'une écriture
+quand git ne peut pas dire ce que `origin/main` tient de la clé alors que le projet a un fichier de clés.
+Un projet sans fichier de clés, ou hors d'un dépôt git, n'a pas la clé : rien n'est refusé.
+
+**La trace.** Chaque refus ajoute une ligne à `~/.claude/hooks/state/refusals/<AAAA-MM-JJ>.jsonl`, avec les
+champs des autres gardes : `guard` à `guard_human_data`, `rule` à `human-collection` (ou `unreadable-key-line`,
+`unreadable-event`, `unreadable-key`), l'agent, le dépôt, la branche et le verbe `ArtifactData write`. Jamais le
+contenu de l'écriture. Le journal vit sur le poste : deux postes, deux journaux.
+
+**Ce qui n'est pas couvert.** Un agent qui écrit la base d'une page par un autre canal que l'outil
+`ArtifactData` (un appel réseau lancé depuis `Bash`, par exemple) échappe au garde. Un tel canal, une fois
+prouvé, se traite comme un risque de sécurité.
+
+**Ce qui n'a pas été éprouvé.** Les champs (`url`, `collection`, `doc_id`, `writes[].op`,
+`writes[].collection`) et les actions sont ceux que le schéma de l'outil donne, rapportés à l'agent qui a
+écrit le garde ; les tests rejouent le hook comme un processus sur des événements écrits à la main à cette
+forme. Le hook n'a pas été joué dans une vraie session de Claude Code : le nom exact de l'outil dans
+l'événement (`ArtifactData`, filtre de `hooks.json`) et la forme réelle de `tool_input` restent à vérifier
+dans la première vraie session qui déclare la clé. Un chemin de collection avec des segments `.` ou `..`,
+ou un `doc_id` qui porte des barres, n'est pas traité à part : on ne sait pas si l'outil les résout.
+
+## La question d'une session longue (ticket 5)
+
+Une session qui pose `ready-for-human` ou `needs-info` sur un ticket ou une PR puis finit son tour s'arrête
+et attend : rien ne la réveille, car `question_delay.py` n'est lu que par `forge:feature-build`. Le hook
+`Stop` `plugins/forge/hooks/question_stop.py` lui fait suivre sa question. Il ne lit que la clé
+`question-default-delay`, déjà documentée ; aucune clé nouvelle.
+
+Ce qu'il fait, dans l'ordre :
+
+1. Il relève dans le transcript les étiquettes que la session a posées depuis le dernier message de
+   l'humain (une commande `Bash` : `gh issue edit` ou `gh pr edit` avec `--add-label`, `gh api .../issues/<n>/labels`
+   avec un champ `labels[]=`). Une étiquette posée par un autre outil, un outil MCP par exemple, n'est pas vue.
+2. Il relit chaque question par les fonctions de `question_delay.py` (`questions`, `Question.due_at`), jamais par
+   une copie de leur logique : ouverte, toujours étiquetée, datée.
+3. Il garde la session ouverte et relit la question toutes les 30 secondes, jusqu'à l'échéance. Une échéance
+   plus lointaine que le `timeout` de son entrée (780 secondes) moins une minute laisse passer l'arrêt : le
+   tick du répartiteur la reprend (ticket 8, partie c).
+4. À l'échéance, il bloque l'arrêt (`decision: block`) : le décideur (`forge:staff-engineer` pour une question
+   technique, `forge:product-owner` pour une question produit), puis `question_delay.py route ... --apply`.
+   Une décision réversible est postée par défaut et retire l'étiquette ; un geste réservé reçoit un rappel, et
+   l'arrêt suivant passe.
+
+Ce qu'il laisse passer, toujours : une question qui porte déjà un `Rappel (question-default-delay)` (A36, c'est
+ce qui rend l'arrêt qui suit un rappel libre, A35), un événement d'un sous-agent (`agent_id`), un agent du
+répartiteur (son `name` du registre correspond à `ignored-session` et son pid tient un verrou vivant, comme
+`handoff_header.other_sessions` : c'est le tick qui le sert, A38), le neuvième arrêt de suite (A37) avec un
+message sur sa sortie qui dit que le plafond de 8 est atteint, et tout échec : clé absente, délai ou transcript
+illisible, `gh` en échec, erreur du hook (A39). Le plafond se compte comme Claude Code le compte : les blocages
+de `Stop` depuis le dernier appel d'outil, ceux de n'importe quel hook.
+
+`hooks.json` n'a aucun `|| exit 2` pour cette entrée : un hook `Stop` qui sort en 2 retient la session, et
+`"onFailure"` est sans effet sur `Stop`. La commande finit par `; exit 0`. `hooks.json` est un chemin protégé :
+la PR de ce ticket est fusionnée par l'humain.
+
+Éprouvé : par les tests, hook lancé en processus avec un faux `gh` et une horloge que le test avance ; le
+transcript est un fichier que le test écrit, d'après le format relevé dans un transcript réel de la version
+2.1.330 (entrée `user` marquée `isMeta` dont le texte commence par `Stop hook feedback:`). Pas éprouvé sur une
+vraie session : une attente de plusieurs minutes dans un hook `Stop`, la prise en compte de `timeout` à 780
+secondes et le blocage qui relance la session n'ont pas été vus de bout en bout. La question de la décision Q6
+du design reste donc à éprouver sur un vrai poste, avant que le tick (ticket 8) n'en dépende. Linux seulement.
 
 ## Le relevé de base (ticket 6, story 18)
 
