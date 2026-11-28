@@ -1,0 +1,157 @@
+"""PreToolUse hook on `ArtifactData`: an agent never writes into the human's collections.
+
+An agent can write into the database of a published page, so a click on that page proves nothing
+unless a hook keeps the agent out of the collections where only the human writes. The key
+`human-collections` of `docs/agents/usine-gardes.md` names them, one line `<page> | <collection>`
+each, as `origin/main` holds the file: a PR that removes a line does not open the collection before
+it is merged.
+
+The real tool names the artifact by its `url` (`claude.ai/artifact/<id>` or
+`claude.ai/code/artifact/<uuid>`), never by a title, so `<page>` is the URL of the artifact and two
+URLs are the same page when they hold the same id. A `collection` is a path of slashes whose segments
+alternate collection and document (`boards/b1/columns`): a listed collection closes what is under it,
+told by whole segments (`humancol2` is not under `humancol`).
+"""
+
+from __future__ import annotations
+
+import json
+import sys
+from collections.abc import Mapping, Sequence
+from pathlib import Path
+
+from refusal_journal import record
+from usine import CONFIG_PATH, GUARD_PATH, ConfigUnreadable, load_at, project_root, split_value
+from utf8_stdio import use_utf8
+
+KEY = "human-collections"
+GUARD = "guard_human_data"
+READS = frozenset({"get", "list", "query", "profiles"})
+
+# The refusals journal: the name of each rule, found by a fixed phrase of the reason.
+RULES = (
+    ("only from the human", "human-collection"),
+    ("is not `<artifact URL> | <collection>`", "unreadable-key-line"),
+    ("could not read the tool call", "unreadable-event"),
+    ("cannot be told", "unreadable-key"),
+)
+
+
+def _text(value: object) -> str | None:
+    return value if isinstance(value, str) and value else None
+
+
+def _action(event: object) -> str | None:
+    call = event.get("tool_input") if isinstance(event, Mapping) else None
+    action = call.get("action") if isinstance(call, Mapping) else None
+    return action if isinstance(action, str) and action else None
+
+
+def _artifact(reference: str) -> str | None:
+    """The id an artifact URL names, lower-cased; None when the text is not the URL of an artifact.
+
+    Scheme, query, fragment and trailing slashes do not matter, nor does the `code/` form: the id is
+    the segment after `artifact`. Two URLs with the same id are taken for one page, the cautious side.
+    """
+    path = reference.strip().split("#", 1)[0].split("?", 1)[0]
+    segments = [segment for segment in path.replace("://", "/").split("/") if segment]
+    if "artifact" not in segments[:-1]:
+        return None
+    return segments[segments.index("artifact") + 1].lower()
+
+
+def _segments(path: str) -> list[str]:
+    return [segment for segment in path.split("/") if segment]
+
+
+def _collections(call: Mapping[str, object]) -> list[str | None]:
+    """The collection each write of the call aims at, None for one the call does not name.
+
+    One for a single write; one per entry of `writes` for a `batch`, each entry carrying its own `op`,
+    `collection` and `doc_id`. An entry the guard cannot read is `None`, and so is a `writes` that is
+    no list: nothing says the call spares the collection.
+    """
+    if call.get("action") != "batch":
+        return [_text(call.get("collection"))]
+    operations = call.get("writes")
+    if not isinstance(operations, list):
+        return [None]
+    return [_text(entry.get("collection")) if isinstance(entry, Mapping) else None for entry in operations]
+
+
+def _under(collection: str | None, listed: str) -> bool:
+    """Whether a write on `collection` reaches `listed`: the collection or something under it.
+
+    A collection the call does not name counts as under it: the guard cannot tell it apart.
+    """
+    if collection is None:
+        return True
+    wanted = _segments(listed)
+    return _segments(collection)[: len(wanted)] == wanted
+
+
+def key_lines(root: Path) -> tuple[list[str], str | None]:
+    """The values of the key as `origin/main` holds it, and why they cannot be told (None when they can).
+
+    `usine.load_at` reads both files on that ref, never the working tree, which an agent can edit.
+    A ref or a file the repository cannot give leaves the key untold, unless the project has neither
+    file on disk: it then holds no key.
+    """
+    try:
+        return load_at(root, "origin/main").config.get(KEY, []), None
+    except ConfigUnreadable as error:
+        if not any((root / name).exists() for name in (GUARD_PATH, CONFIG_PATH)):
+            return [], None
+        return [], f"{error}, so the key `{KEY}` cannot be told"
+
+
+def refusal(event: object, lines: Sequence[str]) -> str | None:
+    """Why the call is refused, None when it passes: `lines` are the values of the key."""
+    if not lines:
+        return None
+    call = event.get("tool_input") if isinstance(event, Mapping) else None
+    action = _action(event)
+    if not isinstance(call, Mapping) or action is None:
+        return f"Blocked by the forge plugin ({GUARD}): the hook could not read the tool call it was given"
+    if action in READS:
+        return None
+    url = _text(call.get("url"))
+    artifact = _artifact(url) if url else None
+    collections = _collections(call)
+    for line in lines:
+        pieces = split_value(line, 2)
+        if pieces is None or _artifact(pieces[0]) is None or not _segments(pieces[1]):
+            return (
+                f"Blocked by the forge plugin ({GUARD}): the line `{line}` of the key `{KEY}` is not"
+                " `<artifact URL> | <collection>`, so no write into a page database is cleared until it is fixed"
+            )
+        page, listed = pieces
+        if artifact in (None, _artifact(page)) and any(_under(found, listed) for found in collections):
+            return (
+                f"Blocked by the forge plugin ({GUARD}): {page} | {listed} is a collection that"
+                " a row comes into only from the human, from their page: an agent does not write it"
+            )
+    return None
+
+
+def main() -> int:
+    try:
+        event = json.load(sys.stdin)
+    except json.JSONDecodeError:
+        event = None
+    lines, why = key_lines(project_root(event if isinstance(event, dict) else None))
+    if why is None:
+        reason = refusal(event, lines)
+    else:
+        # A read cannot reach a collection: only a write, or a call that cannot be read, is refused.
+        reason = None if _action(event) in READS else f"Blocked by the forge plugin ({GUARD}): {why}"
+    if reason is None:
+        return 0
+    record(GUARD, reason, RULES, event, lambda: "ArtifactData write")
+    sys.stderr.write(reason + ".\n")
+    return 2
+
+
+if __name__ == "__main__":
+    use_utf8()
+    raise SystemExit(main())

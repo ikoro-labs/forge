@@ -145,7 +145,7 @@ class TheTemplateDocumentsTheKey(unittest.TestCase):
         """Ticket #381, A2: the key joins the guard keys, so the section that lists them counts and names it."""
         text = self.text()
         section = text.split("## Clés protégées", 1)[1].split("- Le chemin", 1)[0]
-        self.assertIn("Vingt-quatre clés", section)
+        self.assertIn("Vingt-cinq clés", section)
         self.assertIn("`ticket-pr-cap-small`", section)
 
     def test_a2_the_installation_page_describes_the_key(self) -> None:

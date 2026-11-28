@@ -133,11 +133,11 @@ class SensitiveKeysAreReadInTheGuardFile(unittest.TestCase):
         self.assertEqual(config["merge-method"], ["merge"])
 
     def test_b1_every_listed_sensitive_key_is_read_from_the_guard_file(self) -> None:
-        """#345 B1: the 24 keys (the 21 of the staff decision, `e2e-run-limits` of #359, `ticket-pr-cap-exempt` of #314 and `ticket-pr-cap-small` of #381), each read there, none from `usine.md`."""
+        """#345 B1: the 25 keys (the 21 of the staff decision, `e2e-run-limits` of #359, `ticket-pr-cap-exempt` of #314, `ticket-pr-cap-small` of #381 and `human-collections` of #400), each read there, none from `usine.md`."""
         guard = "".join(entry(key, f"guard-{key}") for key in sorted(SENSITIVE_KEYS))
         with project({GUARD_PATH: guard, USINE: "# Usine\n"}) as where:
             config = load(where)
-        self.assertEqual(len(SENSITIVE_KEYS), 24)
+        self.assertEqual(len(SENSITIVE_KEYS), 25)
         self.assertEqual({key: config.get(key) for key in SENSITIVE_KEYS}, {key: [f"guard-{key}"] for key in SENSITIVE_KEYS})
 
 
