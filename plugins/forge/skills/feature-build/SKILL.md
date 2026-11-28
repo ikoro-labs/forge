@@ -1,7 +1,7 @@
 ---
 name: feature-build
 description: "Mener l'aval d'une feature dont la spec est acceptée et les tickets publiés : chaque ticket prêt confié à forge:coder, en parallèle quand le graphe le permet, puis à forge:qc, en série, puis la recette et la clôture, avec arrêt à chaque acceptation humaine."
-argument-hint: F-NNNN [--base <branche>] [--max <n>] [--parallel <n>]
+argument-hint: F-NNNN [--base <branche>] [--max <n>] [--parallel <n>] [--ticket <n>]
 ---
 
 # Construire une feature, les tickets prêts ensemble, les fusions une à une
@@ -19,7 +19,9 @@ tu ne devines pas de valeur.
 
 Arguments : la feature ; `--base`, la branche où les PR partent et fusionnent (`main` par défaut) ;
 `--max`, le plafond de tickets lancés dans le passage ; `--parallel`, le plafond de coders en vol
-(1 redonne la série). Deux plafonds fixes s'y ajoutent, une durée et des jetons d'agents par
+(1 redonne la série) ; `--ticket`, le numéro d'un ticket que le passage mène seul, jusqu'à la fusion de
+sa PR ou son verdict, au lieu de la feature entière (voir « Mode `--ticket` », en fin de page ; sans lui,
+cette section ne s'applique pas). Deux plafonds fixes s'y ajoutent, une durée et des jetons d'agents par
 passage (étape 4). Par défaut : 5 tickets, 3 coders, 6 heures et 3 000 000 jetons, sauf si le
 `CLAUDE.md` du projet en fixe d'autres.
 
@@ -37,7 +39,8 @@ passage (étape 4). Par défaut : 5 tickets, 3 coders, 6 heures et 3 000 000 jet
    (`gh api "repos/<dépôt>/actions/runs?per_page=1"`, puis
    `gh api repos/<dépôt>/actions/runs/<id>/jobs`). Des jobs terminés sans une seule étape signalent
    Actions coupé (facturation, quota), et aucune fusion ne passera : arrête-toi et dis-le.
-5. **Une seule session par projet.** Une seule session, interactive ou de fond, agit sur un dépôt :
+5. **Une seule session par projet.** (Avec `--ticket`, ce point est remplacé par le contrôle du verrou du
+   ticket : voir « Mode `--ticket` ».) Une seule session, interactive ou de fond, agit sur un dépôt :
    un seul passage par feature en est un cas particulier (deux trains sur la même base se marchent
    dessus). Lance d'abord, depuis le dépôt,
    `uv run --no-project --quiet python "${CLAUDE_PLUGIN_ROOT}/hooks/handoff_header.py" sessions .` :
@@ -559,3 +562,48 @@ et **ce que le décideur doit faire**, jamais répondre à une question : faire 
 geste qu'aucun agent ne peut faire sur un ticket `ready-for-human` en le nommant, taper
 `/forge:feature-accept`, ou relancer `/forge:feature-build F-NNNN` pour la suite. Une moyenne de
 plus d'une remise à jour par PR dit que le parallélisme coûte plus qu'il ne rapporte : signale-le.
+
+## Mode `--ticket`
+
+Avec `--ticket <n>`, tu es un **agent épinglé** : un répartiteur t'a lancé, sans interface, pour un seul
+ticket `#<n>` de la feature `F-NNNN`, après l'avoir revendiqué (l'assigné, l'étiquette `agent-claimed` et le
+verrou local sont posés avant ton lancement). Tu ne mènes que le ticket `#<n>`, par `forge:coder` puis
+`forge:qc`, et tu ne revendiques aucun autre ticket, même prêt. Sans `--ticket`, rien de cette section ne
+s'applique : les étapes 0 à 6 sont celles d'avant, à la lettre.
+
+**Le contrôle du ticket.** L'étape 0.5 (une seule session par projet) est remplacée par le contrôle du verrou
+du ticket, qui doit être tenu par la session elle-même. Les autres points de l'étape 0 se lisent comme
+écrits (la porte, la base, le coder, l'heure de départ, le budget d'erreur), sauf le point 9, sauté : les
+questions échues sont celles du répartiteur, et tu n'en lances ni `due` ni `route`. Le fichier
+`.claude/PAUSED`, la porte et le budget d'erreur restent lus comme ailleurs. Lis le ticket
+(`gh issue view <n> --json state,labels,assignees`, et `gh api repos/<dépôt>/issues/<n>` pour
+`issue_dependencies_summary.blocked_by`), puis, depuis ton arbre de travail :
+
+```
+uv run --no-project --quiet python "${CLAUDE_PLUGIN_ROOT}/hooks/agent_lock.py" check . <n>
+```
+
+Tu t'arrêtes, sans rien écrire (ni commentaire, ni étiquette, ni verrou, ni branche), en disant dans ta
+sortie pourquoi, quand :
+
+- le ticket est fermé ;
+- il a un bloqueur ouvert (`issue_dependencies_summary.blocked_by`, comme à l'étape 1) ;
+- il ne porte ni `ready-for-agent` ni `agent-claimed` : il n'est ni prêt ni revendiqué pour ce lancement ;
+- `check` sort en 1 : le ticket n'a pas de verrou, ou le verrou est mort, illisible ou tenu par un autre
+  processus que ta session. Sans verrou, tu ne reprends pas l'étape 0.5 d'une session longue : tu n'es pas la
+  session du projet. Un code 2 est un appel faux : arrête-toi et rends son message ;
+- un fichier `.claude/PAUSED` existe (son texte est la raison), ou la porte, ou le budget d'erreur arrête
+  l'étape 0 comme il l'arrêterait ailleurs ; sous un `feature-freeze` actif, un ticket qui ne porte ni `bug` ni
+  `escaped-defect` s'arrête de même.
+
+**Ce que tu mènes.** Pas de frontière ni de file ordonnée : l'étape 1 se réduit à ce ticket. Tu ne revendiques
+pas le ticket `#<n>` (le répartiteur l'a déjà revendiqué) : saute l'étape 2.1 et ne lis aucun autre ticket
+prêt. `--max` et `--parallel` n'ont pas d'objet, un seul coder part à la fois, et les plafonds de durée et de
+jetons (étape 4), `.claude/PAUSED` et les contrôles du budget et du poste avant chaque lancement restent ceux
+de l'étape 2. Le tour 0, le coder et la lecture de sa sortie suivent l'étape 2, la relecture et la fusion de
+sa PR l'étape 3, sur ce ticket seulement, sans les lignes `due` ni les remises à jour d'autres PR.
+
+**L'arrêt.** Quand la PR est fusionnée, ou que son verdict est posté (un `ACCEPT` sur un chemin protégé qui
+attend l'humain, l'arrêt du tour 3, `needs-your-attention`), ou sur un arrêt sur incident, tu rends compte en
+une ligne du tableau de l'étape 6 et tu t'arrêtes : tu ne lances aucun autre ticket, ni la revue de bout en
+bout (étapes 3 bis et 5), que mène la session de la feature sans `--ticket`.

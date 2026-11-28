@@ -83,6 +83,81 @@ class ReadyAgain(unittest.TestCase):
         self.assertEqual(gh.writes, [])
 
 
+SKILL = support.PLUGIN / "skills" / "feature-build" / "SKILL.md"
+HEADING = "## Mode `--ticket`"
+
+
+def skill() -> str:
+    """The skill with each paragraph on one line, so a sentence wrapped by the editor still matches."""
+    return " ".join(SKILL.read_text(encoding="utf-8").split())
+
+
+def mode() -> str:
+    """The section of the pinned agent, up to the end of the file (it is the last one)."""
+    text = skill()
+    assert HEADING in text, "the skill has no section for the pinned agent"
+    return text.split(HEADING, 1)[1]
+
+
+class OneTicket(unittest.TestCase):
+    """A47, A48: the pinned agent leads that ticket only, and stops without a lock."""
+
+    def test_the_option_is_in_the_argument_hint_and_the_arguments(self) -> None:
+        """F-0003 A47: `--ticket <n>` is declared in the header and in the paragraph of the arguments."""
+        head = SKILL.read_text(encoding="utf-8").split("---", 2)[1]
+        self.assertRegex(head, r"argument-hint: .*\[--ticket <n>\]")
+        arguments = skill().split("Arguments :", 1)[1].split("## 0.", 1)[0]
+        self.assertRegex(arguments, r"`--ticket`, [^;]*mène seul")
+
+    def test_the_lock_check_replaces_the_one_session_per_project_step(self) -> None:
+        """F-0003 A48: in this mode step 0.5 gives way to `agent_lock.py check`, held by the session itself."""
+        text = mode()
+        self.assertRegex(text, r"étape 0\.5[^.]*remplacée par le contrôle du verrou")
+        self.assertIn('hooks/agent_lock.py" check', text)
+        self.assertRegex(text, r"tenu par ta propre session|qui doit être tenu par la session elle-même")
+
+    def test_without_the_lock_it_stops_and_writes_nothing(self) -> None:
+        """F-0003 A48: no lock (code 1 of `check`), the agent stops without a comment, a label or a lock."""
+        text = mode()
+        self.assertRegex(text, r"sans rien écrire[^.]*(commentaire|étiquette)")
+        self.assertRegex(text, r"`check` sort en 1")
+        self.assertRegex(text, r"disant dans ta sortie pourquoi")
+
+    def test_a_closed_blocked_or_unready_ticket_stops_it_too(self) -> None:
+        """F-0003 A48: closed, an open blocker, or neither `ready-for-agent` nor `agent-claimed`."""
+        text = mode()
+        self.assertRegex(text, r"fermé")
+        self.assertRegex(text, r"bloqueur ouvert|`blocked_by`")
+        self.assertRegex(text, r"ni `ready-for-agent` ni `agent-claimed`")
+
+    def test_pause_gate_and_budget_are_still_read(self) -> None:
+        """F-0003 A47 (design Q5): `.claude/PAUSED`, the gate and the error budget keep their say."""
+        text = mode()
+        self.assertIn(".claude/PAUSED", text)
+        self.assertRegex(text, r"la porte[^.]*le budget d'erreur|le budget d'erreur[^.]*la porte")
+
+    def test_it_leads_that_ticket_only_and_claims_no_other(self) -> None:
+        """F-0003 A47: one ticket, no frontier, no claim of another ticket, no second coder at once."""
+        text = mode()
+        self.assertRegex(text, r"ne mènes que le ticket")
+        self.assertRegex(text, r"ne revendiques? aucun autre ticket")
+        self.assertRegex(text, r"[Pp]as de frontière")
+
+    def test_it_does_not_claim_its_own_ticket_again(self) -> None:
+        """F-0003 A47: the dispatcher already set the assignee, `agent-claimed` and the lock; step 2.1 is skipped."""
+        self.assertRegex(mode(), r"ne revendiques pas[^.]*(déjà|répartiteur)|saute[^.]*revendication")
+
+    def test_it_stops_at_the_merge_or_the_verdict(self) -> None:
+        """F-0003 A47: merged, or the verdict posted, then it reports and stops; no end-to-end review, no closing."""
+        text = mode()
+        self.assertRegex(text, r"fusionnée[^.]*verdict[^.]*(tu t'arrêtes|arrêt)")
+        self.assertRegex(text, r"étapes? 3 bis[^.]*5|3 bis et 5")
+
+    def test_the_decider_questions_are_not_its_to_settle(self) -> None:
+        """F-0003 A47: the due questions are the dispatcher's (A58); the agent runs no `due` and no `route`."""
+        self.assertRegex(mode(), r"questions échues[^.]*répartiteur|répartiteur[^.]*questions échues")
+
+
 class Locked(unittest.TestCase):
     """A48, A57: the pinned agent runs only on a ticket whose lock it holds itself, and frees it to ask."""
 
