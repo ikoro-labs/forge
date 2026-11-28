@@ -31,9 +31,12 @@ objectives go `menacé` or `épuisé`, or all back to `tenu`. `changelog` prints
 de service" of a release entry: the state of each objective at `--le` (now by default) and the
 `escaped-defect` tickets opened since `--depuis`. A key `slo-issue` absent is "sans objet".
 
-`queue` orders tickets (given in the order of the sub-issues) by severity class (`sev1`, `sev2`, `sev3`,
-then none), then by the nearest deadline to take them in charge according to the `sla` key, then in
-the order given. A key `sla` absent is "sans objet": the severity still sorts, no deadline is guessed.
+`queue` orders tickets (given in the order of the sub-issues) by class (`sev1`, then a ticket carrying the
+label of the `speed-label` key, which marks a ticket whose goal is the factory's own lead time, then
+`sev2`, `sev3`, then none), then by the nearest deadline to take them in charge according to the `sla` key,
+then in the order given. A key `sla` absent is "sans objet": the severity still sorts, no deadline is
+guessed. A key `speed-label` absent is "sans objet": the order is the one without it. A key repeated fails
+the command.
 
 `incidents` counts the blameless reviews of the folder the key `incident-dir` names (see `incident.py`)
 by class of fix, `mécanique` and `jugement`, a class with no review counting 0. A review `incident.py`
@@ -1118,6 +1121,15 @@ def load_sla(project: Path) -> dict[str, sla.Rule] | None:
 
 
 ABSENT_SLA = f"sans objet (clé `{sla.KEY}` absente)"
+ABSENT_SPEED = f"sans objet (clé `{sla.SPEED_KEY}` absente)"
+
+
+def load_speed_label(project: Path) -> str | None:
+    """The label of the `speed-label` key, None when the key is absent; SloError when it is repeated."""
+    label, errors = sla.speed_label(usine.load(project).get(sla.SPEED_KEY))
+    if errors:
+        raise SloError("\n".join(errors))
+    return label
 
 
 SLA_DAYS = 30
@@ -1224,26 +1236,32 @@ def run_sla(args: argparse.Namespace, run: Runner, now: datetime) -> int:
 
 def run_queue(args: argparse.Namespace, run: Runner, now: datetime) -> int:
     rules = load_sla(args.projet)
+    speed = load_speed_label(args.projet)
     tickets = []
     for number in args.tickets:
         info = parse_stream(run(["gh", "issue", "view", str(number), "--json", "number,labels,createdAt"], args.projet))[0]
         tickets.append(sla.Ticket(int(info["number"]), label_names(info), token_audit.parse_time(info["createdAt"])))
     rows = []
-    for item in sla.order(tickets, rules or {}):
+    for item in sla.order(tickets, rules or {}, speed):
         deadline = sla.take_deadline(item, rules or {})
         rows.append({
             "ticket": item.number, "gravite": sla.severity_of(item.labels),
+            "vitesse": speed is not None and speed in item.labels,
             "echeance": deadline.isoformat() if deadline else None,
         })
     note = ABSENT_SLA if rules is None else None
+    speed_note = ABSENT_SPEED if speed is None else None
     if args.json:
-        print(json.dumps({"file": rows, "echeances": note}, ensure_ascii=False, indent=2))
+        print(json.dumps({"file": rows, "echeances": note, "vitesse": speed_note}, ensure_ascii=False, indent=2))
         return 0
-    print("File des tickets, par gravité puis par échéance de prise en charge :")
+    print("File des tickets, par gravité (`sev1` d'abord, puis l'étiquette de vitesse de l'usine) puis par échéance de prise en charge :")
     for row in rows:
-        print(f"- #{row['ticket']} : {row['gravite'] or 'sans gravité'}, échéance {row['echeance'] or 'sans objet'}")
+        speed_text = f", étiquette {speed}" if row["vitesse"] else ""
+        print(f"- #{row['ticket']} : {row['gravite'] or 'sans gravité'}{speed_text}, échéance {row['echeance'] or 'sans objet'}")
     if note:
         print(f"Échéances : {note}.")
+    if speed_note:
+        print(f"Priorité de vitesse : {speed_note}.")
     return 0
 
 

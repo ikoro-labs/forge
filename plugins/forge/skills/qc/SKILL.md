@@ -100,6 +100,11 @@ habituel, et une PR de prose en rend souvent une.
      appliquée) est reporté en commentaire sur un ticket déjà ouvert qui touche le même code,
      sinon sur l'issue de suivi de la feature ; hors feature, il reste dans le verdict. Il n'ouvre
      pas de ticket. Les `NOTE` et les `MINOR` de prose restent dans le verdict.
+   - Un ticket que tu ouvres, dans les seuls cas que les règles du projet admettent (la ligne `Motif :`),
+     porte l'étiquette de la clé `speed-label` (`--label`) quand son but est le délai de l'usine
+     elle-même (le temps de la CI, des gardes, des relais) : il passe ainsi devant la file, après
+     `sev1`. Un autre but ne la reçoit jamais. Clé absente : « sans objet (clé `speed-label` absente) »,
+     aucune étiquette n'est devinée ; l'étiquette doit exister sur le dépôt, tu ne la crées pas.
    - REJECT in round 3, with or without a ticket: `needs-your-attention` on the PR, which stays
      open; its ticket leaves the queue, and no new PR takes up the same points. Never close it.
      A round 4 runs only with the human's grant (`GRANTED:`).

@@ -42,12 +42,21 @@ répétée fait échouer la commande. Sans la clé `release-tag`, l'étape « co
 
 ## La file de `forge:feature-build`
 
-`forge:feature-build` prend les tickets prêts par gravité (`sev1`, puis `sev2`, puis `sev3`, puis ceux
-sans classe), et à gravité égale par échéance de prise en charge (la plus proche d'abord). Sans la clé
-`sla`, la gravité trie encore (elle vient de l'étiquette) et l'échéance est « sans objet » : l'ordre
-des sous-issues départage. Un ticket `sev1` passe devant tout ticket qui n'est pas encore confié ; il
-ne passe ni devant un coder déjà en vol, ni devant un bloqueur ouvert, et il reste soumis à un gel de
-feature (clé `budget-action`) s'il ne porte ni `bug` ni `escaped-defect`.
+`forge:feature-build` prend les tickets prêts par gravité (`sev1`, puis les tickets qui portent l'étiquette
+de la clé `speed-label`, puis `sev2`, puis `sev3`, puis ceux sans classe), et à classe égale par échéance
+de prise en charge (la plus proche d'abord). Sans la clé `sla`, la gravité trie encore (elle vient de
+l'étiquette) et l'échéance est « sans objet » : l'ordre des sous-issues départage. Un ticket `sev1` passe
+devant tout ticket qui n'est pas encore confié ; il ne passe ni devant un coder déjà en vol, ni devant un
+bloqueur ouvert, et il reste soumis à un gel de feature (clé `budget-action`) s'il ne porte ni `bug` ni
+`escaped-defect`.
+
+La clé `speed-label` (décision de l'humain du 2026-11-28, ticket #377) désigne l'étiquette d'un ticket dont
+le but est le délai de l'usine elle-même : le temps de la CI, des gardes, des relais. Un tel ticket passe
+devant la file sans geste de l'humain, après `sev1` et avant tout autre ticket ; un ticket qui porte `sev1`
+et cette étiquette reste dans `sev1`. Elle ne change ni un coder déjà en vol, ni un bloqueur ouvert, ni le
+gel de feature. Sans la clé, « sans objet (clé `speed-label` absente) » : l'ordre est celui des gravités
+seules. Les skills `feature-build`, `qc` et `incident` posent l'étiquette sur le ticket qu'ils ouvrent quand
+son but est ce délai ; elle doit exister sur le dépôt, l'agent ne la crée pas.
 
 ```sh
 uv run --no-project --quiet python plugins/forge/scripts/factory_slo.py queue <projet> <ticket> [<ticket> ...]

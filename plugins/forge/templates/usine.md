@@ -394,6 +394,18 @@ Sans la clé, les échéances sont « sans objet (clé `sla` absente) », aucune
 - `sla` : `<sev2 | 2 j | 7 j | 14 j>`
 - `sla` : `<sev3 | 7 j | 30 j | 60 j>`
 
+L'étiquette d'un ticket dont le but est le délai de l'usine elle-même (le temps de la CI, des gardes,
+des relais), lue par `scripts/factory_slo.py queue`. Une seule ligne, le nom de l'étiquette : un ticket
+qui la porte passe après `sev1` et avant tout autre ticket (`sev2`, `sev3`, sans classe), et un ticket
+qui porte à la fois `sev1` et cette étiquette reste dans `sev1`. L'étiquette doit exister sur le dépôt :
+l'agent ne la crée pas. Elle ne change ni un coder déjà en vol, ni un bloqueur ouvert, ni le gel de
+feature. Sans la clé, « sans objet (clé `speed-label` absente) » : l'ordre est celui de la clé `sla`
+seule, aucune étiquette n'est devinée. Une clé déclarée deux fois fait échouer `queue`. Les skills
+`forge:feature-build`, `forge:qc` et `forge:incident` posent l'étiquette sur le ticket qu'ils ouvrent
+quand son but est ce délai, et seulement alors.
+
+- `speed-label` : `<factory-speed>`
+
 Les objectifs de service, lus par `scripts/factory_slo.py status`. Une ligne par objectif :
 `<sli> | <comparateur> <cible> | <fenêtre en jours>`. Le SLI est l'un de ceux de
 `docs/indicateurs-de-service.md` ; une durée prend `p90` ou `mediane` après son nom. Le comparateur est
