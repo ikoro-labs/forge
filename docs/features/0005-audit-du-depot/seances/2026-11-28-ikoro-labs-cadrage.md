@@ -75,7 +75,7 @@ d'un HTML hors du dépôt. Le skill interactif reste inchangé.
 Réponse : tour 2.
 
 **Q5 (T). Le rôle qui audite.** Recommandation : un agent nouveau du plugin (nom provisoire
-`forge:repo-auditor`, fixé dans la spec), en lecture seule : ajouté à la liste `READERS` de
+`repo-auditor`, préfixé `forge`, fixé dans la spec), en lecture seule : ajouté à la liste `READERS` de
 `guard_readonly` (`plugins/forge/hooks/guard_readonly.py:48-51`), outils `Read, Grep, Glob, Bash`
 comme `forge:qc-conf` (`plugins/forge/agents/qc-conf.md:4`), sans `WebSearch` ni `WebFetch`, pour
 que rien de ce qu'il lit ne sorte du poste. Il rend le texte du rapport ; le skill qui l'a lancé
