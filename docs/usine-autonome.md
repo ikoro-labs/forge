@@ -85,3 +85,41 @@ nomment. Le schéma réel de l'appel `ArtifactData` n'a pas pu être lu pendant 
 été joué dans une vraie session de Claude Code : si le nom d'un de ces champs diffère, le garde traite la
 partie qu'il ne lit pas comme pouvant viser la collection listée : seule une partie lue et différente laisse
 passer l'appel, et sans la clé rien n'est refusé. À vérifier dans la première vraie session qui déclare la clé.
+
+## Le relevé de base (ticket 6, story 18)
+
+`factory_slo.py baseline` donne les chiffres qui fondent le point de décision du 2026-12-16, avant le
+répartiteur puis pendant l'essai. Il ne mesure rien de nouveau pour le délai et les jetons : il reprend
+`lead-time` et `tokens-per-merge`. Il ne lit que GitHub, git, les journaux de jetons et la trace du répartiteur.
+
+```sh
+uv run --no-project --quiet python plugins/forge/scripts/factory_slo.py baseline .
+uv run --no-project --quiet python plugins/forge/scripts/factory_slo.py baseline . --essai 2026-12-05
+```
+
+Le premier appel relève la base : les 30 jours avant `--jusqua` (maintenant par défaut), ou depuis `--depuis`.
+Le texte rendu est celui du commentaire à poster sur #340 : pour chaque mesure, sa fenêtre et son dénominateur.
+
+| Mesure | Ce qui est compté |
+| --- | --- |
+| délai p90 | de la pose de `ready-for-agent` à la fusion de la PR qui ferme le ticket ; les tickets sans pose sont comptés à part |
+| interventions de l'humain par ticket fusionné | les étiquettes `needs-your-attention` posées sur un ticket fusionné ou sur une PR qui l'a fermé, plus les PR fusionnées par un compte de la clé `accepting-human` (son identifiant court) sans l'étiquette `agent-merged` |
+| jetons par PR | les jetons des journaux de ce poste sur la fenêtre, divisés par les PR fusionnées |
+
+L'agent fusionne sous le compte de l'humain et étiquette ce qu'il fusionne `agent-merged` : sans cette étiquette, une
+fusion est lue comme celle de l'humain. Sans la clé `accepting-human`, les fusions de l'humain sont « sans objet »
+et seules les étiquettes sont comptées. Un commentaire de l'humain n'est jamais compté.
+
+Le second appel, avec `--essai <premier jour de l'essai>` (et `--le <fin>`, maintenant par défaut), relève aussi
+l'essai et applique la règle du point de décision : « oui » si et seulement si le délai p90 de l'essai est
+strictement plus bas que celui de la base, si les interventions par ticket de l'essai ne dépassent pas celles de la
+base, et si la trace du répartiteur de ce poste (`~/.claude/hooks/state/dispatch/<jour>.jsonl`, événement
+`question`) ne porte aucun `post-default` d'une case `H<n>` dans l'essai. Sinon « non », avec chaque raison. Une
+mesure qu'une fenêtre ne peut pas donner est une raison de « non » : elle ne prouve rien. La trace est lue telle que
+la spec la décrit (G3) : `dispatch_trace.py`, qui l'écrit, n'existe pas encore, et le champ `project` est accepté
+comme le nom du dépôt ou comme le dossier du projet.
+
+Le relevé compte enfin les tickets publiés après la clé `ticket-size-max` qui ont atteint `ticket-pr-cap`
+(cible 0, sur tout l'historique, hors des fenêtres). La date de départ est celle du premier commit de la base qui
+porte la ligne de la clé dans `docs/agents/usine.md`. Les PR d'un ticket sont comptées comme `guard_pr_cap.py` les
+compte. Sans l'une des deux clés, ou sans commit de la base qui porte `ticket-size-max`, la mesure est « sans objet ».
