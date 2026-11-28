@@ -15,7 +15,15 @@ from collections.abc import Mapping
 from pathlib import Path
 
 import support
-from test_usine_guard_file import GUARD_PATH, USINE, entry, environment, lose_the_guard_file, project
+from test_usine_guard_file import (
+    GUARD_PATH,
+    USINE,
+    entry,
+    environment,
+    lose_the_guard_file,
+    project,
+)
+from usine import SENSITIVE_KEYS, load
 
 HOOK = support.PLUGIN / "hooks" / "guard_human_data.py"
 LINE = "Tableau | decisions"
@@ -235,6 +243,21 @@ class TheKeyIsReadOnOriginMain(unittest.TestCase):
             done = run(where, call("set", page="Autre", collection="notes"))
             self.assertEqual(done.returncode, 2, done.stderr)
             self.assertIn("cannot be read", done.stderr)
+
+
+class TheKeyBoundsTheAgent(unittest.TestCase):
+    def test_f_0003_a7_the_key_is_sensitive_so_usine_md_cannot_carry_it(self) -> None:
+        """F-0003 A7: `human-collections` is in `SENSITIVE_KEYS`: the loader drops it from `usine.md`."""
+        self.assertIn("human-collections", SENSITIVE_KEYS)
+        with project({GUARD_PATH: "# Gardes\n", USINE: "# Usine\n"}, in_tree={USINE: entry("human-collections", LINE)}) as where:
+            self.assertNotIn("human-collections", load(where))
+
+    def test_f_0003_a8_the_template_gives_the_key_a_line_and_the_page_says_it_is_not_applicable_without_it(self) -> None:
+        """F-0003 A8: the template of `usine.md` has the key line; `docs/usine-autonome.md` words the absent key."""
+        template = (support.PLUGIN / "templates" / "usine.md").read_text(encoding="utf-8")
+        self.assertIn("- `human-collections` : `<", template)
+        page = " ".join((support.REPO_ROOT / "docs" / "usine-autonome.md").read_text(encoding="utf-8").split())
+        self.assertIn("sans objet (clé `human-collections` absente)", page)
 
 
 class WithoutTheKeyNothingIsRefused(unittest.TestCase):

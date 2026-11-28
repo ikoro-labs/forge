@@ -138,3 +138,6 @@ script de la 1.22.0, ou de la tête de `main` passé à `release.py` par `--essa
 - `ticket-budget`, `owner-gesture`, `never-weaken`, `infra-hosts`, `infra-verify`, `validation-owner`,
   `validation-reviewer`, `pin-bump` : ce dépôt ne les déclare pas ; l'étape qui lit chacune est « sans
   objet (clé `<nom>` absente) », jamais `PASS`.
+- `human-collections` : ce dépôt ne publie aucune page dont l'humain écrit une collection ; `guard_human_data`
+  ne refuse rien ici (« sans objet (clé `human-collections` absente) »), et le geste de l'humain qui la
+  déclare est décrit dans `docs/usine-autonome.md`.
