@@ -740,6 +740,13 @@ Chaque décision par défaut et chaque rappel relancent le délai. Sans la clé,
 script ne vérifie pas que l'agent a bien lu la matrice : il lit son verdict. Essayé sur Linux seulement, par
 les tests, `gh` simulé ; pas encore contre un vrai dépôt ni sous Windows.
 
+Une session longue qui pose elle-même `ready-for-human` ou `needs-info` puis finit son tour ne lit jamais cette
+commande : le hook `question_stop` (Stop) la lui fait suivre. Il lit le transcript, relève les étiquettes que
+la session a posées depuis le dernier message de l'humain, garde la session ouverte jusqu'à l'échéance, puis
+bloque l'arrêt avec la consigne (décideur, puis `question_delay.py route --apply`). Il passe sur une question
+qui porte déjà un rappel, pour un sous-agent, pour un agent du répartiteur (clé `ignored-session`), au
+neuvième blocage de suite et à la moindre erreur. Voir [`docs/usine-autonome.md`](usine-autonome.md).
+
 ## The infrastructure guard
 
 `guard_infra` runs before every `Bash` and `PowerShell` call. A command it holds is refused to a

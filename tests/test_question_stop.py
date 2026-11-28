@@ -480,7 +480,7 @@ class FailsOpen(unittest.TestCase):
 
     def test_an_event_that_is_no_json_lets_the_stop_pass(self) -> None:
         """F-0003 A39: the hook sees garbage on its input: exit 0, nothing written."""
-        session = self.due_session()
+        self.due_session()  # isolates HOME and the project, nothing else
         with mock.patch("sys.stdin", StringIO("{oops")), mock.patch("sys.stdout", new=StringIO()) as out:
             self.assertEqual(main(), 0)
         self.assertEqual(out.getvalue(), "")
