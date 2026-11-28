@@ -9,6 +9,44 @@ Ce dépôt a été recréé le 2026-10-23 ; l'ancien est `ikoro-labs/forge-archi
 numéros de PR et de ticket nus (`#38`) renvoient à l'ancien dépôt ; un renvoi au nouveau dépôt
 porte son nom (`ikoro-labs/forge#7`).
 
+## [1.23.1] - 2026-11-28
+
+Ce dépôt range ses clés protégées dans `docs/agents/usine-gardes.md`, et `docs/agents/usine.md` redevient un
+fichier qu'une PR ordinaire change. Version corrective : côté plugin, seule une phrase du gabarit `usine.md`
+change. Déclencheur de la clé `release-trigger` atteint (2 fusions en attente pour 1 demandée, mesuré le
+2026-11-28 sur `6572e1a`).
+
+- Skills : le gabarit `usine.md` dit que la clé `e2e-run-limits` borne l'agent comme `run-limits`, et qu'un
+  projet l'écrit dans `docs/agents/usine-gardes.md` avec les autres clés protégées (ikoro-labs/forge#345, PR
+  ikoro-labs/forge#372).
+- Tests : les onze clés protégées que ce dépôt déclare sont lues dans le fichier de gardes, et `protected-path`
+  comme `.github/CODEOWNERS` le nomment à la place de `usine.md` (`tests/test_usine_gardes_repo.py`,
+  `tests/test_usine_gardes_docs.py`, ikoro-labs/forge#372). La suite passe à 2734 tests sous Linux, 6 ignorés (mesuré le 2026-11-28 sur
+  cette PR, tête `6572e1a` plus la version et le journal).
+- Gestes humains : sur ce dépôt, changer une clé protégée passe par `docs/agents/usine-gardes.md`, que l'humain
+  approuve sous le compte propriétaire de `.github/CODEOWNERS` avant de fusionner ; `usine.md` ne l'exige plus.
+  Rien ne change pour un projet consommateur.
+- Resté dehors : rien de cette version n'a été vu en marche sur un projet consommateur ; l'essai de bout en bout
+  passe sur `6572e1a`, tête de `main`, le 2026-11-28.
+
+### Objectifs de service
+
+État de chaque objectif au 2026-11-28.
+
+| Objectif | Cible | Fenêtre | Valeur | Budget restant | État |
+|---|---|---|---|---|---|
+| `accept-round-1` | >= 99 % | 30 j | 65.35 % | 0 % sur 1 % | épuisé |
+| `lead-time p90` | <= 1 h | 30 j | 544.1 h | 0 h sur 1 h | épuisé |
+| `release-lag p90` | <= 1 h | 30 j | 36.8 h | 0 h sur 1 h | épuisé |
+| `escaped-defects` | <= 1 % | 30 j | 0 % | 1 % sur 1 % | tenu |
+| `change-failure` | <= 1 % | 30 j | 0 % | 1 % sur 1 % | tenu |
+| `human-touch` | <= 1 % | 30 j | 30.91 % | 0 % sur 1 % | épuisé |
+| `main-green` | >= 100 % | 30 j | 96.79 % | 0 % sur 0 % | épuisé |
+| `judge-recall` | >= 99 % | 30 j | sans objet | aucun résultat du jeu de référence (option `--reference` absente) | sans objet |
+| `false-accept` | <= 0 % | 30 j | sans objet | aucun résultat du jeu de référence (option `--reference` absente) | sans objet |
+
+Aucun `escaped-defect` ouvert depuis le 2026-11-27.
+
 ## [1.23.0] - 2026-11-27
 
 Les scripts et la porte de revue lisent aussi les clés protégées de `docs/agents/usine-gardes.md`, par le chargeur
