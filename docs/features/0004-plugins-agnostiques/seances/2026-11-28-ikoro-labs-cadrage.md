@@ -143,3 +143,18 @@ Réponse de forge:staff-engineer : à venir (probablement `RESERVED`, H3).
   https://learn.chatgpt.com/docs/hooks, https://developers.openai.com/codex/plugins/build.md,
   https://code.claude.com/docs/en/plugins-reference.
 - Restent à l'humain : Q2 (veto, entrée du lot B) et Q14 (H3, accès à Codex).
+
+### Tour 2 (2026-11-28, session forge)
+
+- Q2, réponse de l'humain relayée par sa session de pilotage : des plugins aussi indépendants de l'outil
+  que possible ; lot B, Codex puis Google Antigravity ; lot C, les modèles à poids ouverts par un seul agent
+  de terminal ouvert, pas un adaptateur par modèle ; référence citée : herdr.dev.
+- Q14, réponse partielle de l'humain (#395, commentaire 7241946927) : un accès à Codex d'un mois, facturé
+  sur l'abonnement, sans clé d'API ; la connexion du poste reste à faire avec le bon compte.
+- Q15, forge:staff-engineer (T2) : Antigravity sondé d'abord, gardes inconnues jusqu'à la sonde, repli
+  sans gardes. Sources : antigravity.google/docs (hooks, build-plugins, cli/headless, subagents), lues le
+  2026-11-28.
+- Q16, forge:staff-engineer (T2, fusion H1) : lot C sur Codex CLI avec un fournisseur à poids ouverts ;
+  repli Qwen Code puis OpenCode ; herdr n'est ni agent ni garde. Sources : discussion openai/codex 7782,
+  docs.ollama.com/api/openai-compatibility, herdr.dev, lues le 2026-11-28.
+- Q17, nouvelle, réservée à l'humain (H3) : hébergement et choix des modèles du lot C.
