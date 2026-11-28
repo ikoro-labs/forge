@@ -542,11 +542,32 @@ def predecessors(checkout: str, session: str) -> set[str]:
     return found
 
 
+def ignored_names(target: str) -> list[str]:
+    """The lines of the key `ignored-session` of the project at `target`: a session name, or a prefix
+    that ends in `*`. Empty when the key is absent or the configuration cannot be read."""
+    from usine import load  # Imported here: only `other_sessions` reads the configuration.
+
+    return [value for value in load(Path(target)).get("ignored-session", []) if value]
+
+
+def name_ignored(name: object, patterns: list[str]) -> bool:
+    text = "" if name is None else str(name)
+    return any(text.startswith(line[:-1]) if line.endswith("*") else text == line for line in patterns)
+
+
 def other_sessions(repo: Path, caller: set[int], session: str = "") -> list[str]:
     """`<pid> <kind> <name> <status> <cwd>` for each live session of `repo` outside `caller`,
-    and outside the sessions that handed `session` over (`predecessors`)."""
+    and outside the sessions that handed `session` over (`predecessors`).
+
+    A session whose `name` matches a line of the key `ignored-session` and whose pid holds a live
+    dispatcher lock (`agent_lock`) is an agent of the dispatcher, not a session at work: it is left
+    out. The launch mode (`kind`) plays no part, a `claude -p` pass records `interactive`; a session
+    of the human holds no such lock, so the name alone never hides one. An unreadable entry stays
+    listed."""
     target = main_checkout(repo)
     handed_over = predecessors(target, session)
+    patterns: list[str] | None = None
+    locked: set[int] | None = None
     found = []
     for entry in sorted((Path.home() / ".claude" / "sessions").glob("*.json")):
         if entry.stem.isdigit() and int(entry.stem) in caller:
@@ -563,6 +584,15 @@ def other_sessions(repo: Path, caller: set[int], session: str = "") -> list[str]
             continue
         if main_checkout(Path(cwd)) != target:
             continue
+        if patterns is None:
+            patterns = ignored_names(target)
+        if patterns and name_ignored(fields.get("name"), patterns):
+            if locked is None:
+                import agent_lock  # Imported here: agent_lock imports this module.
+
+                locked = {lock.pid for lock in agent_lock.held(Path(target))}
+            if pid in locked:
+                continue
         found.append(" ".join([str(pid), *(column(fields.get(key)) for key in ("kind", "name", "status")), cwd]))
     return found
 

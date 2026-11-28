@@ -12,7 +12,8 @@ date: 2026-11-28
 # F-0004 : cadrage
 
 F-0004 sépare forge en un coeur qui ne dépend d'aucun outil d'agent et en adaptateurs minces, un par
-outil : Claude Code reste le premier, sans régression, Codex est le deuxième candidat. Elle prouve
+outil : Claude Code reste le premier, sans régression ; Codex puis Google Antigravity viennent au lot B,
+les modèles à poids ouverts au lot C, par un seul agent de terminal ouvert (section 2). Elle prouve
 qu'un projet peut mener la chaîne des features, le coder et la revue `forge:qc`, gardes comprises,
 depuis un autre outil que Claude Code, sans copie du plugin.
 
@@ -72,8 +73,10 @@ Claude Code, se comporte exactement comme avant F-0004.
 
 ## 2. Périmètre
 
-Deux lots, dans l'ordre, avec un point de décision entre eux (section 8). Le lot A ne change aucun
-comportement sous Claude Code ; le lot B n'entre que sur le « oui » du point de décision.
+Trois lots, dans l'ordre (section 8). Le lot A ne change aucun comportement sous Claude Code. Les lots
+B et C sont décidés par l'humain (Q2) : forge vise à être aussi indépendant de l'outil que possible.
+Ce que chacun promet dépend de sa sonde : un outil dont la sonde échoue reçoit un adaptateur sans
+gardes, documenté comme tel, où la clé `agent-autonomy` est refusée.
 
 | Exigence | Contenu | Preuve |
 |---|---|---|
@@ -88,7 +91,9 @@ comportement sous Claude Code ; le lot B n'entre que sur le « oui » du point d
 | EXI-09 | Lot B, sur le « oui ». Adaptateur Codex : manifeste Codex (`extensions.com.openai` ou `.codex-plugin/plugin.json`), hooks branchés par l'adaptateur, correspondance des outils (`Bash`, `apply_patch`, `spawn_agent`, MCP), rôles en fichiers d'agent Codex, entrée de marketplace Codex | doc Codex des plugins, des hooks et des sous-agents, lue le 2026-11-28 ; rien d'éprouvé |
 | EXI-10 | Lot B. L'essai de bout en bout (`e2e_trial.py`, dépôt d'essai de la clé `e2e-repo`) passe sous Codex, avec un défaut planté que les gardes refusent | `docs/agents/usine.md`, essai de bout en bout |
 | EXI-11 | Lots A et B. Les instructions d'un projet : le gabarit `usine.md` et `docs/installation.md` disent comment tenir un `AGENTS.md` lu par tous les outils et un `CLAUDE.md` qui importe `@AGENTS.md` puis ajoute les règles propres à Claude Code, sans lien symbolique ; ce dépôt garde son `CLAUDE.md` (Q13) ; la page dit ce qui marche sous chaque outil, et ce qui reste propre à Claude Code | agents.md ; doc Claude Code de la mémoire (lecture d'`AGENTS.md` dès 2.1.277) |
-| EXI-12 | Lots A et B. Documentation : chaque clé nouvelle dans le gabarit `plugins/forge/templates/usine.md`, la page de `docs/` qui en traite, `docs/sessions.md` pour la passation, l'entrée du `CHANGELOG.md` | `.claude/rules/forge.md`, version et journal |
+| EXI-13 | Lot B, après Codex. Adaptateur Antigravity, sonde d'abord : ses hooks refusent par une réponse JSON (`decision: deny`) en sortie 0, pas par le code 2, et un hook qui plante laisse passer ; l'adaptateur rend donc chaque échec de garde en refus explicite. La charge ne porte ni l'identité de l'agent ni `file_path`. Skills, `AGENTS.md`, plugins et sous-agents existent ; lancement sans interface par `agy -p`. Jamais promis à parité complète (Q15) | doc Antigravity (hooks, build-plugins, cli/headless, subagents), lue le 2026-11-28, pages non datées ; rien d'éprouvé |
+| EXI-14 | Lot C. Les modèles à poids ouverts par un seul agent de terminal ouvert, sans adaptateur par modèle : Codex CLI (Apache-2.0) avec un fournisseur à poids ouverts, sur l'adaptateur Codex du lot B. Codex n'accepte plus que l'API Responses : Ollama et LM Studio la servent, un autre serveur demande un traducteur. Repli si la sonde échoue : Qwen Code, puis OpenCode (Q16) | discussion openai/codex 7782, doc de compatibilité OpenAI d'Ollama, lues le 2026-11-28 ; rien d'éprouvé |
+| EXI-12 | Lots A, B et C. Documentation : chaque clé nouvelle dans le gabarit `plugins/forge/templates/usine.md`, la page de `docs/` qui en traite, `docs/sessions.md` pour la passation, l'entrée du `CHANGELOG.md` | `.claude/rules/forge.md`, version et journal |
 
 **La stratégie d'adaptateur, pour ce qu'aucun standard ne couvre.** Elle se fixe dans la spec ; le
 cadrage en pose la forme.
@@ -122,7 +127,9 @@ service tirés des transcripts, dont le format n'est pas stable sous Codex selon
 évaluations. Si les gardes ne se chargent pas sous un outil, son adaptateur le dit.
 
 **Hors périmètre.** Un adaptateur Gemini CLI : ses événements ont d'autres noms (`BeforeTool`,
-`AfterTool`...), le modèle neutre doit seulement ne pas l'exclure (annexe B). Cursor, Copilot et les
+`AfterTool`...), le modèle neutre doit seulement ne pas l'exclure (annexe B). herdr (herdr.dev, la
+référence citée par l'humain) n'est ni un agent ni un garde : il n'a ni refus d'outil ni mode sans
+interface, et ne remplace pas le répartiteur de F-0003 (Q16). Un adaptateur par modèle. Cursor, Copilot et les
 autres clients d'Agent Plugins 1.0 : ils n'ont que les skills, sans gardes. Un serveur MCP pour les
 scripts déterministes (Q11, décidé : les deux outils lancent des commandes). La traduction du contenu en anglais, chantier à
 part (`.claude/rules/forge.md`, prose). La configuration des projets consommateurs, qui reste à leur
@@ -155,13 +162,17 @@ Sans objet (clé `entry-gate` absente) : les besoins de ce dépôt viennent de s
 | Beaucoup de PR de chemins protégés, donc de fusions humaines (H1) | Grouper par garde ; dire dans la spec combien de PR touchent `hooks.json` | Plus de PR en attente de l'humain que de PR fusionnées sur une semaine |
 | Les standards bougent : une source secondaire dit Agent Plugins 1.0 en brouillon, la page de la spec le dit publié ; deux pages Codex se contredisent sur les sous-agents | `$schema` épinglé ; textes relus et datés avant la spec | Une page de référence changée depuis la lecture |
 | Un `plugin.json` à la racine gêne Claude Code, qui lit `.claude-plugin/plugin.json` | `claude plugin validate` dans la CI dès la première PR du lot A | Un avertissement ou un échec de `validate` |
-| Deux adaptateurs à tenir sans utilisateur Codex réel | Point de décision avant le lot B (Q2) | Aucun projet nommé sous Codex à la date du point |
+| Trois adaptateurs à tenir sans utilisateur réel hors de Claude Code | Choix de l'humain (Q2) ; chaque sonde peut réduire un adaptateur à « sans gardes » | Un adaptateur sans test vert pendant un mois |
+| Sous Antigravity, un garde qui plante laisse passer (doc des plugins), contre la règle « un garde vaut refus quand il échoue » | L'adaptateur attrape tout échec du coeur et rend `decision: deny` ; la sonde plante un garde exprès | Un garde planté qui rend « admis » sous Antigravity |
+| L'accès à Codex de l'humain finit vers le 2026-12-28 ; l'essai du lot B sous Codex, prévu en 2027, tomberait après | Sonde Codex avant le 2026-12-28 ; l'accès au-delà est une question à l'humain (Q14) | Aucun accès à Codex à la date de l'essai |
+| Le lot C hérite des limites de Codex : API Responses seule, un traducteur à poser pour un serveur autre qu'Ollama ou LM Studio | Ollama d'abord ; l'hébergement et les modèles sont à l'humain (Q17) ; repli Qwen Code puis OpenCode | La sonde du lot C sans refus de garde sous `codex exec` |
 
 ## 6. Faisabilité des données
 
 Aucune donnée d'un client. Le lot A se mesure sur la suite de tests et l'essai de bout en bout
-existants. Le lot B demande un poste avec Codex installé et un compte, que ce cadrage n'a pas
-vérifiés (Q14), et des fixtures de charge de hook Codex, tirées de sa documentation puis d'une vraie
+existants. Le lot B demande un poste avec Codex installé et un compte : l'humain a un accès d'un mois,
+jusque vers le 2026-12-28 ; la connexion du poste est encore celle d'un autre compte, et `codex` n'est
+pas dans le `PATH` (Q14, relevé par la session de pilotage, non revérifié ici). Il demande aussi des fixtures de charge de hook Codex, tirées de sa documentation puis d'une vraie
 session ; le chemin du transcript existe sous Codex, mais son format n'y est pas stable. L'audit du
 second plugin reste hors dépôt. Les chiffres relevés par la session de pilotage le 2026-11-28 sur
 `6572e1a` ont été recomptés sur `c2ecef9` (annexe A) ; les écarts y sont dits.
@@ -185,6 +196,10 @@ second plugin reste hors dépôt. Les chiffres relevés par la session de pilota
 | 2026-11-28 | Q11 : serveur MCP hors périmètre | `forge:staff-engineer` (T2) | tour 1 |
 | 2026-11-28 | Q12 : coeur en place sous `plugins/forge/`, `skills/` à la racine du plugin, adaptateurs sous `plugins/forge/adapters/<outil>/`, manifeste racine sans `version` | `forge:staff-engineer` (T2) | tour 1 |
 | 2026-11-28 | Q13 : un `AGENTS.md` commun, un `CLAUDE.md` qui importe `@AGENTS.md`, sans lien symbolique ; ce dépôt garde son `CLAUDE.md` | `forge:product-owner` (P1) | tour 1 |
+| 2026-11-28 | Q2 : la recommandation du tour 1 est remplacée par le choix de l'humain : des plugins aussi indépendants de l'outil que possible ; lot B, Codex puis Google Antigravity ; lot C, les modèles à poids ouverts par un seul agent de terminal ouvert, pas un adaptateur par modèle | ikoro-labs, relayé par sa session de pilotage | tour 2 |
+| 2026-11-28 | Q14, en partie : un accès à Codex d'un mois, facturé sur l'abonnement, sans clé d'API | ikoro-labs, relayé par sa session de pilotage (#395) | tour 2 |
+| 2026-11-28 | Q15 : Antigravity sondé d'abord, gardes inconnues jusqu'à la sonde, repli sans gardes ; jamais parité complète | `forge:staff-engineer` (T2) | tour 2 |
+| 2026-11-28 | Q16 : lot C sur Codex CLI avec un fournisseur à poids ouverts ; repli Qwen Code puis OpenCode ; herdr hors cible | `forge:staff-engineer` (T2 ; fusion H1) | tour 2 |
 
 Les réponses de la séance `seances/2026-11-28-ikoro-labs-cadrage.md`, tour 1, sont reportées ci-dessus.
 Sources des décideurs, lues le 2026-11-28 : https://learn.chatgpt.com/docs/hooks,
@@ -193,13 +208,13 @@ https://code.claude.com/docs/en/memory.
 
 **Points ouverts, réservés à l'humain.**
 
-- **Q2, entrée du lot B (veto ; aucune case ne la délègue, clé `entry-gate` absente).** Recommandation de
-  `forge:product-owner` : le lot B n'entre que si un projet nommé travaille sous Codex à la date du point de
-  décision et si la sonde Codex a passé ; sinon la feature se clôt sur le lot A.
-- **Q14, accès à Codex (H3).** Le compte, l'installation de Codex sur le poste et un plafond de dépense,
-  pour la sonde et l'essai de bout en bout, sont des gestes de l'humain.
+- **Q14, reste de l'accès à Codex (H3).** La connexion du poste avec le bon compte, l'installation de
+  `codex` dans le `PATH`, et l'accès après le 2026-12-28 pour l'essai du lot B.
+- **Q17, lot C : hébergement et modèles (H3).** Où tournent les modèles à poids ouverts (Ollama sur le
+  poste, un serveur), lesquels, et à quel coût. Recommandation de `forge:staff-engineer` : Ollama sur le
+  poste pour la sonde, sans service à poser.
 
-Tant qu'un de ces deux points reste ouvert, l'acceptation par le modèle n'est pas permise.
+Tant qu'un de ces points reste ouvert, l'acceptation par le modèle n'est pas permise.
 
 ## 8. Critères d'arrêt
 
@@ -209,10 +224,11 @@ Dates proposées par la session (l'acceptation les fixe).
 |---|---|---|
 | 2026-12-05 | Points ouverts tranchés, cadrage accepté | Reporter les dates d'autant, sur l'issue de suivi |
 | Fusion du lot 1 de F-0003, au plus tôt 2026-12-12 | La spec s'écrit sur la tête de `main` qui le porte | Attendre ; rien ne se construit avant |
-| 2026-12-19, sonde Codex | Sur une vraie installation de Codex : les hooks d'un plugin se chargent, des charges réelles sont capturées pour chaque garde | Lot B réduit à un adaptateur sans gardes documenté, ou abandonné (Q2) |
+| 2026-12-19, sonde Codex, avant la fin de l'accès | Sur une vraie installation de Codex : les hooks d'un plugin se chargent, des charges réelles sont capturées pour chaque garde, y compris sous `codex exec` avec un fournisseur à poids ouverts (lot C) | Adaptateur Codex sans gardes documenté ; lot C sur le repli (Q16) |
 | 2027-01-15 | Lot A fusionné ; aucune attente de test changée ; essai de bout en bout sous Claude Code qui passe | Garder ce qui est fusionné ; le reste se commente sur l'issue de suivi |
-| 2027-01-22, point de décision | « Oui » au lot B si un projet nommé travaille sous Codex et si la sonde a passé | « Non » : clore la feature sur le coeur neutre et l'adaptateur Claude Code |
+| 2027-01-22, sonde Antigravity | Sur une vraie installation : un garde refuse par `decision: deny`, un garde planté refuse aussi, les hooks tournent dans un sous-agent et sous `agy -p` | Adaptateur Antigravity sans gardes documenté (Q15) |
 | 2027-02-26 | Lot B fusionné ; essai de bout en bout sous Codex qui passe, défaut planté refusé | Clore sur ce qui a tenu ; l'adaptateur Codex reste marqué non éprouvé |
+| 2027-03-26 | Lot C fusionné ; essai de bout en bout sous Codex CLI avec un modèle à poids ouverts, défaut planté refusé | Clore sur ce qui a tenu ; l'adaptateur du lot C reste marqué non éprouvé |
 
 ## Annexe A : audit du plugin
 
@@ -267,6 +283,7 @@ Textes lus le 2026-11-28.
 | Hooks de Codex, https://developers.openai.com/codex/hooks (redirigé vers learn.chatgpt.com/docs/hooks) | Doc de l'éditeur, sans mention d'essai | mêmes noms d'événements que Claude Code et d'autres ; `hooks.json` ; code 2 ; `permissionDecision` ; `Bash`, `apply_patch` (filtrable en `Edit` ou `Write`), `spawn_agent` (filtrable en `Agent`) ; pose `CLAUDE_PLUGIN_ROOT` ; hooks à approuver par l'utilisateur | même format de transport ; charge différente |
 | Plugins de Codex, https://developers.openai.com/codex/plugins/build.md | Doc de l'éditeur | `plugin.json` racine Agent Plugins ou `.codex-plugin/plugin.json` ; `extensions.com.openai.hooks` ; marketplace `.agents/plugins/marketplace.json` | la contradiction sur les hooks de plugin est le premier risque |
 | Skills et sous-agents de Codex | Doc de l'éditeur (pages build-skills et subagents, vue en résultat de recherche) | skills sous `.agents/skills` ; agents en TOML sous `.codex/agents/` ; livraison d'agents par un plugin non vérifiée | rôles à traduire |
+| Antigravity, https://antigravity.google/docs/hooks, /docs/build-plugins/, /docs/cli/headless, /docs/subagents | Doc de l'éditeur, pages non datées, lues le 2026-11-28 | `PreToolUse` refuse par `decision: deny` en sortie 0 ; code 2 inopérant ; échec ouvert ; ni `SubagentStop` ni `UserPromptSubmit` ; skills, `AGENTS.md`, plugins (`plugin.json`, `agents/`, `hooks.json`), sous-agents ; `agy -p` sans plafond de dépense | lot B, sonde d'abord (Q15) |
 | Hooks de Gemini CLI, https://geminicli.com/docs/hooks/reference/ | Doc de l'éditeur | `BeforeTool`, `AfterTool`, `BeforeAgent`, `AfterAgent`, `SessionStart`... ; code 2 ; `decision: deny` ; livraison par une extension non vérifiée | hors périmètre |
 
 Non vérifié : l'article de The New Stack sur les écarts de portabilité (accès refusé, HTTP 403) ; la

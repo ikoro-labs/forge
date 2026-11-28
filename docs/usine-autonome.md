@@ -1,8 +1,19 @@
-# L'usine autonome
+# L'usine autonome (F-0003)
 
-La feature F-0003 (`docs/features/0003-usine-autonome/`) retire à l'humain les gestes qui ne demandent pas
-son jugement, et lui garde ceux qui le demandent. Cette page grandit avec ses tickets : chacun y décrit ses
-clés, ce qu'il refuse et ce qu'il n'a pas pu éprouver.
+Cette page suit la feature F-0003 (`docs/features/0003-usine-autonome/`) : ce que chaque ticket livre, les
+clés de `usine.md` qu'il ajoute, ce que l'humain doit faire. Elle se complète à chaque ticket ; elle ne
+décrit que ce qui est entré.
+
+## Les clés
+
+Une clé absente rend son étape « sans objet (clé `<nom>` absente) » : aucune n'a de valeur par défaut. Le
+gabarit `plugins/forge/templates/usine.md` donne la forme de chacune.
+
+| Clé | Fichier | Rôle |
+| --- | --- | --- |
+| `agent-token-command` | `docs/agents/usine-gardes.md` | une commande qui imprime un jeton d'installation de l'application GitHub des agents |
+| `agent-login` | `docs/agents/usine-gardes.md` | le login que portent les gestes de l'application |
+| `ignored-session` | `docs/agents/usine.md` | les noms de session (exact, ou préfixe fini par `*`) des agents d'un répartiteur, que `handoff_header.py sessions` ne compte pas comme sessions au travail |
 
 ## L'identité GitHub des agents
 
@@ -78,3 +89,19 @@ Par les tests de `tests/test_guard_git_identity.py` (la détection d'un geste), 
 Linux seulement. Pas encore avec une vraie application GitHub ni dans une
 vraie session de Claude Code : les noms des outils MCP des serveurs GitHub sont supposés d'après ceux qu'on
 voit dans les tests de fusion, et le comportement d'un vrai serveur n'a pas été joué.
+
+## Les passes ignorées (ticket 4, partie a)
+
+`ignored-session` ne cache une session que si deux faits tiennent : son `name` du registre correspond à une
+ligne de la clé, et son pid tient un verrou vivant du répartiteur
+(`~/.claude/hooks/state/dispatch/locks/<projet>/<ticket>.json`). Le relais ne la compte plus en code 6, et
+`sessions_notice.py` ne la signale plus. Voir [`docs/sessions.md`](sessions.md) pour la détection.
+
+Ce que la partie a ne fait pas : écrire le verrou. Le répartiteur le pose avec le ticket 8 ; tant que
+personne ne l'écrit, aucune session n'est ignorée, ce qui est le côté prudent. Le nouvel essai d'un relais
+refusé (`CLAUDE_HANDOFF_RETRY_MINUTES`) est la partie b du même ticket.
+
+Le nom d'une session ne prouve rien, une session de l'humain peut porter n'importe quel nom : c'est le
+verrou, qu'une session de l'humain ne tient jamais, qui la distingue. La spec disait « une session
+`interactive` n'est jamais ignorée », mais une passe `claude -p` s'inscrit `interactive` (relevé du
+2026-11-28, Claude Code 2.1.332) : le design (décision Q1, veto de l'humain) a remplacé ce test par le verrou.
