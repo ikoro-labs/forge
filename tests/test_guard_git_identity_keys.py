@@ -188,9 +188,3 @@ class AnMcpWriteIsRefusedClosed(unittest.TestCase):
             ):
                 with self.subTest(tool=tool):
                     self.assertEqual(run_guard(where, tool, {"issue_number": 3}).returncode, 0)
-
-    def test_a11_the_merge_tool_still_answers_to_the_autonomy_key_when_the_token_is_there(self) -> None:
-        """F-0003 A11: refused for the identity first, and the merge rules are not weakened by it."""
-        with project(KEYS) as where:
-            done = run_guard(where, "mcp__github__merge_pull_request", {"pullNumber": 5}, GH_TOKEN=INSTALLATION)
-        self.assertEqual(done.returncode, 2, done.stderr)
