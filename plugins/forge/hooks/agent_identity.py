@@ -12,6 +12,7 @@ No token is ever written, in a message, a journal or a file: a message names the
 
 from __future__ import annotations
 
+import subprocess
 from collections.abc import Mapping
 
 TOKEN_KEY = "agent-token-command"
@@ -19,6 +20,12 @@ LOGIN_KEY = "agent-login"
 PREFIX = "ghs_"
 # The variables `gh` reads for a token, in the order it reads them: the first one set decides.
 TOKEN_VARIABLES = ("GH_TOKEN", "GITHUB_TOKEN")
+# The command of `agent-token-command` signs and calls GitHub: it may take a while, never forever.
+TIMEOUT_SECONDS = 30.0
+
+
+class IdentityError(Exception):
+    """The installation token cannot be had. The message names the key, never the command or a token."""
 
 
 def is_agent_token(env: Mapping[str, str]) -> bool:
@@ -87,3 +94,44 @@ def mcp_refusal(config: Mapping[str, list[str]], tool: str) -> str | None:
         f" the agents (`{LOGIN_KEY}` : `{config[LOGIN_KEY][0]}`): write by `gh`, under the installation"
         f" token that the `{TOKEN_KEY}` key gives"
     )
+
+
+def token_command(config: Mapping[str, list[str]]) -> str:
+    """The command of the `agent-token-command` key: one line, not empty, or `IdentityError`."""
+    lines = config.get(TOKEN_KEY, [])
+    if len(lines) != 1 or not lines[0].strip():
+        raise IdentityError(f"the `{TOKEN_KEY}` key takes one non-empty line, and has {len(lines)}")
+    return lines[0]
+
+
+def fresh_token(command: str, timeout: float = TIMEOUT_SECONDS) -> str:
+    """The installation token that `command` prints, or `IdentityError`: no agent is launched without it.
+
+    The command runs in the shell (it is the project's, read on `origin/main`), with no input; it exits 0
+    and prints one line that starts with `ghs_`. Its output and its text are never put in an error: a
+    failure names the key and what went wrong, and the human's token is never taken in its place.
+    """
+    try:
+        done = subprocess.run(  # noqa: S602 - the project's own command, a protected key
+            command,
+            shell=True,
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        raise IdentityError(f"the command of the `{TOKEN_KEY}` key timed out after {timeout:g} s") from None
+    except OSError:
+        raise IdentityError(f"the command of the `{TOKEN_KEY}` key could not be started") from None
+    if done.returncode != 0:
+        raise IdentityError(f"the command of the `{TOKEN_KEY}` key failed (exit {done.returncode})")
+    lines = [line.strip() for line in done.stdout.splitlines() if line.strip()]
+    if not lines:
+        raise IdentityError(f"the command of the `{TOKEN_KEY}` key printed no token")
+    if len(lines) > 1:
+        raise IdentityError(f"the command of the `{TOKEN_KEY}` key printed more than one line")
+    if not lines[0].startswith(PREFIX):
+        raise IdentityError(f"the command of the `{TOKEN_KEY}` key printed a token that does not start with `{PREFIX}`")
+    return lines[0]
