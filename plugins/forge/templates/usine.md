@@ -19,9 +19,9 @@ relatifs à la racine du dépôt.
 
 ## Clés protégées : `docs/agents/usine-gardes.md`
 
-Vingt-trois clés bornent les pouvoirs de l'agent : `agent-autonomy`, `protected-path`,
+Vingt-quatre clés bornent les pouvoirs de l'agent : `agent-autonomy`, `protected-path`,
 `gh-api-allow`, `owner-gesture`, `never-weaken`, `infra-hosts`, `infra-verify`, `pr-cap-raiser`,
-`ticket-pr-cap`, `ticket-pr-cap-since`, `ticket-pr-cap-exempt`, `ticket-budget`, `run-limits`,
+`ticket-pr-cap`, `ticket-pr-cap-since`, `ticket-pr-cap-exempt`, `ticket-pr-cap-small`, `ticket-budget`, `run-limits`,
 `e2e-run-limits`, `run-budget`,
 `budget-action`, `slo`, `accepting-human`, `validation-owner`, `validation-reviewer`, `pin-bump`,
 `readonly-agent` et `readonly-command`. Elles gardent ici leur forme et leur section d'exemple, mais
@@ -510,9 +510,11 @@ nombre entier fait échouer le contrôle.
 
 - `ticket-budget` : `<300000>`
 
-Le plafond de PR par ticket, un nombre entier au-dessus de 0 sur une seule ligne. Une PR dont le corps cite
+Le plafond de PR par ticket, un nombre entier au-dessus de 0 sur une seule ligne : `6` tant que les tickets
+ne sont pas dimensionnés à la découpe (ceux publiés avant que `forge:feature-design` en estime la taille),
+`3` une fois qu'ils le sont. Une PR dont le corps cite
 `Closes #n` ou `Refs #n` est refusée par `guard_pr_cap` quand le ticket `#n` a déjà ce nombre de PR,
-ouvertes ou fusionnées (une PR fermée sans fusion ne compte pas) : c'est le `BLOCKED` de la quatrième PR,
+ouvertes ou fusionnées (une PR fermée sans fusion ne compte pas) : c'est le `BLOCKED` de la PR de trop,
 le ticket est commenté et reçoit `needs-your-attention`, et aucun ticket ne naît du plafond. Le coder
 (`forge:coder`) et l'orchestrateur (`forge:feature-build`) le lisent avant de couper un ticket : ils en
 prévoient au plus ce nombre. Seule l'étiquette `pr-cap-raised`, posée par un compte de la clé
@@ -537,6 +539,21 @@ valeur qui n'est pas un jour valide (`2026-13-45`, `demain`), une clé répété
 illisible fait refuser toute PR qui cite un ticket, tant que ce n'est pas corrigé.
 
 - `ticket-pr-cap-since` : `<AAAA-MM-JJ>`
+
+Le seuil sous lequel une PR ne compte pas dans ce plafond, un nombre de lignes entier au-dessus de 0 sur une
+seule ligne. `guard_pr_cap` lit `additions` et `deletions` de chaque PR dans le même appel `gh pr list --json`
+que le compte, et laisse hors du compte, ouverte ou fusionnée, une PR dont la somme est strictement
+inférieure à ce nombre : elle compte moins de lignes que lui, une PR d'exactement ce nombre compte. Une PR
+sortie du compte ne démarre pas non plus un ticket (la date de `ticket-pr-cap-since` ne lui est pas
+appliquée). Une PR en création n'a pas de diff lisible avant que gh ne s'exécute : elle compte jusqu'à ce
+qu'elle soit listée. La clé relâche le plafond, donc elle est protégée. Sans la clé `ticket-pr-cap-small`,
+« sans objet (clé `ticket-pr-cap-small` absente) » : toutes les PR comptent, quelle que soit leur taille,
+aucune valeur par défaut n'est devinée et les deux champs ne sont pas demandés. Une valeur qui n'est pas un
+nombre entier au-dessus de 0, une clé répétée, ou une PR du compte dont `additions` ou `deletions` est
+illisible fait refuser toute PR qui cite un ticket, tant que ce n'est pas corrigé. Sans la clé
+`ticket-pr-cap`, la taille n'est pas lue non plus.
+
+- `ticket-pr-cap-small` : `<50>`
 
 Les PR d'entretien de l'usine, que `guard_pr_cap` laisse hors du compte du plafond : une ligne par
 `type(scope)` (`chore(factory)`, `chore(pin)`), et une PR dont le titre commence exactement par

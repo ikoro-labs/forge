@@ -65,7 +65,9 @@ class FakeGh:
         issue: dict | None = None,
         created: Sequence[str | None] | None = None,
         titles: Sequence[str | None] | None = None,
+        sizes: Sequence[tuple[object, object]] | None = None,
     ) -> None:
+        self.sizes = sizes  # (additions, deletions) of each listed PR, None as a field leaves it out (None as a whole: no fields)
         self.titles = titles  # title of each listed PR, None leaves the field out (None as a whole: no field)
         self.created = created  # createdAt of each listed PR, None leaves the field out (None as a whole: no field)
         self.prs = prs  # (state, body) of each PR gh lists; None plays an unreachable gh
@@ -99,6 +101,12 @@ class FakeGh:
                 for item, title in zip(listed, self.titles):
                     if title is not None:
                         item["title"] = title
+            if self.sizes is not None:
+                for item, (added, removed) in zip(listed, self.sizes):
+                    if added is not None:
+                        item["additions"] = added
+                    if removed is not None:
+                        item["deletions"] = removed
             return json.dumps(listed)
         return None
 
@@ -616,10 +624,10 @@ class TheKey(unittest.TestCase):
         text = (support.PLUGIN / "hooks" / "guard_pr_cap.py").read_text(encoding="utf-8")
         self.assertNotRegex(text, r"\b20\d\d-\d\d-\d\d\b")
 
-    def test_this_repository_declares_the_key_at_four(self) -> None:
-        """Ticket #367, A1 (was #314, A2 at 3): `docs/agents/usine-gardes.md` (moved by #345) holds `ticket-pr-cap : 4`, once."""
+    def test_this_repository_declares_the_key_at_six(self) -> None:
+        """Ticket #381, A4 (was #367 at 4, #314 at 3): `docs/agents/usine-gardes.md` (moved by #345) holds `ticket-pr-cap : 6`, once."""
         text = support.repo_usine_text()
-        self.assertEqual(re.findall(r"^- `ticket-pr-cap` : `(\d+)`$", text, re.MULTILINE), ["4"])
+        self.assertEqual(re.findall(r"^- `ticket-pr-cap` : `(\d+)`$", text, re.MULTILINE), ["6"])
 
 
 class SinceDate(unittest.TestCase):
@@ -879,8 +887,8 @@ class ExemptKeyDeclared(unittest.TestCase):
         text = " ".join((support.PLUGIN / "templates" / "usine.md").read_text(encoding="utf-8").split())
         section = text.split("## Clés protégées")[1].split(" Les autres clés")[0]
         self.assertIn("`ticket-pr-cap-exempt`", section)
-        self.assertIn("Vingt-trois clés", section)
-        self.assertEqual(len(SENSITIVE_KEYS), 23)
+        self.assertIn("Vingt-quatre clés", section)
+        self.assertEqual(len(SENSITIVE_KEYS), 24)
 
 
 class ExemptCreation(unittest.TestCase):
@@ -1111,7 +1119,7 @@ class LastPr(unittest.TestCase):
         """Ticket #314, A9: the last PR has no key of its own; part 3 adds `ticket-pr-cap-exempt`, a key of the count."""
         text = (support.PLUGIN / "templates" / "usine.md").read_text(encoding="utf-8")
         keys = {line.split("`")[1] for line in text.splitlines() if line.startswith("- `ticket-pr-cap")}
-        self.assertEqual(keys, {"ticket-pr-cap", "ticket-pr-cap-since", "ticket-pr-cap-exempt"})
+        self.assertEqual(keys, {"ticket-pr-cap", "ticket-pr-cap-since", "ticket-pr-cap-exempt", "ticket-pr-cap-small"})
 
 
 class FourthPr(unittest.TestCase):
@@ -1215,11 +1223,12 @@ class RaisedCap(unittest.TestCase):
         project = Project(self, text)
         for login in ("ikoro-labs", "sunderland-labs"):
             with self.subTest(login=login):
-                gh = self.full(4, [raised(login)])  # the cap of this repository (#367)
-                gh.created = ["2026-11-23T10:00:00Z"] * 4  # this repository counts from a day: its PRs carry one
-                gh.titles = ["feat(x): one", "feat(y): two", "fix(z): three", "docs(w): four"]  # and lists titles to leave out: gh gives them
+                gh = self.full(6, [raised(login)])  # the cap of this repository (#381)
+                gh.created = ["2026-11-23T10:00:00Z"] * 6  # this repository counts from a day: its PRs carry one
+                gh.titles = ["feat(x): one", "feat(y): two", "fix(z): three", "docs(w): four", "fix(v): five", "feat(u): six"]
+                gh.sizes = [(300, 20)] * 6  # and leaves out the small PRs (#381): gh gives their sizes
                 reason = project.create(pr_body("Closes #5"), gh) or ""
-                self.assertIn("#5 already has 4 PRs for a cap of 4", reason)
+                self.assertIn("#5 already has 6 PRs for a cap of 6", reason)
                 self.assertIn("clé `pr-cap-raiser` absente", reason)
 
     def test_the_events_are_read_only_when_the_count_reaches_the_cap(self) -> None:
